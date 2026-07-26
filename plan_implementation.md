@@ -34,8 +34,8 @@ mathématiques exactes (masse, vitesse, split, fusion, decay…) mod par mod. Le
 
 | Lot | Nom | Phase | Statut global |
 |---|---|---|---|
-| [0](#lot-0--cadrage--fondations-du-projet) | Cadrage & fondations du projet | Transverse | 🔶 En cours |
-| [1](#lot-1--socle-technique-moteur-de-jeu) | Socle technique moteur de jeu | MVP | ⬜ À faire |
+| [0](#lot-0--cadrage--fondations-du-projet) | Cadrage & fondations du projet | Transverse | ✅ Fait |
+| [1](#lot-1--socle-technique-moteur-de-jeu) | Socle technique moteur de jeu | MVP | 🔶 En cours (reste 1.8) |
 | [2](#lot-2--salons-rooms) | Salons (rooms) | MVP | ⬜ À faire |
 | [3](#lot-3--comptes-joueurs--persistance) | Comptes joueurs & persistance | MVP | ⬜ À faire |
 | [4](#lot-4--deuxième-mode-de-jeu-validation-de-lapi-de-modding) | Deuxième mode de jeu (validation API) | MVP | ⬜ À faire |
@@ -64,11 +64,12 @@ la première ligne de moteur de jeu.
   licence, infra, backlog de décisions — validé comme base de référence du projet.
 
 ### 0.2 — Décisions bloquantes restantes avant code (§8.1)
-- **Statut :** 🔶 En cours (2026-07-26)
+- **Statut :** ✅ Fait (2026-07-26)
   - ✅ Formule de décroissance de la vélocité selon la masse — **tranchée par défaut**,
     voir [metriques.md §3](metriques.md#3-vitesse-en-fonction-de-la-masse)
     (`v(m) = V_REF * √(M_START/m)`, ajustable en playtest sans changement d'architecture).
-  - ⬜ Moteur de rendu client : Canvas 2D natif vs. PixiJS — encore à trancher.
+  - ✅ Moteur de rendu client : **Canvas 2D natif** — tranché lors du Lot 1.7, validé en
+    conditions réelles dans un navigateur.
 - **Contenu :** trancher, ou décider de trancher par playtest en cours de Lot 1 :
   - Formule de décroissance de la vélocité selon la masse.
   - Moteur de rendu client : Canvas 2D natif vs. PixiJS.
@@ -204,13 +205,26 @@ Vanilla codé comme un mod — validation de l'architecture de modding décrite 
   pas atteinte — valeur de départ, ajustable en playtest.
 
 ### 1.7 — Client de rendu basique
-- **Statut :** ⬜ À faire
-- **Contenu :** rendu Canvas 2D (ou PixiJS selon 0.2), connexion WebSocket, contrôle
-  souris/clavier (déplacement, split), interpolation d'affichage pour lisser la latence
-  (§4.2).
+- **Statut :** ✅ Fait (2026-07-26)
+- **Contenu :** `client/public/index.html` (canvas + formulaire de pseudo), `client/src/net.ts`
+  (connexion WebSocket), `client/src/input.ts` (direction souris depuis le centre de
+  l'écran, split sur barre espace), `client/src/render.ts` (caméra centrée sur le
+  barycentre pondéré des morceaux du joueur, zoom qui diminue avec la masse totale,
+  couleur déterministe par joueur). Bundlé avec **esbuild** (`client/package.json`
+  script `bundle`), servi directement par le serveur de jeu (`server/src/net/server.ts`
+  sert `client/public/` en statique — un seul process pour tout le MVP).
 - **Dépendances :** 0.2, 1.4.
-- **Critère d'acceptation :** un joueur peut se déplacer, manger des particules, grossir,
-  splitter, et voir les autres joueurs connectés au même salon, avec un rendu fluide.
+- **Critère d'acceptation :** **validé manuellement dans un vrai navigateur** (Lot 1.7
+  exige un test réel, pas seulement des tests unitaires) : serveur compilé démarré,
+  page chargée, join envoyé, le HUD passe de "0" à "1 morceau(x) en jeu", le morceau du
+  joueur s'affiche avec sa couleur et son pseudo, la nourriture ambiante est visible,
+  aucune erreur console, split sans crash (correctement ignoré sous le seuil de masse).
+  5 tests unitaires sur `computeCamera`. **Interpolation d'affichage non implémentée**
+  (repoussée : le test manuel en local n'a montré aucun besoin visible à ce stade —
+  à réévaluer en 1.8/Lot 8 avec une vraie latence réseau).
+- **Décision (§0.2, moteur de rendu) :** **Canvas 2D natif**, pas PixiJS — suffisant à
+  cette échelle (10-50 joueurs, cahier des charges §4.1), zéro dépendance
+  supplémentaire. Résout le dernier point ouvert du Lot 0.
 
 ### 1.8 — Validation empirique de charge
 - **Statut :** ⬜ À faire
@@ -624,6 +638,7 @@ Lot/Sous-Lot significatif terminé. Les entrées les plus récentes en haut.*
 
 | Date | Entrée |
 |---|---|
+| 2026-07-26 | Lot 1.7 fait : client Canvas 2D (choix tranché, résout le dernier point ouvert du Lot 0.2), bundlé avec esbuild, servi par le serveur de jeu lui-même. **Validé manuellement dans un vrai navigateur** (via le Browser pane) : join, rendu du morceau + nourriture, HUD, split sans crash. Le Lot 0 est maintenant entièrement terminé. Reste sur le Lot 1 : 1.8 (validation de charge). |
 | 2026-07-26 | Lot 1.3/1.4 faits : serveur WebSocket (`ws` + `http` natif) branché sur `Room`, protocole complet (join/input/welcome/state/died). Validé par 5 tests d'intégration + un test manuel de bout en bout avec le serveur réellement compilé et démarré. **Point technique important** : `shared/package.json` pointe désormais vers `dist/index.js`/`dist/index.d.ts` (pas `src/`) — nécessaire pour que `node dist/index.js` du serveur puisse réellement résoudre `@angulio/shared` à l'exécution (Node ne peut pas exécuter du `.ts` directement sur cette machine, voir note du 1.3). `vitest.config.ts` alias `@angulio/shared` vers `shared/src/index.ts` pour que les tests utilisent toujours la source à jour sans dépendre d'un build préalable. Ordre de build implicite requis : `shared` avant les autres (déjà l'ordre du tableau `workspaces` racine — ne pas le réordonner sans y repenser). |
 | 2026-07-26 | Lot 1.1/1.2/1.5/1.6 faits : moteur générique (`World`/`Room`/`SpatialHash`) sans aucune règle de jeu codée en dur, API de hooks `GameMod` validée, mode Vanilla entièrement implémenté comme mod (53 tests passants au total). Densité de spawn de nourriture et devenir de la masse perdue tranchés par défaut (voir metriques.md §13). Reste : réseau (1.3/1.4), client (1.7), validation de charge (1.8). |
 | 2026-07-26 | Lot 0 quasi complet : structure du monorepo (`shared/`, `server/`, `client/`, `admin/`) avec placeholders buildables/testés, outillage (npm workspaces, TS composite, ESLint 9 flat config, Prettier, Vitest) validé de bout en bout (`lint`, `test`, `build`, `format:check`), licence AGPL-3.0 officielle ajoutée (`LICENSE`, texte récupéré depuis gnu.org), CI GitHub Actions ajoutée. Seul point encore ouvert du Lot 0 : choix Canvas 2D vs PixiJS (0.2). |

@@ -5,7 +5,8 @@
   "type": "module",
   "main": "./src/index.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json && npm run bundle",
+    "bundle": "esbuild src/index.ts --bundle --outfile=public/bundle.js --format=esm --sourcemap"
   },
   "dependencies": {
     "@angulio/shared": "*"

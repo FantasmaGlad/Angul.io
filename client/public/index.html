@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Angul.io</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: #0b0f14;
+        height: 100%;
+      }
+      canvas {
+        display: block;
+      }
+      #hud {
+        position: fixed;
+        top: 8px;
+        left: 8px;
+        color: #e6e6e6;
+        font: 14px sans-serif;
+        text-shadow: 0 1px 2px #000;
+      }
+      #joinOverlay {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.6);
+      }
+      #joinOverlay input {
+        font-size: 18px;
+        padding: 6px 10px;
+      }
+      #joinOverlay button {
+        font-size: 18px;
+        padding: 6px 14px;
+        margin-left: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+    <div id="hud"></div>
+    <div id="joinOverlay">
+      <input id="nickname" placeholder="Pseudo" maxlength="20" />
+      <button id="joinButton">Jouer</button>
+    </div>
+    <script type="module" src="./bundle.js"></script>
+  </body>
+</html>
