@@ -245,6 +245,10 @@ Vanilla codé comme un mod — validation de l'architecture de modding décrite 
 - **Décision (§0.2, moteur de rendu) :** **Canvas 2D natif**, pas PixiJS — suffisant à
   cette échelle (10-50 joueurs, cahier des charges §4.1), zéro dépendance
   supplémentaire. Résout le dernier point ouvert du Lot 0.
+- **Ajouts du 2026-07-26 (suite à retour utilisateur) :** fond blanc + grille façon papier
+  millimétré (repère de déplacement/échelle, `render.ts` `drawGrid`) ; contrôle par
+  **intensité du curseur** — `client/src/input.ts` envoie un vecteur dont la norme
+  (∈ [0,1], pas seulement la direction) code l'intensité, cf. metriques.md §5bis.
 
 ### 1.8 — Validation empirique de charge
 - **Statut :** ✅ Fait (2026-07-26) — résultat important, optimisation déjà appliquée en partie
@@ -282,17 +286,37 @@ Vanilla codé comme un mod — validation de l'architecture de modding décrite 
   | 10 | **~35.2 Mbit/s** | ~41 % |
   | 50 | **~222.1 Mbit/s** | ~43 % |
 
-- **Conclusion :** un gain réel et significatif (~42 %) obtenu par de la sérialisation plus
-  compacte, sans toucher à l'architecture réseau (toujours un état complet par tick, pas de
-  delta compression, pas d'interest management). **Ce n'est pas suffisant à 50 joueurs**
-  (222 Mbit/s reste très probablement au-dessus de ce qu'une box Bouygue résidentielle
-  peut fournir en continu) — à 10 joueurs (35 Mbit/s), c'est plus raisonnable mais encore
-  significatif pour une ligne domestique partagée. **Le besoin d'interest management
-  (n'envoyer à chaque client que les entités visibles autour de sa caméra) reste réel et
-  devra être traité avant le Lot 8**, en particulier si l'objectif est de tenir le haut de
-  la fourchette (50 joueurs). À revalider avec un vrai test de charge sur le Wyse derrière
-  la box réelle (Lot 8), le résultat localhost ne mesurant que le coût serveur, pas la
-  latence réseau réelle.
+- **Deuxième vague d'optimisations (2026-07-26, décision utilisateur : traiter l'interest
+  management maintenant plutôt qu'au Lot 8) :**
+  - **Compression WebSocket** (`perMessageDeflate: true`, `net/server.ts`) — quasi gratuite,
+    très efficace sur du JSON répétitif.
+  - **Arrondi différencié** : position/rayon à 1 décimale (nécessaire à la fluidité visuelle
+    au zoom max ×2 du client), masse à l'entier (jamais utilisée pixel par pixel côté
+    client — seul `r`, déjà arrondi, sert au rendu).
+  - **Interest management** (chunks) : chaque client ne reçoit que les entités dans un rayon
+    de 3000px autour du barycentre de ses propres morceaux (+ ses morceaux, toujours inclus
+    quelle que soit leur position), via une grille spatiale dédiée (`SpatialHash`, maille =
+    rayon d'intérêt) — réutilise la même classe que la détection de collision, avec une
+    maille différente. Rayon fixe et généreux plutôt que calé sur le zoom réel du client
+    (qui dépend de sa taille d'écran, inconnue du serveur) : approximation volontaire,
+    raffinable plus tard si le client transmet ses dimensions de viewport.
+- **Mesure finale (toutes optimisations cumulées) :**
+
+  | Joueurs simulés | Bande passante montante serveur | Réduction vs. mesure initiale |
+  |---|---|---|
+  | 10 | **~7.8 Mbit/s** | ~87 % |
+  | 50 | **~51.5 Mbit/s** | ~87 % |
+
+  (Mesure conservatrice : `raw.length` côté client reflète la taille décompressée par `ws`,
+  pas les octets réellement transmis sur le réseau — la compression apporte donc un gain
+  supplémentaire non visible dans ces chiffres.)
+- **Conclusion :** la combinaison des trois optimisations ramène la bande passante à un
+  niveau tout à fait raisonnable pour une ligne domestique, y compris à 50 joueurs. Le
+  chiffre à 50 joueurs reste à **revalider avec un vrai test de charge sur le Wyse derrière
+  la box réelle (Lot 8)** — ces mesures localhost ne capturent que le coût serveur, pas la
+  latence ni la topologie réseau réelles. Delta compression et protocole binaire restent
+  des optimisations possibles si jamais insuffisant, mais ne semblent plus prioritaires
+  après ce résultat.
 
 ---
 
@@ -706,6 +730,7 @@ Lot/Sous-Lot significatif terminé. Les entrées les plus récentes en haut.*
 
 | Date | Entrée |
 |---|---|
+| 2026-07-26 | **Contrôle par intensité du curseur** (metriques.md §5.1, proposition utilisateur) : la distance du curseur au centre de l'écran module désormais une intensité ∈[0,1] qui réduit proportionnellement vitesse cible ET taux d'accélération — contrôle analogique plutôt que tout-ou-rien. Encodé dans la norme du vecteur `dir` du protocole (pas de nouveau champ). **Rendu client** : fond blanc + grille façon papier millimétré (repère visuel), texte des pseudos recontrasté (contour blanc + fond sombre) pour rester lisible sur fond clair. **Bande passante** : compression WebSocket (`perMessageDeflate`), arrondi différencié (position/rayon à 1 décimale, masse à l'entier — jamais utilisée pixel par pixel côté client), et **interest management** (chaque client ne reçoit que les entités dans un rayon de 3000px autour de ses propres morceaux, via une grille spatiale dédiée réutilisant `SpatialHash`). Résultat cumulé : **~387→52 Mbit/s à 50 joueurs, ~60→8 Mbit/s à 10 joueurs (~87% de réduction)** — mesure conservatrice (ne capture pas le gain de la compression elle-même). 73 tests passants. À revalider sur le Wyse réel (Lot 8). |
 | 2026-07-26 | **Refactor majeur du Lot 1.6** suite à l'analyse d'un fichier Excel fourni par l'utilisateur ("Angul.io - Master Sheet Engine & Documentation Technique.xlsx"). `mods/vanilla/` remplacé par un moteur paramétrique générique (`mods/parametric/`, `createParametricMod(config)`) piloté par des fichiers JSON (`server/configs/vanilla.json`, `folie.json`). Nouveau modèle vitesse+accélération (metriques.md v0.2 §4-5, remplace le boost de split ad hoc), split/fusion généralisés (eta_W, cooldown mass-dépendant), bords de carte génériques (STRICT_WALL/ELASTIC_BOUNCE/TOROIDAL), nourriture à densité par surface. Folie livré comme second mode dès maintenant (voir note Lot 4). Bug corrigé dans le fichier Excel source (cellule Folie/speedMultiplier corrompue en date, corrigée à 2.5). 70 tests passants. Effet de bord mesuré : la densité de nourriture de la feuille donne ~3375-12000 particules ambiantes (bien plus que les 300 fixes précédents), bande passante à 20 joueurs déjà ~198 Mbit/s — renforce le besoin d'interest management avant le Lot 8. |
 | 2026-07-26 | Gains rapides de bande passante appliqués suite au 1.8 (décision utilisateur : traiter maintenant plutôt qu'au Lot 8) : identifiants courts au lieu d'UUID (`World`, `net/server.ts`), pseudo envoyé une fois par joueur via un nouveau message `player` plutôt que répété à chaque entité/tick, clés JSON raccourcies dans `EntitySnapshot`. Mesure : ~387→222 Mbit/s à 50 joueurs, ~60→35 Mbit/s à 10 joueurs (~42% de réduction). **Reste insuffisant à 50 joueurs** — l'interest management reste nécessaire avant le Lot 8 si l'objectif est le haut de la fourchette. |
 | 2026-07-26 | **Lot 1 terminé.** 1.8 (validation de charge, `server/scripts/loadtest.mjs`) : tick très stable même à 50 joueurs/350 entités, MAIS bande passante montante serveur estimée à ~387 Mbit/s à 50 joueurs (~60 Mbit/s à 10) avec l'état complet JSON verbeux actuel — bien plus que prévu. **Le besoin de delta compression/interest management (initialement différé après le MVP en §1.4) est maintenant confirmé avant le Lot 8**, pas après. Décision de priorisation (gains rapides vs. interest management complet) à prendre avec l'utilisateur avant le Lot 8. |

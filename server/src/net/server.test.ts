@@ -195,4 +195,66 @@ describe('startGameServer', () => {
 
     expect(removedPlayerIds).toEqual([welcome.playerId]);
   });
+
+  it('arrondit position/rayon à 1 décimale et la masse à l’entier (Lot 1.8)', async () => {
+    const mod: GameMod = {
+      id: 'test',
+      onPlayerJoin: (world, playerId) => {
+        world.spawnPiece(playerId, { x: 123.456789, y: 0 }, 50.623456789);
+      },
+    };
+    const room = new Room(mod, { mapSize: 1000, tickRateHz: 20 });
+    handle = startGameServer(room, { port: 0 });
+    const port = await handle.whenReady;
+
+    const socket = await connectedClient(port);
+    const messages = collectMessages(socket);
+    socket.send(JSON.stringify({ type: 'join', nickname: 'Test' }));
+    await waitUntil(() => messages.some((m) => m.type === 'welcome'));
+
+    room.tick();
+    await waitUntil(() => messages.some((m) => m.type === 'state'));
+    const state = messages.find((m) => m.type === 'state') as {
+      entities: Array<{ x: number; m: number }>;
+    };
+    const piece = state.entities.find((e) => e.m > 0)!;
+
+    expect(piece.x).toBe(123.5);
+    expect(piece.m).toBe(51); // masse arrondie à l'entier le plus proche, pas à 1 décimale
+
+    socket.close();
+  });
+
+  it('ne diffuse à un client que les entités proches de sa propre caméra (interest management)', async () => {
+    const mod: GameMod = {
+      id: 'test',
+      onPlayerJoin: (world, playerId) => {
+        world.spawnPiece(playerId, { x: 0, y: 0 }, 50);
+      },
+    };
+    const room = new Room(mod, { mapSize: 100_000, tickRateHz: 20 });
+    handle = startGameServer(room, { port: 0, interestRadiusPx: 500 });
+    const port = await handle.whenReady;
+
+    const socket = await connectedClient(port);
+    const messages = collectMessages(socket);
+    socket.send(JSON.stringify({ type: 'join', nickname: 'Test' }));
+    await waitUntil(() => messages.some((m) => m.type === 'welcome'));
+
+    // Une particule proche (dans le rayon) et une très loin (hors rayon)
+    room.world.spawnParticle({ x: 100, y: 0 }, 1);
+    room.world.spawnParticle({ x: 50_000, y: 50_000 }, 1);
+
+    room.tick();
+    await waitUntil(() => messages.some((m) => m.type === 'state'));
+    const state = messages.find((m) => m.type === 'state') as {
+      entities: Array<{ x: number; y: number }>;
+    };
+
+    expect(state.entities.some((e) => e.x === 100 && e.y === 0)).toBe(true);
+    expect(state.entities.some((e) => e.x === 50_000)).toBe(false);
+    expect(state.entities.some((e) => e.x === 0 && e.y === 0)).toBe(true); // son propre morceau
+
+    socket.close();
+  });
 });

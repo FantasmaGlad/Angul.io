@@ -53,6 +53,32 @@ describe('createParametricMod — onTick (vitesse/accélération)', () => {
     expect(piece.velocity.x).toBeCloseTo(15, 6);
   });
 
+  it('réduit la vitesse cible ET le taux d’accélération proportionnellement à l’intensité du curseur', () => {
+    // Decay désactivée : ce test porte sur l'intensité, pas sur l'interaction avec la masse.
+    const config = testConfig({
+      decay: {
+        rateAboveStart: 0,
+        intervalAboveStartSec: 5,
+        rateBelowStart: 0,
+        intervalBelowStartSec: 10,
+        floor: 2,
+      },
+    });
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    const piece = world.spawnPiece('p1', { x: 500, y: 500 }, 50);
+
+    // dir de norme 0.5 -> intensité 50% (curseur à mi-chemin du rayon de contrôle)
+    mod.onPlayerInput?.(world, 'p1', { dir: { x: 0.5, y: 0 }, split: false });
+    mod.onTick?.(world, 0.1); // 1500*0.1*0.5 = 75 px/s de changement max, sous la cible réduite (150)
+
+    expect(piece.velocity.x).toBeCloseTo(75, 6);
+
+    mod.onTick?.(world, 1); // largement assez pour converger vers la cible réduite
+    expect(piece.velocity.x).toBeCloseTo(velocityForMass(50, config) * 0.5, 6);
+  });
+
   it('applique la decay passive', () => {
     const config = testConfig();
     const mod = createParametricMod(config);

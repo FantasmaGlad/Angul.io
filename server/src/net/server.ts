@@ -2,18 +2,31 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { join, normalize, resolve } from 'node:path';
-import type { ClientMessage, EntitySnapshot, ServerMessage } from '@angulio/shared';
+import {
+  distance,
+  type ClientMessage,
+  type EntitySnapshot,
+  type ServerMessage,
+} from '@angulio/shared';
 import { WebSocketServer, type WebSocket } from 'ws';
+import { SpatialHash } from '../engine/spatialHash.js';
+import type { Entity, PlayerId } from '../engine/types.js';
 import type { Room } from '../engine/room.js';
-import type { PlayerId } from '../engine/types.js';
 
 export interface GameServerOptions {
   port: number;
   /** Répertoire de fichiers statiques du client à servir (Lot 1.7), optionnel. */
   staticDir?: string;
+  /** Rayon (px, unité de simulation) autour de la caméra de chaque joueur au-delà duquel les
+   * entités ne sont plus diffusées à ce client — voir "interest management" ci-dessous.
+   * Volontairement généreux et fixe plutôt que calé sur le zoom réel du client (qui varie avec
+   * sa taille d'écran, inconnue du serveur) : suffisant pour la plupart des cas, à affiner plus
+   * tard si le client transmet un jour ses dimensions de viewport. */
+  interestRadiusPx?: number;
 }
 
 const MAX_NICKNAME_LENGTH = 20;
+const INTEREST_RADIUS_PX_DEFAULT = 3000;
 
 export interface GameServerHandle {
   /** Résout avec le port réellement utilisé (utile en test avec `port: 0`). */
@@ -23,16 +36,26 @@ export interface GameServerHandle {
 
 /**
  * Branche une Room existante sur un serveur HTTP + WebSocket : gère join/input/close et
- * diffuse l'état du monde à chaque tick (état complet, pas de delta compression au MVP —
- * voir plan Lot 1.4).
+ * diffuse l'état du monde à chaque tick. Optimisations réseau (Lot 1.8) :
+ *   - compression WebSocket (`perMessageDeflate`) ;
+ *   - nombres arrondis avant sérialisation (la précision flottante complète est inutile) ;
+ *   - *interest management* : chaque client ne reçoit que les entités proches de sa propre
+ *     caméra (+ toujours ses propres morceaux), pas le monde entier — toujours pas de delta
+ *     compression (un snapshot complet, mais restreint, à chaque tick).
  */
 export function startGameServer(room: Room, options: GameServerOptions): GameServerHandle {
+  const interestRadiusPx = options.interestRadiusPx ?? INTEREST_RADIUS_PX_DEFAULT;
+
   const httpServer = createServer((req, res) => {
     void serveStatic(options.staticDir, req, res);
   });
 
-  const wss = new WebSocketServer({ server: httpServer });
+  const wss = new WebSocketServer({ server: httpServer, perMessageDeflate: true });
   const sockets = new Map<PlayerId, WebSocket>();
+  // Grille dédiée à l'interest management, distincte de celle des collisions (World) : maille
+  // large (= interestRadiusPx) pour qu'une requête sur les 9 cellules voisines couvre bien tout
+  // le rayon d'intérêt, quel que soit l'endroit de sa cellule où se trouve le point interrogé.
+  const interestHash = new SpatialHash(interestRadiusPx);
   // Id courts plutôt que des UUID — voir World.spawnEntity et plan Lot 1.8 (bande passante).
   let nextPlayerId = 1;
 
@@ -80,17 +103,32 @@ export function startGameServer(room: Room, options: GameServerOptions): GameSer
 
   room.onState((tick) => {
     if (sockets.size === 0) return; // rien à diffuser si personne n'est connecté
-    const entities: EntitySnapshot[] = room.world.allEntities().map((entity) => ({
-      i: entity.id,
-      k: entity.kind === 'particle' ? 'f' : 'c',
-      x: entity.position.x,
-      y: entity.position.y,
-      r: entity.radius,
-      m: entity.mass,
-      p: entity.ownerId,
-    }));
-    const stateMessage: ServerMessage = { type: 'state', tick, entities };
-    for (const socket of sockets.values()) send(socket, stateMessage);
+
+    interestHash.clear();
+    for (const entity of room.world.allEntities()) interestHash.insert(entity);
+
+    for (const [playerId, socket] of sockets) {
+      const ownPieces = room.world.getPiecesByOwner(playerId);
+      const center = centroidOf(ownPieces) ?? {
+        x: room.world.mapSize / 2,
+        y: room.world.mapSize / 2,
+      };
+
+      // Toujours voir ses propres morceaux, même hors du rayon d'intérêt (ne devrait pas
+      // arriver en pratique puisque le rayon est centré dessus, mais reste correct si jamais).
+      const visible = new Map<string, Entity>();
+      for (const piece of ownPieces) visible.set(piece.id, piece);
+
+      for (const id of interestHash.queryNearby(center)) {
+        const entity = room.world.getEntity(id);
+        if (entity && distance(entity.position, center) <= interestRadiusPx) {
+          visible.set(entity.id, entity);
+        }
+      }
+
+      const entities: EntitySnapshot[] = [...visible.values()].map(toSnapshot);
+      send(socket, { type: 'state', tick, entities });
+    }
   });
 
   room.onPlayerDeath((playerId) => {
@@ -111,6 +149,47 @@ export function startGameServer(room: Room, options: GameServerOptions): GameSer
       wss.close();
       httpServer.close();
     },
+  };
+}
+
+function centroidOf(pieces: Entity[]): { x: number; y: number } | undefined {
+  if (pieces.length === 0) return undefined;
+
+  let totalMass = 0;
+  let x = 0;
+  let y = 0;
+  for (const piece of pieces) {
+    totalMass += piece.mass;
+    x += piece.position.x * piece.mass;
+    y += piece.position.y * piece.mass;
+  }
+  return { x: x / totalMass, y: y / totalMass };
+}
+
+/** Arrondi à 1 décimale : la précision flottante complète (ex. `1579.9018746980125`) n'apporte
+ * rien visuellement mais alourdit sensiblement chaque message (Lot 1.8). Utilisé pour
+ * position/rayon, qui affectent directement le rendu — le dixième de pixel évite un
+ * "escalier" perceptible au zoom maximal du client (×2, render.ts). */
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+/** La masse n'est jamais utilisée pixel par pixel côté client (seul `r`, déjà arrondi, sert au
+ * rendu ; `m` n'influence que le calcul de zoom de la caméra, insensible à ±0.5) — un entier
+ * suffit et coûte un caractère de moins par entité que `round1`. */
+function roundMass(value: number): number {
+  return Math.round(value);
+}
+
+function toSnapshot(entity: Entity): EntitySnapshot {
+  return {
+    i: entity.id,
+    k: entity.kind === 'particle' ? 'f' : 'c',
+    x: round1(entity.position.x),
+    y: round1(entity.position.y),
+    r: round1(entity.radius),
+    m: roundMass(entity.mass),
+    p: entity.ownerId,
   };
 }
 

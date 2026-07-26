@@ -7,6 +7,12 @@ const MAX_SCALE = 2;
  * qu'à calibrer le zoom, pas la simulation elle-même. */
 const REFERENCE_MASS = 50;
 
+const BACKGROUND_COLOR = '#ffffff';
+const GRID_COLOR = '#e3e3e3';
+/** Espacement de la grille en pixels *monde* (donc fixe quel que soit le zoom, comme des
+ * carreaux de papier millimétré vus de plus ou moins loin). */
+const GRID_SPACING_WORLD_PX = 100;
+
 export interface Camera {
   x: number;
   y: number;
@@ -47,11 +53,13 @@ export function renderFrame(
   camera: Camera,
   nicknames: ReadonlyMap<string, string>,
 ): void {
-  ctx.fillStyle = '#0b0f14';
+  ctx.fillStyle = BACKGROUND_COLOR;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   const toScreenX = (x: number) => (x - camera.x) * camera.scale + canvas.width / 2;
   const toScreenY = (y: number) => (y - camera.y) * camera.scale + canvas.height / 2;
+
+  drawGrid(ctx, canvas, camera, toScreenX, toScreenY);
 
   for (const entity of entities) {
     const screenX = toScreenX(entity.x);
@@ -68,13 +76,53 @@ export function renderFrame(
 
     const nickname = entity.p && nicknames.get(entity.p);
     if (entity.k === 'c' && nickname) {
-      ctx.fillStyle = '#ffffff';
       ctx.font = `${Math.max(10, screenRadius * 0.3)}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
+      // Contour blanc + remplissage sombre : lisible sur fond blanc *et* sur les couleurs
+      // vives des morceaux, sans avoir à connaître la couleur exacte du morceau au-dessous.
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#ffffff';
+      ctx.strokeText(nickname, screenX, screenY);
+      ctx.fillStyle = '#1a1a1a';
       ctx.fillText(nickname, screenX, screenY);
     }
   }
+}
+
+/** Grille façon papier millimétré, en espace monde (donc fixe visuellement quel que soit le
+ * zoom) — repère de déplacement et d'échelle sur le fond blanc. */
+function drawGrid(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  camera: Camera,
+  toScreenX: (x: number) => number,
+  toScreenY: (y: number) => number,
+): void {
+  const worldLeft = camera.x - canvas.width / 2 / camera.scale;
+  const worldRight = camera.x + canvas.width / 2 / camera.scale;
+  const worldTop = camera.y - canvas.height / 2 / camera.scale;
+  const worldBottom = camera.y + canvas.height / 2 / camera.scale;
+
+  const firstX = Math.floor(worldLeft / GRID_SPACING_WORLD_PX) * GRID_SPACING_WORLD_PX;
+  const firstY = Math.floor(worldTop / GRID_SPACING_WORLD_PX) * GRID_SPACING_WORLD_PX;
+
+  ctx.strokeStyle = GRID_COLOR;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+
+  for (let x = firstX; x <= worldRight; x += GRID_SPACING_WORLD_PX) {
+    const screenX = toScreenX(x);
+    ctx.moveTo(screenX, 0);
+    ctx.lineTo(screenX, canvas.height);
+  }
+  for (let y = firstY; y <= worldBottom; y += GRID_SPACING_WORLD_PX) {
+    const screenY = toScreenY(y);
+    ctx.moveTo(0, screenY);
+    ctx.lineTo(canvas.width, screenY);
+  }
+
+  ctx.stroke();
 }
 
 /** Couleur déterministe à partir de l'id du propriétaire — stable entre les morceaux d'un

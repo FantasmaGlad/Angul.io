@@ -2,9 +2,9 @@ import {
   add,
   circleOverlapArea,
   distance,
+  length,
   massToArea,
   moveToward,
-  normalize,
   scale,
   sub,
   type Vector2,
@@ -44,9 +44,16 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     world.spawnPiece(playerId, randomPositionInMap(margin), config.player.startMass);
   }
 
-  function directionOf(piece: Entity): Vector2 {
+  /**
+   * `inputDir` encode à la fois la direction et l'intensité voulues par le joueur : sa norme
+   * (∈ [0, 1], garantie côté client — `client/src/input.ts`) est l'intensité (1 = curseur au
+   * bord ou au-delà du rayon de contrôle), sa direction normalisée est l'angle visé.
+   */
+  function inputVectorOf(piece: Entity): { direction: Vector2; intensity: number } {
     const dir = pieceState(piece).inputDir;
-    return dir.x === 0 && dir.y === 0 ? FALLBACK_DIRECTION : normalize(dir);
+    const intensity = Math.min(1, length(dir));
+    if (intensity === 0) return { direction: FALLBACK_DIRECTION, intensity: 0 };
+    return { direction: scale(dir, 1 / length(dir)), intensity };
   }
 
   /** Divise un morceau en deux (masse restante m/2, éjecté = m/2 * eta_W — metriques.md §9,
@@ -56,7 +63,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     if (world.getPiecesByOwner(playerId).length >= config.player.maxSplits) return;
 
     const half = piece.mass / 2;
-    const dir = directionOf(piece);
+    const { direction: dir } = inputVectorOf(piece); // le split ignore l'intensité, toujours "plein"
 
     world.setMass(piece, half);
     const originState = pieceState(piece);
@@ -153,8 +160,11 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         const state = pieceState(entity);
         state.splitElapsedS += dt;
 
-        const targetVelocity = scale(directionOf(entity), velocityForMass(entity.mass, config));
-        const maxChange = accelerationForMass(entity.mass, config) * dt;
+        const { direction, intensity } = inputVectorOf(entity);
+        // Le curseur proche du centre donne un contrôle fin (faible intensité) ; loin, le
+        // plein régime — vitesse cible ET taux d'accélération sont tous deux réduits.
+        const targetVelocity = scale(direction, velocityForMass(entity.mass, config) * intensity);
+        const maxChange = accelerationForMass(entity.mass, config) * intensity * dt;
         entity.velocity = moveToward(entity.velocity, targetVelocity, maxChange);
 
         const decayedMass = applyPassiveDecay(entity.mass, dt, config);

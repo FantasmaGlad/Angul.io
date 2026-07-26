@@ -3,6 +3,9 @@ import type { Entity } from '../../engine/types.js';
 
 /** État propre au mod paramétrique, attaché à `entity.data` (le moteur ne le lit jamais). */
 export interface ParametricPieceState {
+  /** Direction ET intensité de l'input : sa norme (∈ [0,1], garantie par le client) code
+   * l'intensité, sa direction normalisée code l'angle visé (voir `inputVectorOf` dans
+   * mods/parametric/index.ts). */
   inputDir: Vector2;
   /** Secondes écoulées depuis le split qui a créé ce morceau ; Infinity si jamais splitté. */
   splitElapsedS: number;

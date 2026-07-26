@@ -1,6 +1,7 @@
 # Métriques et formules — Angul.io
 
-**Version :** 0.2 — Document de référence technique.
+**Version :** 0.3 — Document de référence technique. (v0.3 ajoute le contrôle par
+intensité du curseur, §5.1, suite à une proposition utilisateur.)
 **Origine des valeurs :** dérivées du cahier des charges (§3.5) pour la première version
 (v0.1), puis **révisées et étendues** à partir de la feuille de calcul fournie par
 l'utilisateur ("Angul.io - Master Sheet Engine & Documentation Technique.xlsx") qui
@@ -173,14 +174,15 @@ a(m) = A0 * (M0/m)^alpha
 instantanée. Chaque tick :
 
 ```
-vitesse_cible = direction_curseur * v(m)          (§4)
-Δ_max         = a(m) * dt
+vitesse_cible = direction_curseur * v(m) * intensité     (§4, §5.1)
+Δ_max         = a(m) * intensité * dt
 vitesse       ← deplacer_vers(vitesse, vitesse_cible, Δ_max)
 ```
 
 où `deplacer_vers(actuel, cible, max)` rapproche `actuel` de `cible` d'au plus `max` (en
 norme) — implémenté génériquement dans `shared/src/vector.ts` (`moveToward`), réutilisable
-par n'importe quel mod.
+par n'importe quel mod. `intensité` est défini en §5.1 (v0.3 — absent des versions
+précédentes, qui appliquaient toujours l'intensité maximale).
 
 Valeurs Vanilla/Folie (`A0=1500, alpha=0.70`, identique dans les deux modes) :
 
@@ -193,6 +195,29 @@ Valeurs Vanilla/Folie (`A0=1500, alpha=0.70`, identique dans les deux modes) :
 avec une vitesse initiale élevée (§8), puis le même modèle d'accélération générique le
 ramène naturellement vers la vitesse cible du joueur, sans minuteur de décroissance
 séparé — une seule formule pour tout le mouvement.
+
+### 5.1. Intensité du curseur (contrôle analogique)
+
+**Ajout v0.3**, suite à une proposition utilisateur. Auparavant, tout déplacement du
+curseur hors du centre demandait la vitesse/accélération cible *maximale* d'un coup
+(contrôle tout-ou-rien). Désormais, la distance du curseur au centre de l'écran module une
+**intensité** ∈ [0, 1] qui réduit proportionnellement la vitesse cible **et** le taux
+d'accélération — contrôle fin près du centre, plein régime au bord :
+
+```
+intensité = clamp( distance_curseur_écran / RAYON_CONTROLE_PX, 0, 1 )
+```
+
+Calculée **côté client** (`client/src/input.ts`, `RAYON_CONTROLE_PX = 300`, en pixels
+écran — indépendant du zoom, puisque le joueur est toujours rendu au centre de son propre
+écran). Le vecteur envoyé au serveur (`dir` du protocole, `shared/src/protocol.ts`) encode
+direction et intensité en un seul `Vector2` : sa **norme** (∈ [0,1], garantie côté client)
+est l'intensité, sa direction normalisée est l'angle visé — pas de champ supplémentaire
+dans le protocole. Le split ignore l'intensité (toujours "plein", voir §8).
+
+Exemple : à 50 % du rayon de contrôle, `intensité = 0.5` → vitesse cible à 50 % de `v(m)`
+**et** taux d'accélération à 50 % de `a(m)` (converge donc deux fois plus lentement vers
+une cible elle-même deux fois plus basse).
 
 ---
 

@@ -59,7 +59,7 @@ const input = attachInput(canvas);
 
 setInterval(() => {
   if (!selfPlayerId) return;
-  connection.send({ type: 'input', dir: input.getDirection(), split: input.consumeSplit() });
+  connection.send({ type: 'input', dir: input.getInputVector(), split: input.consumeSplit() });
 }, INPUT_SEND_INTERVAL_MS);
 
 function frame(): void {

@@ -30,7 +30,9 @@ export interface ClientJoinMessage {
 
 export interface ClientInputMessage {
   type: 'input';
-  /** Direction normalisée vers le curseur, {0,0} si le joueur ne bouge pas. */
+  /** Direction ET intensité vers le curseur : la norme (∈ [0,1], clampée côté client) code
+   * l'intensité — contrôle "analogique" plutôt que tout-ou-rien ({0,0} si le curseur est au
+   * centre de l'écran). */
   dir: Vector2;
   /** true uniquement sur le tick où le split est demandé (déclenchement, pas un état maintenu). */
   split: boolean;
