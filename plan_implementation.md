@@ -77,9 +77,10 @@ la première ligne de moteur de jeu.
   actée dans le Journal des décisions.
 
 ### 0.3 — Initialisation du dépôt et structure du monorepo
-- **Statut :** 🔶 En cours (2026-07-26) — dépôt Git local initialisé, `.gitignore` en place.
-  Restant : structure de dossiers (`server/`, `client/`, `admin/`, `shared/`), README initial,
-  et premier push sur GitHub (le dépôt reste local pour l'instant).
+- **Statut :** 🔶 En cours (2026-07-26) — dépôt Git local initialisé, `.gitignore` en place,
+  remote GitHub configuré en SSH et premier push effectué sur
+  [github.com/FantasmaGlad/Angul.io](https://github.com/FantasmaGlad/Angul.io) (branche `main`).
+  Restant : structure de dossiers (`server/`, `client/`, `admin/`, `shared/`) et README initial.
 - **Contenu :** `git init`, structure de dossiers (`server/`, `client/`, `admin/`, `shared/`),
   `.gitignore`, README initial avec description courte + lien vers le cahier des charges.
 - **Critère d'acceptation :** dépôt Git initialisé, structure de dossiers en place, premier
@@ -593,6 +594,7 @@ Lot/Sous-Lot significatif terminé. Les entrées les plus récentes en haut.*
 
 | Date | Entrée |
 |---|---|
+| 2026-07-26 | Clé de déploiement ajoutée au dépôt GitHub (accès écriture), connexion SSH vérifiée, premier push effectué sur `main` — https://github.com/FantasmaGlad/Angul.io. |
 | 2026-07-26 | Création de [metriques.md](metriques.md) : formules du mode Vanilla (masse↔rayon, vitesse, decay, split, fusion, collision). Formule de vitesse tranchée par défaut : `v(m) = V_REF * √(M_START/m)` avec `V_REF = 6 uc/s`, clampée ×0.25/×3 — résout la tâche 0.2, ajustable en playtest. Remote GitHub `origin` configuré en SSH (`git@github.com-angulio:...`) via une clé de déploiement dédiée `~/.ssh/angulio_deploy`. |
 | 2026-07-26 | Dépôt Git local initialisé (branche `main`), `.gitignore` ajouté, premier commit avec le cahier des charges et ce plan. Convention actée : pas de mention de co-auteur IA dans les commits de ce projet. |
 | 2026-07-26 | Rédaction du cahier des charges (v0.2) et de ce plan d'implémentation. Aucun code écrit à ce stade — le projet démarre au Lot 0.2. |
