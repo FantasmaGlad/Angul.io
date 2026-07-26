@@ -20,7 +20,7 @@ export function computeCamera(
   selfPlayerId: string | undefined,
   fallback: { x: number; y: number },
 ): Camera {
-  const ownPieces = entities.filter((entity) => entity.ownerId === selfPlayerId);
+  const ownPieces = entities.filter((entity) => entity.p === selfPlayerId);
   if (ownPieces.length === 0) {
     return { x: fallback.x, y: fallback.y, scale: BASE_SCALE };
   }
@@ -29,20 +29,23 @@ export function computeCamera(
   let x = 0;
   let y = 0;
   for (const piece of ownPieces) {
-    totalMass += piece.mass;
-    x += piece.x * piece.mass;
-    y += piece.y * piece.mass;
+    totalMass += piece.m;
+    x += piece.x * piece.m;
+    y += piece.y * piece.m;
   }
 
   const scale = clamp(BASE_SCALE / Math.sqrt(totalMass / REFERENCE_MASS), MIN_SCALE, MAX_SCALE);
   return { x: x / totalMass, y: y / totalMass, scale };
 }
 
+/** `nicknames` : pseudo par id de joueur, appris via les messages `player` (envoyés une fois
+ * par joueur plutôt que répétés sur chaque entité à chaque tick — voir plan Lot 1.8). */
 export function renderFrame(
   ctx: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
   entities: EntitySnapshot[],
   camera: Camera,
+  nicknames: ReadonlyMap<string, string>,
 ): void {
   ctx.fillStyle = '#0b0f14';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -53,7 +56,7 @@ export function renderFrame(
   for (const entity of entities) {
     const screenX = toScreenX(entity.x);
     const screenY = toScreenY(entity.y);
-    const screenRadius = entity.radius * camera.scale;
+    const screenRadius = entity.r * camera.scale;
 
     if (screenX + screenRadius < 0 || screenX - screenRadius > canvas.width) continue;
     if (screenY + screenRadius < 0 || screenY - screenRadius > canvas.height) continue;
@@ -63,12 +66,13 @@ export function renderFrame(
     ctx.fillStyle = colorFor(entity);
     ctx.fill();
 
-    if (entity.kind === 'piece' && entity.ownerNickname) {
+    const nickname = entity.p && nicknames.get(entity.p);
+    if (entity.k === 'c' && nickname) {
       ctx.fillStyle = '#ffffff';
       ctx.font = `${Math.max(10, screenRadius * 0.3)}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(entity.ownerNickname, screenX, screenY);
+      ctx.fillText(nickname, screenX, screenY);
     }
   }
 }
@@ -76,12 +80,12 @@ export function renderFrame(
 /** Couleur déterministe à partir de l'id du propriétaire — stable entre les morceaux d'un
  * même joueur (utile après un split) sans avoir besoin d'un état côté client. */
 function colorFor(entity: EntitySnapshot): string {
-  if (entity.kind === 'particle') return '#3a6b35';
-  if (!entity.ownerId) return '#888888';
+  if (entity.k === 'f') return '#3a6b35';
+  if (!entity.p) return '#888888';
 
   let hash = 0;
-  for (let i = 0; i < entity.ownerId.length; i++) {
-    hash = (hash * 31 + entity.ownerId.charCodeAt(i)) >>> 0;
+  for (let i = 0; i < entity.p.length; i++) {
+    hash = (hash * 31 + entity.p.charCodeAt(i)) >>> 0;
   }
   return `hsl(${hash % 360}, 70%, 55%)`;
 }

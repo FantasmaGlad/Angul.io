@@ -25,6 +25,9 @@ let entities: EntitySnapshot[] = [];
 let selfPlayerId: string | undefined;
 let mapSize = 4000;
 let justDied = false;
+/** Pseudo par id de joueur, appris via les messages `player` (envoyés une fois par joueur,
+ * pas répétés sur chaque entité à chaque tick — voir plan Lot 1.8, bande passante). */
+const nicknames = new Map<string, string>();
 
 const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
 const connection = new GameConnection(`${wsProtocol}://${location.host}`);
@@ -33,6 +36,8 @@ connection.onMessage((message: ServerMessage) => {
   if (message.type === 'welcome') {
     selfPlayerId = message.playerId;
     mapSize = message.mapSize;
+  } else if (message.type === 'player') {
+    nicknames.set(message.playerId, message.nickname);
   } else if (message.type === 'state') {
     entities = message.entities;
   } else if (message.type === 'died') {
@@ -59,9 +64,9 @@ setInterval(() => {
 
 function frame(): void {
   const camera = computeCamera(entities, selfPlayerId, { x: mapSize / 2, y: mapSize / 2 });
-  renderFrame(ctx!, canvas, entities, camera);
+  renderFrame(ctx!, canvas, entities, camera, nicknames);
 
-  const pieceCount = entities.filter((entity) => entity.kind === 'piece').length;
+  const pieceCount = entities.filter((entity) => entity.k === 'c').length;
   hud.textContent = justDied
     ? 'Vous êtes mort — respawn en cours…'
     : `${pieceCount} morceau(x) en jeu`;

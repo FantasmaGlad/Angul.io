@@ -1,17 +1,26 @@
 import type { Vector2 } from './vector.js';
 
-export type EntityKind = 'particle' | 'piece';
+/** 'f' = particule de nourriture, 'c' = morceau de joueur ("creature"). Codes courts : ce champ
+ * est répété pour chaque entité à chaque tick (voir plan Lot 1.8, bande passante). */
+export type WireEntityKind = 'f' | 'c';
 
-/** Une entrée du snapshot envoyé au client — pas de delta compression au MVP (metriques.md/plan §1.4). */
+/**
+ * Une entrée du snapshot envoyé au client, à chaque tick, pour chaque entité visible.
+ * Champs volontairement courts (`i`, `k`, `r`, `m`, `p`) — mesuré au Lot 1.8 : avec des UUID et
+ * des noms de clé longs, la diffusion d'état complet à 50 joueurs coûtait ~387 Mbit/s d'upload
+ * serveur. Pas de delta compression ni d'interest management pour autant (différés, voir plan
+ * §1.4) — seulement une sérialisation moins verbeuse.
+ */
 export interface EntitySnapshot {
-  id: string;
-  kind: EntityKind;
+  /** Identifiant court (pas un UUID — voir World/server.ts). */
+  i: string;
+  k: WireEntityKind;
   x: number;
   y: number;
-  radius: number;
-  mass: number;
-  ownerId?: string;
-  ownerNickname?: string;
+  r: number;
+  m: number;
+  /** Identifiant court du joueur propriétaire, absent pour la nourriture. */
+  p?: string;
 }
 
 export interface ClientJoinMessage {
@@ -41,8 +50,17 @@ export interface WorldStateMessage {
   entities: EntitySnapshot[];
 }
 
+/** Envoyé une fois par joueur (à sa connexion, et rétroactivement à tout nouvel arrivant pour les
+ * joueurs déjà présents) plutôt que répété sur chaque entité à chaque tick (Lot 1.8). */
+export interface PlayerInfoMessage {
+  type: 'player';
+  playerId: string;
+  nickname: string;
+}
+
 export interface PlayerDiedMessage {
   type: 'died';
 }
 
-export type ServerMessage = WelcomeMessage | WorldStateMessage | PlayerDiedMessage;
+export type ServerMessage =
+  WelcomeMessage | WorldStateMessage | PlayerInfoMessage | PlayerDiedMessage;

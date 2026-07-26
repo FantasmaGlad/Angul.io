@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { distance, massToRadius, type Vector2 } from '@angulio/shared';
 import { SpatialHash } from './spatialHash.js';
 import type { Entity, EntityId, EntityKind, PlayerId, PlayerState } from './types.js';
@@ -22,6 +21,9 @@ export class World {
   private readonly entities = new Map<EntityId, Entity>();
   private readonly players = new Map<PlayerId, PlayerState>();
   private spatialHash: SpatialHash;
+  /** Compteur d'ids courts plutôt que des UUID — mesuré au Lot 1.8 : la taille des ids sur le
+   * réseau compte beaucoup à 20 Hz avec des centaines d'entités. */
+  private nextEntityId = 1;
 
   constructor(options: WorldOptions) {
     this.mapSize = options.mapSize;
@@ -50,7 +52,7 @@ export class World {
     velocity?: Vector2,
   ): Entity {
     const entity: Entity = {
-      id: randomUUID(),
+      id: String(this.nextEntityId++),
       kind,
       position: { ...position },
       velocity: velocity ? { ...velocity } : { x: 0, y: 0 },

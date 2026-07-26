@@ -4,13 +4,13 @@ import { computeCamera } from './render.js';
 
 function piece(overrides: Partial<EntitySnapshot>): EntitySnapshot {
   return {
-    id: 'e1',
-    kind: 'piece',
+    i: 'e1',
+    k: 'c',
     x: 0,
     y: 0,
-    radius: 7,
-    mass: 50,
-    ownerId: 'p1',
+    r: 7,
+    m: 50,
+    p: 'p1',
     ...overrides,
   };
 }
@@ -30,23 +30,23 @@ describe('computeCamera', () => {
 
   it('se centre sur le barycentre pondéré par la masse de plusieurs morceaux', () => {
     const entities = [
-      piece({ id: 'a', x: 0, y: 0, mass: 100 }),
-      piece({ id: 'b', x: 300, y: 0, mass: 100 }),
+      piece({ i: 'a', x: 0, y: 0, m: 100 }),
+      piece({ i: 'b', x: 300, y: 0, m: 100 }),
     ];
     const camera = computeCamera(entities, 'p1', { x: 0, y: 0 });
     expect(camera.x).toBeCloseTo(150, 6); // milieu, masses égales
   });
 
   it('dézoome (échelle réduite) quand la masse totale augmente', () => {
-    const small = computeCamera([piece({ mass: 50 })], 'p1', { x: 0, y: 0 });
-    const big = computeCamera([piece({ mass: 5000 })], 'p1', { x: 0, y: 0 });
+    const small = computeCamera([piece({ m: 50 })], 'p1', { x: 0, y: 0 });
+    const big = computeCamera([piece({ m: 5000 })], 'p1', { x: 0, y: 0 });
     expect(big.scale).toBeLessThan(small.scale);
   });
 
   it('ignore les morceaux appartenant à d’autres joueurs', () => {
     const entities = [
-      piece({ id: 'mine', x: 10, y: 10, ownerId: 'p1' }),
-      piece({ id: 'other', x: 999, y: 999, ownerId: 'p2' }),
+      piece({ i: 'mine', x: 10, y: 10, p: 'p1' }),
+      piece({ i: 'other', x: 999, y: 999, p: 'p2' }),
     ];
     const camera = computeCamera(entities, 'p1', { x: 0, y: 0 });
     expect(camera.x).toBeCloseTo(10, 6);

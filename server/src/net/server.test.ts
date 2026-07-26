@@ -4,10 +4,24 @@ import type { GameMod } from '../engine/mod.js';
 import { Room } from '../engine/room.js';
 import { startGameServer, type GameServerHandle } from './server.js';
 
-function waitForMessage(socket: WebSocket): Promise<Record<string, unknown>> {
-  return new Promise((resolve) => {
-    socket.once('message', (raw: Buffer) => resolve(JSON.parse(raw.toString())));
-  });
+type Message = Record<string, unknown>;
+
+/** Accumule tous les messages reçus depuis l'ouverture du socket — évite la course entre deux
+ * `once('message', ...)` séquentiels quand le serveur envoie plusieurs messages d'affilée
+ * dans le même tick (welcome + player, par exemple peuvent arriver avant qu'on ait eu la main
+ * pour se ré-abonner). */
+function collectMessages(socket: WebSocket): Message[] {
+  const messages: Message[] = [];
+  socket.on('message', (raw: Buffer) => messages.push(JSON.parse(raw.toString())));
+  return messages;
+}
+
+async function waitUntil(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
+  const start = Date.now();
+  while (!predicate()) {
+    if (Date.now() - start > timeoutMs) throw new Error('waitUntil : délai dépassé');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
 }
 
 function waitForOpen(socket: WebSocket): Promise<void> {
@@ -35,9 +49,11 @@ describe('startGameServer', () => {
     const port = await handle.whenReady;
 
     const socket = await connectedClient(port);
-    const welcomePromise = waitForMessage(socket);
+    const messages = collectMessages(socket);
     socket.send(JSON.stringify({ type: 'join', nickname: 'Test' }));
-    const welcome = await welcomePromise;
+
+    await waitUntil(() => messages.some((m) => m.type === 'welcome'));
+    const welcome = messages.find((m) => m.type === 'welcome')!;
 
     expect(welcome).toMatchObject({ type: 'welcome', mapSize: 1234 });
     expect(typeof welcome.playerId).toBe('string');
@@ -45,7 +61,7 @@ describe('startGameServer', () => {
     socket.close();
   });
 
-  it('diffuse l’état du monde après un join, avec le morceau du joueur', async () => {
+  it('diffuse l’état du monde après un join, avec le morceau du joueur et son pseudo', async () => {
     const mod: GameMod = {
       id: 'test',
       onPlayerJoin: (world, playerId) => {
@@ -57,18 +73,56 @@ describe('startGameServer', () => {
     const port = await handle.whenReady;
 
     const socket = await connectedClient(port);
+    const messages = collectMessages(socket);
     socket.send(JSON.stringify({ type: 'join', nickname: 'Alice' }));
-    await waitForMessage(socket); // welcome
 
-    const statePromise = waitForMessage(socket);
+    await waitUntil(() => messages.some((m) => m.type === 'welcome'));
+    const welcome = messages.find((m) => m.type === 'welcome')!;
+
+    await waitUntil(() => messages.some((m) => m.type === 'player'));
+    const playerInfo = messages.find((m) => m.type === 'player');
+    expect(playerInfo).toMatchObject({
+      type: 'player',
+      playerId: welcome.playerId,
+      nickname: 'Alice',
+    });
+
     room.tick();
-    const state = await statePromise;
+    await waitUntil(() => messages.some((m) => m.type === 'state'));
+    const state = messages.find((m) => m.type === 'state') as { entities: Array<{ p?: string }> };
 
-    expect(state.type).toBe('state');
-    const entities = state.entities as Array<{ ownerNickname?: string }>;
-    expect(entities.some((e) => e.ownerNickname === 'Alice')).toBe(true);
+    expect(state.entities.some((e) => e.p === welcome.playerId)).toBe(true);
 
     socket.close();
+  });
+
+  it('envoie les pseudos déjà connus à un nouvel arrivant (backfill)', async () => {
+    const mod: GameMod = { id: 'test' };
+    const room = new Room(mod, { mapSize: 1000, tickRateHz: 20 });
+    handle = startGameServer(room, { port: 0 });
+    const port = await handle.whenReady;
+
+    const first = await connectedClient(port);
+    const firstMessages = collectMessages(first);
+    first.send(JSON.stringify({ type: 'join', nickname: 'Eve' }));
+    await waitUntil(() => firstMessages.some((m) => m.type === 'welcome'));
+    const firstWelcome = firstMessages.find((m) => m.type === 'welcome')!;
+
+    const second = await connectedClient(port);
+    const secondMessages = collectMessages(second);
+    second.send(JSON.stringify({ type: 'join', nickname: 'Frank' }));
+
+    await waitUntil(
+      () =>
+        secondMessages.some(
+          (m) =>
+            m.type === 'player' && m.playerId === firstWelcome.playerId && m.nickname === 'Eve',
+        ),
+      // le backfill des joueurs déjà présents doit atteindre le nouvel arrivant
+    );
+
+    first.close();
+    second.close();
   });
 
   it('transmet les inputs au mod via handleInput', async () => {
@@ -87,8 +141,9 @@ describe('startGameServer', () => {
     const port = await handle.whenReady;
 
     const socket = await connectedClient(port);
+    const messages = collectMessages(socket);
     socket.send(JSON.stringify({ type: 'join', nickname: 'Bob' }));
-    await waitForMessage(socket); // welcome
+    await waitUntil(() => messages.some((m) => m.type === 'welcome'));
 
     socket.send(JSON.stringify({ type: 'input', dir: { x: 1, y: 0 }, split: true }));
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -105,13 +160,11 @@ describe('startGameServer', () => {
     const port = await handle.whenReady;
 
     const socket = await connectedClient(port);
+    const messages = collectMessages(socket);
     socket.send('ceci n’est pas du JSON');
-
-    const welcomePromise = waitForMessage(socket);
     socket.send(JSON.stringify({ type: 'join', nickname: 'Carol' }));
-    const welcome = await welcomePromise;
 
-    expect(welcome.type).toBe('welcome');
+    await waitUntil(() => messages.some((m) => m.type === 'welcome'));
 
     socket.close();
   });
@@ -132,11 +185,10 @@ describe('startGameServer', () => {
     const port = await handle.whenReady;
 
     const socket = await connectedClient(port);
-    const welcome = await (async () => {
-      const p = waitForMessage(socket);
-      socket.send(JSON.stringify({ type: 'join', nickname: 'Dan' }));
-      return p;
-    })();
+    const messages = collectMessages(socket);
+    socket.send(JSON.stringify({ type: 'join', nickname: 'Dan' }));
+    await waitUntil(() => messages.some((m) => m.type === 'welcome'));
+    const welcome = messages.find((m) => m.type === 'welcome')!;
 
     socket.close();
     await new Promise((resolve) => setTimeout(resolve, 50));

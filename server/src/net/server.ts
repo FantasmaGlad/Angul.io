@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -34,6 +33,8 @@ export function startGameServer(room: Room, options: GameServerOptions): GameSer
 
   const wss = new WebSocketServer({ server: httpServer });
   const sockets = new Map<PlayerId, WebSocket>();
+  // Id courts plutôt que des UUID — voir World.spawnEntity et plan Lot 1.8 (bande passante).
+  let nextPlayerId = 1;
 
   wss.on('connection', (socket: WebSocket) => {
     let playerId: PlayerId | undefined;
@@ -43,11 +44,25 @@ export function startGameServer(room: Room, options: GameServerOptions): GameSer
       if (!message) return;
 
       if (message.type === 'join' && !playerId) {
-        playerId = randomUUID();
+        playerId = String(nextPlayerId++);
         sockets.set(playerId, socket);
         const nickname = message.nickname.trim().slice(0, MAX_NICKNAME_LENGTH) || 'Joueur';
         room.addPlayer(playerId, nickname);
         send(socket, { type: 'welcome', playerId, mapSize: room.world.mapSize });
+
+        // Le nouvel arrivant apprend les pseudos déjà connus (les autres, pas lui — couvert
+        // par la diffusion ci-dessous, qui l'inclut).
+        for (const existingPlayer of room.world.allPlayers()) {
+          if (existingPlayer.id === playerId) continue;
+          send(socket, {
+            type: 'player',
+            playerId: existingPlayer.id,
+            nickname: existingPlayer.nickname,
+          });
+        }
+        // Tout le monde apprend le nouveau pseudo — message rare, pas répété à chaque tick (Lot 1.8).
+        const playerInfo: ServerMessage = { type: 'player', playerId, nickname };
+        for (const otherSocket of sockets.values()) send(otherSocket, playerInfo);
         return;
       }
 
@@ -66,14 +81,13 @@ export function startGameServer(room: Room, options: GameServerOptions): GameSer
   room.onState((tick) => {
     if (sockets.size === 0) return; // rien à diffuser si personne n'est connecté
     const entities: EntitySnapshot[] = room.world.allEntities().map((entity) => ({
-      id: entity.id,
-      kind: entity.kind,
+      i: entity.id,
+      k: entity.kind === 'particle' ? 'f' : 'c',
       x: entity.position.x,
       y: entity.position.y,
-      radius: entity.radius,
-      mass: entity.mass,
-      ownerId: entity.ownerId,
-      ownerNickname: entity.ownerId ? room.world.getPlayer(entity.ownerId)?.nickname : undefined,
+      r: entity.radius,
+      m: entity.mass,
+      p: entity.ownerId,
     }));
     const stateMessage: ServerMessage = { type: 'state', tick, entities };
     for (const socket of sockets.values()) send(socket, stateMessage);

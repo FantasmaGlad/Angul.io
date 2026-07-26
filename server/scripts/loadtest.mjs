@@ -82,14 +82,19 @@ async function main() {
       });
 
       socket.on('message', (raw) => {
-        const now = performance.now();
         stats.messageCount += 1;
         stats.totalBytes += raw.length;
-        if (lastStateAt !== null) stats.interArrivalMs.push(now - lastStateAt);
-        lastStateAt = now;
         try {
           const parsed = JSON.parse(raw.toString());
-          if (parsed.type === 'state') stats.lastEntityCount = parsed.entities.length;
+          // Seuls les messages `state` sont réguliers (un par tick) : les mélanger avec les
+          // messages ponctuels (welcome/player, en rafale au moment du join) fausserait la
+          // mesure de stabilité du tick.
+          if (parsed.type === 'state') {
+            const now = performance.now();
+            if (lastStateAt !== null) stats.interArrivalMs.push(now - lastStateAt);
+            lastStateAt = now;
+            stats.lastEntityCount = parsed.entities.length;
+          }
         } catch {
           /* ignoré */
         }

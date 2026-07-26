@@ -227,42 +227,52 @@ Vanilla codé comme un mod — validation de l'architecture de modding décrite 
   supplémentaire. Résout le dernier point ouvert du Lot 0.
 
 ### 1.8 — Validation empirique de charge
-- **Statut :** ✅ Fait (2026-07-26) — **résultat critique, action requise avant Lot 8**
+- **Statut :** ✅ Fait (2026-07-26) — résultat important, optimisation déjà appliquée en partie
 - **Contenu :** `server/scripts/loadtest.mjs` — démarre le serveur compilé, connecte N bots
   WebSocket (mouvement + split périodique), mesure la stabilité du tick perçue côté client
   et la bande passante agrégée. `npm run loadtest --workspace=server -- <bots> <secondes>`.
 - **Dépendances :** 1.6, 1.7.
-- **Résultats mesurés (localhost, donc latence réseau non incluse) :**
+- **Mesure initiale (JSON verbeux : UUID + `ownerNickname` répété à chaque entité/tick) :**
 
-  | Joueurs simulés | Entités (nourriture 300 + morceaux) | Stabilité du tick | Bande passante montante serveur estimée |
+  | Joueurs simulés | Entités | Stabilité du tick | Bande passante montante serveur estimée |
   |---|---|---|---|
   | 10 | 310 | moy 50.1 ms, p99 52.2 ms (cible 50 ms à 20 Hz) | **~59.8 Mbit/s** |
   | 50 | 350 | moy 50.1 ms, p99 54.2 ms | **~386.7 Mbit/s** |
 
-- **Ce qui est validé :** la boucle de tick elle-même est **très stable** (quasi aucune
-  dérive même à 50 joueurs + 350 entités) — le moteur (1.2/1.5/1.6) n'est pas le goulot
-  d'étranglement.
-- **Ce qui ne l'est pas — point bloquant identifié :** la diffusion d'état complet en JSON
-  verbeux (UUID en clair pour `id`/`ownerId`, pseudo répété à chaque tick sur chaque
-  morceau, pas de compression) coûte **~7-8 Mbit/s par joueur connecté**. À 50 joueurs,
-  ça représente **~387 Mbit/s d'upload constant**, très probablement bien au-delà de ce
-  qu'une box Bouygue résidentielle peut fournir en continu (cahier des charges §4.2 avait
-  anticipé ce risque sans le chiffrer — c'est fait maintenant). Même à 10 joueurs (~60
-  Mbit/s), ça reste une charge d'upload significative pour une ligne domestique partagée
-  avec le reste du foyer.
-- **Conclusion :** contrairement à l'hypothèse initiale du plan ("delta compression et
-  interest management sont des optimisations à ajouter après un premier prototype, une
-  fois le besoin confirmé" — §1.4), le besoin est maintenant confirmé **avant** la mise en
-  production, pas après. Ne pas traiter ce point avant le Lot 8 (déploiement sur le Wyse
-  derrière la box réelle) ferait planter le jeu en conditions réelles dès quelques joueurs.
-- **Recommandation, non implémentée à ce stade (à valider avec toi) :** avant le Lot 8,
-  prioriser au minimum des gains rapides et peu coûteux en architecture : identifiants
-  courts/numériques au lieu d'UUID dans les snapshots, ne pas répéter `ownerNickname` à
-  chaque entité à chaque tick (résolvable une fois côté client via un message séparé,
-  rare), et éventuellement réduire `FOOD_TARGET_COUNT` ou la fréquence de diffusion. La
-  vraie solution structurelle (interest management : n'envoyer que les entités visibles
-  autour de la caméra de chaque joueur) reste plus lourde et peut suivre après ces gains
-  rapides.
+- **Ce qui était déjà validé :** la boucle de tick elle-même est **très stable** (quasi
+  aucune dérive même à 50 joueurs + 350 entités) — le moteur (1.2/1.5/1.6) n'est pas le
+  goulot d'étranglement, uniquement le format des messages.
+- **Décision (avec l'utilisateur) :** appliquer immédiatement les gains rapides identifiés,
+  plutôt que de différer au Lot 8 comme prévu initialement en §1.4 — le besoin était
+  confirmé, pas hypothétique.
+- **Optimisations appliquées (toujours sans delta compression ni interest management,
+  uniquement une sérialisation moins verbeuse) :**
+  - `World` génère des identifiants courts incrémentaux (`"1"`, `"2"`, …) au lieu d'UUID
+    (`server/src/engine/world.ts`) ; idem côté serveur réseau pour les identifiants de
+    joueur (`server/src/net/server.ts`).
+  - Le pseudo n'est plus répété sur chaque entité à chaque tick : nouveau message
+    `player` (`shared/src/protocol.ts`), envoyé une fois par joueur (à sa connexion,
+    et rétroactivement aux joueurs déjà connectés pour tout nouvel arrivant), que le
+    client mappe localement `playerId → pseudo`.
+  - Clés JSON du snapshot raccourcies (`i`/`k`/`x`/`y`/`r`/`m`/`p`).
+- **Mesure après optimisation :**
+
+  | Joueurs simulés | Bande passante montante serveur | Réduction |
+  |---|---|---|
+  | 10 | **~35.2 Mbit/s** | ~41 % |
+  | 50 | **~222.1 Mbit/s** | ~43 % |
+
+- **Conclusion :** un gain réel et significatif (~42 %) obtenu par de la sérialisation plus
+  compacte, sans toucher à l'architecture réseau (toujours un état complet par tick, pas de
+  delta compression, pas d'interest management). **Ce n'est pas suffisant à 50 joueurs**
+  (222 Mbit/s reste très probablement au-dessus de ce qu'une box Bouygue résidentielle
+  peut fournir en continu) — à 10 joueurs (35 Mbit/s), c'est plus raisonnable mais encore
+  significatif pour une ligne domestique partagée. **Le besoin d'interest management
+  (n'envoyer à chaque client que les entités visibles autour de sa caméra) reste réel et
+  devra être traité avant le Lot 8**, en particulier si l'objectif est de tenir le haut de
+  la fourchette (50 joueurs). À revalider avec un vrai test de charge sur le Wyse derrière
+  la box réelle (Lot 8), le résultat localhost ne mesurant que le coût serveur, pas la
+  latence réseau réelle.
 
 ---
 
@@ -666,6 +676,7 @@ Lot/Sous-Lot significatif terminé. Les entrées les plus récentes en haut.*
 
 | Date | Entrée |
 |---|---|
+| 2026-07-26 | Gains rapides de bande passante appliqués suite au 1.8 (décision utilisateur : traiter maintenant plutôt qu'au Lot 8) : identifiants courts au lieu d'UUID (`World`, `net/server.ts`), pseudo envoyé une fois par joueur via un nouveau message `player` plutôt que répété à chaque entité/tick, clés JSON raccourcies dans `EntitySnapshot`. Mesure : ~387→222 Mbit/s à 50 joueurs, ~60→35 Mbit/s à 10 joueurs (~42% de réduction). **Reste insuffisant à 50 joueurs** — l'interest management reste nécessaire avant le Lot 8 si l'objectif est le haut de la fourchette. |
 | 2026-07-26 | **Lot 1 terminé.** 1.8 (validation de charge, `server/scripts/loadtest.mjs`) : tick très stable même à 50 joueurs/350 entités, MAIS bande passante montante serveur estimée à ~387 Mbit/s à 50 joueurs (~60 Mbit/s à 10) avec l'état complet JSON verbeux actuel — bien plus que prévu. **Le besoin de delta compression/interest management (initialement différé après le MVP en §1.4) est maintenant confirmé avant le Lot 8**, pas après. Décision de priorisation (gains rapides vs. interest management complet) à prendre avec l'utilisateur avant le Lot 8. |
 | 2026-07-26 | Lot 1.7 fait : client Canvas 2D (choix tranché, résout le dernier point ouvert du Lot 0.2), bundlé avec esbuild, servi par le serveur de jeu lui-même. **Validé manuellement dans un vrai navigateur** (via le Browser pane) : join, rendu du morceau + nourriture, HUD, split sans crash. Le Lot 0 est maintenant entièrement terminé. Reste sur le Lot 1 : 1.8 (validation de charge). |
 | 2026-07-26 | Lot 1.3/1.4 faits : serveur WebSocket (`ws` + `http` natif) branché sur `Room`, protocole complet (join/input/welcome/state/died). Validé par 5 tests d'intégration + un test manuel de bout en bout avec le serveur réellement compilé et démarré. **Point technique important** : `shared/package.json` pointe désormais vers `dist/index.js`/`dist/index.d.ts` (pas `src/`) — nécessaire pour que `node dist/index.js` du serveur puisse réellement résoudre `@angulio/shared` à l'exécution (Node ne peut pas exécuter du `.ts` directement sur cette machine, voir note du 1.3). `vitest.config.ts` alias `@angulio/shared` vers `shared/src/index.ts` pour que les tests utilisent toujours la source à jour sans dépendre d'un build préalable. Ordre de build implicite requis : `shared` avant les autres (déjà l'ordre du tableau `workspaces` racine — ne pas le réordonner sans y repenser). |
