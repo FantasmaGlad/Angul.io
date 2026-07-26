@@ -43,7 +43,12 @@ export class World {
     return entity;
   }
 
-  private spawnEntity(kind: EntityKind, position: Vector2, mass: number, velocity?: Vector2): Entity {
+  private spawnEntity(
+    kind: EntityKind,
+    position: Vector2,
+    mass: number,
+    velocity?: Vector2,
+  ): Entity {
     const entity: Entity = {
       id: randomUUID(),
       kind,
@@ -147,7 +152,8 @@ export class World {
         const other = this.entities.get(otherId);
         if (!other) continue;
 
-        const pairKey = entity.id < other.id ? `${entity.id}|${other.id}` : `${other.id}|${entity.id}`;
+        const pairKey =
+          entity.id < other.id ? `${entity.id}|${other.id}` : `${other.id}|${entity.id}`;
         if (seen.has(pairKey)) continue;
         seen.add(pairKey);
 

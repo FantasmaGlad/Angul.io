@@ -78,7 +78,10 @@ describe('Room — cycle de vie des hooks', () => {
 
     room.handleInput('p1', { dir: { x: 1, y: 0 }, split: false });
 
-    expect(onPlayerInput).toHaveBeenCalledWith(room.world, 'p1', { dir: { x: 1, y: 0 }, split: false });
+    expect(onPlayerInput).toHaveBeenCalledWith(room.world, 'p1', {
+      dir: { x: 1, y: 0 },
+      split: false,
+    });
   });
 
   it('notifie les listeners onPlayerDeath indépendamment du mod (utile au réseau)', () => {

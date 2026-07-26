@@ -77,7 +77,8 @@ function applyRepulsion(a: Entity, b: Entity): void {
 function tryMerge(world: World, a: Entity, b: Entity): void {
   const stateA = pieceState(a);
   const stateB = pieceState(b);
-  const cooldownElapsed = Math.min(stateA.splitElapsedS, stateB.splitElapsedS) >= C.T_MERGE_COOLDOWN;
+  const cooldownElapsed =
+    Math.min(stateA.splitElapsedS, stateB.splitElapsedS) >= C.T_MERGE_COOLDOWN;
   if (!cooldownElapsed) return;
 
   const overlap = circleOverlapArea(a.radius, b.radius, distance(a.position, b.position));
@@ -134,7 +135,10 @@ export const vanillaMod: GameMod = {
 
       if (state.boostRemainingS > 0) {
         const factor = boostFactor(state.boostRemainingS);
-        const boost = scale(state.boostDir, C.BOOST_SPEED_FACTOR * velocityForMass(entity.mass) * factor);
+        const boost = scale(
+          state.boostDir,
+          C.BOOST_SPEED_FACTOR * velocityForMass(entity.mass) * factor,
+        );
         entity.velocity = add(baseVelocity, boost);
         state.boostRemainingS = Math.max(0, state.boostRemainingS - dt);
       } else {
@@ -146,7 +150,10 @@ export const vanillaMod: GameMod = {
     }
 
     const particleCount = world.allEntities().filter((e) => e.kind === 'particle').length;
-    const toSpawn = Math.min(C.FOOD_SPAWN_PER_TICK, Math.max(0, C.FOOD_TARGET_COUNT - particleCount));
+    const toSpawn = Math.min(
+      C.FOOD_SPAWN_PER_TICK,
+      Math.max(0, C.FOOD_TARGET_COUNT - particleCount),
+    );
     for (let i = 0; i < toSpawn; i++) {
       world.spawnParticle(randomPositionInMap(world.mapSize, 1), C.M_FOOD);
     }

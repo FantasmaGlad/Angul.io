@@ -35,7 +35,7 @@ mathématiques exactes (masse, vitesse, split, fusion, decay…) mod par mod. Le
 | Lot | Nom | Phase | Statut global |
 |---|---|---|---|
 | [0](#lot-0--cadrage--fondations-du-projet) | Cadrage & fondations du projet | Transverse | ✅ Fait |
-| [1](#lot-1--socle-technique-moteur-de-jeu) | Socle technique moteur de jeu | MVP | 🔶 En cours (reste 1.8) |
+| [1](#lot-1--socle-technique-moteur-de-jeu) | Socle technique moteur de jeu | MVP | ✅ Fait — ⚠️ voir 1.8 (bande passante) |
 | [2](#lot-2--salons-rooms) | Salons (rooms) | MVP | ⬜ À faire |
 | [3](#lot-3--comptes-joueurs--persistance) | Comptes joueurs & persistance | MVP | ⬜ À faire |
 | [4](#lot-4--deuxième-mode-de-jeu-validation-de-lapi-de-modding) | Deuxième mode de jeu (validation API) | MVP | ⬜ À faire |
@@ -227,14 +227,42 @@ Vanilla codé comme un mod — validation de l'architecture de modding décrite 
   supplémentaire. Résout le dernier point ouvert du Lot 0.
 
 ### 1.8 — Validation empirique de charge
-- **Statut :** ⬜ À faire
-- **Contenu :** test avec bots ou clients simulés pour valider la fréquence de tick, la
-  bande passante montante réelle sur la ligne Bouygue, et décider si delta
-  compression/interest management (1.4) doivent être implémentés avant la mise en prod.
+- **Statut :** ✅ Fait (2026-07-26) — **résultat critique, action requise avant Lot 8**
+- **Contenu :** `server/scripts/loadtest.mjs` — démarre le serveur compilé, connecte N bots
+  WebSocket (mouvement + split périodique), mesure la stabilité du tick perçue côté client
+  et la bande passante agrégée. `npm run loadtest --workspace=server -- <bots> <secondes>`.
 - **Dépendances :** 1.6, 1.7.
-- **Critère d'acceptation :** mesures de bande passante et de stabilité du tick consignées
-  dans le Journal des décisions, avec une décision explicite sur le besoin d'optimisation
-  réseau immédiat ou différé.
+- **Résultats mesurés (localhost, donc latence réseau non incluse) :**
+
+  | Joueurs simulés | Entités (nourriture 300 + morceaux) | Stabilité du tick | Bande passante montante serveur estimée |
+  |---|---|---|---|
+  | 10 | 310 | moy 50.1 ms, p99 52.2 ms (cible 50 ms à 20 Hz) | **~59.8 Mbit/s** |
+  | 50 | 350 | moy 50.1 ms, p99 54.2 ms | **~386.7 Mbit/s** |
+
+- **Ce qui est validé :** la boucle de tick elle-même est **très stable** (quasi aucune
+  dérive même à 50 joueurs + 350 entités) — le moteur (1.2/1.5/1.6) n'est pas le goulot
+  d'étranglement.
+- **Ce qui ne l'est pas — point bloquant identifié :** la diffusion d'état complet en JSON
+  verbeux (UUID en clair pour `id`/`ownerId`, pseudo répété à chaque tick sur chaque
+  morceau, pas de compression) coûte **~7-8 Mbit/s par joueur connecté**. À 50 joueurs,
+  ça représente **~387 Mbit/s d'upload constant**, très probablement bien au-delà de ce
+  qu'une box Bouygue résidentielle peut fournir en continu (cahier des charges §4.2 avait
+  anticipé ce risque sans le chiffrer — c'est fait maintenant). Même à 10 joueurs (~60
+  Mbit/s), ça reste une charge d'upload significative pour une ligne domestique partagée
+  avec le reste du foyer.
+- **Conclusion :** contrairement à l'hypothèse initiale du plan ("delta compression et
+  interest management sont des optimisations à ajouter après un premier prototype, une
+  fois le besoin confirmé" — §1.4), le besoin est maintenant confirmé **avant** la mise en
+  production, pas après. Ne pas traiter ce point avant le Lot 8 (déploiement sur le Wyse
+  derrière la box réelle) ferait planter le jeu en conditions réelles dès quelques joueurs.
+- **Recommandation, non implémentée à ce stade (à valider avec toi) :** avant le Lot 8,
+  prioriser au minimum des gains rapides et peu coûteux en architecture : identifiants
+  courts/numériques au lieu d'UUID dans les snapshots, ne pas répéter `ownerNickname` à
+  chaque entité à chaque tick (résolvable une fois côté client via un message séparé,
+  rare), et éventuellement réduire `FOOD_TARGET_COUNT` ou la fréquence de diffusion. La
+  vraie solution structurelle (interest management : n'envoyer que les entités visibles
+  autour de la caméra de chaque joueur) reste plus lourde et peut suivre après ces gains
+  rapides.
 
 ---
 
@@ -638,6 +666,7 @@ Lot/Sous-Lot significatif terminé. Les entrées les plus récentes en haut.*
 
 | Date | Entrée |
 |---|---|
+| 2026-07-26 | **Lot 1 terminé.** 1.8 (validation de charge, `server/scripts/loadtest.mjs`) : tick très stable même à 50 joueurs/350 entités, MAIS bande passante montante serveur estimée à ~387 Mbit/s à 50 joueurs (~60 Mbit/s à 10) avec l'état complet JSON verbeux actuel — bien plus que prévu. **Le besoin de delta compression/interest management (initialement différé après le MVP en §1.4) est maintenant confirmé avant le Lot 8**, pas après. Décision de priorisation (gains rapides vs. interest management complet) à prendre avec l'utilisateur avant le Lot 8. |
 | 2026-07-26 | Lot 1.7 fait : client Canvas 2D (choix tranché, résout le dernier point ouvert du Lot 0.2), bundlé avec esbuild, servi par le serveur de jeu lui-même. **Validé manuellement dans un vrai navigateur** (via le Browser pane) : join, rendu du morceau + nourriture, HUD, split sans crash. Le Lot 0 est maintenant entièrement terminé. Reste sur le Lot 1 : 1.8 (validation de charge). |
 | 2026-07-26 | Lot 1.3/1.4 faits : serveur WebSocket (`ws` + `http` natif) branché sur `Room`, protocole complet (join/input/welcome/state/died). Validé par 5 tests d'intégration + un test manuel de bout en bout avec le serveur réellement compilé et démarré. **Point technique important** : `shared/package.json` pointe désormais vers `dist/index.js`/`dist/index.d.ts` (pas `src/`) — nécessaire pour que `node dist/index.js` du serveur puisse réellement résoudre `@angulio/shared` à l'exécution (Node ne peut pas exécuter du `.ts` directement sur cette machine, voir note du 1.3). `vitest.config.ts` alias `@angulio/shared` vers `shared/src/index.ts` pour que les tests utilisent toujours la source à jour sans dépendre d'un build préalable. Ordre de build implicite requis : `shared` avant les autres (déjà l'ordre du tableau `workspaces` racine — ne pas le réordonner sans y repenser). |
 | 2026-07-26 | Lot 1.1/1.2/1.5/1.6 faits : moteur générique (`World`/`Room`/`SpatialHash`) sans aucune règle de jeu codée en dur, API de hooks `GameMod` validée, mode Vanilla entièrement implémenté comme mod (53 tests passants au total). Densité de spawn de nourriture et devenir de la masse perdue tranchés par défaut (voir metriques.md §13). Reste : réseau (1.3/1.4), client (1.7), validation de charge (1.8). |

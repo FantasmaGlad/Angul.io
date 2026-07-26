@@ -3,7 +3,15 @@ import type { Entity } from './types.js';
 import { SpatialHash } from './spatialHash.js';
 
 function fakeEntity(id: string, x: number, y: number): Entity {
-  return { id, kind: 'particle', position: { x, y }, velocity: { x: 0, y: 0 }, mass: 1, radius: 1, data: {} };
+  return {
+    id,
+    kind: 'particle',
+    position: { x, y },
+    velocity: { x: 0, y: 0 },
+    mass: 1,
+    radius: 1,
+    data: {},
+  };
 }
 
 describe('SpatialHash', () => {

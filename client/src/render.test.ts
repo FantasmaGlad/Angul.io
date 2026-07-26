@@ -44,7 +44,10 @@ describe('computeCamera', () => {
   });
 
   it('ignore les morceaux appartenant à d’autres joueurs', () => {
-    const entities = [piece({ id: 'mine', x: 10, y: 10, ownerId: 'p1' }), piece({ id: 'other', x: 999, y: 999, ownerId: 'p2' })];
+    const entities = [
+      piece({ id: 'mine', x: 10, y: 10, ownerId: 'p1' }),
+      piece({ id: 'other', x: 999, y: 999, ownerId: 'p2' }),
+    ];
     const camera = computeCamera(entities, 'p1', { x: 0, y: 0 });
     expect(camera.x).toBeCloseTo(10, 6);
     expect(camera.y).toBeCloseTo(10, 6);

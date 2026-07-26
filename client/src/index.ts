@@ -62,7 +62,9 @@ function frame(): void {
   renderFrame(ctx!, canvas, entities, camera);
 
   const pieceCount = entities.filter((entity) => entity.kind === 'piece').length;
-  hud.textContent = justDied ? 'Vous êtes mort — respawn en cours…' : `${pieceCount} morceau(x) en jeu`;
+  hud.textContent = justDied
+    ? 'Vous êtes mort — respawn en cours…'
+    : `${pieceCount} morceau(x) en jeu`;
 
   requestAnimationFrame(frame);
 }

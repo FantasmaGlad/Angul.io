@@ -116,7 +116,11 @@ function send(socket: WebSocket, message: ServerMessage): void {
   if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message));
 }
 
-async function serveStatic(dir: string | undefined, req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function serveStatic(
+  dir: string | undefined,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
   if (!dir) {
     res.writeHead(404);
     res.end();
