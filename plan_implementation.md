@@ -122,21 +122,24 @@ Objectif : avoir un salon unique jouable de bout en bout (client ↔ serveur), a
 Vanilla codé comme un mod — validation de l'architecture de modding décrite en §3.2.
 
 ### 1.1 — Modèle de données du monde (types partagés)
-- **Statut :** ⬜ À faire
-- **Contenu :** types TypeScript partagés client/serveur pour entités (joueur, morceau,
-  particule), monde, salon — dans `shared/`.
+- **Statut :** ✅ Fait (2026-07-26)
+- **Contenu :** `shared/src/vector.ts` (Vector2 + maths), `shared/src/geometry.ts`
+  (masse↔rayon, aire d'intersection de cercles — implémente metriques.md §2/§10),
+  `shared/src/protocol.ts` (messages réseau, voir 1.4).
 - **Dépendances :** Lot 0.
-- **Critère d'acceptation :** types compilables, importables des deux côtés (`server/` et
-  `client/`) sans duplication.
+- **Critère d'acceptation :** types compilables, importables des deux côtés — **validé**,
+  utilisés par `server/`. 8 tests unitaires (`vector.test.ts`, `geometry.test.ts`).
 
 ### 1.2 — Boucle de jeu à tick fixe + partitionnement spatial
-- **Statut :** ⬜ À faire
-- **Contenu :** boucle de simulation serveur (20-30 Hz, §4.3), grille ou quadtree pour les
-  collisions (éviter le O(n²)).
+- **Statut :** ✅ Fait (2026-07-26)
+- **Contenu :** `server/src/engine/world.ts` (entités génériques, aucune règle de jeu),
+  `server/src/engine/spatialHash.ts` (grille uniforme, broad-phase), `server/src/engine/room.ts`
+  (boucle de tick avec `dt` réel mesuré via `performance.now()`, pas un dt fixe supposé).
 - **Dépendances :** 1.1.
-- **Critère d'acceptation :** simulation tournant en continu à fréquence stable (mesurée),
-  détection de collision fonctionnelle testée avec un nombre croissant d'entités (ex. 500+
-  particules) sans dégradation notable du tick.
+- **Critère d'acceptation :** `World.findOverlappingPairs()` détecte correctement les
+  chevauchements (testé), le tick loop mesure un dt réel plutôt qu'un pas fixe supposé.
+  Le test de charge à 500+ entités (mentionné dans le critère d'origine) est repoussé au
+  1.8 (validation empirique), une fois le réseau (1.3/1.4) branché.
 
 ### 1.3 — Serveur WebSocket
 - **Statut :** ⬜ À faire
@@ -156,28 +159,38 @@ Vanilla codé comme un mod — validation de l'architecture de modding décrite 
 - **Critère d'acceptation :** un client affiche l'état du monde reçu du serveur en continu.
 
 ### 1.5 — API de hooks/événements du moteur (cœur de l'architecture de modding)
-- **Statut :** ⬜ À faire
-- **Contenu :** définition et implémentation des hooks listés en §3.2/§3.4 :
-  `onPlayerSpawn`, `onTick`, `onIntervalTick`, `onCollision`, `onPlayerEat`,
-  `onPlayerSplit`, `onPlayerMerge`, `onPlayerDeath`. Mécanisme d'enregistrement d'un mod
-  (module isolé qui s'abonne aux hooks) sans toucher au moteur central.
+- **Statut :** ✅ Fait (2026-07-26)
+- **Contenu :** interface `GameMod` (`server/src/engine/mod.ts`) : `onRoomInit`, `onTick`,
+  `onPostMove`, `onCollision`, `onPlayerJoin`, `onPlayerLeave`, `onPlayerInput`,
+  `onPlayerDeath`. Tous optionnels. Dispatch assuré par `Room` (1.2) : le moteur ne prend
+  aucune décision de gameplay (pas de masse de départ, pas de decay, pas de condition de
+  manger codées dans `World`/`Room`) — tout vient du mod chargé.
 - **Dépendances :** 1.2.
-- **Critère d'acceptation :** un mod "vide" (aucune règle) peut être chargé par le moteur
-  sans erreur ; les hooks sont bien déclenchés dans le bon ordre (vérifiable par logs/tests).
-- **Note :** c'est le sous-lot le plus structurant du projet — les questions ouvertes du
-  §3.3 (langage des mods, granularité de l'API, mods pouvant ajouter des assets) doivent
-  être au moins provisoirement tranchées ici, et actées dans le Journal des décisions.
+- **Critère d'acceptation :** validé par `room.test.ts` (ordre `onTick → onPostMove →
+  onCollision`, dispatch de `onPlayerDeath` sur transition vivant→mort, transmission des
+  inputs) et confirmé a posteriori par le 1.6 : le mode Vanilla entier est écrit sans
+  toucher une seule ligne de `engine/`.
+- **Décisions actées (§3.3) :** mods écrits dans le même langage que le serveur
+  (TypeScript, pas de langage embarqué type Lua pour le MVP) ; granularité "réagir à des
+  événements avec accès direct à `World`" plutôt que redéfinir la physique bas niveau ;
+  les mods n'ajoutent pas d'assets pour le MVP (logique uniquement).
 
 ### 1.6 — Mode Vanilla implémenté comme mod
-- **Statut :** ⬜ À faire
-- **Contenu :** implémentation intégrale des règles chiffrées du §3.5 et des formules
-  détaillées dans [metriques.md](metriques.md) (masse de départ, vitesse, split 50/50,
-  cooldown de fusion 30s, seuils de masse, perte passive, mur bloquant aux bords, etc.)
-  en tant que module utilisant uniquement l'API de hooks du 1.5.
+- **Statut :** ✅ Fait (2026-07-26)
+- **Contenu :** `server/src/mods/vanilla/` — `constants.ts` (table de metriques.md §1),
+  `physics.ts` (vitesse, decay, boost — fonctions pures testées indépendamment),
+  `pieceState.ts` (état par morceau dans `entity.data`), `index.ts` (le `GameMod` complet :
+  spawn, split, fusion, manger particule/joueur, répulsion, mur bloquant, spawn de
+  nourriture ambiante à densité cible).
 - **Dépendances :** 1.5, [metriques.md](metriques.md).
-- **Critère d'acceptation :** toutes les valeurs du tableau §3.5 sont respectées et
-  testées (tests unitaires sur les règles de masse/split/fusion/collision) ; le mode est
-  jouable de bout en bout.
+- **Critère d'acceptation :** **validé** — 26 tests dédiés (`physics.test.ts` +
+  `index.test.ts`) couvrant vitesse clampée, decay au-dessus/en-dessous de 50, split 50/50
+  avec seuil et cap de morceaux, fusion (cooldown + chevauchement 1/3), absorption à 5%,
+  répulsion sinon, alimentation, mur bloquant. Reste à valider en conditions réelles une
+  fois le client branché (1.7/1.8).
+- **Point tranché ici (densité de spawn, §6/§13 de metriques.md) :** cible de 300
+  particules ambiantes sur la carte, 5 réapparitions max par tick tant que la cible n'est
+  pas atteinte — valeur de départ, ajustable en playtest.
 
 ### 1.7 — Client de rendu basique
 - **Statut :** ⬜ À faire
@@ -600,6 +613,7 @@ Lot/Sous-Lot significatif terminé. Les entrées les plus récentes en haut.*
 
 | Date | Entrée |
 |---|---|
+| 2026-07-26 | Lot 1.1/1.2/1.5/1.6 faits : moteur générique (`World`/`Room`/`SpatialHash`) sans aucune règle de jeu codée en dur, API de hooks `GameMod` validée, mode Vanilla entièrement implémenté comme mod (53 tests passants au total). Densité de spawn de nourriture et devenir de la masse perdue tranchés par défaut (voir metriques.md §13). Reste : réseau (1.3/1.4), client (1.7), validation de charge (1.8). |
 | 2026-07-26 | Lot 0 quasi complet : structure du monorepo (`shared/`, `server/`, `client/`, `admin/`) avec placeholders buildables/testés, outillage (npm workspaces, TS composite, ESLint 9 flat config, Prettier, Vitest) validé de bout en bout (`lint`, `test`, `build`, `format:check`), licence AGPL-3.0 officielle ajoutée (`LICENSE`, texte récupéré depuis gnu.org), CI GitHub Actions ajoutée. Seul point encore ouvert du Lot 0 : choix Canvas 2D vs PixiJS (0.2). |
 | 2026-07-26 | Clé de déploiement ajoutée au dépôt GitHub (accès écriture), connexion SSH vérifiée, premier push effectué sur `main` — https://github.com/FantasmaGlad/Angul.io. |
 | 2026-07-26 | Création de [metriques.md](metriques.md) : formules du mode Vanilla (masse↔rayon, vitesse, decay, split, fusion, collision). Formule de vitesse tranchée par défaut : `v(m) = V_REF * √(M_START/m)` avec `V_REF = 6 uc/s`, clampée ×0.25/×3 — résout la tâche 0.2, ajustable en playtest. Remote GitHub `origin` configuré en SSH (`git@github.com-angulio:...`) via une clé de déploiement dédiée `~/.ssh/angulio_deploy`. |

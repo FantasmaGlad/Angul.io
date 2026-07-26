@@ -342,9 +342,15 @@ sans changement d'architecture (§3.5/§8.1 du cahier des charges) :
 - Valeur exacte de `V_REF` (vitesse de référence) — 6 uc/s est un point de départ, à
   valider en jeu.
 - Devenir de la masse perdue passivement (disparition vs. reconversion en particule) — §5.
-- Densité de spawn des particules de nourriture — non couverte ici, à définir lors du
-  Lot 1.6.
-- Dimension réelle de la carte (`TAILLE_CARTE`, §11) — à fixer lors du Lot 1.1.
+  Tranché par défaut lors du Lot 1.6 : la masse perdue disparaît simplement (pas de
+  reconversion), ajustable si l'économie de la partie s'avère trop pauvre en playtest.
+- Densité de spawn des particules de nourriture — tranchée par défaut lors du Lot 1.6 :
+  `FOOD_TARGET_COUNT = 300` particules ambiantes visées sur la carte, `FOOD_SPAWN_PER_TICK
+  = 5` réapparitions max par tick tant que la cible n'est pas atteinte (voir
+  `server/src/mods/vanilla/constants.ts`). Ajustable en playtest.
+- Dimension réelle de la carte (`TAILLE_CARTE`, §11) — à fixer lors du Lot 1.1 ; en
+  pratique paramétrée par `mapSize` à la création d'une `Room` (pas encore de valeur de
+  production figée, les tests utilisent des tailles arbitraires).
 
 ---
 
