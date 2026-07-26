@@ -34,3 +34,13 @@ export function normalize(v: Vector2): Vector2 {
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
+
+/** Rapproche `current` de `target` d'au plus `maxDelta` (norme) — modèle générique
+ * d'accélération bornée, utilisé par les mods pour faire varier une vélocité progressivement
+ * plutôt que la fixer instantanément. */
+export function moveToward(current: Vector2, target: Vector2, maxDelta: number): Vector2 {
+  const delta = sub(target, current);
+  const deltaLength = length(delta);
+  if (deltaLength <= maxDelta || deltaLength === 0) return { ...target };
+  return add(current, scale(delta, maxDelta / deltaLength));
+}

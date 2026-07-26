@@ -1,13 +1,23 @@
 import { fileURLToPath } from 'node:url';
 import { Room } from './engine/room.js';
-import { vanillaMod } from './mods/vanilla/index.js';
+import { createParametricMod } from './mods/parametric/index.js';
+import { loadModConfig } from './mods/parametric/loadConfig.js';
 import { startGameServer } from './net/server.js';
 
 const TICK_RATE_HZ = 20;
-const MAP_SIZE = 4000;
+const MOD_ID = process.env.MOD_ID ?? 'vanilla';
 const PORT = Number(process.env.PORT ?? 8080);
 
-const room = new Room(vanillaMod, { mapSize: MAP_SIZE, tickRateHz: TICK_RATE_HZ });
+const config = loadModConfig(MOD_ID);
+const mod = createParametricMod(config);
+
+const room = new Room(mod, {
+  // Suppose une carte carrée (largeur = hauteur), vrai pour vanilla/folie à ce jour — le
+  // rendu des bords lui-même (border.ts) gère largeur et hauteur indépendamment.
+  mapSize: config.arena.width,
+  tickRateHz: TICK_RATE_HZ,
+  kArea: config.areaConstant,
+});
 room.start();
 
 startGameServer(room, {
@@ -16,5 +26,5 @@ startGameServer(room, {
 });
 
 console.log(
-  `Angul.io — serveur (mode ${vanillaMod.id}) sur le port ${PORT}, tick ${TICK_RATE_HZ}Hz, carte ${MAP_SIZE}x${MAP_SIZE}.`,
+  `Angul.io — serveur (mode ${mod.id}) sur le port ${PORT}, tick ${TICK_RATE_HZ}Hz, carte ${config.arena.width}x${config.arena.height}.`,
 );

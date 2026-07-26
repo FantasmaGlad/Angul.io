@@ -1,0 +1,49 @@
+{
+  "id": "vanilla",
+  "player": {
+    "startMass": 50,
+    "maxSplits": 16,
+    "minSplitMass": 100
+  },
+  "physics": {
+    "v0": 300,
+    "speedMultiplier": 1.0,
+    "speedMassExponent": 0.44,
+    "velocityFloor": 20,
+    "accelerationBase": 1500,
+    "accelerationMassExponent": 0.7
+  },
+  "split": {
+    "ejectEfficiency": 1.0,
+    "ejectSpeedFactor": 2.0
+  },
+  "merge": {
+    "baseTimeSec": 30,
+    "massFactor": 0,
+    "overlapMinFraction": 0.3333333333333333
+  },
+  "eating": {
+    "massAdvantage": 0.05,
+    "minMassToEatFood": 2
+  },
+  "decay": {
+    "rateAboveStart": 0.01,
+    "intervalAboveStartSec": 5,
+    "rateBelowStart": 0.01,
+    "intervalBelowStartSec": 10,
+    "floor": 2
+  },
+  "arena": {
+    "width": 15000,
+    "height": 15000,
+    "borderType": "STRICT_WALL"
+  },
+  "food": {
+    "density": 15,
+    "respawnRatePerSecond": 100,
+    "massMin": 1,
+    "massMax": 1,
+    "massSkewExponent": 1
+  },
+  "areaConstant": 3.141592653589793
+}

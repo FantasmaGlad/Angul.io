@@ -1,0 +1,193 @@
+import { describe, expect, it } from 'vitest';
+import { World } from '../../engine/world.js';
+import { createParametricMod } from './index.js';
+import { pieceState } from './pieceState.js';
+import { testConfig } from './testConfig.js';
+import { velocityForMass } from './physics.js';
+
+function freshWorld(mapSize = 15000): World {
+  return new World({ mapSize });
+}
+
+describe('createParametricMod — onPlayerJoin', () => {
+  it('fait apparaître un unique morceau à la masse de départ du config', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+
+    mod.onPlayerJoin?.(world, 'p1');
+
+    const pieces = world.getPiecesByOwner('p1');
+    expect(pieces).toHaveLength(1);
+    expect(pieces[0]?.mass).toBe(config.player.startMass);
+  });
+});
+
+describe('createParametricMod — onTick (vitesse/accélération)', () => {
+  it('accélère vers v(m) sans la dépasser dans la direction de l’input', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    const piece = world.spawnPiece('p1', { x: 500, y: 500 }, 50);
+
+    mod.onPlayerInput?.(world, 'p1', { dir: { x: 1, y: 0 }, split: false });
+    // dt assez grand pour que l'accélération (1500 px/s²) atteigne v(50)=300 px/s en un seul tick
+    mod.onTick?.(world, 0.2);
+
+    expect(piece.velocity.x).toBeCloseTo(velocityForMass(50, config), 6);
+    expect(piece.velocity.y).toBeCloseTo(0, 6);
+  });
+
+  it('ne saute pas instantanément à la vitesse cible sur un tick trop court (inertie)', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    const piece = world.spawnPiece('p1', { x: 500, y: 500 }, 50);
+
+    mod.onPlayerInput?.(world, 'p1', { dir: { x: 1, y: 0 }, split: false });
+    mod.onTick?.(world, 0.01); // 1500*0.01 = 15 px/s de changement max, très inférieur à 300
+
+    expect(piece.velocity.x).toBeCloseTo(15, 6);
+  });
+
+  it('applique la decay passive', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    const piece = world.spawnPiece('p1', { x: 500, y: 500 }, 100);
+
+    mod.onTick?.(world, 5);
+
+    expect(piece.mass).toBeCloseTo(99, 1);
+  });
+});
+
+describe('createParametricMod — split', () => {
+  it('divise un morceau en 2, avec une vitesse d’éjection initiale', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    const piece = world.spawnPiece('p1', { x: 1000, y: 1000 }, 200);
+
+    mod.onPlayerInput?.(world, 'p1', { dir: { x: 1, y: 0 }, split: true });
+
+    const pieces = world.getPiecesByOwner('p1');
+    expect(pieces).toHaveLength(2);
+    const origin = pieces.find((p) => p.id === piece.id);
+    const ejected = pieces.find((p) => p.id !== piece.id);
+
+    expect(origin?.mass).toBeCloseTo(100, 6);
+    expect(ejected?.mass).toBeCloseTo(100, 6); // eta_W = 1 dans le config de test
+    expect(ejected && ejected.velocity.x).toBeGreaterThan(0); // boost initial dans la direction du split
+  });
+
+  it('crée de la masse quand ejectEfficiency > 1 (comportement "Folie")', () => {
+    const config = testConfig({ split: { ejectEfficiency: 1.2, ejectSpeedFactor: 2 } });
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    world.spawnPiece('p1', { x: 1000, y: 1000 }, 200);
+
+    mod.onPlayerInput?.(world, 'p1', { dir: { x: 1, y: 0 }, split: true });
+
+    const pieces = world.getPiecesByOwner('p1');
+    const totalMass = pieces.reduce((sum, p) => sum + p.mass, 0);
+    expect(totalMass).toBeCloseTo(220, 6); // 100 (origine) + 100*1.2 (éjecté)
+  });
+
+  it('ne fait rien en-dessous de minSplitMass', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    world.spawnPiece('p1', { x: 500, y: 500 }, 50);
+
+    mod.onPlayerInput?.(world, 'p1', { dir: { x: 1, y: 0 }, split: true });
+
+    expect(world.getPiecesByOwner('p1')).toHaveLength(1);
+  });
+});
+
+describe('createParametricMod — fusion', () => {
+  it('fusionne deux morceaux du même joueur après cooldown et chevauchement suffisant', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    const a = world.spawnPiece('p1', { x: 500, y: 500 }, 100);
+    const b = world.spawnPiece('p1', { x: 505, y: 500 }, 100);
+    pieceState(a).splitElapsedS = config.merge.baseTimeSec;
+    pieceState(b).splitElapsedS = config.merge.baseTimeSec;
+
+    mod.onCollision?.(world, a, b);
+
+    expect(world.getPiecesByOwner('p1')).toHaveLength(1);
+  });
+
+  it('ne fusionne pas avant la fin du cooldown', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    const a = world.spawnPiece('p1', { x: 500, y: 500 }, 100);
+    const b = world.spawnPiece('p1', { x: 505, y: 500 }, 100);
+    pieceState(a).splitElapsedS = 1;
+    pieceState(b).splitElapsedS = config.merge.baseTimeSec;
+
+    mod.onCollision?.(world, a, b);
+
+    expect(world.getPiecesByOwner('p1')).toHaveLength(2);
+  });
+});
+
+describe('createParametricMod — manger', () => {
+  it('mange un autre joueur avec l’avantage de masse requis', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    world.addPlayer('p2', 'Bob');
+    const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 105);
+    const target = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
+
+    mod.onCollision?.(world, attacker, target);
+
+    expect(world.getEntity(target.id)).toBeUndefined();
+    expect(attacker.mass).toBeCloseTo(205, 6);
+  });
+
+  it('mange une particule si la masse est suffisante', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    const piece = world.spawnPiece('p1', { x: 500, y: 500 }, 50);
+    const particle = world.spawnParticle({ x: 500, y: 500 }, 1);
+
+    mod.onCollision?.(world, piece, particle);
+
+    expect(world.getEntity(particle.id)).toBeUndefined();
+    expect(piece.mass).toBeCloseTo(51, 6);
+  });
+});
+
+describe('createParametricMod — onPostMove (bords de carte)', () => {
+  it('délègue au comportement de bord configuré (STRICT_WALL par défaut)', () => {
+    const config = testConfig({ arena: { width: 100, height: 100, borderType: 'STRICT_WALL' } });
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    const piece = world.spawnPiece('p1', { x: -5, y: 50 }, 50);
+    piece.velocity = { x: -10, y: 0 };
+
+    mod.onPostMove?.(world, 0.1);
+
+    expect(piece.position.x).toBeCloseTo(piece.radius, 6);
+    expect(piece.velocity.x).toBe(0);
+  });
+});

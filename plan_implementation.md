@@ -188,21 +188,41 @@ Vanilla codé comme un mod — validation de l'architecture de modding décrite 
   les mods n'ajoutent pas d'assets pour le MVP (logique uniquement).
 
 ### 1.6 — Mode Vanilla implémenté comme mod
-- **Statut :** ✅ Fait (2026-07-26)
-- **Contenu :** `server/src/mods/vanilla/` — `constants.ts` (table de metriques.md §1),
-  `physics.ts` (vitesse, decay, boost — fonctions pures testées indépendamment),
-  `pieceState.ts` (état par morceau dans `entity.data`), `index.ts` (le `GameMod` complet :
-  spawn, split, fusion, manger particule/joueur, répulsion, mur bloquant, spawn de
-  nourriture ambiante à densité cible).
+- **Statut :** ✅ Fait, puis **refactoré en profondeur le 2026-07-26** en moteur paramétrique
+- **Contenu (v1, initial) :** `server/src/mods/vanilla/` — implémentation Vanilla codée en
+  dur (constantes TS, vitesse instantanée + boost de split ad hoc). Validée par 26 tests,
+  fonctionnelle de bout en bout.
+- **Refactor (v2, suite à l'analyse d'un fichier Excel fourni par l'utilisateur —
+  "Angul.io - Master Sheet Engine & Documentation Technique.xlsx") :** `mods/vanilla/`
+  **supprimé**, remplacé par `server/src/mods/parametric/` : un moteur générique
+  (`createParametricMod(config)`) piloté par un fichier JSON par mode
+  (`server/configs/vanilla.json`, `server/configs/folie.json`). Voir
+  [metriques.md](metriques.md) (réécrit en v0.2) pour le détail des formules.
+  - Modèle vitesse **et** accélération (inertie générique remplaçant le boost de split
+    ad hoc de la v1) — voir metriques.md §4-5.
+  - Split généralisé par `ejectEfficiency` (conservation ou création de masse selon le
+    mode), fusion à cooldown mass-dépendant (`baseTimeSec + massFactor*masse`).
+  - Bords de carte génériques : `STRICT_WALL`, `ELASTIC_BOUNCE`, `TOROIDAL` implémentés
+    (`TOXIC_ZONE` documenté mais non implémenté, paramètres non spécifiés).
+  - Nourriture à densité par surface de carte (`pellets/1000px²`) plutôt qu'un total fixe.
+  - **Folie** est livré comme second mode dès maintenant (juste un second JSON) — voir
+    Lot 4, qui en profite directement.
 - **Dépendances :** 1.5, [metriques.md](metriques.md).
-- **Critère d'acceptation :** **validé** — 26 tests dédiés (`physics.test.ts` +
-  `index.test.ts`) couvrant vitesse clampée, decay au-dessus/en-dessous de 50, split 50/50
-  avec seuil et cap de morceaux, fusion (cooldown + chevauchement 1/3), absorption à 5%,
-  répulsion sinon, alimentation, mur bloquant. Reste à valider en conditions réelles une
-  fois le client branché (1.7/1.8).
-- **Point tranché ici (densité de spawn, §6/§13 de metriques.md) :** cible de 300
-  particules ambiantes sur la carte, 5 réapparitions max par tick tant que la cible n'est
-  pas atteinte — valeur de départ, ajustable en playtest.
+- **Critère d'acceptation :** **validé** — 30 tests dédiés (`physics.test.ts`,
+  `border.test.ts`, `loadConfig.test.ts`, `index.test.ts`) sur le moteur paramétrique,
+  plus les tests de régression confirmant que le bug de la cellule Excel corrompue
+  (date au lieu de `2.5`) reste corrigé. Testé manuellement en conditions réelles
+  (serveur compilé + navigateur, Vanilla **et** Folie démarrent et tournent).
+- **Points tranchés/assumés lors du refactor (détaillés en metriques.md §13) :**
+  `minSplitMass` de Folie (400, extrapolé), distribution de masse de nourriture de Folie
+  (biais quadratique, notre interprétation), `decay`/`eating` de Folie repris identiques
+  à Vanilla (non couverts par la feuille).
+- **⚠️ Effet de bord mesuré (bande passante) :** la densité de nourriture de la feuille
+  (15-30 pellets/1000px² sur des cartes 15000-20000px) donne ~3375 à ~12 000 particules
+  ambiantes — bien plus que le total fixe de 300 choisi arbitrairement en 1.8. Un
+  nouveau test de charge (20 bots) mesure **~198 Mbit/s**, contre ~222 Mbit/s pour 50
+  bots avec l'ancien modèle. Renforce encore la conclusion du 1.8 : interest management
+  nécessaire avant le Lot 8. Voir aussi metriques.md §7.
 
 ### 1.7 — Client de rendu basique
 - **Statut :** ✅ Fait (2026-07-26)
@@ -381,11 +401,21 @@ Objectif : prouver que l'API de hooks du Lot 1.5 permet d'écrire un mode diffé
 Vanilla **sans modifier le moteur central** — jalon de validation architecturale avant
 d'envisager l'ouverture communautaire (Phase 2).
 
+> **Mise à jour (2026-07-26) :** le refactor du Lot 1.6 a fait naître **Folie**, un
+> second mode déjà fonctionnel (`server/configs/folie.json`) — mais c'est un mode
+> **paramétrique** (mêmes hooks/mécaniques que Vanilla, valeurs différentes), pas un mode
+> aux mécaniques structurellement nouvelles. Il valide donc la couche "config JSON", pas
+> l'extensibilité de l'API de hooks elle-même. L'objectif d'origine de ce Lot (4.1-4.3)
+> reste pertinent : choisir un mode qui a *vraiment* besoin de nouveaux hooks/logique
+> (ex. Classes avec compétences actives, ou tout mode du §3.4 non réductible à un simple
+> réglage de valeurs) pour prouver que l'architecture de hooks elle-même est suffisante.
+
 ### 4.1 — Choix du mode à développer en second
 - **Statut :** ⬜ À faire
-- **Contenu :** trancher parmi la liste du §3.4. Recommandation : privilégier **Hardcore**
-  (#2) ou **Précision/Sniper** (#8), plus simples que Classes (#5) ou Battle Royale (#6),
-  pour un premier test d'API rapide à livrer.
+- **Contenu :** trancher parmi la liste du §3.4 — **un mode non paramétrique**, qui
+  demande une logique nouvelle (Folie ne compte pas, voir note ci-dessus). Recommandation
+  inchangée : privilégier **Hardcore** (#2) ou **Précision/Sniper** (#8), plus simples que
+  Classes (#5) ou Battle Royale (#6).
 - **Dépendances :** Lot 1.6.
 - **Critère d'acceptation :** mode choisi et acté dans le Journal des décisions.
 
@@ -676,6 +706,7 @@ Lot/Sous-Lot significatif terminé. Les entrées les plus récentes en haut.*
 
 | Date | Entrée |
 |---|---|
+| 2026-07-26 | **Refactor majeur du Lot 1.6** suite à l'analyse d'un fichier Excel fourni par l'utilisateur ("Angul.io - Master Sheet Engine & Documentation Technique.xlsx"). `mods/vanilla/` remplacé par un moteur paramétrique générique (`mods/parametric/`, `createParametricMod(config)`) piloté par des fichiers JSON (`server/configs/vanilla.json`, `folie.json`). Nouveau modèle vitesse+accélération (metriques.md v0.2 §4-5, remplace le boost de split ad hoc), split/fusion généralisés (eta_W, cooldown mass-dépendant), bords de carte génériques (STRICT_WALL/ELASTIC_BOUNCE/TOROIDAL), nourriture à densité par surface. Folie livré comme second mode dès maintenant (voir note Lot 4). Bug corrigé dans le fichier Excel source (cellule Folie/speedMultiplier corrompue en date, corrigée à 2.5). 70 tests passants. Effet de bord mesuré : la densité de nourriture de la feuille donne ~3375-12000 particules ambiantes (bien plus que les 300 fixes précédents), bande passante à 20 joueurs déjà ~198 Mbit/s — renforce le besoin d'interest management avant le Lot 8. |
 | 2026-07-26 | Gains rapides de bande passante appliqués suite au 1.8 (décision utilisateur : traiter maintenant plutôt qu'au Lot 8) : identifiants courts au lieu d'UUID (`World`, `net/server.ts`), pseudo envoyé une fois par joueur via un nouveau message `player` plutôt que répété à chaque entité/tick, clés JSON raccourcies dans `EntitySnapshot`. Mesure : ~387→222 Mbit/s à 50 joueurs, ~60→35 Mbit/s à 10 joueurs (~42% de réduction). **Reste insuffisant à 50 joueurs** — l'interest management reste nécessaire avant le Lot 8 si l'objectif est le haut de la fourchette. |
 | 2026-07-26 | **Lot 1 terminé.** 1.8 (validation de charge, `server/scripts/loadtest.mjs`) : tick très stable même à 50 joueurs/350 entités, MAIS bande passante montante serveur estimée à ~387 Mbit/s à 50 joueurs (~60 Mbit/s à 10) avec l'état complet JSON verbeux actuel — bien plus que prévu. **Le besoin de delta compression/interest management (initialement différé après le MVP en §1.4) est maintenant confirmé avant le Lot 8**, pas après. Décision de priorisation (gains rapides vs. interest management complet) à prendre avec l'utilisateur avant le Lot 8. |
 | 2026-07-26 | Lot 1.7 fait : client Canvas 2D (choix tranché, résout le dernier point ouvert du Lot 0.2), bundlé avec esbuild, servi par le serveur de jeu lui-même. **Validé manuellement dans un vrai navigateur** (via le Browser pane) : join, rendu du morceau + nourriture, HUD, split sans crash. Le Lot 0 est maintenant entièrement terminé. Reste sur le Lot 1 : 1.8 (validation de charge). |

@@ -1,362 +1,395 @@
 # Métriques et formules — Angul.io
 
-**Version :** 0.1 — Document de référence technique, dérivé de
-[cahier_des_charges.md](cahier_des_charges.md) §3.5.
-**Portée de cette version :** mode **Vanilla** uniquement. Les autres modes (§3.4 du
-cahier des charges) auront chacun leur propre section à la suite de celle-ci, une fois
-leur spécification chiffrée tranchée (Lot 4.2 et suivants du
-[plan d'implémentation](plan_implementation.md)).
+**Version :** 0.2 — Document de référence technique.
+**Origine des valeurs :** dérivées du cahier des charges (§3.5) pour la première version
+(v0.1), puis **révisées et étendues** à partir de la feuille de calcul fournie par
+l'utilisateur ("Angul.io - Master Sheet Engine & Documentation Technique.xlsx") qui
+introduit un modèle vitesse/accélération plus riche et une deuxième instance de mode
+("Folie"), validant l'architecture décrite ci-dessous.
 
-Ce document a vocation à être la **référence unique et implémentable** des formules de
-jeu : un développeur doit pouvoir coder directement à partir de ce fichier sans deviner
-de valeur manquante. Il résout notamment le point ouvert §3.5/tâche 0.2 du plan
-("formule exacte de décroissance de la vélocité") en proposant une formule par défaut,
-explicitement ajustable par playtesting sans changer l'architecture.
+**Architecture :** depuis la v0.2, ce document ne décrit plus "le mode Vanilla" comme un
+bloc de règles isolé, mais un **moteur paramétrique unique** (`server/src/mods/parametric/`)
+piloté par un fichier de configuration JSON par mode (`server/configs/vanilla.json`,
+`server/configs/folie.json`). Toutes les formules ci-dessous sont génériques ; les
+tableaux donnent les valeurs concrètes pour Vanilla et Folie côte à côte. Ajouter un
+nouveau mode purement paramétrique (mêmes mécaniques, valeurs différentes) ne demande
+qu'un nouveau fichier JSON, pas de nouveau code — voir plan_implementation.md Lot 1.6.
+Un mode aux mécaniques structurellement différentes (ex. IA de zombies) reste un module
+de code à part entière (API de hooks, `engine/mod.ts`), ce document ne couvre alors que
+sa partie "valeurs numériques" s'il en a.
 
 ---
 
 ## 0. Conventions et unités
 
-- **Masse** : unité abstraite `u`, sans dimension physique réelle — c'est le score et le
+- **Masse** : unité abstraite, sans dimension physique réelle — c'est le score et le
   paramètre de base de toutes les autres formules.
-- **Distance** : "unité de carte" (`uc`), indépendante des pixels affichés à l'écran.
-  L'échelle pixel/caméra est une affaire de rendu client (Lot 1.7), hors scope de ce
-  document — ce qui compte ici est la cohérence interne des calculs de collision.
+- **Distance** : **pixels (`px`)**, qui sont ici littéralement l'unité de simulation (pas
+  seulement une unité d'affichage) — changement par rapport à la v0.1 de ce document, qui
+  utilisait une unité abstraite ("uc") découplée du rendu. La feuille Excel raisonne
+  directement en pixels (taille de carte, vitesse en px/s) ; le zoom caméra côté client
+  (`client/src/render.ts`) reste un simple facteur d'affichage indépendant, sans lien
+  avec cette unité de simulation.
 - **Temps** : secondes (`s`).
-- **Fréquence de tick serveur** : `f_tick` (Hz). Valeur de référence utilisée dans ce
-  document : **20 Hz** (`Δt = 0.05 s`), bas de la fourchette 20-30 Hz du Lot 1.2. Toutes
-  les formules sont données en temps continu puis discrétisées par tick pour
-  implémentation directe ; si la fréquence finale retenue diffère, seules les valeurs
-  numériques discrètes changent, pas les formules.
+- **Fréquence de tick serveur** : `f_tick` (Hz). Valeur de référence : **20 Hz**
+  (`Δt = 0.05 s`), bas de la fourchette 20-30 Hz du Lot 1.2. Le moteur utilise en réalité
+  le `dt` réel mesuré entre deux ticks (`Room.tick()`), pas un pas fixe supposé — les
+  formules ci-dessous sont continues et discrétisées par ce `dt` réel.
 
 ---
 
-## 1. Table des constantes (mode Vanilla)
+## 1. Schéma de configuration paramétrique
 
-| Symbole | Nom | Valeur par défaut | Source |
+Un mode = un objet JSON respectant ce schéma (voir
+`server/src/mods/parametric/config.ts` pour la définition TypeScript exacte). Origine de
+chaque champ précisée dans la dernière colonne : **Excel** = feuille de calcul
+utilisateur, **v0.1** = première version de ce document (cahier des charges §3.5, pas
+couvert par la feuille), **implémentation** = introduit par nécessité d'implémentation,
+sans équivalent dans les deux sources précédentes.
+
+| Champ | Symbole feuille | Rôle | Origine |
 |---|---|---|---|
-| `M_START` | Masse de départ | 50 | Cahier des charges §3.5 |
-| `M_SPLIT_MIN` | Masse minimum pour avoir le droit de split | 100 | §3.5 |
-| `N_PIECES_MAX` | Morceaux max sur le terrain par joueur | 16 | §3.5 |
-| `T_MERGE_COOLDOWN` | Cooldown de fusion après split | 30 s | §3.5 |
-| `OVERLAP_MERGE_MIN` | Chevauchement minimum pour fusion | 1/3 de la surface totale des 2 morceaux | §3.5 |
-| `M_FOOD` | Masse d'une particule de nourriture | 1 | §3.5 |
-| `M_EAT_FOOD_MIN` | Masse minimale pour manger une particule | 2 | §3.5 |
-| `EAT_MASS_ADVANTAGE` | Avantage de masse requis pour manger un joueur | 5 % (×1.05) | §3.5 |
-| `DECAY_RATE_ABOVE` | Taux de perte passive au-dessus de `M_START` | 1 %/5 s | §3.5 |
-| `DECAY_RATE_BELOW` | Taux de perte passive en-dessous de `M_START` | 1 %/10 s | §3.5 |
-| `M_DECAY_FLOOR` | Plancher de perte de masse passive | 2 | §3.5 |
-| `K_AREA` | Constante de conversion masse → aire | π (donc `Rayon = √masse`) | Ce document §2, défaut MVP |
-| `V_REF` | Vitesse de référence à `M_START` | 6 uc/s | Ce document §3, défaut MVP, **ajustable en playtest** |
-| `V_MAX_FACTOR` / `V_MIN_FACTOR` | Bornes de clamp de vitesse | ×3 / ×0.25 de `V_REF` | Ce document §3 |
-| `BOOST_SPEED_FACTOR` | Vitesse additionnelle au split (boost), en facteur de v(m_morceau) | ×2 | Ce document §4 |
-| `T_BOOST` | Durée de décroissance du boost de split | 0.3 s | Ce document §4 |
-| `f_tick` | Fréquence de tick serveur | 20 Hz (`Δt` = 0.05 s) | Lot 1.2, plage 20-30 Hz |
+| `player.startMass` | M0 | Masse au spawn/respawn | Excel |
+| `player.maxSplits` | Smax | Morceaux max simultanés | Excel |
+| `player.minSplitMass` | — | Masse minimale pour avoir le droit de split | v0.1 (absent de la feuille) |
+| `physics.v0` | V0 | Vitesse nominale à M0 (px/s) | Excel |
+| `physics.speedMultiplier` | kv | Multiplicateur de vitesse global du mode | Excel |
+| `physics.speedMassExponent` | gamma | Exposant d'atténuation de la vitesse | Excel |
+| `physics.velocityFloor` | Vfloor | Vitesse plancher (px/s) | Excel |
+| `physics.accelerationBase` | A0 | Accélération à M0 (px/s²) | Excel |
+| `physics.accelerationMassExponent` | alpha | Exposant d'atténuation de l'accélération | Excel |
+| `split.ejectEfficiency` | eta_W | Masse gagnée par le morceau éjecté / masse perdue | Excel |
+| `split.ejectSpeedFactor` | — | Vitesse initiale d'éjection (× v(m)) | implémentation |
+| `merge.baseTimeSec` | Tbase | Cooldown de fusion de base (s) | Excel |
+| `merge.massFactor` | gamma_rec | Allongement du cooldown avec la masse | Excel |
+| `merge.overlapMinFraction` | — | Chevauchement minimal pour fusionner | v0.1 (absent de la feuille) |
+| `eating.massAdvantage` | — | Avantage de masse requis pour manger un joueur | v0.1 (absent de la feuille) |
+| `eating.minMassToEatFood` | — | Masse minimale pour manger une particule | v0.1 (absent de la feuille) |
+| `decay.*` | — | Perte de masse passive | v0.1 (absent de la feuille) |
+| `arena.width/height` | Wmap/Hmap | Dimensions de la carte (px) | Excel |
+| `arena.borderType` | borderType | STRICT_WALL / ELASTIC_BOUNCE / TOROIDAL / TOXIC_ZONE | Excel (seul TOXIC_ZONE n'est pas implémenté — paramètres de dégâts non spécifiés) |
+| `arena.bounceRestitution` | — | Fraction de vitesse restituée (ELASTIC_BOUNCE) | Excel |
+| `food.density` | D_food | Pellets par bloc de 1000×1000 px² | Excel |
+| `food.respawnRatePerSecond` | R_food | Pellets réapparaissant par seconde | Excel |
+| `food.massMin/massMax` | M_food | Plage de masse d'une particule | Excel |
+| `food.massSkewExponent` | — | Biais de la distribution vers `massMin` | implémentation (la feuille ne donne qu'une description qualitative pour Folie) |
+| `areaConstant` | — | Constante masse→aire (K_AREA) | v0.1 (absent de la feuille) |
 
 ---
 
-## 2. Relation masse ↔ aire ↔ rayon
+## 2. Table des valeurs — Vanilla vs Folie
 
-Le rayon géométrique d'un morceau (joueur ou particule) est dérivé de sa masse en
-supposant une **densité surfacique constante** : l'aire est proportionnelle à la masse.
-C'est ce qui garantit que la masse totale se conserve visuellement lors d'un split (aire
-totale inchangée) ou d'une fusion (aires additives).
+| Paramètre | Vanilla | Folie |
+|---|---|---|
+| `player.startMass` (M0) | 50 | 200 |
+| `player.maxSplits` (Smax) | 16 | 32 |
+| `player.minSplitMass` | 100 (=2×M0) | 400 (=2×M0, notre extrapolation) |
+| `physics.v0` (V0) | 300 px/s | 300 px/s |
+| `physics.speedMultiplier` (kv) | 1.0 | **2.5** |
+| `physics.speedMassExponent` (gamma) | 0.44 | 0.44 |
+| `physics.velocityFloor` (Vfloor) | 20 px/s | 20 px/s |
+| `physics.accelerationBase` (A0) | 1500 px/s² | 1500 px/s² |
+| `physics.accelerationMassExponent` (alpha) | 0.70 | 0.70 |
+| `split.ejectEfficiency` (eta_W) | 1.0 (conservation stricte) | 1.2 (crée +20% de masse) |
+| `split.ejectSpeedFactor` | 2.0 | 2.0 |
+| `merge.baseTimeSec` (Tbase) | 30 s | 15 s |
+| `merge.massFactor` (gamma_rec) | 0 (cooldown fixe) | 0 (cooldown fixe) |
+| `merge.overlapMinFraction` | 1/3 | 1/3 |
+| `eating.massAdvantage` | 5 % | 5 % |
+| `eating.minMassToEatFood` | 2 | 2 |
+| `decay.*` | voir §6 | identique à Vanilla (non spécifié par la feuille pour Folie) |
+| `arena.width` × `height` | 15000 × 15000 px | 20000 × 20000 px |
+| `arena.borderType` | STRICT_WALL | ELASTIC_BOUNCE (restitution 0.8) |
+| `food.density` (D_food) | 15 / 1000px² | 30 / 1000px² |
+| `food.respawnRatePerSecond` (R_food) | 100 / s | 200 / s |
+| `food.massMin` – `massMax` | 1 – 1 (fixe) | 2 – 8, biaisé vers les petites masses |
+| `areaConstant` (K_AREA) | π (Rayon = √masse) | π |
+
+> **Correction apportée** : la cellule Folie/`speedMultiplier` du fichier Excel source
+> contenait une date (02/05/2026) au lieu d'un nombre — artefact classique de
+> l'autocorrection Excel sur une saisie "2.5". Corrigée à **2.5** dans le fichier et
+> reprise telle quelle ici.
+
+Fichiers sources faisant foi pour l'implémentation :
+[server/configs/vanilla.json](server/configs/vanilla.json),
+[server/configs/folie.json](server/configs/folie.json).
+
+---
+
+## 3. Relation masse ↔ aire ↔ rayon
+
+Inchangé depuis la v0.1 — absent de la feuille Excel, qui ne précise pas cette formule.
 
 ```
 Aire(m)  = K_AREA * m
 Rayon(m) = √(Aire(m) / π) = √(K_AREA * m / π)
 ```
 
-Avec `K_AREA = π` (valeur par défaut retenue pour ce MVP), la formule se simplifie en :
+Avec `K_AREA = π` (Vanilla et Folie), la formule se simplifie en **Rayon(m) = √m**.
 
-> **Rayon(m) = √m**
+---
 
-Exemples avec cette formule par défaut :
+## 4. Vitesse en fonction de la masse
 
-| Masse | Rayon |
+```
+v(m) = MAX( Vfloor, V0 * kv * (M0/m)^gamma )
+```
+
+Remplace la formule `v(m) = V_REF·√(M0/m)` de la v0.1 (exposant fixe 0.5) par un modèle
+paramétrable (exposant `gamma`, multiplicateur `kv` par mode) et un plancher absolu
+(`Vfloor`) plutôt qu'un facteur de clamp relatif.
+
+Valeurs Vanilla (`V0=300, kv=1, gamma=0.44, Vfloor=20`) :
+
+| Masse | v(m) |
 |---|---|
-| 2 (plancher de decay) | ≈ 1.41 uc |
-| 50 (masse de départ) | ≈ 7.07 uc |
-| 100 (seuil de split) | 10 uc |
-| 500 | ≈ 22.36 uc |
+| 50 (M0) | 300 px/s |
+| 200 | ≈ 163.0 px/s |
+| 1 000 000 | 20 px/s (plancher) |
+
+Folie applique en plus `kv=2.5` : à masse égale, un morceau va 2.5× plus vite qu'en
+Vanilla (mode "rapide et chaotique").
+
+**Direction** : le vecteur vitesse *cible* est dirigé du centre du morceau vers la
+position du curseur du joueur, normalisé puis multiplié par `v(m)`. Contrairement à la
+v0.1, ce n'est **pas** la vélocité appliquée instantanément — voir §5.
 
 ---
 
-## 3. Vitesse en fonction de la masse
+## 5. Accélération (inertie du mouvement)
 
-Principe (§3.5) : plus un joueur/morceau est gros, plus il est lent. Formule à
-décroissance en `1/√m`, ancrée sur la masse de départ comme référence :
-
-```
-v(m) = V_REF * √(M_START / m)
-```
-
-Avec clamp pour éviter des vitesses extrêmes aux masses très faibles ou très élevées :
+**Changement de modèle majeur par rapport à la v0.1.** La v0.1 n'avait aucune inertie sur
+le mouvement normal (vitesse instantanée vers le curseur) et un mécanisme de "boost" ad
+hoc réservé au split. La feuille Excel introduit un modèle d'accélération générique,
+valable pour **tout** déplacement — plus une cellule est grosse, plus elle met de temps à
+atteindre sa vitesse cible (inertie), pas seulement plus elle est lente en vitesse de
+croisière.
 
 ```
-v(m) = clamp( V_REF * √(M_START / m), V_MIN_FACTOR * V_REF, V_MAX_FACTOR * V_REF )
+a(m) = A0 * (M0/m)^alpha
 ```
 
-Valeurs avec les constantes par défaut (`V_REF` = 6 uc/s, `M_START` = 50) :
+`a(m)` est un taux de rapprochement (px/s²) vers la vitesse cible, pas une vitesse
+instantanée. Chaque tick :
 
-| Masse | v(m) brut | v(m) après clamp |
+```
+vitesse_cible = direction_curseur * v(m)          (§4)
+Δ_max         = a(m) * dt
+vitesse       ← deplacer_vers(vitesse, vitesse_cible, Δ_max)
+```
+
+où `deplacer_vers(actuel, cible, max)` rapproche `actuel` de `cible` d'au plus `max` (en
+norme) — implémenté génériquement dans `shared/src/vector.ts` (`moveToward`), réutilisable
+par n'importe quel mod.
+
+Valeurs Vanilla/Folie (`A0=1500, alpha=0.70`, identique dans les deux modes) :
+
+| Masse | a(m) |
+|---|---|
+| 50 (M0) | 1500 px/s² |
+| 200 | ≈ 568.4 px/s² |
+
+**Ce modèle remplace aussi le "boost" de split de la v0.1** : le morceau éjecté démarre
+avec une vitesse initiale élevée (§8), puis le même modèle d'accélération générique le
+ramène naturellement vers la vitesse cible du joueur, sans minuteur de décroissance
+séparé — une seule formule pour tout le mouvement.
+
+---
+
+## 6. Perte de masse passive (decay)
+
+Inchangé depuis la v0.1 — absent de la feuille Excel, reprise telle quelle pour Vanilla
+**et** Folie (la feuille ne définit pas de comportement différent pour Folie).
+
+```
+λ_above = -ln(1 - rateAboveStart) / intervalAboveStartSec
+λ_below = -ln(1 - rateBelowStart) / intervalBelowStartSec
+
+dm/dt = -λ(m) * m,   λ(m) = λ_above si m > M0, λ_below si floor < m ≤ M0, 0 sinon
+
+m ← max( m * exp(-λ(m) * dt), floor )
+```
+
+Valeurs (Vanilla et Folie) : `rateAboveStart = rateBelowStart = 1 %`,
+`intervalAboveStartSec = 5`, `intervalBelowStartSec = 10`, `floor = 2`.
+
+---
+
+## 7. Alimentation : manger une particule
+
+- **Condition :** `masse_joueur ≥ eating.minMassToEatFood` (= 2, Vanilla et Folie)
+- **Effet :** `masse_joueur ← masse_joueur + masse_particule`
+
+**Masse d'une particule** (nouveau en v0.2, généralise le `M_food` fixe de la v0.1) :
+
+```
+masse_particule = massMin + (massMax - massMin) * random()^massSkewExponent
+```
+
+Vanilla : `massMin = massMax = 1` → toujours 1 (comme en v0.1).
+Folie : `massMin = 2, massMax = 8, massSkewExponent = 2` → distribution biaisée vers les
+petites masses ("plus de petits que de gros", description qualitative de la feuille —
+la formule exacte de biais est notre interprétation).
+
+**Densité et taux de réapparition** (remplace le `FOOD_TARGET_COUNT` fixe de la v0.1,
+qui ne s'adaptait pas à la taille de la carte) :
+
+```
+cible = D_food * (largeur_carte * hauteur_carte) / 1000²
+```
+
+À chaque tick, un crédit de spawn s'accumule à `R_food` particules/seconde et se dépense
+tant que le nombre de particules est sous la cible.
+
+| | Vanilla | Folie |
 |---|---|---|
-| 2 | 30 uc/s | 18 uc/s (clampé à ×3) |
-| 10 | 13.42 uc/s | 13.42 uc/s |
-| 50 | 6 uc/s | 6 uc/s (référence) |
-| 100 | 4.24 uc/s | 4.24 uc/s |
-| 500 | 1.90 uc/s | 1.90 uc/s |
-| 5000 | 0.6 uc/s | 1.5 uc/s (clampé à ×0.25) |
+| Carte | 15000×15000 | 20000×20000 |
+| Densité | 15/1000px² | 30/1000px² |
+| **Cible calculée** | **≈ 3375 particules** | **≈ 12 000 particules** |
+| Taux de réapparition | 100/s | 200/s |
 
-**Direction** : le vecteur vitesse cible est dirigé du centre du morceau vers la position
-du curseur/pointeur du joueur, normalisé puis multiplié par `v(m)`. Il n'y a **pas
-d'inertie** sur ce mouvement de base dans le mode Vanilla (comportement Agar.io
-classique : la vitesse instantanée suit directement l'intention du joueur) — voir §4
-pour la seule exception (boost de split).
-
----
-
-## 4. Accélération : le cas du split (boost)
-
-Le mode Vanilla ne modélise pas d'accélération/inertie sur le déplacement courant (§3), à
-une exception près : la propulsion du morceau au moment du split, qui nécessite une
-décélération explicite pour ne pas garder une vitesse anormalement élevée en continu.
-
-Au moment `T0` du split, le morceau éjecté reçoit une vitesse additionnelle :
-
-```
-v_boost(T0) = BOOST_SPEED_FACTOR * v(m_piece)
-```
-
-Cette composante additionnelle décroît **linéairement** à zéro sur `T_BOOST` secondes :
-
-```
-v_boost(t) = v_boost(T0) * max(0, 1 - (t - T0) / T_BOOST),   pour t ∈ [T0, T0 + T_BOOST]
-```
-
-Ce qui correspond à une décélération constante :
-
-```
-a_boost = -v_boost(T0) / T_BOOST
-```
-
-La vitesse totale du morceau pendant la fenêtre de boost est la somme vectorielle de la
-vitesse de contrôle normale (§3, direction curseur) et de la composante de boost
-(direction du split au moment `T0`, qui s'estompe) :
-
-```
-v_total(t) = v_controle(t) + v_boost(t) * direction_split
-```
-
-Après `T_BOOST`, seule `v_controle` subsiste (retour au comportement standard du §3).
+> ⚠️ **Ce nombre est nettement plus élevé que le `FOOD_TARGET_COUNT = 300` fixé
+> arbitrairement en v0.1.** Conséquence directe mesurée au Lot 1.8 : la bande passante de
+> diffusion augmente sensiblement avec le nombre d'entités (voir plan_implementation.md
+> Lot 1.8, mesure du 2026-07-26 avec ce nouveau modèle : ~198 Mbit/s pour seulement 20
+> joueurs, contre ~222 Mbit/s pour 50 joueurs avec l'ancien modèle à densité fixe). Ce
+> n'est pas un bug — la densité vient de la feuille de spécification — mais ça renforce
+> encore la nécessité de l'interest management avant le Lot 8 (déjà identifiée au Lot 1.8).
 
 ---
 
-## 5. Perte de masse passive (decay)
+## 8. Split
 
-**Formulation discrète littérale** du §3.5 (fidèle au cahier des charges tel qu'écrit) :
+**Condition :** `masse ≥ minSplitMass` **ET** nombre de morceaux du joueur `< maxSplits`.
 
-- Si `m > M_START` : toutes les 5 s, `m ← m × 0.99`
-- Si `M_DECAY_FLOOR < m ≤ M_START` : toutes les 10 s, `m ← m × 0.99`
-- Si `m ≤ M_DECAY_FLOOR` : aucune perte
-
-**Formulation continue équivalente**, recommandée pour l'implémentation (lissage par
-tick plutôt que des "sauts" perceptibles toutes les 5 ou 10 secondes) :
+**Répartition de la masse**, généralisée par `ejectEfficiency` (eta_W) — la v0.1 n'avait
+qu'un partage 50/50 strict :
 
 ```
-λ_above = -ln(0.99) / 5  ≈ 0.0020101 s⁻¹
-λ_below = -ln(0.99) / 10 ≈ 0.0010050 s⁻¹
-
-dm/dt = -λ(m) * m,   avec λ(m) = λ_above si m > M_START,
-                                 λ_below si M_DECAY_FLOOR < m ≤ M_START,
-                                 0 sinon
+masse_restante = masse / 2
+masse_éjectée  = (masse / 2) * ejectEfficiency
 ```
 
-Discrétisation par tick (`Δt = 1/f_tick`) :
+Vanilla (`ejectEfficiency = 1`) : partage 50/50 strict, comme en v0.1.
+Folie (`ejectEfficiency = 1.2`) : le morceau éjecté reçoit 20 % de masse en plus que ce
+que le joueur perd — de la masse est *créée* au split (cohérent avec l'esprit "chaos" du
+mode).
+
+**Position** : le morceau éjecté démarre à `position_origine + direction × (2 × rayon)`,
+tangent au morceau d'origine.
+
+**Vitesse initiale d'éjection** (remplace le mécanisme de boost à minuteur de la v0.1,
+voir §5) :
 
 ```
-m ← m * exp(-λ(m) * Δt)
+vitesse_éjectée(T0) = direction_split * v(masse_éjectée) * ejectSpeedFactor
 ```
 
-(l'approximation linéaire `m ← m * (1 - λ(m) * Δt)` est équivalente à moins de 0.01 %
-d'écart à 20 Hz, utilisable si `exp` doit être évité pour raison de performance).
-
-**Point encore ouvert** (§3.5) : la masse perdue disparaît-elle simplement, ou se
-retransforme-t-elle en particule de nourriture sur la carte ? Non tranché ici — n'affecte
-pas la formule de décroissance elle-même, seulement ce qui se passe visuellement/
-économiquement dans le monde après la perte.
+Puis le modèle d'accélération générique (§5) ramène progressivement cette vitesse vers la
+vitesse cible du joueur — pas de minuteur de décroissance séparé.
 
 ---
 
-## 6. Alimentation : manger une particule
+## 9. Manger un autre joueur / répulsion sinon
 
-- **Condition :** `m_joueur ≥ M_EAT_FOOD_MIN` (= 2)
-- **Effet :** `m_joueur ← m_joueur + M_FOOD` (= +1)
-
-La particule est retirée du monde ; une nouvelle apparaît ailleurs selon la logique de
-spawn (densité de spawn non chiffrée pour Vanilla à ce stade — à définir lors de
-l'implémentation du Lot 1.6, sans impact sur la formule ci-dessus).
-
----
-
-## 7. Manger un autre joueur (ou un de ses morceaux)
-
-**Condition** (§3.5) :
+Inchangé depuis la v0.1 (absent de la feuille Excel) :
 
 ```
-m_attaquant ≥ m_cible × (1 + EAT_MASS_ADVANTAGE) = m_cible × 1.05
+Condition : masse_attaquant ≥ masse_cible * (1 + eating.massAdvantage)
+Effet      : masse_attaquant ← masse_attaquant + masse_cible ; morceau cible retiré
 ```
 
-**Effet**, conservation de la masse totale :
-
-```
-m_attaquant ← m_attaquant + m_cible
-```
-
-Le morceau cible est retiré du jeu.
-
-**Cas non tranché en §3.5, tranché ici par défaut** : si aucun des deux morceaux ne
-remplit la condition des 5 % (masses proches), comportement retenu pour le MVP :
-**répulsion douce** (les deux morceaux se repoussent légèrement, voir §8) plutôt qu'un
-passage à travers sans effet — cohérent avec l'attente visuelle standard d'un agar-like.
-Ajustable en playtest sans impact architectural.
-
----
-
-## 8. Résolution de collision entre morceaux de masses proches (répulsion)
-
-Quand deux morceaux de joueurs différents se chevauchent sans qu'aucun ne remplisse la
-condition d'absorption du §7, une force de répulsion les sépare, proportionnelle à la
-profondeur de pénétration.
-
-Soit `d` la distance entre les centres, `r1` et `r2` les rayons respectifs (§2), et la
-pénétration `p = (r1 + r2) - d` (si `p > 0`) :
-
-```
-déplacement_1 = p * (m2 / (m1 + m2))
-déplacement_2 = p * (m1 / (m1 + m2))
-```
-
-(chaque morceau est déplacé le long de l'axe centre-à-centre ; un gros morceau est
-proportionnellement moins repoussé qu'un petit).
-
----
-
-## 9. Split
-
-**Condition** (§3.5) : `m ≥ M_SPLIT_MIN` (=100) **ET** nombre de morceaux du joueur
-`< N_PIECES_MAX` (=16).
-
-**Effet :**
-
-- Le morceau d'origine de masse `m` devient 2 morceaux de masse `m/2` chacun
-  (répartition 50/50, §3.5).
-- Rayon de chaque nouveau morceau : `Rayon(m/2)` (§2).
-- Position du morceau éjecté : centre d'origine + `direction_curseur` ×
-  `(Rayon(m/2)_origine + Rayon(m/2)_éjecté)` — les deux morceaux démarrent tangents, sans
-  se chevaucher.
-- Vitesse du morceau éjecté : voir §4 (boost initial dans la direction du curseur au
-  moment du split).
-- Le morceau d'origine (resté sur place) ne reçoit pas de boost.
+Si aucun des deux morceaux ne remplit la condition, répulsion douce (formule inchangée,
+proportionnelle à la pénétration, pondérée par les masses respectives) — voir
+`server/src/mods/parametric/index.ts` (`applyRepulsion`).
 
 ---
 
 ## 10. Fusion (merge) entre morceaux du même joueur
 
-Deux morceaux du même joueur fusionnent quand les deux conditions suivantes sont
-remplies (§3.5) :
-
-1. Le cooldown `T_MERGE_COOLDOWN` (=30 s) est écoulé depuis le split qui a créé le plus
-   récent des deux morceaux.
-2. Chevauchement ≥ `OVERLAP_MERGE_MIN` (= 1/3) de la surface totale des deux morceaux :
+**Cooldown généralisé** — la v0.1 avait un cooldown fixe (30 s) ; la feuille Excel
+introduit une dépendance à la masse :
 
 ```
-Aire_overlap(r1, r2, d) ≥ (1/3) * (Aire(m1) + Aire(m2))
+T_requis(m) = baseTimeSec + massFactor * m
 ```
 
-Formule standard de l'aire d'intersection de deux cercles (aire de la "lentille"),
-nécessaire pour évaluer la condition ci-dessus :
+Le cooldown de chaque morceau est évalué avec **sa propre masse au moment de son
+dernier split** (`massAtSplit`), pas sa masse courante (qui peut avoir varié par
+alimentation/decay depuis) :
 
 ```
-Soit d la distance entre centres, r1 et r2 les rayons :
-
-- Si d ≥ r1 + r2 :        Aire_overlap = 0                       (pas de contact)
-- Si d ≤ |r1 - r2| :      Aire_overlap = π * min(r1, r2)²        (un morceau recouvre l'autre)
-- Sinon :
-    d1 = (d² - r2² + r1²) / (2d)
-    d2 = d - d1
-    Aire_overlap = r1² * acos(d1/r1) - d1 * √(r1² - d1²)
-                 + r2² * acos(d2/r2) - d2 * √(r2² - d2²)
+requis_A = baseTimeSec + massFactor * massAtSplit_A
+requis_B = baseTimeSec + massFactor * massAtSplit_B
+fusion possible si splitElapsedS_A ≥ requis_A ET splitElapsedS_B ≥ requis_B
 ```
 
-**Effet de la fusion :**
+Vanilla et Folie ont `massFactor = 0` à ce jour → cooldown effectivement fixe (30 s
+Vanilla, 15 s Folie), mais la formule générale permet à un futur mode de faire varier le
+cooldown avec la masse sans changement de code.
+
+**Condition de chevauchement** (inchangée depuis la v0.1, absente de la feuille) :
 
 ```
-m_fusionné        = m1 + m2
-position_fusionné = (position_1 * m1 + position_2 * m2) / (m1 + m2)   [barycentre pondéré]
-Rayon(m_fusionné)  recalculé via §2
+Aire_overlap(r1, r2, d) ≥ overlapMinFraction * (Aire(m1) + Aire(m2))
 ```
+
+Formule de l'aire d'intersection de deux cercles : voir `shared/src/geometry.ts`
+(`circleOverlapArea`), inchangée depuis la v0.1.
+
+**Effet** : masse additive, position barycentrique pondérée par la masse — inchangé.
 
 ---
 
-## 11. Bords de la carte (mur bloquant)
+## 11. Bords de la carte
 
-Soit `[0, TAILLE_CARTE] × [0, TAILLE_CARTE]` les limites de la carte (dimension à fixer
-lors du Lot 1.1/1.2, hors scope de ce document) :
+**Généralisé en v0.2** — la v0.1 ne connaissait que le mur bloquant. Quatre types
+documentés par la feuille Excel, trois implémentés (`server/src/mods/parametric/border.ts`) :
 
-Pour chaque axe (x, y) :
-
-```
-position ← clamp(position, rayon, TAILLE_CARTE - rayon)
-```
-
-La composante de vitesse perpendiculaire au mur touché est mise à zéro pour ce tick
-(pas de rebond, pas de traversée, §3.5) :
-
-```
-si position.x a été clampée → v.x ← 0   (de même pour l'axe y)
-```
+| `borderType` | Comportement | Statut |
+|---|---|---|
+| `STRICT_WALL` | Position bloquée au bord, vélocité perpendiculaire annulée | Implémenté (Vanilla) |
+| `ELASTIC_BOUNCE` | Position bloquée, vélocité perpendiculaire inversée × `bounceRestitution` | Implémenté (Folie, restitution 0.8) |
+| `TOROIDAL` | Réapparition de l'autre côté de la carte (carte torique) | Implémenté, inutilisé par Vanilla/Folie à ce jour |
+| `TOXIC_ZONE` | Dégâts hors des limites | **Non implémenté** — la feuille ne précise pas de taux de dégâts, on échoue explicitement plutôt que d'inventer une valeur |
 
 ---
 
 ## 12. Fréquence de tick et discrétisation générale
 
-Toutes les formules continues ci-dessus (vitesse, decay, boost) sont appliquées par tick
-avec `Δt = 1/f_tick` :
-
-- Déplacement par tick : `position ← position + v(m) * Δt`
-- Décroissance de masse par tick : voir §5
-- Décroissance du boost de split par tick : voir §4, en réévaluant `t - T0` à chaque tick
-
-`f_tick` de référence pour ce document : **20 Hz** (`Δt = 0.05 s`), conforme à la
-fourchette 20-30 Hz du Lot 1.2. Si la fréquence finale retenue diffère, seules les
-valeurs numériques discrètes doivent être recalculées — pas les formules elles-mêmes.
+Inchangé depuis la v0.1 : toutes les formules continues ci-dessus sont appliquées par
+tick avec le `dt` réel mesuré par `Room` (§0), pas un pas fixe supposé. Le déplacement
+lui-même (`position ← position + vélocité * dt`) reste générique, calculé par le moteur
+(`engine/room.ts`), indépendamment de tout mod.
 
 ---
 
-## 13. Récapitulatif des points encore ouverts
+## 13. Récapitulatif des points encore ouverts / assumés
 
-Ces points n'affectent pas la validité des formules ci-dessus — ajustables par playtest
-sans changement d'architecture (§3.5/§8.1 du cahier des charges) :
-
-- Valeur exacte de `V_REF` (vitesse de référence) — 6 uc/s est un point de départ, à
-  valider en jeu.
-- Devenir de la masse perdue passivement (disparition vs. reconversion en particule) — §5.
-  Tranché par défaut lors du Lot 1.6 : la masse perdue disparaît simplement (pas de
-  reconversion), ajustable si l'économie de la partie s'avère trop pauvre en playtest.
-- Densité de spawn des particules de nourriture — tranchée par défaut lors du Lot 1.6 :
-  `FOOD_TARGET_COUNT = 300` particules ambiantes visées sur la carte, `FOOD_SPAWN_PER_TICK
-  = 5` réapparitions max par tick tant que la cible n'est pas atteinte (voir
-  `server/src/mods/vanilla/constants.ts`). Ajustable en playtest.
-- Dimension réelle de la carte (`TAILLE_CARTE`, §11) — à fixer lors du Lot 1.1 ; en
-  pratique paramétrée par `mapSize` à la création d'une `Room` (pas encore de valeur de
-  production figée, les tests utilisent des tailles arbitraires).
+- **Densité de nourriture élevée** (§7) : ~3375 particules (Vanilla) / ~12 000 (Folie) —
+  valeurs de la feuille Excel, avec un impact bande passante significatif confirmé au
+  Lot 1.8. À revalider en conditions réelles de déploiement (Lot 8).
+- **`minSplitMass` de Folie (400)** : notre extrapolation (2×M0, comme Vanilla), la
+  feuille ne le précise pas explicitement.
+- **`massSkewExponent` de la distribution de masse de nourriture** (Folie) : notre
+  interprétation d'une description qualitative ("plus de petits que de gros"), pas une
+  formule donnée par la feuille.
+- **`decay.*` et `eating.*` pour Folie** : repris identiques à Vanilla, la feuille ne les
+  couvre pas du tout (ils viennent uniquement du cahier des charges §3.5, spécifique à
+  Vanilla à l'origine).
+- **Incohérences entre le "dictionnaire" (§1 de la feuille) et sa "matrice de modes"
+  (§2)** pour la taille de carte et `R_food` — le dictionnaire donne des valeurs exemple
+  différentes de celles réellement utilisées par mode ; on a retenu les valeurs de la
+  matrice (les plus spécifiques) comme faisant foi.
+- **`TOXIC_ZONE`** non implémenté (§11) — à spécifier si un futur mode en a besoin.
 
 ---
 
 ## 14. Autres modes de jeu
 
-Hors scope de cette version du document (cf. cahier des charges §3.4). Chaque mode
-recevra sa propre section numérotée à la suite de celle-ci au fur et à mesure de sa
-spécification chiffrée (Lot 4.2 pour le second mode, puis les suivants), afin de garder
-un fichier unique de référence pour toutes les formules du projet, mod par mod.
+Folie (§2 et suivants) est le premier exemple concret d'un second mode purement
+paramétrique (aucune ligne de code spécifique, seulement `server/configs/folie.json`) —
+il valide déjà une bonne partie de l'objectif du Lot 4 (prouver que l'architecture
+supporte plusieurs modes). Un mode aux mécaniques structurellement nouvelles (ex. un mode
+"zombie" avec IA d'entité non-joueur, cf. cahier des charges §3.4) restera un module de
+code à part, documenté ici pour sa seule partie "valeurs numériques" s'il en a.

@@ -1,0 +1,50 @@
+{
+  "id": "folie",
+  "player": {
+    "startMass": 200,
+    "maxSplits": 32,
+    "minSplitMass": 400
+  },
+  "physics": {
+    "v0": 300,
+    "speedMultiplier": 2.5,
+    "speedMassExponent": 0.44,
+    "velocityFloor": 20,
+    "accelerationBase": 1500,
+    "accelerationMassExponent": 0.7
+  },
+  "split": {
+    "ejectEfficiency": 1.2,
+    "ejectSpeedFactor": 2.0
+  },
+  "merge": {
+    "baseTimeSec": 15,
+    "massFactor": 0,
+    "overlapMinFraction": 0.3333333333333333
+  },
+  "eating": {
+    "massAdvantage": 0.05,
+    "minMassToEatFood": 2
+  },
+  "decay": {
+    "rateAboveStart": 0.01,
+    "intervalAboveStartSec": 5,
+    "rateBelowStart": 0.01,
+    "intervalBelowStartSec": 10,
+    "floor": 2
+  },
+  "arena": {
+    "width": 20000,
+    "height": 20000,
+    "borderType": "ELASTIC_BOUNCE",
+    "bounceRestitution": 0.8
+  },
+  "food": {
+    "density": 30,
+    "respawnRatePerSecond": 200,
+    "massMin": 2,
+    "massMax": 8,
+    "massSkewExponent": 2
+  },
+  "areaConstant": 3.141592653589793
+}
