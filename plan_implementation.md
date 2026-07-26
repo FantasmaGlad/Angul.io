@@ -77,36 +77,42 @@ la première ligne de moteur de jeu.
   actée dans le Journal des décisions.
 
 ### 0.3 — Initialisation du dépôt et structure du monorepo
-- **Statut :** 🔶 En cours (2026-07-26) — dépôt Git local initialisé, `.gitignore` en place,
-  remote GitHub configuré en SSH et premier push effectué sur
-  [github.com/FantasmaGlad/Angul.io](https://github.com/FantasmaGlad/Angul.io) (branche `main`).
-  Restant : structure de dossiers (`server/`, `client/`, `admin/`, `shared/`) et README initial.
+- **Statut :** ✅ Fait (2026-07-26) — dépôt Git local initialisé, `.gitignore` en place,
+  remote GitHub configuré en SSH, push effectué sur
+  [github.com/FantasmaGlad/Angul.io](https://github.com/FantasmaGlad/Angul.io) (branche `main`),
+  structure `shared/`, `server/`, `client/`, `admin/` créée avec un placeholder buildable et
+  testé dans chacun, README initial en place.
 - **Contenu :** `git init`, structure de dossiers (`server/`, `client/`, `admin/`, `shared/`),
   `.gitignore`, README initial avec description courte + lien vers le cahier des charges.
 - **Critère d'acceptation :** dépôt Git initialisé, structure de dossiers en place, premier
   commit poussé sur GitHub (dépôt créé en public ou privé selon préférence à ce stade).
 
 ### 0.4 — Outillage de développement
-- **Statut :** ⬜ À faire
-- **Contenu :** choix du gestionnaire de paquets (npm/pnpm), configuration TypeScript
-  partagée, linter/formatter (ESLint + Prettier), framework de tests (Vitest ou Jest).
-- **Critère d'acceptation :** `npm install` + `npm run lint` + `npm test` fonctionnent à
-  la racine du monorepo sans erreur sur un projet vide.
+- **Statut :** ✅ Fait (2026-07-26)
+- **Contenu :** npm workspaces (pnpm non installé sur la machine de dev, npm suffit à
+  cette échelle), TypeScript 5.7 en mode composite (`tsconfig.base.json` + un
+  `tsconfig.json` par package avec `references`), ESLint 9 (flat config) +
+  `typescript-eslint` + `eslint-config-prettier`, Prettier, Vitest.
+- **Critère d'acceptation :** `npm install` + `npm run lint` + `npm test` +
+  `npm run build` + `npm run format:check` fonctionnent tous sans erreur à la racine —
+  **validé**.
 
 ### 0.5 — Licence du projet
-- **Statut :** ⬜ À faire
-- **Contenu :** ajout du fichier `LICENSE` (AGPLv3, §6), mention de la licence et de
-  l'origine du projet dans le README.
+- **Statut :** ✅ Fait (2026-07-26)
+- **Contenu :** texte officiel AGPL-3.0 récupéré depuis gnu.org, ajouté en `LICENSE` à la
+  racine ; mention de la licence et de l'origine du projet dans le README.
 - **Dépendances :** 0.3.
-- **Critère d'acceptation :** fichier LICENSE présent à la racine, en-tête ou mention de
-  licence cohérente dans le README.
+- **Critère d'acceptation :** fichier LICENSE présent à la racine, mention cohérente dans
+  le README — **validé**.
 
 ### 0.6 — Intégration continue basique (optionnel mais recommandé)
-- **Statut :** ⬜ À faire
-- **Contenu :** GitHub Actions (ou équivalent) lançant lint + tests à chaque push.
+- **Statut :** ✅ Fait (2026-07-26)
+- **Contenu :** GitHub Actions (`.github/workflows/ci.yml`) lançant format:check, lint,
+  tests et build à chaque push/PR sur `main`.
 - **Dépendances :** 0.3, 0.4.
 - **Critère d'acceptation :** un push avec une erreur de lint ou un test cassé fait échouer
-  la CI visiblement sur GitHub.
+  la CI visiblement sur GitHub — à confirmer visuellement après le premier push de ce Lot
+  (le workflow n'a pas encore tourné en conditions réelles sur GitHub).
 
 ---
 
@@ -594,6 +600,7 @@ Lot/Sous-Lot significatif terminé. Les entrées les plus récentes en haut.*
 
 | Date | Entrée |
 |---|---|
+| 2026-07-26 | Lot 0 quasi complet : structure du monorepo (`shared/`, `server/`, `client/`, `admin/`) avec placeholders buildables/testés, outillage (npm workspaces, TS composite, ESLint 9 flat config, Prettier, Vitest) validé de bout en bout (`lint`, `test`, `build`, `format:check`), licence AGPL-3.0 officielle ajoutée (`LICENSE`, texte récupéré depuis gnu.org), CI GitHub Actions ajoutée. Seul point encore ouvert du Lot 0 : choix Canvas 2D vs PixiJS (0.2). |
 | 2026-07-26 | Clé de déploiement ajoutée au dépôt GitHub (accès écriture), connexion SSH vérifiée, premier push effectué sur `main` — https://github.com/FantasmaGlad/Angul.io. |
 | 2026-07-26 | Création de [metriques.md](metriques.md) : formules du mode Vanilla (masse↔rayon, vitesse, decay, split, fusion, collision). Formule de vitesse tranchée par défaut : `v(m) = V_REF * √(M_START/m)` avec `V_REF = 6 uc/s`, clampée ×0.25/×3 — résout la tâche 0.2, ajustable en playtest. Remote GitHub `origin` configuré en SSH (`git@github.com-angulio:...`) via une clé de déploiement dédiée `~/.ssh/angulio_deploy`. |
 | 2026-07-26 | Dépôt Git local initialisé (branche `main`), `.gitignore` ajouté, premier commit avec le cahier des charges et ce plan. Convention actée : pas de mention de co-auteur IA dans les commits de ce projet. |
