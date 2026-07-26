@@ -6,7 +6,9 @@ n'importe qui (y compris toi dans six mois) puisse savoir en un coup d'œil ce q
 en cours, ou pas commencé — sans avoir à relire tout l'historique du projet.
 
 Référence : voir [cahier_des_charges.md](cahier_des_charges.md) pour le détail fonctionnel
-et les justifications d'architecture. Les sections `§X` citées ci-dessous renvoient à ce document.
+et les justifications d'architecture, et [metriques.md](metriques.md) pour les formules
+mathématiques exactes (masse, vitesse, split, fusion, decay…) mod par mod. Les sections
+`§X` citées ci-dessous renvoient à ces documents.
 
 ---
 
@@ -62,7 +64,11 @@ la première ligne de moteur de jeu.
   licence, infra, backlog de décisions — validé comme base de référence du projet.
 
 ### 0.2 — Décisions bloquantes restantes avant code (§8.1)
-- **Statut :** ⬜ À faire
+- **Statut :** 🔶 En cours (2026-07-26)
+  - ✅ Formule de décroissance de la vélocité selon la masse — **tranchée par défaut**,
+    voir [metriques.md §3](metriques.md#3-vitesse-en-fonction-de-la-masse)
+    (`v(m) = V_REF * √(M_START/m)`, ajustable en playtest sans changement d'architecture).
+  - ⬜ Moteur de rendu client : Canvas 2D natif vs. PixiJS — encore à trancher.
 - **Contenu :** trancher, ou décider de trancher par playtest en cours de Lot 1 :
   - Formule de décroissance de la vélocité selon la masse.
   - Moteur de rendu client : Canvas 2D natif vs. PixiJS.
@@ -157,10 +163,11 @@ Vanilla codé comme un mod — validation de l'architecture de modding décrite 
 
 ### 1.6 — Mode Vanilla implémenté comme mod
 - **Statut :** ⬜ À faire
-- **Contenu :** implémentation intégrale des règles chiffrées du §3.5 (masse de départ,
-  split 50/50, cooldown de fusion 30s, seuils de masse, perte passive, mur bloquant aux
-  bords, etc.) en tant que module utilisant uniquement l'API de hooks du 1.5.
-- **Dépendances :** 1.5.
+- **Contenu :** implémentation intégrale des règles chiffrées du §3.5 et des formules
+  détaillées dans [metriques.md](metriques.md) (masse de départ, vitesse, split 50/50,
+  cooldown de fusion 30s, seuils de masse, perte passive, mur bloquant aux bords, etc.)
+  en tant que module utilisant uniquement l'API de hooks du 1.5.
+- **Dépendances :** 1.5, [metriques.md](metriques.md).
 - **Critère d'acceptation :** toutes les valeurs du tableau §3.5 sont respectées et
   testées (tests unitaires sur les règles de masse/split/fusion/collision) ; le mode est
   jouable de bout en bout.
@@ -302,9 +309,11 @@ d'envisager l'ouverture communautaire (Phase 2).
 ### 4.2 — Spécification chiffrée du mode choisi
 - **Statut :** ⬜ À faire
 - **Contenu :** figer les valeurs (multiplicateurs, pénalités, densité de spawn, etc.),
-  sur le modèle du tableau §3.5 pour Vanilla.
+  sur le modèle du tableau §3.5 pour Vanilla, et ajouter une nouvelle section formules
+  dans [metriques.md](metriques.md) (§14) sur le modèle de la section Vanilla.
 - **Dépendances :** 4.1.
-- **Critère d'acceptation :** tableau de valeurs ajouté au cahier des charges ou en annexe.
+- **Critère d'acceptation :** tableau de valeurs ajouté au cahier des charges, et section
+  correspondante ajoutée dans metriques.md.
 
 ### 4.3 — Implémentation du mode comme mod indépendant
 - **Statut :** ⬜ À faire
@@ -584,5 +593,6 @@ Lot/Sous-Lot significatif terminé. Les entrées les plus récentes en haut.*
 
 | Date | Entrée |
 |---|---|
+| 2026-07-26 | Création de [metriques.md](metriques.md) : formules du mode Vanilla (masse↔rayon, vitesse, decay, split, fusion, collision). Formule de vitesse tranchée par défaut : `v(m) = V_REF * √(M_START/m)` avec `V_REF = 6 uc/s`, clampée ×0.25/×3 — résout la tâche 0.2, ajustable en playtest. Remote GitHub `origin` configuré en SSH (`git@github.com-angulio:...`) via une clé de déploiement dédiée `~/.ssh/angulio_deploy`. |
 | 2026-07-26 | Dépôt Git local initialisé (branche `main`), `.gitignore` ajouté, premier commit avec le cahier des charges et ce plan. Convention actée : pas de mention de co-auteur IA dans les commits de ce projet. |
 | 2026-07-26 | Rédaction du cahier des charges (v0.2) et de ce plan d'implémentation. Aucun code écrit à ce stade — le projet démarre au Lot 0.2. |
