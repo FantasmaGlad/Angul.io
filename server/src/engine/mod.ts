@@ -34,4 +34,10 @@ export interface GameMod {
 
   /** Appelé quand un joueur passe de "a au moins un morceau" à "n'en a plus aucun". */
   onPlayerDeath?(world: World, playerId: PlayerId): void;
+
+  /** Taux d'accélération courant (uc/s²) pour une masse donnée — utilisé par le réseau pour
+   * renseigner le panneau de stats du client (Pseudo/Guilde/Masse/Vitesse/Accélération) sans
+   * dupliquer la formule du mod côté client (voir `WorldStateMessage.self`, protocol.ts).
+   * Optionnel : si absent, le champ n'est pas renseigné côté client. */
+  getAccelerationForMass?(mass: number): number;
 }

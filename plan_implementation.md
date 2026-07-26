@@ -36,15 +36,16 @@ mathématiques exactes (masse, vitesse, split, fusion, decay…) mod par mod. Le
 |---|---|---|---|
 | [0](#lot-0--cadrage--fondations-du-projet) | Cadrage & fondations du projet | Transverse | ✅ Fait |
 | [1](#lot-1--socle-technique-moteur-de-jeu) | Socle technique moteur de jeu | MVP | ✅ Fait — ⚠️ voir 1.8 (bande passante) |
-| [2](#lot-2--salons-rooms) | Salons (rooms) | MVP | ⬜ À faire |
-| [3](#lot-3--comptes-joueurs--persistance) | Comptes joueurs & persistance | MVP | ⬜ À faire |
+| [2](#lot-2--salons-rooms) | Salons (rooms) | MVP | ✅ Fait — ⚠️ voir 2.5 (isolation CPU non garantie, mono-thread) |
+| [3](#lot-3--comptes-joueurs--persistance) | Comptes joueurs & persistance | MVP | ✅ Fait |
 | [4](#lot-4--deuxième-mode-de-jeu-validation-de-lapi-de-modding) | Deuxième mode de jeu (validation API) | MVP | ⬜ À faire |
 | [5](#lot-5--interface-dadministration) | Interface d'administration | MVP | ⬜ À faire |
 | [6](#lot-6--statut-premium--dons) | Statut Premium & dons | MVP | ⬜ À faire |
 | [7](#lot-7--client-mobile-pwa) | Client mobile (PWA) | MVP | ⬜ À faire |
-| [8](#lot-8--infrastructure--déploiement) | Infrastructure & déploiement | MVP | ⬜ À faire |
+| [8](#lot-8--infrastructure--déploiement) | Infrastructure & déploiement | MVP | 🔶 En cours — install.sh écrit (8.3/8.4/8.5), pas encore exécuté sur le Wyse réel |
 | [9](#lot-9--documentation--ouverture-communautaire-de-lapi-de-modding) | Documentation & ouverture communautaire | Phase 2 | ⬜ À faire |
 | [10](#lot-10--scaling-multi-wyse) | Scaling multi-Wyse | Phase 2 | ⬜ À faire |
+| [11](#lot-11--optimisation-bas-niveau-cpugpu-spéculatif) | Optimisation bas niveau CPU/GPU | Phase 3 (spéculatif) | ⏸️ Non commencé — options listées, aucun besoin mesuré à ce jour |
 
 **Ordre conseillé pour le MVP : Lot 0 → 1 → 2 → 3 → 4 → 6 → 5 → 7 → 8**, avec le Lot 5
 (admin) qui peut avancer en parallèle du Lot 3 dès que le modèle de compte existe, puisqu'il
@@ -326,44 +327,121 @@ Objectif : passer d'un salon unique codé en dur à un système de salons multip
 créables, configurables, publics ou privés.
 
 ### 2.1 — Modèle de salon
-- **Statut :** ⬜ À faire
-- **Contenu :** structure de données d'un salon (mode de jeu associé, visibilité
-  publique/privée, configuration de reset).
+- **Statut :** ✅ Fait (2026-07-26)
+- **Contenu :** `server/src/engine/roomManager.ts` — `RoomManager` : registre en mémoire de
+  salons (`ManagedRoom` = id court incrémental + nom + `modId` + `visibility` +
+  une `Room` (Lot 1.2) indépendante, avec sa propre boucle de tick). `RoomManager` reste
+  décorrélé du mécanisme concret de chargement des mods via un `ModResolver` injecté
+  (`(modId) => { mod, mapSize, kArea }`) — en prod, résolu vers
+  `createParametricMod(loadModConfig(modId))` (index.ts) ; en test, un mod/mapSize
+  arbitraire. `onRoomCreated(listener)` notifie la création de chaque salon (branché par
+  net/server.ts, voir 2.2). La **configuration de reset** mentionnée dans l'énoncé d'origine
+  de ce sous-lot est reportée au 2.4 (pas de champ mort en attendant que le 2.4 l'utilise
+  réellement).
 - **Dépendances :** Lot 1.
-- **Critère d'acceptation :** plusieurs salons peuvent exister en mémoire simultanément,
-  chacun avec sa propre simulation indépendante (§4.3).
+- **Critère d'acceptation :** **validé** par `roomManager.test.ts` (7 tests) — plusieurs
+  salons existent en mémoire simultanément, chacun avec sa propre `World`/simulation
+  totalement indépendante (aucun état partagé, `playerCount` par salon exact).
 
 ### 2.2 — Lobby : liste et création de salons publics
-- **Statut :** ⬜ À faire
-- **Contenu :** écran client listant les salons publics actifs, avec création d'un salon
-  (mode de jeu, nom).
+- **Statut :** ✅ Fait (2026-07-26)
+- **Contenu :** API HTTP ajoutée au serveur existant (`server/src/net/server.ts`, même
+  process que le jeu, pas de nouveau service) : `GET /api/rooms` (salons publics +
+  `playerCount` en direct), `POST /api/rooms` (création, `{name, modId}`, visibilité
+  publique par défaut — la création de salon privé est 2.3), `GET /api/modes` (modes
+  disponibles, fournis par index.ts via `listAvailableModIds()` pour ne pas coupler le
+  réseau au mécanisme de chargement des mods). Connexion WebSocket désormais routée par
+  salon via `?roomId=` dans l'URL (plus de salon unique implicite : une connexion sans
+  `roomId` valide est fermée avec le code `4004`). Côté client : `client/src/lobby.ts`
+  (client de cette API) et un écran de lobby dans `index.html`/`index.ts` — liste des
+  salons publics avec bouton "Rejoindre", formulaire de création (nom + `<select>` des
+  modes) avec bouton "Créer et rejoindre". Le salon "Salon principal" est toujours créé
+  par défaut au démarrage (`index.ts`, compatibilité avec le comportement du Lot 1).
+- **Bug corrigé au passage (régression introduite par ce sous-lot) :** `GameConnection`
+  (`client/src/net.ts`) abandonnait silencieusement tout message envoyé avant l'ouverture
+  effective du WebSocket (`readyState !== OPEN` ⇒ `send()` ne faisait rien). Invisible tant
+  que la connexion se faisait au chargement de la page (largement le temps de s'ouvrir avant
+  le clic sur "Jouer") ; devenu bloquant dès que `enterGame()` crée la connexion **et**
+  envoie le `join` dans le même geste (lobby). Corrigé par une file d'attente qui vide les
+  messages envoyés trop tôt à l'événement `open` — voir 3 tests dédiés (`net.test.ts`, avec
+  un faux WebSocket).
 - **Dépendances :** 2.1.
-- **Critère d'acceptation :** un joueur peut voir la liste des salons publics et en
-  rejoindre un depuis le client.
+- **Critère d'acceptation :** **validé** — 15 tests d'intégration réseau (dont 2 nouveaux :
+  isolation de deux salons simultanés, fermeture sur salon inexistant) + tests unitaires
+  du bug ci-dessus, **et** test manuel réel dans un navigateur (via le Browser pane) :
+  lobby chargé, salon par défaut listé, création d'un second salon public depuis un second
+  onglet, un joueur par salon, chaque client ne voit que son propre salon (capture d'écran
+  + `GET /api/rooms` confirmant `playerCount: 1` pour chacun des deux salons).
 
 ### 2.3 — Salons privés sur invitation
-- **Statut :** ⬜ À faire
-- **Contenu :** génération d'un lien ou code d'invitation pour rejoindre un salon non listé
-  publiquement.
+- **Statut :** ✅ Fait (2026-07-26)
+- **Contenu :** `RoomManager.createRoom` génère un `inviteCode` (`randomUUID()`) pour tout
+  salon `visibility: 'private'`, renvoyé uniquement dans la réponse de création (jamais par
+  `listPublicRooms`, qui ignore de toute façon les salons privés). **Faille corrigée au
+  passage** : un salon privé n'était protégé que par l'absence de listing — son id court et
+  séquentiel (`"1"`, `"2"`…) restait devinable et suffisait à le rejoindre. `getManagedRoom`
+  refuse désormais explicitement de résoudre un salon privé par son id brut ; seul le code
+  d'invitation y donne accès (le lien d'invitation transporte le code, pas l'id interne).
+  Côté client : case à cocher "Privé" à la création, champ "Rejoindre via code" dans le
+  lobby, code affiché dans le HUD pendant la partie (le lobby disparaît dès l'entrée en jeu,
+  donc le montrer une seule fois avant n'aurait pas suffi pour le partager).
 - **Dépendances :** 2.1.
-- **Critère d'acceptation :** un salon marqué privé n'apparaît pas dans le lobby public,
-  mais est rejoignable via son code/lien.
+- **Critère d'acceptation :** **validé** — 6 tests dédiés (`roomManager.test.ts`) + 2 tests
+  réseau (`server.test.ts`, dont un confirmant explicitement le refus par id brut / acceptation
+  par code) + test manuel réel dans le navigateur (salon privé créé, id brut testé en Node
+  direct — fermeture confirmée avec le code `4004` — puis rejoint avec succès via son code).
 
 ### 2.4 — Reset automatique des salons
-- **Statut :** ⬜ À faire
-- **Contenu :** planification configurable par salon, valeur par défaut 1x/24h à 10h
-  (heure de Paris).
+- **Statut :** ✅ Fait (2026-07-26)
+- **Contenu :** `server/src/engine/resetSchedule.ts` — `RoomResetSchedule` à deux formes :
+  `dailyAt` (heure murale dans un fuseau, défaut `{ hour: 10, minute: 0, timeZone:
+  'Europe/Paris' }` — `DEFAULT_RESET_SCHEDULE`) pour la prod, `interval` (délai fixe court)
+  pour les tests, conformément au critère d'acceptation d'origine. `delayUntilNextReset`
+  calcule le prochain déclenchement via `Intl.DateTimeFormat` (pas de dépendance de fuseau
+  horaire supplémentaire) et recalcule à chaque déclenchement plutôt que d'ajouter
+  bêtement 24h — reste correct malgré les changements d'heure. `Room.reset()` (nouveau)
+  vide entièrement le monde (morceaux ET nourriture, qui repousse ensuite via la logique
+  habituelle du mod) et fait respawner chaque joueur encore connecté comme s'il venait de
+  rejoindre (même hook `onPlayerJoin`) — les joueurs restent connectés, pseudo compris.
+  `onReset` notifie le réseau (`net/server.ts`), qui réutilise le message `died` existant
+  pour chaque client du salon plutôt qu'un nouveau type de message (la sensation "je viens
+  de mourir, je respawn" est exactement ce qui se passe). Planification pilotée par
+  `Room.start()`/`stop()` (même cycle de vie que le tick), configurable par salon via
+  `RoomManager.createRoom({..., resetSchedule})` (pas encore de contrôle dans le lobby
+  client pour le personnaliser à la création — modèle de données prêt, UI non faite).
 - **Dépendances :** 2.1.
-- **Critère d'acceptation :** un salon se réinitialise automatiquement à l'heure prévue
-  (testable avec une configuration de test à intervalle court).
+- **Critère d'acceptation :** **validé** — 5 tests (`resetSchedule.test.ts`, dont
+  vérification explicite des décalages été/hiver UTC+2/UTC+1), 5 tests (`room.test.ts`,
+  reset manuel + planification automatique en mode `interval`), 1 test réseau
+  (`server.test.ts`, diffusion `died` lors d'un reset), **et** test manuel réel (serveur
+  réel + navigateur, intervalle de 5s : reset confirmé toutes les ~5s dans les logs
+  serveur, HUD du joueur repassant bien par "Vous êtes mort — respawn en cours…" puis "1
+  morceau(x) en jeu").
 
 ### 2.5 — Isolation multi-salons sur un même serveur
-- **Statut :** ⬜ À faire
-- **Contenu :** vérifier qu'un bug ou une charge élevée dans un salon n'affecte pas les
-  autres (isolation des boucles de simulation, éventuellement un Worker par salon).
+- **Statut :** ✅ Fait (2026-07-26) — **avec une limite documentée, pas glissée sous le tapis**.
+- **Contenu :** `server/src/engine/roomIsolation.test.ts` mesure réellement plutôt que de
+  supposer. **Isolation d'état : totale** — chaque salon a son propre `World`/`Room`, aucune
+  donnée partagée, confirmé par les tests dédiés de 2.1/2.2 (salons simultanés avec joueurs
+  différents, aucune fuite d'un salon à l'autre). **Isolation CPU/timing : non garantie**,
+  et le test le démontre plutôt que de le contourner : Node est mono-thread pour le JS, donc
+  toutes les `Room` d'un même process se partagent le même thread — un tick synchrone coûteux
+  dans un salon (mod lent ou buggé) retarde mesurablement le tick d'un autre salon qui tombe
+  pendant son exécution. Mesuré : sous un intervalle nominal de 50ms (20Hz), un tick coûtant
+  30ms ne cause aucun retard mesurable (tient dans la même fenêtre), mais un tick coûtant 80ms
+  fait chuter le rythme de l'autre salon à ~80ms/tick au lieu de 50ms. Rejoint la discussion
+  du **Lot 11.1** (`worker_threads`) : c'est le levier identifié si cette limite devient un
+  jour un vrai problème (plusieurs salons chargés simultanément) — non nécessaire à l'échelle
+  actuelle (10-50 joueurs, §4.1 du cahier des charges), donc non implémenté maintenant.
 - **Dépendances :** 2.1, Lot 1.8.
-- **Critère d'acceptation :** test avec plusieurs salons actifs simultanément, chacun avec
-  des joueurs, sans interférence observée entre eux.
+- **Critère d'acceptation :** **partiellement révisé** — l'énoncé d'origine ("sans
+  interférence observée entre elles") visait probablement l'isolation d'état, largement
+  acquise ; l'isolation CPU sous charge élevée, elle, n'est structurellement pas garantie sur
+  un process mono-thread, et aucune quantité de test ne changera ce fait sans changer
+  l'architecture (Lot 11.1). Le sous-lot est marqué fait sur la base de : l'isolation d'état
+  est acquise et testée, la limite CPU/timing est désormais connue, mesurée, documentée, et
+  un levier de correction est identifié pour le jour où le besoin sera réel — plutôt que
+  fait sur la base d'une promesse d'isolation totale qui ne serait pas honnête.
 
 ---
 
@@ -373,49 +451,119 @@ Objectif : remplacer les sessions anonymes par des comptes persistants (PostgreS
 support de l'authentification et des statistiques.
 
 ### 3.1 — Setup PostgreSQL et migrations
-- **Statut :** ⬜ À faire
-- **Contenu :** installation locale (dev) de PostgreSQL, outil de migration (ex.
-  Prisma/Drizzle/node-pg-migrate — à choisir), schéma initial.
+- **Statut :** ✅ Fait (2026-07-26)
+- **Contenu :** PostgreSQL 18 installé localement par l'utilisateur (paquets `postgresql`/
+  `postgresql-client` Ubuntu, service `postgresql.service` actif, écoute sur
+  `localhost:5432`). Rôle applicatif dédié `angulio` (login/mot de passe, pas de droit
+  superutilisateur) et base `angulio_dev` créés (pas de connexion sous `postgres`
+  directement — accès uniquement via ce rôle, cohérent avec le futur déploiement Wyse).
+  Outil de migration choisi : **node-pg-migrate** (+ `pg` comme driver) — SQL-first,
+  fichiers de migration versionnés dans `server/migrations/`, pas d'ORM/mapping objet
+  imposé, cohérent avec le reste du projet (dépendances minimales, `ws`+`http` natifs,
+  Canvas 2D natif). `server/.env` (gitignored) porte `DATABASE_URL` ; `server/.env.example`
+  versionné documente le format attendu. Scripts npm : `migrate:up`/`migrate:down`/
+  `migrate:create` (`server/package.json`, `--envPath ./.env`). Schéma initial minimal :
+  table `players` (`id`, `pseudo` unique, `created_at`) — juste de quoi valider le pipeline
+  de bout en bout ; les colonnes du compte joueur complet (3.4) et l'authentification (3.2)
+  arriveront dans leurs migrations respectives plutôt que d'être anticipées ici.
 - **Dépendances :** Lot 0.
-- **Critère d'acceptation :** migrations exécutables en local, schéma versionné dans le repo.
+- **Critère d'acceptation :** **validé** — cycle `migrate:up`/`migrate:down`/`migrate:up`
+  exécuté en conditions réelles contre `angulio_dev` (table `players` créée puis
+  supprimée puis recréée sans erreur, `\d players` confirmant le schéma attendu), migration
+  versionnée dans le repo (`server/migrations/1785090813268_init.cjs`).
 
 ### 3.2 — Authentification (inscription/connexion)
-- **Statut :** ⬜ À faire
-- **Contenu :** pseudo + mot de passe, hachage argon2 (§5.1), validation d'unicité du pseudo.
+- **Statut :** ✅ Fait (2026-07-26)
+- **Contenu :** `server/src/accounts/passwords.ts` (hachage/vérification **argon2**, options par
+  défaut — testé viable sur cette machine avant adoption, cf. §5.1 "argon2 recommandé"),
+  `server/migrations/*_add-password-hash.cjs` (colonne `password_hash` sur `players`),
+  `server/src/accounts/accountsRepository.ts` (`createAccount`/`findByPseudo`/`findById`,
+  `PseudoTakenError` levée sur violation de la contrainte unique PostgreSQL plutôt qu'un
+  pré-check applicatif racy). Endpoints HTTP `POST /api/auth/register` et `POST /api/auth/login`
+  (`net/server.ts`), portés par `server/src/accounts/service.ts` (`AccountsService`, point
+  d'entrée unique — `net/server.ts` ne connaît jamais le repository directement, même principe
+  d'indirection que `RoomManager`). Validation pseudo (3-20 caractères) et mot de passe (8
+  caractères minimum) ; message de connexion identique que le pseudo existe ou non (ne révèle
+  pas les pseudos pris via l'erreur de login).
 - **Dépendances :** 3.1.
-- **Critère d'acceptation :** création de compte et connexion fonctionnelles ; mots de
-  passe jamais stockés ni loggés en clair (vérifié par relecture du code de stockage).
+- **Critère d'acceptation :** **validé** — 4 tests `passwords.test.ts`, 4 tests
+  `accountsRepository.test.ts` (Postgres réel), 6 tests `service.test.ts` (Postgres réel,
+  `describe.skipIf(!DATABASE_URL)` pour rester silencieux sans base configurée). Mot de passe
+  jamais loggé (`logEvent('account_registered', { pseudo })`, jamais le mot de passe) ni stocké
+  en clair (colonne `password_hash` uniquement). Testé manuellement de bout en bout dans le
+  navigateur (inscription réelle, `$argon2...` confirmé en base via `psql`).
 
 ### 3.3 — Sessions/tokens
-- **Statut :** ⬜ À faire
-- **Contenu :** mécanisme de session (JWT ou cookie de session) pour maintenir un joueur
-  connecté entre le lobby et une partie.
+- **Statut :** ✅ Fait (2026-07-26)
+- **Contenu :** `server/src/accounts/sessionStore.ts` — tokens opaques en mémoire
+  (`crypto.randomBytes(32).toString('hex')` → id de compte), pas de JWT ni de dépendance
+  supplémentaire (cohérent avec le reste du projet : `RoomManager` est lui aussi un registre en
+  mémoire). Pas d'expiration (aucun besoin mesuré à ce jour). Le token est renvoyé par
+  `register`/`login`, stocké côté client dans `localStorage` (`client/src/auth.ts`,
+  `saveSession`/`loadSession` — survit à un F5), et transmis à la connexion WebSocket via
+  `?token=` dans l'URL (les navigateurs ne permettent pas d'en-têtes personnalisés sur
+  `WebSocket`) : `net/server.ts` le résout en id de compte à la connexion, absent/invalide ⇒
+  partie en invité (jamais une erreur, voir 4.4/Lot 2).
 - **Dépendances :** 3.2.
-- **Critère d'acceptation :** un joueur reste identifié entre la connexion HTTP (lobby) et
-  la connexion WebSocket (partie), sans avoir à se réauthentifier.
+- **Critère d'acceptation :** **validé** — 4 tests `sessionStore.test.ts` (création/résolution/
+  révocation/unicité), et bout en bout manuellement : inscription dans le lobby → jointure d'un
+  salon avec le token → `GET /api/account/me` avec ce même token après un F5 (session persistée
+  via `localStorage`).
 
 ### 3.4 — Modèle de compte joueur complet
-- **Statut :** ⬜ À faire
-- **Contenu :** niveau/XP, meilleur score par mode de jeu, statut Premium (booléen),
-  cosmétiques débloqués (§5.2).
+- **Statut :** ✅ Fait (2026-07-26)
+- **Contenu :** `server/migrations/*_full-account-model.cjs` — colonnes `level`/`xp`/`premium`/
+  `cosmetics` (`text[]`, contenu détaillé différé, §8.2) sur `players`, table
+  `player_best_scores` (`player_id`, `mode_id` texte libre — les modes sont des configs
+  chargées dynamiquement, pas une énumération figée — `best_score`, clé primaire composite).
+  Formule niveau/XP **volontairement provisoire** (§5.2 : "à définir en phase de
+  développement") : `server/src/accounts/levels.ts`, courbe en racine carrée
+  (`level = 1 + floor(sqrt(xp/100))`), XP gagné = masse maximale atteinte pendant la partie
+  (aucun autre système de score n'existe à ce jour) — ajustable sans migration, ne vit que dans
+  le code applicatif.
 - **Dépendances :** 3.1.
-- **Critère d'acceptation :** schéma en base couvrant tous les champs du tableau §5.2,
-  lisible/modifiable via des requêtes de test.
+- **Critère d'acceptation :** **validé** — schéma confirmé via `psql \d`, 6 tests
+  `levels.test.ts`, lecture/écriture couvertes par les tests de 3.2/3.5.
 
 ### 3.5 — Écriture des stats en fin de partie
-- **Statut :** ⬜ À faire
-- **Contenu :** à la fin d'une partie (ou à la mort d'un joueur), écrire en base le score,
-  mise à jour éventuelle du meilleur score et de l'XP — pas d'écriture à chaque tick (§4.4).
+- **Statut :** ✅ Fait (2026-07-26)
+- **Contenu :** `net/server.ts` — `RoomRuntime` gagne `accountIdByPlayer`/`maxMassByPlayer` (par
+  connexion, uniquement pour les joueurs authentifiés). La masse totale maximale atteinte est
+  mise à jour à chaque tick (dans la boucle `onState` déjà existante, aucun coût réseau
+  supplémentaire), remise à 0 à chaque respawn (pas seulement à la connexion). Écriture
+  best-effort et asynchrone (`recordAccountStats`, erreur seulement loggée — ne doit jamais
+  bloquer la diffusion réseau) déclenchée à la fois sur `onPlayerDeath` **et** sur la
+  déconnexion du socket (`close`) : une perte de connexion est aussi une "fin de partie" pour ce
+  joueur, pas seulement une mort en jeu. `AccountsService.recordGameResult` fait l'upsert du
+  meilleur score (`GREATEST`) et l'ajout d'XP/recalcul de niveau en une seule transaction SQL.
 - **Dépendances :** 3.4, Lot 1.6.
-- **Critère d'acceptation :** une partie jouée met à jour les stats du compte en base,
-  visible après reconnexion.
+- **Critère d'acceptation :** **validé** — 1 test dédié dans `accountsRepository.test.ts`
+  (accumulation d'XP + `GREATEST` sur le meilleur score), et **validé manuellement en
+  conditions réelles** : partie jouée dans le navigateur (compte `FantaTest`), déconnexion,
+  confirmé en base via `psql` (`xp: 50`, `player_best_scores: {vanilla, 50}`), puis ré-affiché
+  correctement dans l'écran de profil après reconnexion.
 
 ### 3.6 — Écran de profil joueur
-- **Statut :** ⬜ À faire
-- **Contenu :** page client affichant pseudo, niveau, meilleurs scores par mode, statut
-  Premium, cosmétiques.
+- **Statut :** ✅ Fait (2026-07-26)
+- **Contenu :** `client/src/auth.ts` (client de l'API : `register`/`login`/`fetchProfile`,
+  persistance de session `localStorage`). Lobby (`index.html`/`index.ts`) : section "Compte"
+  (bascule inscription/connexion, ou "Connecté(e) : X" + boutons Profil/Déconnexion une fois
+  authentifié — une partie en invité reste possible à tout moment via le champ "Pseudo",
+  inchangé). Panneau de profil dédié (`#profileOverlay`) : pseudo, niveau, XP, statut Premium,
+  cosmétiques, liste des meilleurs scores par mode — récupéré via `GET /api/account/me`
+  (`Authorization: Bearer <token>`).
 - **Dépendances :** 3.4, 3.5.
-- **Critère d'acceptation :** un joueur connecté peut consulter son profil à jour.
+- **Critère d'acceptation :** **validé manuellement de bout en bout dans le navigateur** :
+  inscription → panneau "Profil" affichant niveau 1/XP 0 → partie jouée → déconnexion →
+  reconnexion (session persistée) → panneau "Profil" affichant XP 50 et le meilleur score
+  vanilla à jour.
+
+**Lot 3 clos.** Point non traité, à reprendre plus tard si le besoin se confirme : pas encore
+de service PostgreSQL dans `install.sh` (Lot 8, toujours volontairement différé jusqu'ici) ni de
+service Postgres dans la CI GitHub Actions (`.github/workflows/ci.yml`) — les tests Postgres
+(`describe.skipIf(!DATABASE_URL)`) se contentent d'être ignorés silencieusement en CI pour
+l'instant plutôt que de faire échouer le pipeline, donc rien n'est cassé, mais ils n'y tournent
+pas non plus.
 
 ---
 
@@ -620,28 +768,48 @@ Internet (§7).
   du réseau domestique (test depuis une connexion 4G par exemple).
 
 ### 8.3 — DuckDNS
-- **Statut :** ⬜ À faire
-- **Contenu :** enregistrement d'un sous-domaine DuckDNS, script de mise à jour automatique
-  en filet de sécurité si l'IP publique change.
+- **Statut :** 🔶 En cours (2026-07-26) — script écrit, reste à créer le compte/sous-domaine
+  DuckDNS et à exécuter sur le Wyse réel pour valider.
+- **Contenu :** `install.sh` (voir 8.4) écrit un service + timer systemd
+  (`duckdns-update.service`/`.timer`) qui appelle l'API DuckDNS toutes les 5 minutes — filet
+  de sécurité si l'IP publique change, même si elle est censée être fixe côté box.
+  L'enregistrement du sous-domaine lui-même (compte DuckDNS, choix du nom) reste une action
+  manuelle sur duckdns.org, à renseigner ensuite dans les variables `DUCKDNS_SUBDOMAIN`/
+  `DUCKDNS_TOKEN` en tête d'`install.sh`.
 - **Dépendances :** 8.2.
-- **Critère d'acceptation :** le nom de domaine DuckDNS résout vers l'IP publique actuelle ;
-  le script de mise à jour tourne en tâche planifiée sur le Wyse.
+- **Critère d'acceptation :** ⬜ pas encore validé en conditions réelles — le nom de domaine
+  DuckDNS doit résoudre vers l'IP publique actuelle et le timer doit tourner sur le Wyse.
 
 ### 8.4 — Script install.sh
-- **Statut :** ⬜ À faire
-- **Contenu :** bootstrap complet d'un nœud : dépendances système, service systemd pour le
-  serveur de jeu, PostgreSQL, reverse proxy.
-- **Dépendances :** 8.1, Lot 3.1.
-- **Critère d'acceptation :** exécuter `install.sh` sur une machine Ubuntu fraîche amène à
-  un serveur fonctionnel sans étape manuelle supplémentaire (hors configuration réseau §8.2).
+- **Statut :** 🔶 En cours (2026-07-26) — script écrit et vérifié syntaxiquement
+  (`bash -n`), **jamais exécuté sur une machine réelle** (nécessite le Wyse physique, 8.1).
+- **Contenu :** [`install.sh`](install.sh) à la racine du dépôt — bootstrap complet et
+  idempotent (relançable pour déployer une mise à jour) : dépendances système (`apt`),
+  Node.js 20.x (dépôt NodeSource), clonage/mise à jour du code + `npm ci && npm run build`,
+  utilisateur système dédié (pas de privilèges superflus), service systemd
+  `angulio.service` (`Restart=on-failure`, activé au boot), pare-feu `ufw` (SSH + 80/443
+  uniquement — le port du serveur de jeu n'est **jamais** exposé directement, tout passe par
+  le reverse proxy), Caddy en reverse proxy + HTTPS automatique (voir 8.5), timer DuckDNS
+  (voir 8.3). **PostgreSQL volontairement exclu** : rien dans le code actuel ne l'utilise
+  (Lot 3 pas commencé) — l'installer maintenant serait un service qui tourne pour rien ; ce
+  script sera étendu quand le Lot 3 démarrera. La dépendance à Lot 3.1 de l'énoncé d'origine
+  de ce sous-lot est donc revue à la baisse en conséquence.
+- **Dépendances :** 8.1.
+- **Critère d'acceptation :** ⬜ pas encore validé — exécuter `install.sh` sur une machine
+  Ubuntu fraîche doit amener à un serveur fonctionnel sans étape manuelle supplémentaire
+  (hors configuration réseau §8.2, hors renseignement des identifiants DuckDNS en tête du
+  script). À confirmer sur le Wyse réel, une fois 8.1 fait.
 
 ### 8.5 — Reverse proxy / TLS
-- **Statut :** ⬜ À faire
-- **Contenu :** Caddy ou Nginx + Let's Encrypt pour servir le client en HTTPS et le
-  WebSocket en WSS.
+- **Statut :** 🔶 En cours (2026-07-26) — configuré dans `install.sh` (8.4), pas encore
+  validé en conditions réelles.
+- **Contenu :** Caddy (choisi plutôt que Nginx : HTTPS automatique via Let's Encrypt sans
+  configuration manuelle de certificat, `reverse_proxy` gère nativement l'upgrade
+  WebSocket vers le serveur de jeu — aucune directive spéciale requise pour le WSS).
 - **Dépendances :** 8.3, 8.4.
-- **Critère d'acceptation :** le jeu est accessible en HTTPS/WSS depuis un navigateur
-  externe, certificat valide.
+- **Critère d'acceptation :** ⬜ pas encore validé — le jeu doit être accessible en
+  HTTPS/WSS depuis un navigateur externe, certificat valide, une fois déployé sur le Wyse
+  réel avec le NAT (8.2) et le sous-domaine DuckDNS (8.3) en place.
 
 ### 8.6 — Monitoring basique
 - **Statut :** ⬜ À faire
@@ -723,6 +891,68 @@ Internet (§7).
 
 ---
 
+## Lot 11 — Optimisation bas niveau CPU/GPU (spéculatif)
+
+**Phase 3 — ne démarre que si un besoin réel et mesuré l'exige.** Ajouté à la demande de
+l'utilisateur (2026-07-26, suite à une question sur la gestion CPU/GPU des salons) pour garder
+trace des options disponibles *avant* d'en avoir besoin, pas pour les implémenter maintenant.
+**Aucune de ces pistes n'est justifiée à l'échelle actuelle** : le test de charge du Lot 1.8
+montrait une boucle de tick très stable même à 350 entités/50 joueurs sur un seul thread Node,
+et le vrai goulot d'étranglement mesuré jusqu'ici a toujours été le réseau (bande passante),
+pas le CPU/GPU. Chaque option ci-dessous est une alternative indépendante à évaluer *le jour où
+un goulot d'étranglement CPU/GPU réel est mesuré*, pas une suite de sous-lots à dérouler dans
+l'ordre — le choix dépendra de la nature précise du goulot constaté à ce moment-là.
+
+### 11.1 — Parallélisme CPU entre salons (`worker_threads`)
+- **Statut :** ⬜ Non commencé (spéculatif)
+- **Contenu :** aujourd'hui, toutes les `Room` d'un même process tournent sur le thread
+  principal Node (mono-thread pour le JS) — plusieurs salons partagent donc le même cœur CPU
+  au lieu d'être parallélisés. Faire tourner chaque `Room` (ou un groupe de salons) dans son
+  propre `worker_thread` Node permettrait un vrai parallélisme CPU entre salons sur les cœurs
+  disponibles de la machine.
+- **Compromis :** complexité du passage de messages entre threads (les `Entity`/`World` ne
+  peuvent pas être partagés par référence entre threads ; il faut sérialiser l'état à chaque
+  tick ou utiliser `SharedArrayBuffer` pour les données chaudes) ; rejoint la réflexion déjà
+  amorcée au Lot 2.5 (isolation) et nécessaire de toute façon pour le Lot 9.5 (sandboxing des
+  mods tiers non fiables, Phase 2).
+- **Dépendances :** un besoin mesuré (plusieurs salons chargés simultanément saturant un cœur).
+
+### 11.2 — Cœur de simulation réécrit en langage natif (Rust/C++)
+- **Contenu :** si la boucle de tick JS elle-même devenait le goulot (pas juste son
+  parallélisme), réécrire le cœur de simulation (partitionnement spatial, détection de
+  collision, intégration des positions) en Rust ou C++, exposé à Node via un addon natif
+  (`napi-rs` pour Rust, N-API pour C++) ou compilé en WebAssembly.
+- **Compromis :** gain réel sur du calcul intensif pur, mais alourdit largement la chaîne de
+  build/déploiement (toolchain Rust/C++ sur le Wyse ou binaires précompilés par
+  architecture) et casse la promesse actuelle "un mod = du TypeScript" (Lot 1.5/3.3) si le
+  cœur du moteur cesse d'être lisible/modifiable en JS par un contributeur du Lot 9.
+- **Dépendances :** un besoin mesuré, et probablement 11.1 déjà insuffisant seul.
+
+### 11.3 — Calcul massivement parallèle sur GPU (serveur)
+- **Contenu :** pour un nombre d'entités bien plus grand qu'aujourd'hui (dizaines de milliers),
+  des opérations comme le broad-phase de collision pourraient théoriquement être parallélisées
+  sur GPU (CUDA/OpenCL via un addon C++, ou compute shaders WebGPU côté Node).
+- **Compromis :** complexité très élevée pour un gain qui ne se justifie qu'à une échelle très
+  supérieure à celle visée par ce projet (§4.1 du cahier des charges : 10-50 joueurs) ; demande
+  aussi un GPU dédié sur le Wyse, absent du matériel prévu (§8.2). **Piste la moins probable
+  d'être un jour nécessaire**, listée uniquement parce que l'utilisateur a explicitement
+  demandé si c'était possible.
+- **Dépendances :** un changement d'échelle radical du projet, pas seulement une optimisation.
+
+### 11.4 — Rendu client bas niveau (WebGL/WebGPU au lieu de Canvas 2D)
+- **Contenu :** remplacer le rendu Canvas 2D (Lot 1.7) par WebGL/WebGPU donnerait un contrôle
+  explicite du pipeline GPU côté client (rendu instancié de milliers de cercles en un seul
+  appel de dessin, shaders personnalisés) plutôt que de dépendre de l'accélération matérielle
+  interne que le navigateur applique déjà de lui-même à Canvas 2D.
+- **Compromis :** les points chauds identifiés et corrigés en pratique (voir journal du
+  2026-07-26, "Interpolation d'affichage côté client") étaient algorithmiques (nombre d'appels
+  de dessin, absence d'interpolation), pas liés à Canvas 2D lui-même — un passage à WebGL ne
+  se justifierait qu'avec un nombre de particules visibles bien plus élevé qu'aujourd'hui.
+- **Dépendances :** un nombre de particules visibles simultanément mesuré comme problématique
+  malgré l'interest management (Lot 1.8) et le dessin groupé (voir journal).
+
+---
+
 ## Journal des décisions et avancées
 
 *Ajoute une ligne datée à chaque décision technique prise en cours de route, ou à chaque
@@ -730,6 +960,21 @@ Lot/Sous-Lot significatif terminé. Les entrées les plus récentes en haut.*
 
 | Date | Entrée |
 |---|---|
+| 2026-07-26 | **Refonte du lobby** (demande utilisateur : tenir sans scroller, thème clair fixe façon "labo premium", vraie glassmorphism, arène transparente). Thème sombre adaptatif (`prefers-color-scheme: dark`) **retiré** du lobby — clair fixe, décision délibérée, pas une régression. `#lobbyOverlay` passe d'un fond opaque à un voile translucide (`rgba(238,238,240,0.4)`, sans flou propre, déjà porté par `#lobbyPanel`) : laisse apparaître l'arène (grille) derrière le verre, vraie glassmorphism plutôt qu'un fond plein. Fond "labo premium" (dégradés + grille de points) déplacé du seul `#lobbyOverlay` vers `html`/`body`, partagé par toute l'appli. **Arène transparente** (`render.ts`) : `ctx.clearRect` remplace le `fillRect` blanc opaque ; couleur de grille recalibrée en hairline translucide (`rgba(17,17,19,0.1)`) pour rester visible sur le nouveau fond clair. **Bug trouvé en cours de route** : `#statsPanel`/`#hud` (`#gameOverlay`) étaient toujours présents dans le DOM même hors partie (juste masqués visuellement par l'ancien fond opaque du lobby) — devenus visibles par transparence une fois le lobby translucide. Corrigé : `#gameOverlay` masqué par défaut, affiché seulement à l'entrée en partie (`index.ts`, `enterGame`/`onClose`). **Mise en page** : lobby restructuré en deux colonnes (`.lobby-columns`, panneau élargi à 720px, repli une colonne sous 640px) et espacements resserrés — tient désormais dans un viewport standard (~720px de haut) sans avoir à scroller, alors que l'ancienne colonne unique le nécessitait. **Bug rapporté séparément et corrigé au passage** : le champ "Nom du salon" (`<input>` brut, sans le wrapper `.field`/`.field-row` qui porte la marge ailleurs) touchait directement la ligne mode/Privé juste en dessous — marge dédiée ajoutée. |
+| 2026-07-26 | **Lot 3 clos (3.2-3.6) : comptes joueurs, sessions, modèle complet, stats, profil.** Argon2 retenu (§5.1, testé viable sur cette machine avant adoption) pour le hachage, sessions en mémoire par token opaque (pas de JWT, cohérent avec le reste du projet), transmises à la connexion WebSocket via `?token=` (les navigateurs n'autorisent pas d'en-têtes personnalisés sur `WebSocket`). **Une partie en invité reste possible à tout moment** — l'authentification est une couche additive, jamais un prérequis pour jouer. Niveau/XP volontairement provisoires (§5.2 ne tranche pas la formule) : XP = masse maximale atteinte pendant la partie, niveau en racine carrée de l'XP total (`levels.ts`) — le seul système de score disponible à ce jour. Stats écrites à la mort **et** à la déconnexion (une coupure réseau est aussi une "fin de partie"), en best-effort asynchrone pour ne jamais bloquer la diffusion réseau. 24 nouveaux tests (dont 16 contre un vrai PostgreSQL local, `describe.skipIf(!DATABASE_URL)` pour rester silencieux sans base configurée — **pas encore de service Postgres en CI**, à ajouter si ce garde-fou devient limitant). **Validé manuellement de bout en bout** dans le navigateur : inscription → jointure de salon avec token → partie jouée → déconnexion → XP/meilleur score confirmés en base (`psql`) et ré-affichés dans l'écran de profil après reconnexion. |
+| 2026-07-26 | **Zoom recalibré, unités d'affichage m/s(²), retrait du compteur de morceaux** (demandes utilisateur). **Zoom** (`render.ts`) : `BASE_SCALE` passe de 1 à **1.8** (`MAX_SCALE` 2→2.2 en conséquence) — le joueur démarre désormais visuellement zoomé par rapport à la taille "réelle" de son morceau (meilleur contrôle en début de partie), la sensation de dézoom progressif à mesure que la masse grossit reste la même courbe (`√(masse/référence)`), juste recalibrée à un niveau de zoom de départ plus élevé. 2 tests (`render.test.ts`) mis à jour pour référencer `BASE_SCALE` exporté plutôt qu'une valeur `1` en dur. **Unités** (`index.ts`) : Vitesse/Accélération affichées en `m/s`/`m/s²` (facteur cosmétique `MAP_UNITS_TO_METERS = 0.01`, affichage uniquement — la simulation ne modélise aucune unité SI, non représentatif tel que demandé, juste un repère plus parlant que l'unité de carte abstraite). **HUD** : retrait du texte `"X morceau(x) en jeu"` ; ne restent que le message mort/respawn et, le cas échéant, le code d'invitation. |
+| 2026-07-26 | **Bug rapporté "l'accélération ne s'affiche pas" — diagnostiqué comme un problème de cache navigateur, pas un bug de code.** Investigation : un client `ws` de test direct confirme que le serveur envoie bien `self.accelerationPerSec2` à chaque tick (`net/server.ts`), et un `console.log` temporaire dans `index.ts` confirme que le client le reçoit et l'affiche correctement après un chargement de page réellement frais. Cause la plus probable : `server/src/net/server.ts` (`serveStatic`) ne posait **aucun** en-tête de cache sur les fichiers statiques (`bundle.js` compris) — un simple rechargement (pas un hard-refresh) peut donc resservir une version en cache du bundle client, y compris une version antérieure à un correctif, donnant l'impression qu'"il ne marche pas" alors que le code est correct. **Correctif** : `Cache-Control: no-cache` ajouté à toutes les réponses statiques (revalidation systématique, pas de `max-age` puisque les fichiers ne sont pas versionnés par hash de contenu dans l'URL). Point de vigilance pour la suite : envisager un nom de fichier hashé par contenu (Lot 8, si ce type de rapport se reproduit malgré le correctif). |
+| 2026-07-26 | **Lot 3.1 fait : PostgreSQL + migrations.** PostgreSQL 18 installé par l'utilisateur (service actif, `localhost:5432`) ; rôle applicatif dédié `angulio` + base `angulio_dev` créés (pas d'usage du rôle `postgres` par l'app). Outil retenu : **node-pg-migrate** (SQL-first, pas d'ORM) + `pg` comme driver — cohérent avec la préférence du projet pour des dépendances minimales plutôt que des frameworks lourds. Schéma initial volontairement minimal (table `players` : `id`/`pseudo` unique/`created_at`) — juste de quoi prouver le pipeline ; le détail du compte joueur (3.4) et l'authentification (3.2) viendront dans leurs propres migrations. Cycle `migrate:up`/`down`/`up` validé en conditions réelles contre la base de dev. `server/.env` (gitignored, `DATABASE_URL`) + `server/.env.example` versionné. |
+| 2026-07-26 | **Vérification visuelle du panneau de stats + écran F3** (repoussée depuis l'entrée précédente, page de test alors hors du champ de vision de l'utilisateur). Confirmé dans un vrai navigateur : panneau en haut à gauche (Pseudo/Guilde/Masse/Vitesse/Accélération) et écran F3 (FPS, ping, GPU, système, réseau) tous deux fonctionnels avec des valeurs live correctes. **Correctif appliqué au passage** : le panneau de stats utilisait les variables CSS partagées avec le lobby (`--glass`/`--ink`), qui basculent en sombre via `prefers-color-scheme` — or la demande explicite était un panneau **blanc** en toute circonstance (façon Apple), pas adaptatif. `#statsPanel` a désormais ses propres valeurs fixes (blanc translucide), indépendantes du thème système ; le lobby et l'écran F3 gardent leur comportement adaptatif existant, non concernés par la demande. |
+| 2026-07-26 | **Panneau de stats en jeu + écran de debug F3** (demande utilisateur, hors roadmap initiale). Panneau glassmorphism en haut à gauche (Pseudo/Guilde/Masse/Vitesse/Accélération) — **"Guilde" est un espace réservé statique ("—")** : aucun système de guilde n'existe dans le projet à ce jour, affiché tel quel plutôt qu'omis, en attendant qu'une vraie fonctionnalité soit conçue. "Vitesse" dérivée du déplacement réel entre deux snapshots bruts (`client/src/stats.ts`, `speedBetween`) plutôt que dupliquer les formules du mod (qui dépendent de l'intensité d'input courante, pas seulement de la masse). "Accélération" en revanche vient du serveur via un nouveau hook `GameMod.getAccelerationForMass` (délégué par `Room`) et un nouveau champ `WorldStateMessage.self`, réservé au destinataire du message (jamais partagé avec les autres clients) — garde la formule dans le mod plutôt que de la dupliquer côté client. Écran F3 (`client/src/debugOverlay.ts`) : FPS (moyenne glissante), latence réseau réelle (nouveau `ping`/`pong` dans le protocole), infos GPU (`WEBGL_debug_renderer_info`), système (cœurs CPU, mémoire si exposée par le navigateur, résolution), réseau (Network Information API si disponible) — tout en dégradation gracieuse (tiret plutôt que plantage) pour les API non standard absentes de certains navigateurs. 22 tests ajoutés (stats/debugOverlay/mod/room/server), protocole réseau vérifié de bout en bout avec un client `ws` réel (`self.accelerationPerSec2` correct, `pong` renvoie bien le `t` du `ping`). **Non vérifié visuellement dans un vrai rendu de frame** : la page de test tournait hors du champ de vision de l'utilisateur dans cette session, donc `requestAnimationFrame` restait en pause (comportement standard des navigateurs pour un document caché) — à confirmer visuellement par l'utilisateur. |
+| 2026-07-26 | **Lot 2 clos** (2.4 reset automatique, 2.5 isolation). **2.4** : `resetSchedule.ts` (deux formes, `dailyAt`/`interval`), `Room.reset()` vide le monde et respawn chaque joueur connecté, `onReset` réutilise le message `died` côté réseau plutôt qu'un nouveau type de message. Validé aussi manuellement (serveur réel, intervalle 5s, HUD confirmant le cycle mort→respawn). **2.5** : plutôt que de supposer l'isolation, un test dédié (`roomIsolation.test.ts`) la mesure réellement — isolation d'état totale (confirmée), isolation CPU/timing **non garantie** (Node mono-thread : un tick à 80ms dans un salon fait chuter le rythme d'un autre salon de 50ms à ~80ms/tick). Sous-lot marqué fait sur la base d'une limite connue et documentée, avec le levier de correction identifié (Lot 11.1, `worker_threads`) plutôt que sur une promesse d'isolation totale non honnête. 126 tests passants. |
+| 2026-07-26 | **Lot 11 ajouté** (optimisation bas niveau CPU/GPU, spéculatif Phase 3) suite à une question de l'utilisateur sur la gestion CPU/GPU des salons et la pertinence de descendre plus bas niveau (Rust/C++/GPU). Réponse actée : pas justifié aujourd'hui (boucle de tick très stable même à 350 entités/50 joueurs sur un seul thread, goulot mesuré jusqu'ici = réseau, pas CPU/GPU), mais options documentées pour plus tard : `worker_threads` par salon (parallélisme CPU réel, rejoint le besoin d'isolation du 2.5 et de sandboxing du 9.5), cœur de simulation réécrit en Rust/C++ (addon natif ou WASM, casse la promesse "un mod = du TypeScript"), calcul GPU serveur (CUDA/OpenCL/WebGPU, échelle bien supérieure à celle visée, la moins probable), rendu client WebGL/WebGPU (les points chauds réels identifiés ce jour étaient algorithmiques, pas liés à Canvas 2D). Aucune dépendance déclenchante autre qu'un besoin mesuré. |
+| 2026-07-26 | **Logs structurés serveur** (`server/src/log.ts`, `logEvent`) à la demande de l'utilisateur, pour rendre le serveur facilement debuggable avant de continuer sur les lots suivants. Une ligne JSON par événement (`ts`, `event`, champs libres) sur stdout — capturée telle quelle par systemd/journalctl une fois déployé (`install.sh`, Lot 8.4), sans dépendance de logging ni fichier à gérer. Instrumenté : cycle de vie des salons (`room_created`, `room_removed`) dans `RoomManager`, et actions joueurs dans `net/server.ts` (`player_join`, `player_leave`, `player_died`, `player_split_requested` — un seul log par pression de la barre espace, pas un flot continu comme le seraient les `input` bruts à 20/s/joueur — `join_rejected`, `malformed_message`, `room_create_rejected`). 3 nouveaux tests (`log.test.ts`), validé manuellement (serveur réel + client `ws`, logs conformes sur stdout). |
+| 2026-07-26 | **Interpolation d'affichage côté client** (repoussée depuis le 1.7, confirmée nécessaire par un retour utilisateur de lag perçu). Diagnostic : le serveur diffuse à 20 Hz fixe (`TICK_RATE_HZ`) alors que le rendu client tourne sans plafond sur `requestAnimationFrame` (60/120 Hz selon l'écran) — sans interpolation, chaque frame réaffichait la même position figée pendant ~50 ms puis sautait d'un coup, perçu comme du lag quel que soit le framerate d'affichage réel. `render.ts` gagne `interpolateEntities(previous, latest, t)` (fonction pure, 5 tests dédiés) ; `index.ts` conserve désormais les deux derniers snapshots reçus (au lieu du seul dernier) et interpole en fonction du temps réel écoulé depuis leur réception, caméra comprise (calculée sur les positions interpolées, pas les brutes, pour rester en phase avec le monde affiché). **Optimisation de dessin associée** : la nourriture (toutes de la même couleur) est désormais dessinée en un seul `Path2D`/`fill()` groupé au lieu d'un appel par particule — réduit fortement le coût CPU par frame sur une carte dense (jusqu'à quelques centaines de particules visibles même après l'interest management du Lot 1.8). Validé par 110 tests + test manuel réel dans le navigateur (mouvement, nourriture, aucune erreur console). |
+| 2026-07-26 | **Refonte UI/UX du lobby** (demande utilisateur : rendre les tests agréables tout du long) : style "labo" neutre noir/blanc avec glassmorphism (fond flouté translucide, bordures fines, ombres diffuses), variables CSS thème clair/sombre (`prefers-color-scheme`). Portée volontairement limitée à l'écran de lobby (`client/public/index.html`) — l'interface de jeu (canvas + HUD) reste inchangée, sobre et fonctionnelle, comme demandé explicitement. |
+| 2026-07-26 | **Durcissement de `RoomManager` avant exposition publique** (point signalé par l'utilisateur juste avant l'écriture d'`install.sh`) : `maxRooms` (défaut 100, `createRoom` lève une erreur au-delà) et suppression automatique des salons non permanents restés vides plus de `emptyRoomGraceMs` (défaut 10 min, vérifié toutes les 30s par un timer interne, invocable manuellement via `pruneEmptyRooms()` pour les tests). Le salon par défaut créé par `index.ts` est marqué `permanent: true` pour ne jamais être supprimé. **Lot 2.3 (salons privés) fait dans la foulée** : `inviteCode` (`randomUUID()`) généré à la création d'un salon privé, renvoyé uniquement au créateur. **Faille corrigée au passage** : un salon privé n'était protégé que par l'absence de listing — son id court et séquentiel restait devinable et suffisait à le rejoindre (`?roomId=1`, `2`…). `getManagedRoom` refuse désormais explicitement de résoudre un salon privé par son id brut, seul le code d'invitation y donne accès. Côté client : case "Privé" à la création, champ "Rejoindre via code", code affiché dans le HUD pendant la partie (le lobby où il est montré à la création disparaît dès l'entrée en jeu). Gestion ajoutée de la fermeture de connexion (`GameConnection.onClose`) pour ramener au lobby avec un message d'erreur au lieu de laisser le joueur bloqué sur un écran de jeu mort, en cas de code/salon invalide — nécessaire dès qu'un code se tape à la main (typo réaliste, contrairement au choix depuis une liste). 24 nouveaux tests (roomManager/server/net), validé manuellement dans le navigateur (salon privé créé et rejoint via code, id brut testé en Node direct — rejeté avec le code `4004` — code invalide affichant bien l'erreur). |
+| 2026-07-26 | **`install.sh` écrit (Lot 8.3/8.4/8.5, anticipé avant le Lot 3)**, à la demande de l'utilisateur qui prévoit de déployer sur le Wyse maintenant plutôt que d'attendre le MVP complet. Bootstrap idempotent : dépendances système + Node.js 20.x, clonage/mise à jour du code + build, utilisateur système dédié, service systemd `angulio.service` (auto-démarrage), pare-feu `ufw` (SSH + 80/443 seulement — le port du jeu n'est jamais exposé directement), Caddy en reverse proxy avec HTTPS automatique (Let's Encrypt) sur le sous-domaine DuckDNS choisi par l'utilisateur, timer systemd de mise à jour DuckDNS. **Décision : PostgreSQL volontairement exclu** de ce script malgré l'énoncé d'origine du 8.4 — le Lot 3 (comptes joueurs) n'a pas encore commencé, rien dans le code ne l'utilise ; l'ajouter maintenant serait un service qui tourne pour rien. À étendre quand le Lot 3 démarrera. **Non exécuté sur le Wyse réel** (8.1, mise en service physique de la machine, pas encore fait) — seule une vérification de syntaxe (`bash -n`) a été faite sur la machine de dev ; les critères d'acceptation 8.3/8.4/8.5 restent donc ⬜ jusqu'à validation en conditions réelles. **Point signalé à l'utilisateur, non traité ici** : la création de salon (`POST /api/rooms`, Lot 2.2) n'a encore aucune limite ni nettoyage automatique — un salon créé reste en mémoire indéfiniment et l'endpoint n'est protégé par rien ; à traiter avant une exposition large sur DuckDNS (rejoint le 2.4/2.5 restants du Lot 2). |
+| 2026-07-26 | **Lot 2.1/2.2 faits** : le salon unique codé en dur du Lot 1 devient un `RoomManager` (`server/src/engine/roomManager.ts`) gérant plusieurs salons en mémoire, chacun avec sa propre `Room`/simulation totalement indépendante — décorrélé du chargement concret des mods via un `ModResolver` injecté (même principe que `GameMod` pour `Room`). Réseau (`net/server.ts`) refactoré pour router chaque connexion WebSocket vers le salon demandé (`?roomId=`, plus de salon implicite) et exposer une API HTTP de lobby (`GET/POST /api/rooms`, `GET /api/modes`) sur le même process. Client : écran de lobby (liste + création de salon) avant d'entrer en jeu. **Bug trouvé et corrigé en testant manuellement en conditions réelles** (pas seulement en tests automatisés) : `GameConnection` perdait silencieusement le message `join` envoyé avant l'ouverture effective du WebSocket — invisible avec l'ancien flux (connexion ouverte bien avant le clic "Jouer"), bloquant avec le nouveau (connexion + `join` dans le même geste depuis le lobby). Corrigé par une file d'attente vidée à l'ouverture. 92 tests passants. Restent 2.3 (salons privés sur invitation), 2.4 (reset automatique) et 2.5 (isolation sous charge, test dédié) avant de clore le Lot 2. |
 | 2026-07-26 | **Correction du modèle de decay** (metriques.md v0.4 §6) : l'utilisateur a identifié deux paramètres manqués lors de la première lecture de la feuille Excel (`Mm`/`minimumMass`=2 = notre `floor` déjà correct ; `Ml`/`massLoose` = taux 2%/5s au-dessus de 100, 1%/5s en-dessous — remplace notre ancien modèle 1%/5s-10s calé sur `M0`). Fichier Excel mis à jour (2 nouvelles lignes du dictionnaire §1), config renommée `decay.threshold`/`rateAboveThreshold`/etc (n'est plus lié à `player.startMass`). **Point non tranché signalé à l'utilisateur** : le seuil (100) est repris littéralement pour Folie aussi, qui démarre pourtant à 200 — donc Folie décroît toujours au taux rapide, jamais au taux réduit ; à confirmer si voulu. 74 tests passants. |
 | 2026-07-26 | **Contrôle par intensité du curseur** (metriques.md §5.1, proposition utilisateur) : la distance du curseur au centre de l'écran module désormais une intensité ∈[0,1] qui réduit proportionnellement vitesse cible ET taux d'accélération — contrôle analogique plutôt que tout-ou-rien. Encodé dans la norme du vecteur `dir` du protocole (pas de nouveau champ). **Rendu client** : fond blanc + grille façon papier millimétré (repère visuel), texte des pseudos recontrasté (contour blanc + fond sombre) pour rester lisible sur fond clair. **Bande passante** : compression WebSocket (`perMessageDeflate`), arrondi différencié (position/rayon à 1 décimale, masse à l'entier — jamais utilisée pixel par pixel côté client), et **interest management** (chaque client ne reçoit que les entités dans un rayon de 3000px autour de ses propres morceaux, via une grille spatiale dédiée réutilisant `SpatialHash`). Résultat cumulé : **~387→52 Mbit/s à 50 joueurs, ~60→8 Mbit/s à 10 joueurs (~87% de réduction)** — mesure conservatrice (ne capture pas le gain de la compression elle-même). 73 tests passants. À revalider sur le Wyse réel (Lot 8). |
 | 2026-07-26 | **Refactor majeur du Lot 1.6** suite à l'analyse d'un fichier Excel fourni par l'utilisateur ("Angul.io - Master Sheet Engine & Documentation Technique.xlsx"). `mods/vanilla/` remplacé par un moteur paramétrique générique (`mods/parametric/`, `createParametricMod(config)`) piloté par des fichiers JSON (`server/configs/vanilla.json`, `folie.json`). Nouveau modèle vitesse+accélération (metriques.md v0.2 §4-5, remplace le boost de split ad hoc), split/fusion généralisés (eta_W, cooldown mass-dépendant), bords de carte génériques (STRICT_WALL/ELASTIC_BOUNCE/TOROIDAL), nourriture à densité par surface. Folie livré comme second mode dès maintenant (voir note Lot 4). Bug corrigé dans le fichier Excel source (cellule Folie/speedMultiplier corrompue en date, corrigée à 2.5). 70 tests passants. Effet de bord mesuré : la densité de nourriture de la feuille donne ~3375-12000 particules ambiantes (bien plus que les 300 fixes précédents), bande passante à 20 joueurs déjà ~198 Mbit/s — renforce le besoin d'interest management avant le Lot 8. |

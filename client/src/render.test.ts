@@ -1,6 +1,6 @@
 import type { EntitySnapshot } from '@angulio/shared';
 import { describe, expect, it } from 'vitest';
-import { computeCamera } from './render.js';
+import { BASE_SCALE, computeCamera, interpolateEntities } from './render.js';
 
 function piece(overrides: Partial<EntitySnapshot>): EntitySnapshot {
   return {
@@ -18,14 +18,14 @@ function piece(overrides: Partial<EntitySnapshot>): EntitySnapshot {
 describe('computeCamera', () => {
   it('retombe sur la position de repli si le joueur n’a aucun morceau', () => {
     const camera = computeCamera([], 'p1', { x: 500, y: 500 });
-    expect(camera).toEqual({ x: 500, y: 500, scale: 1 });
+    expect(camera).toEqual({ x: 500, y: 500, scale: BASE_SCALE });
   });
 
   it('se centre sur l’unique morceau du joueur', () => {
     const camera = computeCamera([piece({ x: 100, y: 200 })], 'p1', { x: 0, y: 0 });
     expect(camera.x).toBeCloseTo(100, 6);
     expect(camera.y).toBeCloseTo(200, 6);
-    expect(camera.scale).toBeCloseTo(1, 6); // masse = référence -> échelle de base
+    expect(camera.scale).toBeCloseTo(BASE_SCALE, 6); // masse = référence -> échelle de base
   });
 
   it('se centre sur le barycentre pondéré par la masse de plusieurs morceaux', () => {
@@ -51,5 +51,47 @@ describe('computeCamera', () => {
     const camera = computeCamera(entities, 'p1', { x: 0, y: 0 });
     expect(camera.x).toBeCloseTo(10, 6);
     expect(camera.y).toBeCloseTo(10, 6);
+  });
+});
+
+describe('interpolateEntities', () => {
+  it('renvoie le dernier snapshot tel quel en l’absence de snapshot précédent', () => {
+    const latest = [piece({ x: 100, y: 100 })];
+    expect(interpolateEntities(undefined, latest, 0.5)).toEqual(latest);
+  });
+
+  it('interpole la position à mi-chemin entre les deux snapshots (t=0.5)', () => {
+    const previous = [piece({ i: 'a', x: 0, y: 0, r: 10 })];
+    const latest = [piece({ i: 'a', x: 100, y: 200, r: 20 })];
+
+    const result = interpolateEntities(previous, latest, 0.5);
+
+    expect(result).toEqual([piece({ i: 'a', x: 50, y: 100, r: 15 })]);
+  });
+
+  it('t=0 retombe exactement sur la position précédente, t=1 sur la dernière connue', () => {
+    const previous = [piece({ i: 'a', x: 0, y: 0 })];
+    const latest = [piece({ i: 'a', x: 100, y: 100 })];
+
+    expect(interpolateEntities(previous, latest, 0)).toEqual([piece({ i: 'a', x: 0, y: 0 })]);
+    expect(interpolateEntities(previous, latest, 1)).toEqual([piece({ i: 'a', x: 100, y: 100 })]);
+  });
+
+  it('rend une entité tout juste apparue directement à sa position, sans historique', () => {
+    const previous = [piece({ i: 'a', x: 0, y: 0 })];
+    const latest = [piece({ i: 'a', x: 0, y: 0 }), piece({ i: 'new', x: 500, y: 500 })];
+
+    const result = interpolateEntities(previous, latest, 0.5);
+
+    expect(result.find((e) => e.i === 'new')).toEqual(piece({ i: 'new', x: 500, y: 500 }));
+  });
+
+  it('ne renvoie plus une entité disparue entre les deux snapshots (mangée/despawn)', () => {
+    const previous = [piece({ i: 'a', x: 0, y: 0 }), piece({ i: 'gone', x: 1, y: 1 })];
+    const latest = [piece({ i: 'a', x: 10, y: 10 })];
+
+    const result = interpolateEntities(previous, latest, 0.5);
+
+    expect(result.map((e) => e.i)).toEqual(['a']);
   });
 });

@@ -38,7 +38,14 @@ export interface ClientInputMessage {
   split: boolean;
 }
 
-export type ClientMessage = ClientJoinMessage | ClientInputMessage;
+/** Mesure de latence réelle (aller-retour), pour l'écran de debug F3 — le serveur renvoie `t`
+ * tel quel dans un `pong` dès réception, le client calcule le round-trip lui-même. */
+export interface ClientPingMessage {
+  type: 'ping';
+  t: number;
+}
+
+export type ClientMessage = ClientJoinMessage | ClientInputMessage | ClientPingMessage;
 
 export interface WelcomeMessage {
   type: 'welcome';
@@ -50,6 +57,18 @@ export interface WorldStateMessage {
   type: 'state';
   tick: number;
   entities: EntitySnapshot[];
+  /** Valeurs propres au destinataire de ce message, jamais partagées avec les autres clients
+   * (contrairement à `entities`, diffusé tel quel) — pour l'instant seulement le taux
+   * d'accélération courant (uc/s²) du joueur, pour le panneau de stats (Pseudo/Guilde/Masse/
+   * Vitesse/Accélération). Absent si le mod n'expose pas `getAccelerationForMass` ou si le
+   * joueur n'a aucun morceau. */
+  self?: { accelerationPerSec2: number };
+}
+
+/** Réponse immédiate à un `ping` (voir ClientPingMessage). */
+export interface PongMessage {
+  type: 'pong';
+  t: number;
 }
 
 /** Envoyé une fois par joueur (à sa connexion, et rétroactivement à tout nouvel arrivant pour les
@@ -65,4 +84,4 @@ export interface PlayerDiedMessage {
 }
 
 export type ServerMessage =
-  WelcomeMessage | WorldStateMessage | PlayerInfoMessage | PlayerDiedMessage;
+  WelcomeMessage | WorldStateMessage | PlayerInfoMessage | PlayerDiedMessage | PongMessage;

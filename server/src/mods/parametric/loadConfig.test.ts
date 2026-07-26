@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadModConfig } from './loadConfig.js';
+import { listAvailableModIds, loadModConfig } from './loadConfig.js';
 
 describe('loadModConfig', () => {
   it('charge server/configs/vanilla.json avec les valeurs attendues', () => {
@@ -24,5 +24,11 @@ describe('loadModConfig', () => {
 
   it('lève une erreur explicite pour un mod inconnu', () => {
     expect(() => loadModConfig('inexistant')).toThrow(/introuvable/);
+  });
+});
+
+describe('listAvailableModIds', () => {
+  it('liste vanilla et folie', () => {
+    expect(listAvailableModIds()).toEqual(['folie', 'vanilla']);
   });
 });

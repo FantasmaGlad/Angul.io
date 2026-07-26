@@ -39,6 +39,20 @@ function startServer() {
   });
 }
 
+/** Le process serveur peut avoir écrit sur stdout avant que `httpServer.listen` ait terminé
+ * (aucune synchronisation explicite entre les deux dans index.ts) — quelques tentatives
+ * espacées absorbent cette course sans complexifier le serveur lui-même pour un script de test. */
+async function fetchRoomsWithRetry(url, attempts = 20) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      return await (await fetch(url)).json();
+    } catch {
+      await delay(50);
+    }
+  }
+  throw new Error(`Impossible de contacter ${url} après ${attempts} tentatives.`);
+}
+
 function percentile(sorted, p) {
   if (sorted.length === 0) return 0;
   const idx = Math.min(sorted.length - 1, Math.floor(p * sorted.length));
@@ -49,7 +63,12 @@ async function main() {
   console.log(`Démarrage du serveur (port ${PORT})...`);
   const server = await startServer();
 
-  console.log(`Connexion de ${NUM_BOTS} bots pendant ${DURATION_S}s...`);
+  // Depuis le Lot 2.1/2.2, le serveur n'a plus de salon unique implicite : on rejoint le salon
+  // par défaut créé au démarrage via son id, obtenu par l'API du lobby.
+  const rooms = await fetchRoomsWithRetry(`http://localhost:${PORT}/api/rooms`);
+  const roomId = rooms[0].id;
+
+  console.log(`Connexion de ${NUM_BOTS} bots pendant ${DURATION_S}s (salon ${roomId})...`);
   const stats = { messageCount: 0, totalBytes: 0, interArrivalMs: [], lastEntityCount: 0 };
   const sockets = [];
   const closedPromises = [];
@@ -57,7 +76,7 @@ async function main() {
   for (let i = 0; i < NUM_BOTS; i++) {
     const socketRef = {};
     const p = new Promise((resolve) => {
-      const socket = new WebSocket(`ws://localhost:${PORT}`);
+      const socket = new WebSocket(`ws://localhost:${PORT}/?roomId=${roomId}`);
       socketRef.socket = socket;
       let lastStateAt = null;
       let inputTimer;

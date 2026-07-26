@@ -84,6 +84,17 @@ describe('Room — cycle de vie des hooks', () => {
     });
   });
 
+  it('délègue getAccelerationForMass au mod, undefined si le mod ne l’implémente pas', () => {
+    const withHook = makeDeterministicRoom(
+      { id: 'test', getAccelerationForMass: (mass) => mass * 2 },
+      0.05,
+    );
+    expect(withHook.getAccelerationForMass(10)).toBe(20);
+
+    const withoutHook = makeDeterministicRoom({ id: 'test' }, 0.05);
+    expect(withoutHook.getAccelerationForMass(10)).toBeUndefined();
+  });
+
   it('notifie les listeners onPlayerDeath indépendamment du mod (utile au réseau)', () => {
     const mod: GameMod = { id: 'test' };
     const room = makeDeterministicRoom(mod, 0.05);
@@ -100,5 +111,82 @@ describe('Room — cycle de vie des hooks', () => {
     room.tick();
 
     expect(deathListener).toHaveBeenCalledWith('p1');
+  });
+});
+
+describe('Room — reset automatique (Lot 2.4)', () => {
+  it('reset() vide entièrement le monde (morceaux et nourriture) et fait respawn chaque joueur connecté', () => {
+    const onPlayerJoin = vi.fn((world, playerId: string) => {
+      world.spawnPiece(playerId, { x: 0, y: 0 }, 50);
+    });
+    const mod: GameMod = { id: 'test', onPlayerJoin };
+    const room = new Room(mod, { mapSize: 1000, tickRateHz: 20, resetSchedule: null });
+    room.addPlayer('p1', 'Alice');
+    room.world.spawnParticle({ x: 10, y: 10 }, 5);
+    onPlayerJoin.mockClear();
+
+    room.reset();
+
+    expect(room.world.allEntities()).toHaveLength(1); // seulement le nouveau morceau d'Alice
+    expect(room.world.getPiecesByOwner('p1')).toHaveLength(1);
+    expect(onPlayerJoin).toHaveBeenCalledWith(room.world, 'p1');
+  });
+
+  it('conserve le joueur connecté (pseudo, identité) à travers un reset', () => {
+    const mod: GameMod = {
+      id: 'test',
+      onPlayerJoin: (world, playerId) => {
+        world.spawnPiece(playerId, { x: 0, y: 0 }, 50);
+      },
+    };
+    const room = new Room(mod, { mapSize: 1000, tickRateHz: 20, resetSchedule: null });
+    room.addPlayer('p1', 'Alice');
+
+    room.reset();
+
+    expect(room.world.getPlayer('p1')?.nickname).toBe('Alice');
+  });
+
+  it('notifie les listeners onReset à chaque reset, manuel ou automatique', () => {
+    const mod: GameMod = { id: 'test' };
+    const room = new Room(mod, { mapSize: 1000, tickRateHz: 20, resetSchedule: null });
+    const listener = vi.fn();
+    room.onReset(listener);
+
+    room.reset();
+
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('se réinitialise automatiquement selon la planification fournie (mode "interval", pour les tests)', async () => {
+    const mod: GameMod = { id: 'test' };
+    const room = new Room(mod, {
+      mapSize: 1000,
+      tickRateHz: 20,
+      resetSchedule: { type: 'interval', intervalMs: 20 },
+    });
+    const listener = vi.fn();
+    room.onReset(listener);
+
+    room.start();
+    await new Promise((resolve) => setTimeout(resolve, 70));
+    room.stop();
+
+    // Au moins un déclenchement en ~70ms pour un intervalle de 20ms (probablement plusieurs,
+    // la planification se reprogrammant après chaque reset — voir Room.scheduleReset).
+    expect(listener.mock.calls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('resetSchedule: null désactive tout reset automatique', async () => {
+    const mod: GameMod = { id: 'test' };
+    const room = new Room(mod, { mapSize: 1000, tickRateHz: 20, resetSchedule: null });
+    const listener = vi.fn();
+    room.onReset(listener);
+
+    room.start();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    room.stop();
+
+    expect(listener).not.toHaveBeenCalled();
   });
 });

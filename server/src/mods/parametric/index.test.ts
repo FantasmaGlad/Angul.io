@@ -3,11 +3,20 @@ import { World } from '../../engine/world.js';
 import { createParametricMod } from './index.js';
 import { pieceState } from './pieceState.js';
 import { testConfig } from './testConfig.js';
-import { velocityForMass } from './physics.js';
+import { accelerationForMass, velocityForMass } from './physics.js';
 
 function freshWorld(mapSize = 15000): World {
   return new World({ mapSize });
 }
+
+describe('createParametricMod — getAccelerationForMass', () => {
+  it('délègue à accelerationForMass avec la config du mod (panneau de stats client)', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+
+    expect(mod.getAccelerationForMass?.(200)).toBeCloseTo(accelerationForMass(200, config), 6);
+  });
+});
 
 describe('createParametricMod — onPlayerJoin', () => {
   it('fait apparaître un unique morceau à la masse de départ du config', () => {

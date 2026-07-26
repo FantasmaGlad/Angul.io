@@ -129,6 +129,10 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
   return {
     id: config.id,
 
+    getAccelerationForMass(mass) {
+      return accelerationForMass(mass, config);
+    },
+
     onPlayerJoin(world, playerId) {
       spawnPlayerPiece(world, playerId);
     },
