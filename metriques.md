@@ -1,7 +1,8 @@
 # Métriques et formules — Angul.io
 
-**Version :** 0.3 — Document de référence technique. (v0.3 ajoute le contrôle par
-intensité du curseur, §5.1, suite à une proposition utilisateur.)
+**Version :** 0.4 — Document de référence technique. (v0.3 ajoute le contrôle par
+intensité du curseur, §5.1 ; v0.4 corrige le modèle de decay §6 — seuil absolu par mode,
+`Mm`/`Ml` de la feuille Excel, plutôt que la masse de départ.)
 **Origine des valeurs :** dérivées du cahier des charges (§3.5) pour la première version
 (v0.1), puis **révisées et étendues** à partir de la feuille de calcul fournie par
 l'utilisateur ("Angul.io - Master Sheet Engine & Documentation Technique.xlsx") qui
@@ -66,7 +67,10 @@ sans équivalent dans les deux sources précédentes.
 | `merge.overlapMinFraction` | — | Chevauchement minimal pour fusionner | v0.1 (absent de la feuille) |
 | `eating.massAdvantage` | — | Avantage de masse requis pour manger un joueur | v0.1 (absent de la feuille) |
 | `eating.minMassToEatFood` | — | Masse minimale pour manger une particule | v0.1 (absent de la feuille) |
-| `decay.*` | — | Perte de masse passive | v0.1 (absent de la feuille) |
+| `decay.threshold` | Ml (implicite) | Seuil de masse déterminant le taux de perte | Excel (v0.4, §1 — `massLoose`) |
+| `decay.rateAboveThreshold`/`rateBelowThreshold` | Ml | Taux de perte au-dessus/en-dessous du seuil | Excel (v0.4) |
+| `decay.intervalAboveThresholdSec`/`intervalBelowThresholdSec` | Ml | Intervalle des taux ci-dessus | Excel (v0.4) |
+| `decay.floor` | Mm | Masse plancher (perte jamais en-dessous) | Excel (v0.4 — `minimumMass`) |
 | `arena.width/height` | Wmap/Hmap | Dimensions de la carte (px) | Excel |
 | `arena.borderType` | borderType | STRICT_WALL / ELASTIC_BOUNCE / TOROIDAL / TOXIC_ZONE | Excel (seul TOXIC_ZONE n'est pas implémenté — paramètres de dégâts non spécifiés) |
 | `arena.bounceRestitution` | — | Fraction de vitesse restituée (ELASTIC_BOUNCE) | Excel |
@@ -98,7 +102,9 @@ sans équivalent dans les deux sources précédentes.
 | `merge.overlapMinFraction` | 1/3 | 1/3 |
 | `eating.massAdvantage` | 5 % | 5 % |
 | `eating.minMassToEatFood` | 2 | 2 |
-| `decay.*` | voir §6 | identique à Vanilla (non spécifié par la feuille pour Folie) |
+| `decay.threshold` (Ml) | 100 | 100 (⚠️ Folie démarre déjà au-dessus, voir §6) |
+| `decay.rateAboveThreshold`/`rateBelowThreshold` (Ml) | 2 % / 1 % | 2 % / 1 % |
+| `decay.floor` (Mm) | 2 | 2 |
 | `arena.width` × `height` | 15000 × 15000 px | 20000 × 20000 px |
 | `arena.borderType` | STRICT_WALL | ELASTIC_BOUNCE (restitution 0.8) |
 | `food.density` (D_food) | 15 / 1000px² | 30 / 1000px² |
@@ -223,20 +229,35 @@ une cible elle-même deux fois plus basse).
 
 ## 6. Perte de masse passive (decay)
 
-Inchangé depuis la v0.1 — absent de la feuille Excel, reprise telle quelle pour Vanilla
-**et** Folie (la feuille ne définit pas de comportement différent pour Folie).
+**Révisé en v0.3** : la feuille Excel documente en fait ce paramètre (§1 du dictionnaire,
+symboles `Mm`/`minimumMass` et `Ml`/`massLoose`, ajoutés après une première lecture
+incomplète de la feuille). Différence clé par rapport à la v0.1/v0.2 : le seuil qui
+détermine le taux de perte n'est **plus** la masse de départ (`M0`, qui varie par mode :
+50 pour Vanilla, 200 pour Folie) mais une **valeur absolue propre au mode**
+(`decay.threshold`), qui vaut 100 pour Vanilla — coïncidant avec son propre
+`minSplitMass`, cohérent avec l'idée "on décroît plus vite une fois en capacité de
+splitter".
 
 ```
-λ_above = -ln(1 - rateAboveStart) / intervalAboveStartSec
-λ_below = -ln(1 - rateBelowStart) / intervalBelowStartSec
+λ_above = -ln(1 - rateAboveThreshold) / intervalAboveThresholdSec
+λ_below = -ln(1 - rateBelowThreshold) / intervalBelowThresholdSec
 
-dm/dt = -λ(m) * m,   λ(m) = λ_above si m > M0, λ_below si floor < m ≤ M0, 0 sinon
+dm/dt = -λ(m) * m,   λ(m) = λ_above si m > threshold, λ_below si floor < m ≤ threshold, 0 sinon
 
 m ← max( m * exp(-λ(m) * dt), floor )
 ```
 
-Valeurs (Vanilla et Folie) : `rateAboveStart = rateBelowStart = 1 %`,
-`intervalAboveStartSec = 5`, `intervalBelowStartSec = 10`, `floor = 2`.
+Valeurs (Vanilla et Folie, la feuille ne différencie pas les deux modes sur ce point) :
+`threshold = 100`, `rateAboveThreshold = 2 %`, `intervalAboveThresholdSec = 5`,
+`rateBelowThreshold = 1 %`, `intervalBelowThresholdSec = 5`, `floor = 2` (`Mm`).
+
+> ⚠️ **Point à confirmer avec l'utilisateur** : `threshold = 100` a été repris tel quel
+> (littéralement donné par la feuille) pour Folie aussi, alors que Folie démarre à
+> `M0 = 200` — donc **un joueur Folie est toujours au-dessus du seuil dès le spawn** et
+> décroît systématiquement au taux le plus rapide (2 %/5 s), jamais au taux réduit. C'est
+> peut-être voulu (cohérent avec l'esprit "chaos", économie plus punitive), mais ça
+> mériterait d'être confirmé plutôt que supposé — alternative possible : un seuil propre à
+> Folie (ex. calé sur son propre `minSplitMass = 400`, par symétrie avec Vanilla).
 
 ---
 
@@ -399,9 +420,12 @@ lui-même (`position ← position + vélocité * dt`) reste générique, calcul�
 - **`massSkewExponent` de la distribution de masse de nourriture** (Folie) : notre
   interprétation d'une description qualitative ("plus de petits que de gros"), pas une
   formule donnée par la feuille.
-- **`decay.*` et `eating.*` pour Folie** : repris identiques à Vanilla, la feuille ne les
-  couvre pas du tout (ils viennent uniquement du cahier des charges §3.5, spécifique à
-  Vanilla à l'origine).
+- **`decay.threshold` pour Folie (100, littéral)** : voir l'avertissement §6 — Folie
+  démarre à `M0=200`, donc toujours au-dessus de ce seuil, jamais au taux réduit. À
+  confirmer : voulu, ou seuil propre à Folie (ex. son propre `minSplitMass=400`) ?
+- **`eating.*` pour Folie** : repris identique à Vanilla, ni la feuille ni l'utilisateur ne
+  l'ont encore précisé pour Folie (vient du cahier des charges §3.5, spécifique à Vanilla
+  à l'origine).
 - **Incohérences entre le "dictionnaire" (§1 de la feuille) et sa "matrice de modes"
   (§2)** pour la taille de carte et `R_food` — le dictionnaire donne des valeurs exemple
   différentes de celles réellement utilisées par mode ; on a retenu les valeurs de la

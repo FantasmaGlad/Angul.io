@@ -43,9 +43,14 @@ describe('accelerationForMass — a(m) = A0·(M0/m)^alpha', () => {
   });
 });
 
-describe('applyPassiveDecay', () => {
-  it('perd environ 1% en 5s au-dessus de la masse de départ', () => {
+describe('applyPassiveDecay — seuil Ml (§1 feuille Excel), pas la masse de départ', () => {
+  it('perd 2% en 5s au-dessus du seuil (100)', () => {
+    expect(applyPassiveDecay(200, 5, testConfig())).toBeCloseTo(196, 1);
+  });
+
+  it('perd 1% en 5s au niveau ou en-dessous du seuil', () => {
     expect(applyPassiveDecay(100, 5, testConfig())).toBeCloseTo(99, 1);
+    expect(applyPassiveDecay(50, 5, testConfig())).toBeCloseTo(49.5, 1);
   });
 
   it('ne perd rien au plancher', () => {

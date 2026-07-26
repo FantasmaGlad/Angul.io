@@ -57,10 +57,11 @@ describe('createParametricMod — onTick (vitesse/accélération)', () => {
     // Decay désactivée : ce test porte sur l'intensité, pas sur l'interaction avec la masse.
     const config = testConfig({
       decay: {
-        rateAboveStart: 0,
-        intervalAboveStartSec: 5,
-        rateBelowStart: 0,
-        intervalBelowStartSec: 10,
+        threshold: 100,
+        rateAboveThreshold: 0,
+        intervalAboveThresholdSec: 5,
+        rateBelowThreshold: 0,
+        intervalBelowThresholdSec: 5,
         floor: 2,
       },
     });

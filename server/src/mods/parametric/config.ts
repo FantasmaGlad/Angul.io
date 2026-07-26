@@ -72,12 +72,18 @@ export interface ParametricModConfig {
     minMassToEatFood: number;
   };
 
-  /** Perte de masse passive — absente de la feuille Excel, reprise de metriques.md §5. */
+  /** Perte de masse passive — Mm (`floor`) et Ml (les taux/seuil) de la feuille Excel,
+   * §1 du dictionnaire. Le seuil (`threshold`) n'est plus lié à `player.startMass` (v0.1) :
+   * c'est une valeur absolue propre au mode. */
   decay: {
-    rateAboveStart: number;
-    intervalAboveStartSec: number;
-    rateBelowStart: number;
-    intervalBelowStartSec: number;
+    /** Ml — masse en-dessous de laquelle le taux de perte passe de `rateAboveThreshold` à
+     * `rateBelowThreshold`. Vanilla : 100 (= son propre `minSplitMass`). */
+    threshold: number;
+    rateAboveThreshold: number;
+    intervalAboveThresholdSec: number;
+    rateBelowThreshold: number;
+    intervalBelowThresholdSec: number;
+    /** Mm — masse minimale que la perte passive ne peut jamais franchir. */
     floor: number;
   };
 

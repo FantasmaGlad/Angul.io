@@ -27,10 +27,11 @@
     "minMassToEatFood": 2
   },
   "decay": {
-    "rateAboveStart": 0.01,
-    "intervalAboveStartSec": 5,
-    "rateBelowStart": 0.01,
-    "intervalBelowStartSec": 10,
+    "threshold": 100,
+    "rateAboveThreshold": 0.02,
+    "intervalAboveThresholdSec": 5,
+    "rateBelowThreshold": 0.01,
+    "intervalBelowThresholdSec": 5,
     "floor": 2
   },
   "arena": {

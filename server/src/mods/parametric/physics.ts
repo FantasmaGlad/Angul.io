@@ -16,13 +16,18 @@ export function accelerationForMass(mass: number, config: ParametricModConfig): 
 }
 
 function decayLambda(mass: number, config: ParametricModConfig): number {
-  const { rateAboveStart, intervalAboveStartSec, rateBelowStart, intervalBelowStartSec, floor } =
-    config.decay;
+  const {
+    threshold,
+    rateAboveThreshold,
+    intervalAboveThresholdSec,
+    rateBelowThreshold,
+    intervalBelowThresholdSec,
+    floor,
+  } = config.decay;
   if (mass <= floor) return 0;
-  const startMass = config.player.startMass;
-  return mass > startMass
-    ? -Math.log(1 - rateAboveStart) / intervalAboveStartSec
-    : -Math.log(1 - rateBelowStart) / intervalBelowStartSec;
+  return mass > threshold
+    ? -Math.log(1 - rateAboveThreshold) / intervalAboveThresholdSec
+    : -Math.log(1 - rateBelowThreshold) / intervalBelowThresholdSec;
 }
 
 export function applyPassiveDecay(mass: number, dt: number, config: ParametricModConfig): number {
