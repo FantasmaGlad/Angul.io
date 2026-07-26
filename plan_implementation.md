@@ -142,21 +142,32 @@ Vanilla codé comme un mod — validation de l'architecture de modding décrite 
   1.8 (validation empirique), une fois le réseau (1.3/1.4) branché.
 
 ### 1.3 — Serveur WebSocket
-- **Statut :** ⬜ À faire
-- **Contenu :** connexion/déconnexion, ping/pong, gestion de la reconnexion côté client
-  (§4.2).
+- **Statut :** ✅ Fait (2026-07-26)
+- **Contenu :** `server/src/net/server.ts` — `startGameServer(room, options)` sur `ws` +
+  `http` natif (sert aussi les fichiers statiques du client, 1.7). Gère join → welcome,
+  input, close → `removePlayer`, ignore silencieusement un message malformé (pas de crash
+  serveur). `Room.onPlayerDeath` ajouté (indépendant du mod) pour notifier le réseau.
 - **Dépendances :** 1.2.
-- **Critère d'acceptation :** un client peut se connecter, être déconnecté proprement,
-  et se reconnecter sans redémarrer le serveur.
+- **Critère d'acceptation :** validé par 5 tests d'intégration (`net/server.test.ts`,
+  vrais sockets WebSocket sur port éphémère) **et** par un test manuel de bout en bout
+  (serveur compilé réellement démarré + client `ws` : join/welcome/state/input/split tous
+  fonctionnels, densité de nourriture correcte). La reconnexion automatique **côté client**
+  reste à faire en 1.7 (c'est un comportement du client, pas du serveur).
+- **Note technique :** ce Node (v22.22.1, ce poste de dev) est compilé **sans** le support
+  `--experimental-strip-types` (`process.features.typescript === false`). Le serveur doit
+  donc tourner sur le **JS compilé** (`npm run build` puis `node dist/index.js`), jamais
+  sur `src/index.ts` directement — `server/package.json`'s `start` script a été ajusté en
+  conséquence. À vérifier sur le Wyse de prod (Lot 8) avant d'en dépendre.
 
 ### 1.4 — Protocole réseau (sérialisation des messages)
-- **Statut :** ⬜ À faire
-- **Contenu :** format des messages client→serveur (input joueur) et serveur→client (état
-  du monde). Pour le MVP, un envoi d'état complet par tick est acceptable ; delta
-  compression et interest management (§4.2) sont des **optimisations à ajouter après un
-  premier prototype fonctionnel**, une fois le besoin confirmé empiriquement (Lot 1.8).
+- **Statut :** ✅ Fait (2026-07-26)
+- **Contenu :** `shared/src/protocol.ts` — `join`/`input` (client→serveur), `welcome`/
+  `state`/`died` (serveur→client). État complet par tick, sans delta compression ni
+  interest management (conforme à la décision prise pour le MVP).
 - **Dépendances :** 1.1, 1.3.
-- **Critère d'acceptation :** un client affiche l'état du monde reçu du serveur en continu.
+- **Critère d'acceptation :** validé — un client de test reçoit l'état du monde en continu
+  et voit sa propre entité bouger selon son input (confirmé par test automatisé et test
+  manuel).
 
 ### 1.5 — API de hooks/événements du moteur (cœur de l'architecture de modding)
 - **Statut :** ✅ Fait (2026-07-26)
@@ -613,6 +624,7 @@ Lot/Sous-Lot significatif terminé. Les entrées les plus récentes en haut.*
 
 | Date | Entrée |
 |---|---|
+| 2026-07-26 | Lot 1.3/1.4 faits : serveur WebSocket (`ws` + `http` natif) branché sur `Room`, protocole complet (join/input/welcome/state/died). Validé par 5 tests d'intégration + un test manuel de bout en bout avec le serveur réellement compilé et démarré. **Point technique important** : `shared/package.json` pointe désormais vers `dist/index.js`/`dist/index.d.ts` (pas `src/`) — nécessaire pour que `node dist/index.js` du serveur puisse réellement résoudre `@angulio/shared` à l'exécution (Node ne peut pas exécuter du `.ts` directement sur cette machine, voir note du 1.3). `vitest.config.ts` alias `@angulio/shared` vers `shared/src/index.ts` pour que les tests utilisent toujours la source à jour sans dépendre d'un build préalable. Ordre de build implicite requis : `shared` avant les autres (déjà l'ordre du tableau `workspaces` racine — ne pas le réordonner sans y repenser). |
 | 2026-07-26 | Lot 1.1/1.2/1.5/1.6 faits : moteur générique (`World`/`Room`/`SpatialHash`) sans aucune règle de jeu codée en dur, API de hooks `GameMod` validée, mode Vanilla entièrement implémenté comme mod (53 tests passants au total). Densité de spawn de nourriture et devenir de la masse perdue tranchés par défaut (voir metriques.md §13). Reste : réseau (1.3/1.4), client (1.7), validation de charge (1.8). |
 | 2026-07-26 | Lot 0 quasi complet : structure du monorepo (`shared/`, `server/`, `client/`, `admin/`) avec placeholders buildables/testés, outillage (npm workspaces, TS composite, ESLint 9 flat config, Prettier, Vitest) validé de bout en bout (`lint`, `test`, `build`, `format:check`), licence AGPL-3.0 officielle ajoutée (`LICENSE`, texte récupéré depuis gnu.org), CI GitHub Actions ajoutée. Seul point encore ouvert du Lot 0 : choix Canvas 2D vs PixiJS (0.2). |
 | 2026-07-26 | Clé de déploiement ajoutée au dépôt GitHub (accès écriture), connexion SSH vérifiée, premier push effectué sur `main` — https://github.com/FantasmaGlad/Angul.io. |

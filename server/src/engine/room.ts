@@ -22,6 +22,7 @@ export class Room {
   private lastTickAt = 0;
   private tickCount = 0;
   private readonly stateListeners: Array<(tick: number) => void> = [];
+  private readonly deathListeners: Array<(playerId: PlayerId) => void> = [];
 
   constructor(mod: GameMod, options: RoomOptions) {
     this.world = new World({ mapSize: options.mapSize, kArea: options.kArea });
@@ -66,6 +67,7 @@ export class Room {
       const currentlyAlive = player.pieceIds.length > 0;
       if (player.alive && !currentlyAlive) {
         this.mod.onPlayerDeath?.(this.world, player.id);
+        for (const listener of this.deathListeners) listener(player.id);
       }
       player.alive = currentlyAlive;
     }
@@ -89,6 +91,12 @@ export class Room {
 
   onState(listener: (tick: number) => void): void {
     this.stateListeners.push(listener);
+  }
+
+  /** Notifié quand un joueur passe de "a au moins un morceau" à "n'en a plus aucun" — utile au
+   * réseau (net/server.ts) pour envoyer un message `died` sans avoir à décorer le mod. */
+  onPlayerDeath(listener: (playerId: PlayerId) => void): void {
+    this.deathListeners.push(listener);
   }
 
   get currentTick(): number {

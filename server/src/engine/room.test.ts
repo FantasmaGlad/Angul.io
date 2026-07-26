@@ -80,4 +80,22 @@ describe('Room — cycle de vie des hooks', () => {
 
     expect(onPlayerInput).toHaveBeenCalledWith(room.world, 'p1', { dir: { x: 1, y: 0 }, split: false });
   });
+
+  it('notifie les listeners onPlayerDeath indépendamment du mod (utile au réseau)', () => {
+    const mod: GameMod = { id: 'test' };
+    const room = makeDeterministicRoom(mod, 0.05);
+    const deathListener = vi.fn();
+    room.onPlayerDeath(deathListener);
+    room.addPlayer('p1', 'Alice');
+    const piece = room.world.spawnPiece('p1', { x: 0, y: 0 }, 50);
+
+    room.tick();
+    expect(deathListener).not.toHaveBeenCalled();
+
+    room.world.removeEntity(piece.id);
+    vi.spyOn(performance, 'now').mockReturnValueOnce(200);
+    room.tick();
+
+    expect(deathListener).toHaveBeenCalledWith('p1');
+  });
 });

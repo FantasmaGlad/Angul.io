@@ -6,9 +6,13 @@
   "main": "./src/index.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "start": "node --experimental-strip-types src/index.ts"
+    "start": "node dist/index.js"
   },
   "dependencies": {
-    "@angulio/shared": "*"
+    "@angulio/shared": "*",
+    "ws": "^8.21.1"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
   }
 }
