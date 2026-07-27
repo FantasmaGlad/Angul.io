@@ -21,7 +21,8 @@ export class World {
   private readonly kArea: number;
   private readonly entities = new Map<EntityId, Entity>();
   private readonly players = new Map<PlayerId, PlayerState>();
-  private spatialHash: SpatialHash;
+  readonly spatialHash: SpatialHash;
+
   /** Compteur d'ids courts plutôt que des UUID — mesuré au Lot 1.8 : la taille des ids sur le
    * réseau compte beaucoup à 20 Hz avec des centaines d'entités. */
   private nextEntityId = 1;

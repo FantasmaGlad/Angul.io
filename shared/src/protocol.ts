@@ -61,10 +61,18 @@ export interface WelcomeMessage {
   mapSize: number;
 }
 
+export interface LeaderboardEntry {
+  rank: number;
+  nickname: string;
+  score: number;
+  isSelf?: boolean;
+}
+
 export interface WorldStateMessage {
   type: 'state';
   tick: number;
   entities: EntitySnapshot[];
+  leaderboard?: LeaderboardEntry[];
   /** Valeurs propres au destinataire de ce message, jamais partagées avec les autres clients
    * (contrairement à `entities`, diffusé tel quel). */
   self?: {
@@ -79,6 +87,7 @@ export interface WorldStateMessage {
     combo?: { level: number };
   };
 }
+
 
 /** Réponse immédiate à un `ping` (voir ClientPingMessage). */
 export interface PongMessage {

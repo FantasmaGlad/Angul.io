@@ -29,17 +29,33 @@ export class SpatialHash {
 
   /** Identifiants des entités dans la cellule de `position` et ses 8 voisines. */
   queryNearby(position: Vector2): EntityId[] {
+    return this.queryRadius(position, this.cellSize);
+  }
+
+  /** Identifiants des entités dans un rayon donné (en pixels) autour de `position`. */
+  queryRadius(position: Vector2, radius: number): EntityId[] {
+    const cellRange = Math.ceil(radius / this.cellSize);
     const cx = Math.floor(position.x / this.cellSize);
     const cy = Math.floor(position.y / this.cellSize);
     const result: EntityId[] = [];
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dy = -1; dy <= 1; dy++) {
+    const visited = new Set<EntityId>();
+
+    for (let dx = -cellRange; dx <= cellRange; dx++) {
+      for (let dy = -cellRange; dy <= cellRange; dy++) {
         const bucket = this.cells.get(`${cx + dx},${cy + dy}`);
-        if (bucket) result.push(...bucket);
+        if (bucket) {
+          for (const id of bucket) {
+            if (!visited.has(id)) {
+              visited.add(id);
+              result.push(id);
+            }
+          }
+        }
       }
     }
     return result;
   }
+
 
   private cellKey(position: Vector2): string {
     const cx = Math.floor(position.x / this.cellSize);

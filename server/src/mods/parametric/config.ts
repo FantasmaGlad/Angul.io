@@ -125,4 +125,19 @@ export interface ParametricModConfig {
   /** K_AREA — constante masse→aire (Rayon = √(K_AREA·masse/π)), absente de la feuille,
    * reprise de metriques.md §2 (π, donc Rayon = √masse). */
   areaConstant: number;
+
+  bots?: BotConfig;
 }
+
+export interface BotConfig {
+  enabled: boolean;
+  targetRatio: number;
+  updateFrequencyHz: number;
+  proportions: {
+    fuis: number;
+    neutre: number;
+    agressif: number;
+    fou: number;
+  };
+}
+

@@ -10,8 +10,10 @@ import {
   WS_CLOSE_ROOM_NOT_FOUND,
   type ClientMessage,
   type EntitySnapshot,
+  type LeaderboardEntry,
   type ServerMessage,
 } from '@angulio/shared';
+
 import { WebSocketServer, type WebSocket } from 'ws';
 import { SpatialHash } from '../engine/spatialHash.js';
 import { AccountError, type AccountsService } from '../accounts/service.js';
@@ -167,7 +169,29 @@ export function startGameServer(
         if (comboLevel !== undefined) selfFields.combo = { level: comboLevel };
         const self = Object.keys(selfFields).length > 0 ? selfFields : undefined;
 
-        send(socket, { type: 'state', tick, entities, self });
+        // Classement Top 10 du salon
+        const allPlayersList = Array.from(managed.room.world.allPlayers());
+        const playerScores = allPlayersList
+          .map((p) => {
+            let score = 0;
+            for (const pieceId of p.pieceIds) {
+              const piece = managed.room.world.getEntity(pieceId);
+              if (piece) score += piece.mass;
+            }
+            return { id: p.id, nickname: p.nickname, score: Math.floor(score) };
+          })
+          .filter((p) => p.score > 0)
+          .sort((a, b) => b.score - a.score);
+
+        const leaderboard: LeaderboardEntry[] = playerScores.slice(0, 10).map((entry, idx) => ({
+          rank: idx + 1,
+          nickname: entry.nickname,
+          score: entry.score,
+          isSelf: entry.id === playerId,
+        }));
+
+        send(socket, { type: 'state', tick, entities, leaderboard, self });
+
 
         // Lot 3.5 : uniquement pour les joueurs authentifiés (voir `accountIdByPlayer`) — un
         // invité n'a pas de compte où écrire un score.

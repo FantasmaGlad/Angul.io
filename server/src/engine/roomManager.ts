@@ -4,15 +4,21 @@ import type { GameMod } from './mod.js';
 import { Room } from './room.js';
 import type { RoomResetSchedule } from './resetSchedule.js';
 
+import type { BotConfig } from '../mods/parametric/config.js';
+
 export type RoomVisibility = 'public' | 'private';
 
 /**
  * Résout un identifiant de mode de jeu (ex. "vanilla") en un mod prêt à l'emploi ainsi que la
- * configuration de carte qui va avec (mapSize/kArea). Permet à `RoomManager` de rester
- * indépendant du mécanisme de chargement concret des mods — aujourd'hui uniquement des mods
- * paramétriques (`mods/parametric/`), potentiellement autre chose plus tard (Lot 4).
+ * configuration de carte qui va meubler les bots et les options (mapSize/kArea/bots).
  */
-export type ModResolver = (modId: string) => { mod: GameMod; mapSize: number; kArea?: number };
+export type ModResolver = (modId: string) => {
+  mod: GameMod;
+  mapSize: number;
+  kArea?: number;
+  bots?: BotConfig;
+};
+
 
 export interface CreateRoomOptions {
   name: string;
@@ -150,14 +156,17 @@ export class RoomManager {
       throw new Error(`Nombre maximal de salons atteint (${this.maxRooms}).`);
     }
 
-    const { mod, mapSize, kArea } = this.resolveMod(options.modId);
+    const { mod, mapSize, kArea, bots } = this.resolveMod(options.modId);
     const room = new Room(mod, {
       mapSize,
       tickRateHz: this.tickRateHz,
       kArea,
+      maxPlayers: options.maxPlayers ?? DEFAULT_MAX_PLAYERS_PER_ROOM,
+      bots,
       resetSchedule: options.resetSchedule,
     });
     room.start();
+
 
     // Id court incrémental plutôt qu'un UUID, pour rester cohérent avec les identifiants
     // d'entités/joueurs (Lot 1.8, économie de bande passante) — même si l'id de salon ne

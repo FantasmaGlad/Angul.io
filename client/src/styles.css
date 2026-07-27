@@ -900,3 +900,137 @@ a.btn-primary {
     padding: 12px;
   }
 }
+
+/* --- Live Leaderboard (Top 10) --- */
+.leaderboard-overlay {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 220px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  color: var(--text);
+  font-family: var(--font-sans);
+  pointer-events: none;
+  z-index: 10;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.leaderboard-header {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary);
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.leaderboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.leaderboard-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.03);
+}
+.leaderboard-row.is-self {
+  background: rgba(56, 189, 248, 0.2);
+  border: 1px solid var(--primary);
+  font-weight: 700;
+}
+.leaderboard-rank {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-soft);
+  width: 24px;
+}
+.leaderboard-row.is-self .leaderboard-rank {
+  color: var(--primary);
+}
+.leaderboard-nickname {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-right: 8px;
+}
+.leaderboard-score {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* --- Modal Éliminé / Death Overlay --- */
+.death-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 20px;
+}
+.death-modal {
+  width: 380px;
+  max-width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 28px;
+  text-align: center;
+  box-shadow: var(--shadow-modal);
+}
+.death-modal h2 {
+  margin: 0 0 8px 0;
+  font-size: 24px;
+  color: #ef4444;
+}
+.death-modal p {
+  margin: 0 0 20px 0;
+  font-size: 14px;
+  color: var(--text-soft);
+}
+.death-stats {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-bottom: 24px;
+}
+.death-stat-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-soft);
+  margin-bottom: 4px;
+}
+.death-stat-value {
+  font-family: var(--font-mono);
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--primary);
+}
+.death-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+

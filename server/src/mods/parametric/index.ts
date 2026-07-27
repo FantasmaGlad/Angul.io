@@ -13,7 +13,9 @@ import type { GameMod } from '../../engine/mod.js';
 import type { Entity, PlayerId, PlayerInput } from '../../engine/types.js';
 import type { World } from '../../engine/world.js';
 import { creditMassEatenXp, creditPlayerEatenXp } from '../../engine/xp.js';
+import { logEvent } from '../../log.js';
 import { applyBorder } from './border.js';
+
 import type { ParametricModConfig } from './config.js';
 import {
   applyPassiveDecay,
@@ -126,6 +128,19 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
   function handleEatAttempt(world: World, attacker: Entity, target: Entity): boolean {
     if (attacker.mass >= target.mass * (1 + config.eating.massAdvantage)) {
       const gainedMass = target.mass;
+
+      if (attacker.ownerId && target.ownerId) {
+        const attackerPlayer = world.getPlayer(attacker.ownerId);
+        const targetPlayer = world.getPlayer(target.ownerId);
+        logEvent('player_eaten', {
+          attackerId: attacker.ownerId,
+          attackerNickname: attackerPlayer?.nickname ?? attacker.ownerId,
+          victimId: target.ownerId,
+          victimNickname: targetPlayer?.nickname ?? target.ownerId,
+          mass: Math.floor(gainedMass),
+        });
+      }
+
       world.setMass(attacker, attacker.mass + gainedMass);
       world.removeEntity(target.id);
       // XP (demande utilisateur, engine/xp.ts) : "1 masse mangée = 1xp" + bonus fixe "1 joueur
@@ -138,6 +153,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     }
     return false;
   }
+
 
   let foodSpawnCredit = 0;
 

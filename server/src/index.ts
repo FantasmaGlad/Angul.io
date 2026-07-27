@@ -36,8 +36,10 @@ const resolveMod: ModResolver = (modId) => {
     mod: factory(config),
     mapSize: config.arena.width,
     kArea: config.areaConstant,
+    bots: config.bots,
   };
 };
+
 
 const roomManager = new RoomManager(resolveMod, TICK_RATE_HZ);
 

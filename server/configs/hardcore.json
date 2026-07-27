@@ -53,5 +53,17 @@
       { "color": "multicolor", "mass": 12, "weight": 1 }
     ]
   },
-  "areaConstant": 3.141592653589793
+  "areaConstant": 3.141592653589793,
+  "bots": {
+    "enabled": true,
+    "targetRatio": 0.5,
+    "updateFrequencyHz": 2,
+    "proportions": {
+      "fuis": 25,
+      "neutre": 30,
+      "agressif": 30,
+      "fou": 15
+    }
+  }
 }
+

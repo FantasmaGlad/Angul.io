@@ -180,13 +180,15 @@ export default function App() {
   const defaultRoomId = rooms.find((room) => room.permanent)?.id ?? rooms[0]?.id;
 
   const handleExit = useCallback(
-    (message: string) => {
+    (message?: string) => {
       setSession(null);
-      setHomeError(message);
+      if (message) setHomeError(message);
       void refreshLobby();
     },
     [refreshLobby],
   );
+
+
 
   if (session) {
     return (

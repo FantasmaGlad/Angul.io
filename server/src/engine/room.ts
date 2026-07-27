@@ -1,4 +1,6 @@
 import { add, scale } from '@angulio/shared';
+import type { BotConfig } from '../mods/parametric/config.js';
+import { BotManager } from './bots/botManager.js';
 import type { GameMod } from './mod.js';
 import {
   DEFAULT_RESET_SCHEDULE,
@@ -12,11 +14,14 @@ export interface RoomOptions {
   mapSize: number;
   tickRateHz: number;
   kArea?: number;
+  maxPlayers?: number;
+  bots?: BotConfig;
   /** Planification du reset automatique (Lot 2.4, §2.1 du cahier des charges) — par défaut
    * 1x/24h à 10h heure de Paris (`DEFAULT_RESET_SCHEDULE`). `null` désactive le reset
    * automatique (le salon ne se réinitialise alors que via un appel manuel à `reset()`). */
   resetSchedule?: RoomResetSchedule | null;
 }
+
 
 /**
  * Assemble World + mod + boucle de tick fixe. Une room = une simulation indépendante
@@ -25,6 +30,7 @@ export interface RoomOptions {
  */
 export class Room {
   readonly world: World;
+  readonly botManager?: BotManager;
   private readonly mod: GameMod;
   private readonly tickIntervalMs: number;
   private timer: ReturnType<typeof setInterval> | undefined;
@@ -44,6 +50,11 @@ export class Room {
       options.resetSchedule === null
         ? undefined
         : (options.resetSchedule ?? DEFAULT_RESET_SCHEDULE);
+
+    if (options.bots?.enabled) {
+      this.botManager = new BotManager(this, options.bots, options.maxPlayers ?? 50);
+    }
+
     this.mod.onRoomInit?.(this.world);
   }
 
@@ -79,6 +90,7 @@ export class Room {
   reset(): void {
     for (const entity of this.world.allEntities()) this.world.removeEntity(entity.id);
     for (const player of this.world.allPlayers()) this.mod.onPlayerJoin?.(this.world, player.id);
+    this.botManager?.onReset();
     for (const listener of this.resetListeners) listener();
   }
 
@@ -96,6 +108,7 @@ export class Room {
     this.tickCount += 1;
 
     this.mod.onTick?.(this.world, dt);
+    this.botManager?.update(dt);
 
     for (const entity of this.world.allEntities()) {
       entity.position = add(entity.position, scale(entity.velocity, dt));
@@ -115,6 +128,7 @@ export class Room {
       const currentlyAlive = player.pieceIds.length > 0;
       if (player.alive && !currentlyAlive) {
         this.mod.onPlayerDeath?.(this.world, player.id);
+        this.botManager?.onPlayerDeath(player.id);
         for (const listener of this.deathListeners) listener(player.id);
       }
       player.alive = currentlyAlive;
@@ -126,12 +140,19 @@ export class Room {
   addPlayer(id: PlayerId, nickname: string): void {
     this.world.addPlayer(id, nickname);
     this.mod.onPlayerJoin?.(this.world, id);
+    if (!this.botManager?.isBot(id)) {
+      this.botManager?.adjustPopulation();
+    }
   }
 
   removePlayer(id: PlayerId): void {
     this.mod.onPlayerLeave?.(this.world, id);
     this.world.removePlayer(id);
+    if (!this.botManager?.isBot(id)) {
+      this.botManager?.adjustPopulation();
+    }
   }
+
 
   handleInput(playerId: PlayerId, input: PlayerInput): void {
     this.mod.onPlayerInput?.(this.world, playerId, input);

@@ -1,11 +1,11 @@
-import type { EntitySnapshot, ServerMessage } from '@angulio/shared';
+import type { EntitySnapshot, LeaderboardEntry, ServerMessage } from '@angulio/shared';
 import {
   clamp,
   WS_CLOSE_NICKNAME_TAKEN,
   WS_CLOSE_ROOM_EXPIRED,
   WS_CLOSE_ROOM_FULL,
 } from '@angulio/shared';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   createFpsTracker,
   detectGpuInfo,
@@ -29,133 +29,89 @@ import { loadFpsCap } from '../settings.js';
 import { ownAggregate, speedBetween } from '../stats.js';
 
 const INPUT_SEND_INTERVAL_MS = 50; // aligné sur le tick serveur par défaut (20 Hz)
-/** Intervalle attendu entre deux messages `state` (20 Hz par défaut, voir Room/index.ts côté
- * serveur) — sert de base à l'interpolation d'affichage (render.ts, `interpolateEntities`) et
- * à la dérivation de la vitesse (stats.ts, `speedBetween`). */
 const SERVER_STATE_INTERVAL_MS = 50;
 const PING_INTERVAL_MS = 1000;
-/** Facteur purement cosmétique (affichage uniquement) pour donner un ordre de grandeur
- * "physique" repérable (m/s) plutôt que l'unité de simulation abstraite. */
 const MAP_UNITS_TO_METERS = 0.01;
 
-/** Durée d'affichage de la bannière "Combo x{niveau}" avant qu'elle ne s'estompe (demande
- * utilisateur) — volontairement indépendante de la durée réelle du multiplicateur d'XP côté
- * serveur (20s, voir engine/xp.ts). */
-const COMBO_BANNER_DISPLAY_MS = 5_000;
-
-/** Couleur de la bannière "Combo x{niveau}" (demande utilisateur : "de vert, à jaune, à orange
- * puis à rouge plus le combo augmente") — seuils choisis pour une progression lisible sur la
- * plage de niveaux atteignable (le multiplicateur d'XP réel plafonne à x10 côté serveur, voir
- * server/src/engine/xp.ts, ce qui correspond à un niveau autour de 12-13). */
-function comboColorClass(level: number): string {
-  if (level >= 10) return 'combo-red';
-  if (level >= 6) return 'combo-orange';
-  if (level >= 3) return 'combo-yellow';
-  return 'combo-green';
-}
-
 interface GameViewProps {
-  roomIdOrInviteCode: string;
-  inviteCodeToShow: string | undefined;
   nickname: string;
-  authToken: string | undefined;
-  onExit: (message: string) => void;
+  roomIdOrInviteCode: string;
+  inviteCodeToShow?: string;
+  authToken?: string;
+  onExit: (message?: string) => void;
 }
 
-/** Canvas + boucle de jeu — délibérément impératif et hors du cycle de rendu React (§ optimisation
- * demandée) : la boucle tourne à ~60 im/s et les stats HUD (masse/vitesse) sont mises à jour
- * ~20 fois/s directement en DOM via des refs plutôt qu'en state React, pour éviter des dizaines
- * de re-renders par seconde sur du texte. Toute la logique métier (WebSocket, rendu, entrées,
- * stats) reste dans les modules existants (net.ts/render.ts/input.ts/stats.ts), inchangés — ce
- * composant ne fait que les orchestrer. */
 export default function GameView({
+  nickname,
   roomIdOrInviteCode,
   inviteCodeToShow,
-  nickname,
   authToken,
   onExit,
 }: GameViewProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const statNicknameRef = useRef<HTMLSpanElement>(null);
-  const statMassRef = useRef<HTMLSpanElement>(null);
-  const statSpeedRef = useRef<HTMLSpanElement>(null);
-  const hudRef = useRef<HTMLDivElement>(null);
-  const debugOverlayRef = useRef<HTMLPreElement>(null);
-  const comboBannerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const debugOverlayRef = useRef<HTMLPreElement | null>(null);
+  const comboBannerRef = useRef<HTMLDivElement | null>(null);
+  const hudRef = useRef<HTMLDivElement | null>(null);
 
-  // Lue via une ref plutôt qu'incluse dans les dépendances de l'effet principal ci-dessous :
-  // `onExit` vient d'un `useCallback` stable côté App, mais cet effet ne doit de toute façon
-  // tourner qu'une fois par montage (une partie = un montage, voir App.tsx). Mise à jour dans
-  // son propre effet (pas pendant le rendu) — mutation de ref hors render.
+  const statNicknameRef = useRef<HTMLSpanElement | null>(null);
+  const statMassRef = useRef<HTMLSpanElement | null>(null);
+  const statSpeedRef = useRef<HTMLSpanElement | null>(null);
+
   const onExitRef = useRef(onExit);
-  useEffect(() => {
-    onExitRef.current = onExit;
+  onExitRef.current = onExit;
+
+  const connectionRef = useRef<GameConnection | null>(null);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [deathState, setDeathState] = useState<{ isDead: boolean; finalScore: number }>({
+    isDead: false,
+    finalScore: 0,
   });
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx) return;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
     function resizeCanvas(): void {
       canvas!.width = window.innerWidth;
       canvas!.height = window.innerHeight;
     }
-    window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
 
-    let previousSnapshot: EntitySnapshot[] | undefined;
-    let latestSnapshot: EntitySnapshot[] = [];
-    let latestSnapshotAt = performance.now();
     let selfPlayerId: string | undefined;
-    let mapSize = 4000;
-    let justDied = false;
-    let lastPingMs: number | undefined;
-    /** Pseudo par id de joueur, appris via les messages `player` (envoyés une fois par joueur,
-     * pas répétés sur chaque entité à chaque tick — bande passante). */
+    let mapSize = 15000;
+    let latestSnapshot: EntitySnapshot[] = [];
+    let previousSnapshot: EntitySnapshot[] | undefined;
+    let latestSnapshotAt = performance.now();
     const nicknames = new Map<string, string>();
-    /** Dernier niveau de combo connu (demande utilisateur) — sert uniquement à détecter un
-     * changement (`message.self.combo` arrive à ~20Hz avec chaque `state`) pour ne (ré)afficher
-     * la bannière que lorsque le niveau change réellement, pas à chaque tick. */
+    let latestCamera: Camera = { x: 7500, y: 7500, scale: BASE_SCALE };
+    let lastPingMs = 0;
     let lastComboLevel: number | undefined;
     let comboHideTimer: ReturnType<typeof setTimeout> | undefined;
+    let justDied = false;
+    let maxMassThisLife = 50;
 
-    /** "Combo x{niveau}" en gros à l'écran (demande utilisateur) : couleur vert -> jaune ->
-     * orange -> rouge selon le niveau, effet d'apparition (mise à l'échelle à 120%) rejoué à
-     * chaque nouveau niveau. Reste affichée 5 secondes puis s'estompe (fade out CSS) — délibérément
-     * une durée d'affichage fixe côté client, indépendante de la fenêtre réelle du multiplicateur
-     * d'XP (20s, voir server/src/engine/xp.ts) : un joueur qui enchaîne prolonge le combo bien
-     * après que la bannière du niveau précédent se soit effacée, elle réapparaît alors pour le
-     * nouveau niveau ("réapparaît au combo suivant", demande utilisateur). */
     function showComboBanner(level: number): void {
-      const el = comboBannerRef.current;
-      if (!el) return;
-      el.textContent = `Combo x${level}`;
-      el.classList.remove('combo-green', 'combo-yellow', 'combo-orange', 'combo-red', 'fading');
-      el.classList.add('visible', comboColorClass(level));
-      el.classList.remove('combo-pop');
-      void el.offsetWidth; // force le reflow avant de ré-ajouter la classe qui porte l'animation
-      el.classList.add('combo-pop');
-
+      const banner = comboBannerRef.current;
+      if (!banner) return;
+      banner.textContent = `Combo x${level} !`;
+      banner.classList.add('visible');
       if (comboHideTimer) clearTimeout(comboHideTimer);
       comboHideTimer = setTimeout(() => {
-        el.classList.add('fading');
-        comboHideTimer = undefined;
-      }, COMBO_BANNER_DISPLAY_MS);
+        banner.classList.remove('visible');
+      }, 2000);
     }
-    /** Caméra du dernier `frame()` dessiné (boucle RAF) — relue par l'envoi d'input (intervalle
-     * séparé, ~20 Hz) pour convertir la position écran du curseur en position monde, voir
-     * `input.getTarget`. */
-    let latestCamera: Camera = { x: mapSize / 2, y: mapSize / 2, scale: BASE_SCALE };
 
     const input = attachInput(canvas);
 
     const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
-    // `&token=` (Lot 3.3) uniquement si connecté — une partie en invité omet le paramètre.
     const tokenParam = authToken ? `&token=${encodeURIComponent(authToken)}` : '';
     const connection = new GameConnection(
       `${wsProtocol}://${location.host}/?roomId=${encodeURIComponent(roomIdOrInviteCode)}${tokenParam}`,
     );
+    connectionRef.current = connection;
 
     connection.onMessage((message: ServerMessage) => {
       if (message.type === 'welcome') {
@@ -167,6 +123,13 @@ export default function GameView({
         previousSnapshot = latestSnapshot;
         latestSnapshot = message.entities;
         latestSnapshotAt = performance.now();
+        if (message.leaderboard) {
+          setLeaderboard(message.leaderboard);
+        }
+        const own = ownAggregate(latestSnapshot, selfPlayerId);
+        if (own) {
+          maxMassThisLife = Math.max(maxMassThisLife, own.mass);
+        }
         const comboLevel = message.self?.combo?.level;
         if (comboLevel !== undefined && comboLevel !== lastComboLevel) {
           showComboBanner(comboLevel);
@@ -174,6 +137,7 @@ export default function GameView({
         lastComboLevel = comboLevel;
       } else if (message.type === 'died') {
         justDied = true;
+        setDeathState({ isDead: true, finalScore: Math.round(maxMassThisLife) });
         setTimeout(() => {
           justDied = false;
         }, 1500);
@@ -182,17 +146,9 @@ export default function GameView({
       }
     });
 
-    // Le serveur ferme immédiatement (code 4004) si le salon/code demandé n'existe pas. Pas de
-    // reconnexion automatique pour le MVP : une coupure en cours de partie ramène à l'accueil
-    // plutôt que de laisser un dernier freeze-frame silencieux. `closedByUs` distingue une
-    // fermeture décidée par le serveur/réseau d'un simple démontage React (cleanup ci-dessous,
-    // notamment le double montage volontaire de React.StrictMode en développement).
     let closedByUs = false;
     connection.onClose((event) => {
       if (closedByUs) return;
-      // Codes de fermeture applicatifs (shared/protocol.ts) : messages dédiés pour les cas que le
-      // serveur distingue explicitement (refonte UI/UX) — sinon message générique selon qu'on
-      // avait déjà rejoint la partie (`welcome` reçu) ou non.
       if (event.code === WS_CLOSE_NICKNAME_TAKEN) {
         onExitRef.current('Ce pseudo est déjà utilisé sur ce salon — choisis-en un autre.');
         return;
@@ -219,7 +175,7 @@ export default function GameView({
       const { target, intensity } = input.getTarget(latestCamera);
       connection.send({ type: 'input', target, intensity, split: input.consumeSplit() });
     }, INPUT_SEND_INTERVAL_MS);
-    // Latence réelle (aller-retour), affichée dans l'écran de debug F3.
+
     const pingInterval = setInterval(() => {
       connection.send({ type: 'ping', t: performance.now() });
     }, PING_INTERVAL_MS);
@@ -230,10 +186,6 @@ export default function GameView({
     let networkInfo: NetworkInfo | undefined;
     let debugVisible = false;
 
-    // Plafond FPS (§Paramètres) : lu une fois à l'entrée en partie (comme le pseudo), pas
-    // réactif à un changement pendant que la partie est déjà en cours. Purement côté rendu —
-    // n'affecte ni la fréquence d'envoi des inputs (`inputInterval` ci-dessus) ni le tick
-    // serveur, qui restent indépendants.
     const minFrameIntervalMs = 1000 / loadFpsCap();
     let lastFrameAt = 0;
 
@@ -243,8 +195,6 @@ export default function GameView({
       debugVisible = !debugVisible;
       debugOverlayRef.current?.classList.toggle('visible', debugVisible);
       if (debugVisible) {
-        // Détection paresseuse (WebGL/Network Information API) : inutile en continu si l'écran
-        // de debug n'est jamais ouvert.
         gpuInfo ??= detectGpuInfo();
         networkInfo = detectNetworkInfo();
       }
@@ -277,8 +227,6 @@ export default function GameView({
           .join(' — ');
       }
 
-      // Stats mises à jour directement en DOM (refs), hors state React : un re-render par frame
-      // (~20 Hz) serait un coût inutile pour du simple texte (§ optimisation demandée).
       if (statNicknameRef.current) statNicknameRef.current.textContent = nickname || '—';
       const own = ownAggregate(latestSnapshot, selfPlayerId);
       if (statMassRef.current) {
@@ -325,8 +273,6 @@ export default function GameView({
       cancelAnimationFrame(rafId);
       connection.close();
     };
-    // Un seul montage par partie (App.tsx ne rend GameView que pendant une partie) : les props
-    // sont figées pour la durée de vie de ce composant, volontairement hors dépendances.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -344,8 +290,6 @@ export default function GameView({
           </div>
           <div className="stat-row">
             <span className="stat-label">Guilde</span>
-            {/* Espace réservé statique : aucun système de guilde n'existe encore (§0/§4.7
-                cahier_des_charges_ui_ux.md). */}
             <span className="stat-value">—</span>
           </div>
           <div className="stat-row">
@@ -363,6 +307,56 @@ export default function GameView({
         </div>
         <div className="hud-status" ref={hudRef} />
       </div>
+
+      {/* Top 10 Live Leaderboard */}
+      <div className="leaderboard-overlay">
+        <div className="leaderboard-header">🏆 CLASSEMENT (TOP 10)</div>
+        <div className="leaderboard-list">
+          {leaderboard.length === 0 ? (
+            <div className="leaderboard-row">— En attente —</div>
+          ) : (
+            leaderboard.map((entry) => (
+              <div
+                key={`${entry.rank}-${entry.nickname}`}
+                className={`leaderboard-row ${entry.isSelf ? 'is-self' : ''}`}
+              >
+                <span className="leaderboard-rank">#{entry.rank}</span>
+                <span className="leaderboard-nickname">{entry.nickname}</span>
+                <span className="leaderboard-score">{entry.score}</span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Modal Éliminé / Respawn */}
+      {deathState.isDead && (
+        <div className="death-overlay">
+          <div className="death-modal">
+            <h2>💀 Éliminé !</h2>
+            <p>Votre cellule a été absorbée.</p>
+            <div className="death-stats">
+              <span className="death-stat-label">Score Final (Masse Max)</span>
+              <span className="death-stat-value">{deathState.finalScore}</span>
+            </div>
+            <div className="death-actions">
+              <button
+                className="play-button"
+                onClick={() => {
+                  setDeathState({ isDead: false, finalScore: 0 });
+                  connectionRef.current?.send({ type: 'join', nickname });
+                }}
+              >
+                🎮 Rejouer (Respawn)
+              </button>
+              <button className="play-button" style={{ background: '#334155' }} onClick={() => onExit()}>
+                🏠 Menu Principal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <pre className="debug-overlay" ref={debugOverlayRef} />
     </>
   );
