@@ -18,7 +18,35 @@ const REFERENCE_MASS = 50;
  * pour laisser voir le fond "labo premium" de la page (`index.html`, partagé avec le lobby,
  * demande utilisateur) plutôt qu'un blanc plein qui le masquerait. */
 const GRID_COLOR = 'rgba(17, 17, 19, 0.1)';
-const FOOD_COLOR = '#3a6b35';
+/** Couleur d'une particule de nourriture selon sa masse — la masse *est* le type de pellet
+ * (Vert/Bleu/Jaune/Violet/Rouge/Orange/Rose, valeurs 1 à 7), transmise telle quelle par le
+ * protocole existant (`EntitySnapshot.m`) : aucun champ supplémentaire nécessaire, cohérent
+ * avec l'économie de bande passante du Lot 1.8 (le poids de spawn de chaque type diffère par
+ * mode côté serveur, voir server/configs/*.json, mais la correspondance masse→couleur est la
+ * même pour tous les modes). Couleur de repli pour toute masse qu'aucun mode connu n'utilise
+ * (mod futur) plutôt que de dessiner du noir invisible. */
+const FOOD_COLORS_BY_MASS: Record<number, string> = {
+  1: '#3a6b35', // Vert
+  2: '#3266a8', // Bleu
+  3: '#c9a227', // Jaune
+  4: '#7a3fa0', // Violet
+  5: '#b23a2e', // Rouge
+  6: '#c9702e', // Orange
+  7: '#c94f8a', // Rose
+};
+const FOOD_COLOR_FALLBACK = '#3a6b35';
+/** Masse du pellet "Multicolor" (le plus rare et le plus gros, valeur 12) — rendu à part avec
+ * un dégradé plutôt qu'une couleur plate, dessiné individuellement (pas dans le chemin groupé
+ * ci-dessous) : assez rare (1 à 15% selon le mode) pour ne jamais peser sur le budget de dessin
+ * par frame. */
+const MULTICOLOR_FOOD_MASS = 12;
+
+/** Couleur plate d'un pellet de nourriture selon sa masse — extrait en fonction pure (plutôt que
+ * de rester en ligne dans `renderFrame`) pour rester testable sans canvas/DOM. Jamais appelée
+ * pour le pellet Multicolor (voir `MULTICOLOR_FOOD_MASS`, dégradé dédié). */
+export function foodColorForMass(mass: number): string {
+  return FOOD_COLORS_BY_MASS[mass] ?? FOOD_COLOR_FALLBACK;
+}
 /** Espacement de la grille en pixels *monde* (donc fixe quel que soit le zoom, comme des
  * carreaux de papier millimétré vus de plus ou moins loin). */
 const GRID_SPACING_WORLD_PX = 100;
@@ -59,12 +87,12 @@ export function renderFrame(
 
   drawGrid(ctx, canvas, camera, toScreenX, toScreenY);
 
-  // La nourriture partage toutes la même couleur de remplissage : un seul chemin/appel `fill`
-  // pour l'ensemble plutôt qu'un `beginPath`/`fill` par particule — sur une carte dense (jusqu'à
+  // Nourriture groupée par couleur (dérivée de la masse — voir FOOD_COLORS_BY_MASS) : un seul
+  // chemin/appel `fill` par couleur plutôt qu'un par particule — sur une carte dense (jusqu'à
   // plusieurs centaines de particules visibles même après l'interest management du Lot 1.8),
-  // ça évite l'essentiel du coût CPU par frame qui limitait le framerate perçu.
-  const foodPath = new Path2D();
-  let hasFood = false;
+  // ça évite l'essentiel du coût CPU par frame qui limitait le framerate perçu. Le pellet
+  // Multicolor (rare) est dessiné à part, individuellement (voir plus bas).
+  const foodPathsByColor = new Map<string, Path2D>();
 
   for (const entity of entities) {
     const screenX = toScreenX(entity.x);
@@ -75,9 +103,18 @@ export function renderFrame(
     if (screenY + screenRadius < 0 || screenY - screenRadius > canvas.height) continue;
 
     if (entity.k === 'f') {
-      foodPath.moveTo(screenX + Math.max(1, screenRadius), screenY);
-      foodPath.arc(screenX, screenY, Math.max(1, screenRadius), 0, Math.PI * 2);
-      hasFood = true;
+      if (entity.m === MULTICOLOR_FOOD_MASS) {
+        drawMulticolorFood(ctx, screenX, screenY, Math.max(1, screenRadius));
+        continue;
+      }
+      const color = foodColorForMass(entity.m);
+      let path = foodPathsByColor.get(color);
+      if (!path) {
+        path = new Path2D();
+        foodPathsByColor.set(color, path);
+      }
+      path.moveTo(screenX + Math.max(1, screenRadius), screenY);
+      path.arc(screenX, screenY, Math.max(1, screenRadius), 0, Math.PI * 2);
       continue;
     }
 
@@ -101,10 +138,33 @@ export function renderFrame(
     }
   }
 
-  if (hasFood) {
-    ctx.fillStyle = FOOD_COLOR;
-    ctx.fill(foodPath);
+  for (const [color, path] of foodPathsByColor) {
+    ctx.fillStyle = color;
+    ctx.fill(path);
   }
+}
+
+/** Dégradé radial arc-en-ciel pour le pellet "Multicolor" (masse 12, le plus rare et le plus
+ * gros) — dessiné individuellement (chaque dégradé est lié à une position écran, impossible à
+ * regrouper dans un seul `Path2D` comme les couleurs plates ci-dessus), ce qui reste sans
+ * impact perceptible vu sa rareté (1 à 15% des pellets selon le mode). */
+function drawMulticolorFood(
+  ctx: CanvasRenderingContext2D,
+  screenX: number,
+  screenY: number,
+  screenRadius: number,
+): void {
+  const gradient = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, screenRadius);
+  gradient.addColorStop(0, '#ffffff');
+  gradient.addColorStop(0.35, '#ffd23a');
+  gradient.addColorStop(0.6, '#ff5ca8');
+  gradient.addColorStop(0.8, '#5ca8ff');
+  gradient.addColorStop(1, '#7a3fa0');
+
+  ctx.beginPath();
+  ctx.arc(screenX, screenY, screenRadius, 0, Math.PI * 2);
+  ctx.fillStyle = gradient;
+  ctx.fill();
 }
 
 /**

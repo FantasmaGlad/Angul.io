@@ -40,11 +40,18 @@
     "borderType": "STRICT_WALL"
   },
   "food": {
-    "density": 15,
+    "density": 30,
     "respawnRatePerSecond": 100,
-    "massMin": 1,
-    "massMax": 1,
-    "massSkewExponent": 1
+    "pelletTypes": [
+      { "color": "vert", "mass": 1, "weight": 28 },
+      { "color": "bleu", "mass": 2, "weight": 22 },
+      { "color": "jaune", "mass": 3, "weight": 18 },
+      { "color": "violet", "mass": 4, "weight": 13 },
+      { "color": "rouge", "mass": 5, "weight": 10 },
+      { "color": "orange", "mass": 6, "weight": 5 },
+      { "color": "rose", "mass": 7, "weight": 3 },
+      { "color": "multicolor", "mass": 12, "weight": 1 }
+    ]
   },
   "areaConstant": 3.141592653589793
 }

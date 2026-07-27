@@ -1,8 +1,11 @@
 # Métriques et formules — Angul.io
 
-**Version :** 0.4 — Document de référence technique. (v0.3 ajoute le contrôle par
+**Version :** 0.5 — Document de référence technique. (v0.3 ajoute le contrôle par
 intensité du curseur, §5.1 ; v0.4 corrige le modèle de decay §6 — seuil absolu par mode,
-`Mm`/`Ml` de la feuille Excel, plutôt que la masse de départ.)
+`Mm`/`Ml` de la feuille Excel, plutôt que la masse de départ ; v0.5 remplace la
+distribution continue de masse de nourriture par des types de pellets à poids de spawn
+discrets et double la densité de nourriture des deux modes, §7 — demande utilisateur,
+pas la feuille Excel.)
 **Origine des valeurs :** dérivées du cahier des charges (§3.5) pour la première version
 (v0.1), puis **révisées et étendues** à partir de la feuille de calcul fournie par
 l'utilisateur ("Angul.io - Master Sheet Engine & Documentation Technique.xlsx") qui
@@ -74,10 +77,9 @@ sans équivalent dans les deux sources précédentes.
 | `arena.width/height` | Wmap/Hmap | Dimensions de la carte (px) | Excel |
 | `arena.borderType` | borderType | STRICT_WALL / ELASTIC_BOUNCE / TOROIDAL / TOXIC_ZONE | Excel (seul TOXIC_ZONE n'est pas implémenté — paramètres de dégâts non spécifiés) |
 | `arena.bounceRestitution` | — | Fraction de vitesse restituée (ELASTIC_BOUNCE) | Excel |
-| `food.density` | D_food | Pellets par bloc de 1000×1000 px² | Excel |
+| `food.density` | D_food | Pellets par bloc de 1000×1000 px² | Excel (valeurs doublées en v0.3, demande utilisateur) |
 | `food.respawnRatePerSecond` | R_food | Pellets réapparaissant par seconde | Excel |
-| `food.massMin/massMax` | M_food | Plage de masse d'une particule | Excel |
-| `food.massSkewExponent` | — | Biais de la distribution vers `massMin` | implémentation (la feuille ne donne qu'une description qualitative pour Folie) |
+| `food.pelletTypes` | — | Types de pellets (couleur/masse/poids de spawn) — remplace `massMin`/`massMax`/`massSkewExponent` (v0.2) | v0.3, demande utilisateur (table de valeurs par couleur) |
 | `areaConstant` | — | Constante masse→aire (K_AREA) | v0.1 (absent de la feuille) |
 
 ---
@@ -107,9 +109,9 @@ sans équivalent dans les deux sources précédentes.
 | `decay.floor` (Mm) | 2 | 2 |
 | `arena.width` × `height` | 15000 × 15000 px | 20000 × 20000 px |
 | `arena.borderType` | STRICT_WALL | ELASTIC_BOUNCE (restitution 0.8) |
-| `food.density` (D_food) | 15 / 1000px² | 30 / 1000px² |
+| `food.density` (D_food) | 30 / 1000px² (v0.3, était 15) | 60 / 1000px² (v0.3, était 30) |
 | `food.respawnRatePerSecond` (R_food) | 100 / s | 200 / s |
-| `food.massMin` – `massMax` | 1 – 1 (fixe) | 2 – 8, biaisé vers les petites masses |
+| `food.pelletTypes` | 8 types, voir §7 (poids concentrés sur les petites masses) | 8 types, voir §7 (poids concentrés sur les grosses masses) |
 | `areaConstant` (K_AREA) | π (Rayon = √masse) | π |
 
 > **Correction apportée** : la cellule Folie/`speedMultiplier` du fichier Excel source
@@ -266,19 +268,32 @@ Valeurs (Vanilla et Folie, la feuille ne différencie pas les deux modes sur ce 
 - **Condition :** `masse_joueur ≥ eating.minMassToEatFood` (= 2, Vanilla et Folie)
 - **Effet :** `masse_joueur ← masse_joueur + masse_particule`
 
-**Masse d'une particule** (nouveau en v0.2, généralise le `M_food` fixe de la v0.1) :
+**Masse d'une particule** (v0.3, remplace le modèle continu `massMin`/`massMax`/
+`massSkewExponent` de la v0.2 — demande utilisateur du 2026-07-27, table de types de pellets) :
+tirage pondéré parmi un ensemble de **types de pellets** (`food.pelletTypes`), chacun avec une
+masse fixe et un poids de spawn relatif propre au mode. La masse *est* le type (aucun champ
+supplémentaire sur le protocole réseau) — le client déduit la couleur d'affichage directement
+de la masse reçue (`client/src/render.ts`, `foodColorForMass`), la correspondance masse→couleur
+étant la même quel que soit le mode (seuls les poids de spawn diffèrent).
 
-```
-masse_particule = massMin + (massMax - massMin) * random()^massSkewExponent
-```
+| Pellet | Masse | Poids Vanilla | Poids Folie |
+|---|---|---|---|
+| Vert | 1 | 28% | 10% |
+| Bleu | 2 | 22% | 10% |
+| Jaune | 3 | 18% | 10% |
+| Violet | 4 | 13% | 10% |
+| Rouge | 5 | 10% | 15% |
+| Orange | 6 | 5% | 15% |
+| Rose | 7 | 3% | 15% |
+| Multicolor | 12 | 1% | 15% |
 
-Vanilla : `massMin = massMax = 1` → toujours 1 (comme en v0.1).
-Folie : `massMin = 2, massMax = 8, massSkewExponent = 2` → distribution biaisée vers les
-petites masses ("plus de petits que de gros", description qualitative de la feuille —
-la formule exacte de biais est notre interprétation).
+Vanilla reste très concentré sur les petites masses (Vert/Bleu/Jaune représentent 68% des
+spawns) ; Folie est nettement plus généreux sur les pellets de haute valeur (60% de poids sur
+Rouge/Orange/Rose/Multicolor, contre 28% en Vanilla). Le pellet Multicolor (masse 12, le plus
+gros) reste le plus rare dans les deux modes, mais 15× plus fréquent en Folie (15% vs 1%).
 
-**Densité et taux de réapparition** (remplace le `FOOD_TARGET_COUNT` fixe de la v0.1,
-qui ne s'adaptait pas à la taille de la carte) :
+**Densité et taux de réapparition** (inchangé depuis la v0.2 — remplace le `FOOD_TARGET_COUNT`
+fixe de la v0.1, qui ne s'adaptait pas à la taille de la carte) :
 
 ```
 cible = D_food * (largeur_carte * hauteur_carte) / 1000²
@@ -290,17 +305,19 @@ tant que le nombre de particules est sous la cible.
 | | Vanilla | Folie |
 |---|---|---|
 | Carte | 15000×15000 | 20000×20000 |
-| Densité | 15/1000px² | 30/1000px² |
-| **Cible calculée** | **≈ 3375 particules** | **≈ 12 000 particules** |
+| Densité | **30**/1000px² (v0.3, était 15) | **60**/1000px² (v0.3, était 30) |
+| **Cible calculée** | **≈ 6750 particules** | **≈ 24 000 particules** |
 | Taux de réapparition | 100/s | 200/s |
 
-> ⚠️ **Ce nombre est nettement plus élevé que le `FOOD_TARGET_COUNT = 300` fixé
-> arbitrairement en v0.1.** Conséquence directe mesurée au Lot 1.8 : la bande passante de
-> diffusion augmente sensiblement avec le nombre d'entités (voir plan_implementation.md
-> Lot 1.8, mesure du 2026-07-26 avec ce nouveau modèle : ~198 Mbit/s pour seulement 20
-> joueurs, contre ~222 Mbit/s pour 50 joueurs avec l'ancien modèle à densité fixe). Ce
-> n'est pas un bug — la densité vient de la feuille de spécification — mais ça renforce
-> encore la nécessité de l'interest management avant le Lot 8 (déjà identifiée au Lot 1.8).
+> ⚠️ **Densité doublée par rapport à la v0.2** (demande utilisateur du 2026-07-27), qui avait
+> déjà noté que le total dérivé de la feuille (≈3375/≈12000) était bien plus élevé que le
+> `FOOD_TARGET_COUNT = 300` fixé arbitrairement en v0.1, avec un effet mesurable sur la bande
+> passante (Lot 1.8). Doubler encore la densité amplifie ce même effet — confirmé en
+> conditions réelles (voir Journal, 2026-07-27) : jusqu'à ~741 particules de nourriture visibles
+> simultanément par un seul client en Vanilla (rayon d'intérêt de 3000px), contre quelques
+> centaines avant ce changement. Aucune nouvelle mesure de bande passante dédiée n'a été refaite
+> à ce stade (le besoin d'interest management était déjà acté avant ce changement, voir Lot 1.8) ;
+> à surveiller si un test de charge futur révèle un nouveau palier.
 
 ---
 
@@ -412,14 +429,16 @@ lui-même (`position ← position + vélocité * dt`) reste générique, calcul�
 
 ## 13. Récapitulatif des points encore ouverts / assumés
 
-- **Densité de nourriture élevée** (§7) : ~3375 particules (Vanilla) / ~12 000 (Folie) —
-  valeurs de la feuille Excel, avec un impact bande passante significatif confirmé au
-  Lot 1.8. À revalider en conditions réelles de déploiement (Lot 8).
+- **Densité de nourriture élevée** (§7) : ~6750 particules (Vanilla) / ~24 000 (Folie)
+  depuis le doublement de densité v0.3 (demande utilisateur, était ~3375/~12000 sur les
+  valeurs de la feuille Excel), avec un impact bande passante déjà significatif avant ce
+  doublement (Lot 1.8). À revalider en conditions réelles de déploiement (Lot 8).
 - **`minSplitMass` de Folie (400)** : notre extrapolation (2×M0, comme Vanilla), la
   feuille ne le précise pas explicitement.
-- **`massSkewExponent` de la distribution de masse de nourriture** (Folie) : notre
-  interprétation d'une description qualitative ("plus de petits que de gros"), pas une
-  formule donnée par la feuille.
+- **Poids de spawn des types de pellets par mode** (§7, v0.3) : table fournie par
+  l'utilisateur (pas la feuille Excel) — remplace l'ancien `massSkewExponent`
+  (interprétation d'une description qualitative de la feuille, "plus de petits que de
+  gros", maintenant obsolète).
 - **`decay.threshold` pour Folie (100, littéral)** : voir l'avertissement §6 — Folie
   démarre à `M0=200`, donc toujours au-dessus de ce seuil, jamais au taux réduit. À
   confirmer : voulu, ou seuil propre à Folie (ex. son propre `minSplitMass=400`) ?

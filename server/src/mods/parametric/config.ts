@@ -14,6 +14,16 @@
  * fusion, constante masse→aire) — repris tels quels de la spécification initiale
  * (cahier_des_charges.md §3.5 / metriques.md v0.1).
  */
+
+/** Un type de pellet de nourriture (voir `ParametricModConfig['food']['pelletTypes']`). */
+export interface FoodPelletType {
+  /** Purement informatif (lisibilité des fichiers de config/journal) — jamais transmis au
+   * client. */
+  color: string;
+  mass: number;
+  weight: number;
+}
+
 export interface ParametricModConfig {
   id: string;
 
@@ -101,12 +111,15 @@ export interface ParametricModConfig {
     density: number;
     /** R_food — pellets réapparaissant par seconde sur toute la carte. */
     respawnRatePerSecond: number;
-    massMin: number;
-    massMax: number;
-    /** > 1 favorise les petites masses dans [massMin, massMax] ("plus de petits que de
-     * gros" — Folie). 1 = distribution uniforme. Absent de la feuille (qui ne donne que la
-     * description qualitative), interprétation assumée ici. */
-    massSkewExponent: number;
+    /** Types de pellets (couleur/masse/poids de spawn) — remplace l'ancien modèle de
+     * distribution continue (`massMin`/`massMax`/`massSkewExponent`) par une palette de valeurs
+     * discrètes propre à chaque mode (demande utilisateur : Vert/Bleu/Jaune/Violet/Rouge/
+     * Orange/Rose/Multicolor). `weight` est un poids relatif de spawn — pas nécessairement
+     * normalisé à 100, `randomFoodMass` (physics.ts) pondère proportionnellement à la somme des
+     * poids de la liste. `color` est purement informatif (jamais transmis au client, qui déduit
+     * la couleur d'affichage directement de la masse reçue — voir client/src/render.ts, aucun
+     * champ supplémentaire sur le protocole réseau). */
+    pelletTypes: FoodPelletType[];
   };
 
   /** K_AREA — constante masse→aire (Rayon = √(K_AREA·masse/π)), absente de la feuille,

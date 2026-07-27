@@ -27,7 +27,11 @@ export function testConfig(overrides: Partial<ParametricModConfig> = {}): Parame
       floor: 2,
     },
     arena: { width: 15000, height: 15000, borderType: 'STRICT_WALL' },
-    food: { density: 15, respawnRatePerSecond: 100, massMin: 1, massMax: 1, massSkewExponent: 1 },
+    food: {
+      density: 30,
+      respawnRatePerSecond: 100,
+      pelletTypes: [{ color: 'vert', mass: 1, weight: 1 }],
+    },
     areaConstant: Math.PI,
     ...overrides,
   };

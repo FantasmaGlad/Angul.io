@@ -36,13 +36,22 @@ export function applyPassiveDecay(mass: number, dt: number, config: ParametricMo
   return Math.max(mass * Math.exp(-lambda * dt), config.decay.floor);
 }
 
-/** Masse d'une nouvelle particule de nourriture. Distribution biaisée vers `massMin` quand
- * `massSkewExponent > 1` ("plus de petits que de gros", décrit qualitativement par la feuille
- * Excel pour Folie — la formule exacte est notre interprétation, pas la leur). */
+/** Masse d'une nouvelle particule de nourriture — tirage pondéré parmi les types de pellets du
+ * mode (`config.food.pelletTypes`, ex. Vert/Bleu/Jaune/Violet/Rouge/Orange/Rose/Multicolor,
+ * chacun avec sa propre masse et son propre poids de spawn, différent par mode). Remplace
+ * l'ancien modèle de distribution continue (`massMin`/`massMax`/`massSkewExponent`). */
 export function randomFoodMass(config: ParametricModConfig): number {
-  const { massMin, massMax, massSkewExponent } = config.food;
-  if (massMax <= massMin) return massMin;
-  return massMin + (massMax - massMin) * Math.pow(Math.random(), massSkewExponent);
+  const { pelletTypes } = config.food;
+  const totalWeight = pelletTypes.reduce((sum, type) => sum + type.weight, 0);
+  let roll = Math.random() * totalWeight;
+  for (const type of pelletTypes) {
+    if (roll < type.weight) return type.mass;
+    roll -= type.weight;
+  }
+  // Filet de sécurité : erreur d'arrondi flottant en bout de boucle, ou config invalide
+  // (`pelletTypes` vide) — ne doit jamais planter sur un `undefined.mass`.
+  const last = pelletTypes[pelletTypes.length - 1];
+  return last ? last.mass : 1;
 }
 
 /** Nombre cible de particules de nourriture pour la carte actuelle, dérivé de la densité

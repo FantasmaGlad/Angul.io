@@ -1,6 +1,6 @@
 import type { EntitySnapshot } from '@angulio/shared';
 import { describe, expect, it } from 'vitest';
-import { BASE_SCALE, computeCamera, interpolateEntities } from './render.js';
+import { BASE_SCALE, computeCamera, foodColorForMass, interpolateEntities } from './render.js';
 
 function piece(overrides: Partial<EntitySnapshot>): EntitySnapshot {
   return {
@@ -93,5 +93,20 @@ describe('interpolateEntities', () => {
     const result = interpolateEntities(previous, latest, 0.5);
 
     expect(result.map((e) => e.i)).toEqual(['a']);
+  });
+});
+
+describe('foodColorForMass — types de pellets (Vert/Bleu/Jaune/Violet/Rouge/Orange/Rose)', () => {
+  it('associe une couleur distincte à chacune des masses 1 à 7', () => {
+    const colors = [1, 2, 3, 4, 5, 6, 7].map(foodColorForMass);
+    expect(new Set(colors).size).toBe(7); // toutes différentes, aucune collision
+  });
+
+  it('reste stable (même couleur) pour une masse donnée', () => {
+    expect(foodColorForMass(1)).toBe(foodColorForMass(1));
+  });
+
+  it('retombe sur une couleur de repli pour une masse inconnue (mod futur)', () => {
+    expect(foodColorForMass(999)).toBe(foodColorForMass(1));
   });
 });
