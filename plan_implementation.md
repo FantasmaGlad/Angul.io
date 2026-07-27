@@ -42,7 +42,7 @@ mathématiques exactes (masse, vitesse, split, fusion, decay…) mod par mod. Le
 | [5](#lot-5--interface-dadministration) | Interface d'administration | MVP | ✅ Fait — ⚠️ 5.5 différé (Phase 2) |
 | [6](#lot-6--statut-premium--dons) | Statut Premium & dons | MVP | ✅ Fait — ⚠️ voir 6.1 (compte Ko-fi réel pas encore créé), 6.5 différé |
 | [7](#lot-7--client-mobile-pwa) | Client mobile (PWA) | MVP | 🔶 En cours — 7.1/7.2 faits, 7.3 (validation sur un vrai appareil Android) reste à faire |
-| [8](#lot-8--infrastructure--déploiement) | Infrastructure & déploiement | MVP | 🔶 En cours — install.sh écrit (8.3/8.4/8.5), pas encore exécuté sur le Wyse réel |
+| [8](#lot-8--infrastructure--déploiement) | Infrastructure & déploiement | MVP | 🔶 En cours — install.sh écrit (8.3/8.4/8.5/8.6), pas encore exécuté sur le Wyse réel |
 | [9](#lot-9--documentation--ouverture-communautaire-de-lapi-de-modding) | Documentation & ouverture communautaire | Phase 2 | ⬜ À faire |
 | [10](#lot-10--scaling-multi-wyse) | Scaling multi-Wyse | Phase 2 | ⬜ À faire |
 | [11](#lot-11--optimisation-bas-niveau-cpugpu-spéculatif) | Optimisation bas niveau CPU/GPU | Phase 3 (spéculatif) | ⏸️ Non commencé — options listées, aucun besoin mesuré à ce jour |
@@ -966,11 +966,29 @@ Internet (§7).
   réel avec le NAT (8.2) et le sous-domaine DuckDNS (8.3) en place.
 
 ### 8.6 — Monitoring basique
-- **Statut :** ⬜ À faire
-- **Contenu :** logs applicatifs persistés, alerte simple (mail/notification) si le
-  service tombe.
+- **Statut :** 🔶 En cours (2026-07-27) — script écrit et vérifié syntaxiquement, **jamais
+  exécuté sur une machine réelle** (même limite que le reste du Lot 8, 8.1).
+- **Contenu :** logs applicatifs déjà persistés via `journalctl` une fois déployé (rien à
+  ajouter : `logEvent` écrit sur stdout depuis le Lot "logs structurés serveur", capturé tel
+  quel par systemd — voir Journal du 2026-07-26). **Alerte** (`install.sh`) : plateforme
+  choisie **ntfy.sh** — service de notification push public, **aucun compte requis** (juste un
+  nom de sujet secret, `ALERT_NTFY_TOPIC`), cohérent avec la contrainte de ne pas créer de
+  compte tiers à la place de l'utilisateur (comme pour Ko-fi, Lot 6.1) ; alternative à un vrai
+  MTA (`postfix`/SMTP), plus lourd à configurer et nécessitant des identifiants que je n'ai
+  pas. Optionnel : `ALERT_NTFY_TOPIC` vide désactive proprement l'alerte (le reste du script
+  fonctionne pareil), cohérent avec le reste des fonctionnalités additives du projet
+  (comptes, admin — jamais bloquantes si non configurées). Mécanisme : `OnFailure=` (dans
+  `[Unit]` de `angulio.service`) déclenché seulement quand systemd renonce à redémarrer après
+  plusieurs échecs rapprochés (`StartLimitIntervalSec=60`/`StartLimitBurst=5`) — un redémarrage
+  isolé, déjà absorbé par `Restart=on-failure`, ne déclenche donc pas d'alerte ; un vrai
+  crash-loop, si.
 - **Dépendances :** 8.4.
-- **Critère d'acceptation :** un arrêt du service génère une alerte reçue par toi.
+- **Critère d'acceptation :** ⬜ pas encore validé en conditions réelles — nécessite de
+  déclencher un vrai échec du service sur une machine réelle pour confirmer la réception de la
+  notification (bloqué sur le Wyse physique, 8.1, comme le reste du Lot 8). La logique de
+  génération des fichiers systemd (avec/sans `OnFailure=`) a été vérifiée par un test isolé du
+  bloc de substitution de variables (rendu correct dans les deux cas), en plus de `bash -n` sur
+  le script complet.
 
 ---
 
@@ -1114,6 +1132,7 @@ Lot/Sous-Lot significatif terminé. Les entrées les plus récentes en haut.*
 
 | Date | Entrée |
 |---|---|
+| 2026-07-27 | **Lot 8.6 (monitoring basique) attaqué : alerte ntfy.sh optionnelle.** Logs déjà couverts sans rien ajouter (`journalctl`, acquis depuis les logs structurés du Lot 1.8/2). Pour l'alerte, plateforme choisie **ntfy.sh** — même contrainte que Ko-fi (Lot 6.1) : pas de création de compte tiers à ma place, donc un service qui fonctionne par simple nom de sujet plutôt qu'un MTA/SMTP nécessitant des identifiants inexistants. `ALERT_NTFY_TOPIC` optionnel dans `install.sh` : vide, aucune alerte configurée (dégradation gracieuse, comme `accounts`/`admin`) ; renseigné, écrit un service `angulio-alert.service` (oneshot, `curl` vers `ntfy.sh/<sujet>`) déclenché via `OnFailure=` sur `angulio.service`, lui-même limité par `StartLimitIntervalSec=60`/`StartLimitBurst=5` pour ne pas alerter sur un simple redémarrage isolé (déjà absorbé par `Restart=on-failure`), seulement sur un vrai crash-loop. Logique de génération des deux variantes du fichier systemd (avec/sans `OnFailure=`) vérifiée par un test isolé du bloc de substitution, en plus de `bash -n` sur le script complet — toujours pas exécuté sur une machine réelle (Wyse physique, 8.1, indisponible). |
 | 2026-07-27 | **Lot 8.4 étendu : `install.sh` intègre désormais PostgreSQL.** Point resté ouvert depuis la clôture du Lot 3 ("pas encore de service PostgreSQL dans install.sh") — traité maintenant que les Lots 5/6/7 sont faits et que le script est de toute façon en train d'être retouché. Ajouts : paquet `postgresql`, création idempotente du rôle/de la base applicatifs (mot de passe généré une seule fois, au premier déploiement — `server/.env` sert de marqueur pour ne jamais régénérer les identifiants d'un déploiement existant), génération de `server/.env` (`DATABASE_URL` + `ADMIN_PASSWORD_HASH`, ce dernier haché via `hashPassword.mjs` du Lot 5.1 à partir d'une nouvelle variable `ADMIN_PASSWORD` en tête de script, même convention que `DUCKDNS_TOKEN`), puis `npm run migrate:up` à chaque déploiement. Toujours seulement vérifié par `bash -n` (`shellcheck` non disponible sur cette machine) — l'exécution réelle reste bloquée sur le Wyse physique (8.1), comme le reste du Lot 8. |
 | 2026-07-27 | **Lot 7.1/7.2 faits (PWA) : manifeste, icônes, service worker.** `manifest.json` + 3 icônes PNG (192/512/512 maskable) générées via un `<canvas>` dans le navigateur plutôt que d'ajouter une dépendance de traitement d'image au projet (`sharp`/`canvas` npm) — deux cercles qui se chevauchent, évoquant le gameplay (absorption de cellules), place-holder de branding assumé. Service worker (`client/public/service-worker.js`, JS brut sans build) précache uniquement la coquille statique (page, bundle, manifeste, icônes) — **jamais** `/api/*` ni le WebSocket du jeu, pour ne jamais servir une liste de salons ou une partie périmées hors ligne. **Validé dans le navigateur** (Browser pane) : manifeste valide avec 3 icônes, service worker `activated`, les 7 fichiers de la coquille confirmés en cache. **7.3 (validation sur un vrai appareil Android) reste ⬜** : nécessite un appareil physique, indisponible dans cet environnement — même limite que le Lot 8.1 (Wyse physique). 7.4/7.5 restent différés comme prévu. |
 | 2026-07-27 | **Lots 5 et 6 clos : interface d'administration et statut Premium/dons.** `admin/` devient une vraie app (le placeholder du Lot 0 est remplacé) : login par mot de passe unique haché (`ADMIN_PASSWORD_HASH`, argon2, script `hashPassword.mjs` pour le générer), recherche/consultation/édition de compte (niveau, XP, cosmétiques, Premium, bannissement) via un patch unique `PATCH /api/admin/players/:id`, servie sous `/admin/*` par le même process de jeu (répertoire statique distinct du client joueur). **Bug trouvé et corrigé en testant manuellement dans le navigateur** (pas seulement en tests automatisés) : `/admin` sans slash final + un script chargé en chemin relatif (`./bundle.js`) résolvait vers le bundle du **client joueur** au lieu de celui de l'admin (résolution d'URL relative standard) — corrigé par un chemin absolu. Bannissement : nouvelle colonne `banned`, vérifiée après le mot de passe à la connexion (ne fuit rien à qui ne le connaît pas), et révocation immédiate des sessions actives du compte banni (nouveau `SessionStore.revokeSessionsForAccount`) plutôt que d'attendre une expiration qui n'existe pas. **Lot 6** : plateforme de don choisie (**Ko-fi**, 0% commission, pas de société requise, don libre sans palier) — le compte réel reste à créer manuellement par l'utilisateur (hors de portée d'un agent), `DONATION_URL` est un espace réservé documenté dans `client/src/support.ts`. Page Soutien ajoutée au lobby (panneau glassmorphism, même style que le profil). Création de salon restreinte aux comptes Premium (`isPremium`, cahier des charges §5.3) : 403 côté serveur pour un invité/compte standard, formulaire remplacé côté client par un message explicatif tant que le compte connu n'est pas Premium — avec dégradation gracieuse existante (sans base de données configurée, la restriction ne s'applique pas, comme le reste de `GameServerOptions.accounts`). 15 nouveaux tests serveur (dont un bloc entier de tests réseau "avec comptes joueurs" contre un vrai PostgreSQL), 189 tests passants au total. **Validé manuellement de bout en bout dans le navigateur** (Browser pane) pour l'ensemble du circuit : connexion admin → recherche → activation Premium d'un compte de test → reconnexion côté client → formulaire de création de salon débloqué → salon créé et rejoint ; bannissement testé séparément (connexion refusée ensuite, 401). |
