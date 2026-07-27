@@ -331,5 +331,31 @@ describe('RoomManager', () => {
       expect(() => manager.expireRoom('id-inconnu')).not.toThrow();
       expect(removed).toEqual([]);
     });
+
+    it('permet de désactiver les bots à la création du salon (botsEnabled: false)', () => {
+      const botsConfig = {
+        enabled: true,
+        targetRatio: 0.5,
+        updateFrequencyHz: 2,
+        proportions: { fuis: 25, neutre: 30, agressif: 30, fou: 15 },
+      };
+      const manager = makeManager((modId) => ({ mod: testMod, mapSize: 1000, bots: botsConfig }));
+
+      const summary = manager.createRoom({
+        name: 'Salon Sans Bots',
+        modId: 'vanilla',
+        visibility: 'public',
+        botsEnabled: false,
+      });
+
+      const managed = manager.getManagedRoom(summary.id)!;
+      managed.room.tick();
+
+      expect(managed.room.botManager?.activeBotCount ?? 0).toBe(0);
+      expect(managed.room.world.allPlayers()).toHaveLength(0);
+    });
+
+
   });
 });
+

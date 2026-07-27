@@ -758,6 +758,8 @@ async function handleCreateRoom(
       ? durationMsRaw
       : undefined;
 
+  const botsEnabled = isRecord(body) && typeof body.botsEnabled === 'boolean' ? body.botsEnabled : undefined;
+
   if (!name) {
     logEvent('room_create_rejected', { reason: 'missing_name' });
     respondJson(res, 400, { error: 'Le nom du salon est requis.' });
@@ -770,8 +772,9 @@ async function handleCreateRoom(
   }
 
   try {
-    const summary = roomManager.createRoom({ name, modId, visibility, maxPlayers, durationMs });
+    const summary = roomManager.createRoom({ name, modId, visibility, maxPlayers, durationMs, botsEnabled });
     respondJson(res, 201, summary);
+
   } catch (error) {
     logEvent('room_create_rejected', { reason: (error as Error).message });
     respondJson(res, 400, { error: (error as Error).message });

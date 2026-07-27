@@ -43,6 +43,8 @@ export interface CreateRoomOptions {
   maxPlayers?: number;
   /** "Durée" (refonte UI/UX) — durée de vie du salon en ms, omis = pas d'expiration. */
   durationMs?: number;
+  /** "Activer les bots (IA)" — omis = bots activés selon la configuration du mode. */
+  botsEnabled?: boolean;
 }
 
 /** `token` (Lot 6.4) : la création de salon est réservée aux comptes Premium — le serveur
@@ -66,8 +68,10 @@ export async function createRoom(
       visibility,
       maxPlayers: options.maxPlayers,
       durationMs: options.durationMs,
+      botsEnabled: options.botsEnabled,
     }),
   });
+
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? 'Impossible de créer le salon.');

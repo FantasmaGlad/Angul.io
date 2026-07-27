@@ -24,26 +24,12 @@ export interface CreateRoomOptions {
   name: string;
   modId: string;
   visibility: RoomVisibility;
-  /** Un salon permanent n'est jamais supprimé automatiquement même vide (voir
-   * `emptyRoomGraceMs`) — réservé au salon par défaut créé par index.ts au démarrage. Un
-   * salon créé depuis le lobby (Lot 2.2) est toujours non permanent. */
   permanent?: boolean;
-  /** Planification du reset automatique (Lot 2.4) — simple relais vers `Room`, qui applique
-   * son propre défaut (1x/24h à 10h heure de Paris) si omis. "Configurable par salon" au sens
-   * du cahier des charges (§2.1) se limite à ce niveau (modèle de données) pour l'instant :
-   * aucun contrôle dans le lobby (client) pour le personnaliser à la création. */
   resetSchedule?: RoomResetSchedule | null;
-  /** Capacité maximale de joueurs (refonte UI/UX, formulaire "Créer un salon privé" —
-   * "Nombre de Joueurs") — défaut `DEFAULT_MAX_PLAYERS_PER_ROOM` si omis (couvre le salon
-   * permanent et tout salon créé sans le préciser). Appliquée au moment du `join` réseau (voir
-   * net/server.ts), pas ici : `RoomManager` ne connaît rien des sockets. */
   maxPlayers?: number;
-  /** Durée de vie du salon (ms) avant fermeture automatique (refonte UI/UX, champ "Durée" du
-   * formulaire de création) — `undefined`/omis = salon sans expiration (comportement d'avant
-   * ce champ). À l'expiration, `expireRoom` est invoqué automatiquement (voir `createRoom`),
-   * distinct de `pruneEmptyRooms` qui ne supprime que des salons déjà vides : ici le salon peut
-   * très bien avoir des joueurs encore connectés au moment de l'expiration. */
   durationMs?: number;
+  /** Activation/Désactivation des bots (IA) pour ce salon (si false, aucun bot n'apparaît). */
+  botsEnabled?: boolean;
 }
 
 /** Vue publique d'un salon, sans exposer la `Room` ni ses internes (utilisée par le lobby, Lot 2.2). */
@@ -53,17 +39,10 @@ export interface RoomSummary {
   modId: string;
   visibility: RoomVisibility;
   playerCount: number;
-  /** Capacité maximale de joueurs (refonte UI/UX) — affichée côté client en "count/maxPlayers". */
   maxPlayers: number;
-  /** `true` pour le salon par défaut créé au démarrage (voir index.ts, `CreateRoomOptions.permanent`)
-   * — permet au client de cibler explicitement ce salon (bouton "Rejoindre", fond spectateur)
-   * plutôt que de compter sur l'ordre de la liste renvoyée par `listPublicRooms`. */
   permanent: boolean;
 }
 
-/** Réponse de `createRoom` pour un salon privé : inclut le code d'invitation, à communiquer au
- * créateur uniquement (jamais renvoyé par `listPublicRooms`, qui ignore de toute façon les
- * salons privés — voir Lot 2.3). */
 export interface CreatedRoomSummary extends RoomSummary {
   inviteCode?: string;
 }
@@ -75,34 +54,18 @@ export interface ManagedRoom {
   readonly visibility: RoomVisibility;
   readonly inviteCode?: string;
   readonly room: Room;
-  /** Capacité maximale de joueurs — voir `CreateRoomOptions.maxPlayers`. Appliquée par
-   * net/server.ts au moment du `join` réseau. */
   readonly maxPlayers: number;
 }
 
 interface RoomEntry extends ManagedRoom {
   readonly permanent: boolean;
-  /** Dernier instant (Date.now()) où le salon avait au moins un joueur — sert de base au délai
-   * de grâce avant suppression automatique (voir `pruneEmptyRooms`). Initialisé à la création :
-   * un salon tout juste créé n'est pas immédiatement éligible à la suppression. */
   lastNonEmptyAt: number;
-  /** Minuterie d'expiration (voir `CreateRoomOptions.durationMs`/`expireRoom`) — absente si le
-   * salon n'a pas de durée de vie fixée. Conservée pour pouvoir l'annuler si le salon est
-   * supprimé d'une autre façon avant son échéance (évite un `expireRoom` orphelin sur un id déjà
-   * réutilisé, même si l'id court n'est en pratique jamais réutilisé — voir `nextRoomId`). */
   expireTimer?: ReturnType<typeof setTimeout>;
 }
 
 export interface RoomManagerOptions {
-  /** Nombre maximal de salons simultanés — protection basique contre un abus de
-   * `POST /api/rooms` (Lot 2.2) une fois le lobby exposé publiquement. Au-delà, `createRoom`
-   * lève une erreur (400 côté API HTTP, voir net/server.ts). */
   maxRooms?: number;
-  /** Durée (ms) au-delà de laquelle un salon vide (0 joueur) et non permanent est supprimé
-   * automatiquement — évite une croissance illimitée de la mémoire si le lobby est exposé
-   * publiquement sans authentification ni limite de création. */
   emptyRoomGraceMs?: number;
-  /** Intervalle (ms) entre deux passages de nettoyage automatique. */
   pruneIntervalMs?: number;
 }
 
@@ -111,24 +74,8 @@ const DEFAULT_EMPTY_ROOM_GRACE_MS = 10 * 60_000; // 10 minutes
 const DEFAULT_PRUNE_INTERVAL_MS = 30_000;
 const INVITE_CODE_DIGITS = 6;
 const INVITE_CODE_UPPER_BOUND = 10 ** INVITE_CODE_DIGITS;
-/** Capacité par défaut d'un salon dont `maxPlayers` n'a pas été précisé (salon permanent créé
- * par index.ts, ou tout salon créé sans le champ "Nombre de Joueurs") — largement au-dessus de
- * la charge cible du MVP (10-50 joueurs simultanés, cahier des charges §2.1), simple garde-fou
- * plutôt qu'une vraie contrainte de capacité pour l'usage courant. */
 const DEFAULT_MAX_PLAYERS_PER_ROOM = 100;
 
-/**
- * Registre des salons actifs en mémoire (Lot 2.1). Un salon unique codé en dur (Lot 1) devient un
- * ensemble dynamique de salons, créés à la demande, chacun avec sa propre `Room` — donc sa propre
- * boucle de tick et sa propre simulation, totalement indépendante des autres (§4.3 du cahier des
- * charges). `RoomManager` ne fait qu'assembler/cataloguer des `Room` ; il ne sait rien du réseau
- * (net/server.ts) ni du contenu des mods.
- *
- * Durcissement (avant exposition publique via DuckDNS/install.sh) : un salon non permanent vide
- * depuis trop longtemps est supprimé automatiquement, et le nombre total de salons est plafonné —
- * sans ces deux garde-fous, `POST /api/rooms` (Lot 2.2) exposé sur Internet sans authentification
- * permettrait une croissance illimitée de la mémoire.
- */
 export class RoomManager {
   private readonly rooms = new Map<string, RoomEntry>();
   private readonly createListeners: Array<(managed: ManagedRoom) => void> = [];
@@ -157,15 +104,20 @@ export class RoomManager {
     }
 
     const { mod, mapSize, kArea, bots } = this.resolveMod(options.modId);
+    const botConfig = bots
+      ? { ...bots, enabled: options.botsEnabled ?? bots.enabled }
+      : undefined;
+
     const room = new Room(mod, {
       mapSize,
       tickRateHz: this.tickRateHz,
       kArea,
       maxPlayers: options.maxPlayers ?? DEFAULT_MAX_PLAYERS_PER_ROOM,
-      bots,
+      bots: botConfig,
       resetSchedule: options.resetSchedule,
     });
     room.start();
+
 
 
     // Id court incrémental plutôt qu'un UUID, pour rester cohérent avec les identifiants

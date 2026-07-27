@@ -37,6 +37,7 @@ export default function CreateRoomPanel({
   const [maxPlayers, setMaxPlayers] = useState(String(DEFAULT_ROOM_MAX_PLAYERS));
   const [duration, setDuration] = useState(DURATION_OPTIONS[DURATION_OPTIONS.length - 1]!.value);
   const [isPrivate, setIsPrivate] = useState(true);
+  const [botsEnabled, setBotsEnabled] = useState(true);
   const [createdCode, setCreatedCode] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [formError, setFormError] = useState('');
@@ -68,6 +69,7 @@ export default function CreateRoomPanel({
           {
             maxPlayers: Number.isInteger(parsedMaxPlayers) ? parsedMaxPlayers : undefined,
             durationMs,
+            botsEnabled,
           },
         );
         if (room.inviteCode) {
@@ -157,6 +159,18 @@ export default function CreateRoomPanel({
             </div>
 
             <div className="field-row-toggle">
+              <span className="field-label">ROBOTS (IA)</span>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={botsEnabled}
+                  onChange={(event) => setBotsEnabled(event.target.checked)}
+                />
+                <span className="toggle-track" aria-hidden="true" />
+              </label>
+            </div>
+
+            <div className="field-row-toggle">
               <span className="field-label">ACCÈS PRIVÉ</span>
               <label className="toggle-switch">
                 <input
@@ -167,6 +181,7 @@ export default function CreateRoomPanel({
                 <span className="toggle-track" aria-hidden="true" />
               </label>
             </div>
+
 
             {createdCode && (
               <label className="field">
