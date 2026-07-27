@@ -480,6 +480,62 @@
         border: 1px solid var(--hairline);
         border-radius: 12px;
       }
+
+      /* Lot 6.2 : mêmes proportions/glassmorphism que #profileOverlay (cohérence visuelle),
+         contenu différent (don/soutien plutôt que stats de compte). */
+      #supportOverlay {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        box-sizing: border-box;
+        background-color: rgba(10, 10, 12, 0.45);
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif;
+      }
+      #supportPanel {
+        width: 380px;
+        max-width: 100%;
+        max-height: 88vh;
+        overflow-y: auto;
+        background: var(--glass-strong);
+        border: 1px solid var(--glass-border);
+        border-radius: 24px;
+        padding: 30px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(28px) saturate(180%);
+        -webkit-backdrop-filter: blur(28px) saturate(180%);
+        color: var(--ink);
+      }
+      #supportPanel #supportBody {
+        font-size: 13.5px;
+        line-height: 1.5;
+        color: var(--ink);
+      }
+      #supportPanel a#supportLink {
+        display: block;
+        text-align: center;
+        text-decoration: none;
+        box-shadow: 0 6px 16px rgba(17, 17, 19, 0.25);
+      }
+      #supportPanel button {
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        border-radius: 12px;
+        border: 1px solid var(--hairline);
+        background: var(--surface-1);
+        color: var(--ink);
+        padding: 9px 16px;
+        width: 100%;
+        margin-top: 10px;
+      }
+      #supportPanel button:hover {
+        background: var(--surface-2);
+      }
     </style>
   </head>
   <body>
@@ -524,9 +580,12 @@
             <section class="lobby-section" id="accountSection">
               <div class="section-header">
                 <span class="section-title">Compte</span>
-                <button id="accountToggleModeButton" class="btn-ghost" type="button">
-                  S'inscrire
-                </button>
+                <div class="field-row" style="margin-bottom: 0">
+                  <button id="openSupportButton" class="btn-ghost" type="button">Soutenir</button>
+                  <button id="accountToggleModeButton" class="btn-ghost" type="button">
+                    S'inscrire
+                  </button>
+                </div>
               </div>
 
               <div id="accountForm">
@@ -572,17 +631,33 @@
 
             <section class="lobby-section">
               <span class="section-title">Créer un salon</span>
-              <input id="roomNameInput" placeholder="Nom du salon" maxlength="40" />
-              <div class="field-row">
-                <select id="roomModeSelect"></select>
-                <label class="checkbox-field">
-                  <input id="roomPrivateCheckbox" type="checkbox" />
-                  <span>Privé</span>
-                </label>
+              <!-- Lot 6.4 : réservé aux comptes Premium (cahier des charges §5.3) — le serveur
+                   refuse de toute façon (403) sans compte Premium, mais mieux vaut ne pas
+                   montrer un formulaire voué à échouer : #createRoomLocked remplace le
+                   formulaire tant que le statut Premium n'est pas confirmé (voir index.ts,
+                   `refreshCreateRoomAccess`). -->
+              <div id="createRoomForm">
+                <input id="roomNameInput" placeholder="Nom du salon" maxlength="40" />
+                <div class="field-row">
+                  <select id="roomModeSelect"></select>
+                  <label class="checkbox-field">
+                    <input id="roomPrivateCheckbox" type="checkbox" />
+                    <span>Privé</span>
+                  </label>
+                </div>
+                <button id="createRoomButton" class="btn-primary" type="button">
+                  Créer et rejoindre
+                </button>
               </div>
-              <button id="createRoomButton" class="btn-primary" type="button">
-                Créer et rejoindre
-              </button>
+              <div id="createRoomLocked" style="display: none">
+                <p class="account-status">
+                  Réservé aux comptes <strong>Premium</strong> (don libre, voir
+                  <button id="openSupportFromLockButton" class="btn-ghost" type="button">
+                    Soutenir
+                  </button>
+                  ).
+                </p>
+              </div>
             </section>
 
             <section class="lobby-section">
@@ -630,6 +705,22 @@
           <ul id="profileBestScores"></ul>
         </section>
         <button id="closeProfileButton" type="button">Fermer</button>
+      </div>
+    </div>
+    <!-- Lot 6.2 : page dédiée don/soutien (cahier des charges §5.3) — explique le statut
+         Premium et pointe vers le lien de don, contenu géré par support.ts (pas figé ici en
+         dur : le lien change selon `DONATION_URL`). -->
+    <div id="supportOverlay">
+      <div id="supportPanel">
+        <div class="lobby-header">
+          <h1>Soutenir Angul.io</h1>
+          <p>Don libre, sans palier — aucun montant minimum</p>
+        </div>
+        <p id="supportBody" class="account-status"></p>
+        <a id="supportLink" class="btn-primary" target="_blank" rel="noopener noreferrer">
+          Faire un don
+        </a>
+        <button id="closeSupportButton" type="button">Fermer</button>
       </div>
     </div>
     <script type="module" src="./bundle.js"></script>

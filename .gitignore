@@ -4,6 +4,8 @@ build/
 *.tsbuildinfo
 client/public/bundle.js
 client/public/bundle.js.map
+admin/public/bundle.js
+admin/public/bundle.js.map
 .env
 .env.*
 !.env.example

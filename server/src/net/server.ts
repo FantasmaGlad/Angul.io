@@ -11,6 +11,7 @@ import {
 import { WebSocketServer, type WebSocket } from 'ws';
 import { SpatialHash } from '../engine/spatialHash.js';
 import { AccountError, type AccountsService } from '../accounts/service.js';
+import type { AdminAuth } from '../admin/adminAuth.js';
 import type { ManagedRoom, RoomManager, RoomVisibility } from '../engine/roomManager.js';
 import type { Entity, PlayerId } from '../engine/types.js';
 import { logEvent } from '../log.js';
@@ -34,6 +35,13 @@ export interface GameServerOptions {
    * de stats), pour ne pas forcer `DATABASE_URL` sur un environnement de test/dev qui n'en a pas
    * besoin (voir server/src/db/pool.ts). */
   accounts?: AccountsService;
+  /** Authentification admin (Lot 5.1) — optionnelle comme `accounts`, mêmes raisons (pas de
+   * plantage sans `ADMIN_PASSWORD_HASH` configuré, voir AdminAuth.isConfigured). */
+  admin?: AdminAuth;
+  /** Répertoire de fichiers statiques de l'interface d'administration (Lot 5), servis sous
+   * `/admin/*` — distincte du client joueur (`staticDir`), cahier des charges §5.4 ("séparée
+   * du client joueur"). */
+  adminStaticDir?: string;
 }
 
 const MAX_NICKNAME_LENGTH = 20;
@@ -173,6 +181,8 @@ export function startGameServer(
       options.staticDir,
       options.availableModIds ?? [],
       options.accounts,
+      options.admin,
+      options.adminStaticDir,
       req,
       res,
     );
@@ -374,6 +384,8 @@ async function handleHttpRequest(
   staticDir: string | undefined,
   availableModIds: string[],
   accounts: AccountsService | undefined,
+  admin: AdminAuth | undefined,
+  adminStaticDir: string | undefined,
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
@@ -385,7 +397,7 @@ async function handleHttpRequest(
   }
 
   if (url.pathname === '/api/rooms' && req.method === 'POST') {
-    await handleCreateRoom(roomManager, req, res);
+    await handleCreateRoom(roomManager, accounts, req, res);
     return;
   }
 
@@ -409,7 +421,45 @@ async function handleHttpRequest(
     return;
   }
 
-  await serveStatic(staticDir, req, res);
+  // --- Interface admin (Lot 5) -------------------------------------------------------------
+
+  if (url.pathname === '/api/admin/login' && req.method === 'POST') {
+    await handleAdminLogin(admin, req, res);
+    return;
+  }
+
+  if (url.pathname === '/api/admin/players' && req.method === 'GET') {
+    await handleAdminSearchPlayers(accounts, admin, url, req, res);
+    return;
+  }
+
+  const adminPlayerMatch = /^\/api\/admin\/players\/(\d+)$/.exec(url.pathname);
+  if (adminPlayerMatch && req.method === 'GET') {
+    await handleAdminGetPlayer(accounts, admin, Number(adminPlayerMatch[1]), req, res);
+    return;
+  }
+  if (adminPlayerMatch && req.method === 'PATCH') {
+    await handleAdminUpdatePlayer(accounts, admin, Number(adminPlayerMatch[1]), req, res);
+    return;
+  }
+
+  // Interface admin servie sous /admin/* (Lot 5.4, "séparée du client joueur") — même serveur,
+  // répertoire statique distinct de `staticDir`, comme les routes /api/admin/* ci-dessus.
+  if (adminStaticDir && (url.pathname === '/admin' || url.pathname.startsWith('/admin/'))) {
+    const stripped = url.pathname.slice('/admin'.length);
+    await serveStatic(
+      adminStaticDir,
+      stripped === '' || stripped === '/' ? '/index.html' : stripped,
+      res,
+    );
+    return;
+  }
+
+  await serveStatic(
+    staticDir,
+    req.url && req.url !== '/' ? req.url.split('?')[0]! : '/index.html',
+    res,
+  );
 }
 
 /**
@@ -492,11 +542,31 @@ function getBearerToken(req: IncomingMessage): string | undefined {
   return header.slice('Bearer '.length).trim() || undefined;
 }
 
+/**
+ * Lot 6.4 — cahier des charges §5.3 : la création de salon est un avantage réservé aux comptes
+ * Premium (un compte standard, ou un invité sans compte du tout, rejoint les salons existants).
+ * Sans `accounts` configuré (DB absente), le concept même de compte/Premium n'existe pas dans cet
+ * environnement — la création reste ouverte à tous, comme avant ce Lot, plutôt que de bloquer un
+ * dev/test local qui n'a pas de base de données (même philosophie de dégradation gracieuse que
+ * le reste de `GameServerOptions.accounts`).
+ */
 async function handleCreateRoom(
   roomManager: RoomManager,
+  accounts: AccountsService | undefined,
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
+  if (accounts) {
+    const accountId = accounts.resolveToken(getBearerToken(req));
+    if (!(await accounts.isPremium(accountId))) {
+      logEvent('room_create_rejected', { reason: 'not_premium' });
+      respondJson(res, 403, {
+        error: 'La création de salon est réservée aux comptes Premium (voir la page Soutien).',
+      });
+      return;
+    }
+  }
+
   let body: unknown;
   try {
     body = await readJsonBody(req);
@@ -532,6 +602,168 @@ async function handleCreateRoom(
   }
 }
 
+// --- Interface admin (Lot 5) ---------------------------------------------------------------
+
+async function handleAdminLogin(
+  admin: AdminAuth | undefined,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  if (!admin?.isConfigured) {
+    respondJson(res, 503, {
+      error: 'Interface admin indisponible (ADMIN_PASSWORD_HASH non configuré).',
+    });
+    return;
+  }
+
+  let body: unknown;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    respondJson(res, 400, { error: (error as Error).message });
+    return;
+  }
+
+  const password = isRecord(body) && typeof body.password === 'string' ? body.password : '';
+  const token = await admin.login(password);
+  if (!token) {
+    logEvent('admin_login_failed', {});
+    respondJson(res, 401, { error: 'Mot de passe incorrect.' });
+    return;
+  }
+  logEvent('admin_login', {});
+  respondJson(res, 200, { token });
+}
+
+/** `true` si authentifié (l'appelant peut continuer) ; répond déjà 401/503 et renvoie `false`
+ * sinon — chaque route admin commence par `if (!(await requireAdmin(...))) return;`. */
+function requireAdmin(
+  admin: AdminAuth | undefined,
+  req: IncomingMessage,
+  res: ServerResponse,
+): boolean {
+  if (!admin?.isConfigured) {
+    respondJson(res, 503, {
+      error: 'Interface admin indisponible (ADMIN_PASSWORD_HASH non configuré).',
+    });
+    return false;
+  }
+  if (!admin.isAuthenticated(getBearerToken(req))) {
+    respondJson(res, 401, { error: 'Non authentifié (admin).' });
+    return false;
+  }
+  return true;
+}
+
+async function handleAdminSearchPlayers(
+  accounts: AccountsService | undefined,
+  admin: AdminAuth | undefined,
+  url: URL,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  if (!requireAdmin(admin, req, res)) return;
+  if (!accounts) {
+    respondJson(res, 503, {
+      error: 'Comptes joueurs indisponibles (base de données non configurée).',
+    });
+    return;
+  }
+  const query = url.searchParams.get('q')?.trim() ?? '';
+  respondJson(res, 200, await accounts.searchAccountsForAdmin(query));
+}
+
+async function handleAdminGetPlayer(
+  accounts: AccountsService | undefined,
+  admin: AdminAuth | undefined,
+  accountId: number,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  if (!requireAdmin(admin, req, res)) return;
+  if (!accounts) {
+    respondJson(res, 503, {
+      error: 'Comptes joueurs indisponibles (base de données non configurée).',
+    });
+    return;
+  }
+  const account = await accounts.getAccountForAdmin(accountId);
+  if (!account) {
+    respondJson(res, 404, { error: 'Compte introuvable.' });
+    return;
+  }
+  respondJson(res, 200, account);
+}
+
+async function handleAdminUpdatePlayer(
+  accounts: AccountsService | undefined,
+  admin: AdminAuth | undefined,
+  accountId: number,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  if (!requireAdmin(admin, req, res)) return;
+  if (!accounts) {
+    respondJson(res, 503, {
+      error: 'Comptes joueurs indisponibles (base de données non configurée).',
+    });
+    return;
+  }
+
+  let body: unknown;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    respondJson(res, 400, { error: (error as Error).message });
+    return;
+  }
+
+  try {
+    const updated = await accounts.updateAccountForAdmin(accountId, parseAdminPatch(body));
+    if (!updated) {
+      respondJson(res, 404, { error: 'Compte introuvable.' });
+      return;
+    }
+    logEvent('admin_account_updated', { accountId });
+    respondJson(res, 200, updated);
+  } catch (error) {
+    if (error instanceof AccountError) {
+      respondJson(res, 400, { error: error.message });
+      return;
+    }
+    logEvent('account_error', { action: 'admin_update', reason: (error as Error).message });
+    respondJson(res, 500, { error: 'Erreur serveur.' });
+  }
+}
+
+/** Extraction "leniente" des champs (typage, pas de règles métier — voir `validateAdminPatch`
+ * côté service) : un champ absent ou d'un type inattendu est simplement ignoré plutôt que de
+ * faire échouer toute la requête, même principe que `handleCreateRoom`. */
+function parseAdminPatch(body: unknown): {
+  level?: number;
+  xp?: number;
+  premium?: boolean;
+  cosmetics?: string[];
+  banned?: boolean;
+} {
+  if (!isRecord(body)) return {};
+  const patch: {
+    level?: number;
+    xp?: number;
+    premium?: boolean;
+    cosmetics?: string[];
+    banned?: boolean;
+  } = {};
+  if (typeof body.level === 'number') patch.level = body.level;
+  if (typeof body.xp === 'number') patch.xp = body.xp;
+  if (typeof body.premium === 'boolean') patch.premium = body.premium;
+  if (typeof body.banned === 'boolean') patch.banned = body.banned;
+  if (Array.isArray(body.cosmetics) && body.cosmetics.every((c) => typeof c === 'string')) {
+    patch.cosmetics = body.cosmetics;
+  }
+  return patch;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -564,7 +796,7 @@ function respondJson(res: ServerResponse, statusCode: number, body: unknown): vo
 
 async function serveStatic(
   dir: string | undefined,
-  req: IncomingMessage,
+  requestedPath: string,
   res: ServerResponse,
 ): Promise<void> {
   if (!dir) {
@@ -574,8 +806,7 @@ async function serveStatic(
   }
 
   const rootDir = resolve(dir);
-  const requestedPath = req.url && req.url !== '/' ? req.url.split('?')[0] : '/index.html';
-  const filePath = join(rootDir, normalize(String(requestedPath)));
+  const filePath = join(rootDir, normalize(requestedPath || '/index.html'));
 
   if (!filePath.startsWith(rootDir)) {
     res.writeHead(403);

@@ -26,4 +26,17 @@ describe('SessionStore', () => {
     sessions.revokeSession(token);
     expect(sessions.resolveSession(token)).toBeUndefined();
   });
+
+  it('revokeSessionsForAccount révoque tous les tokens d’un compte, laisse les autres intacts', () => {
+    const sessions = createSessionStore();
+    const tokenA1 = sessions.createSession(1);
+    const tokenA2 = sessions.createSession(1);
+    const tokenB = sessions.createSession(2);
+
+    sessions.revokeSessionsForAccount(1);
+
+    expect(sessions.resolveSession(tokenA1)).toBeUndefined();
+    expect(sessions.resolveSession(tokenA2)).toBeUndefined();
+    expect(sessions.resolveSession(tokenB)).toBe(2);
+  });
 });

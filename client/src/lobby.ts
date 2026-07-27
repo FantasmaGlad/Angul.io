@@ -25,14 +25,20 @@ export async function fetchAvailableModes(): Promise<string[]> {
   return (await response.json()) as string[];
 }
 
+/** `token` (Lot 6.4) : la création de salon est réservée aux comptes Premium — le serveur
+ * refuse (403) sans token ou sans statut Premium associé, voir net/server.ts. */
 export async function createRoom(
   name: string,
   modId: string,
   visibility: 'public' | 'private' = 'public',
+  token?: string,
 ): Promise<CreatedRoomSummary> {
   const response = await fetch('/api/rooms', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify({ name, modId, visibility }),
   });
   if (!response.ok) {

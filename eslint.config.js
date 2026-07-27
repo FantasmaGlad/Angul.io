@@ -5,8 +5,8 @@ import globals from 'globals';
 
 export default tseslint.config(
   {
-    // client/public/** contient le bundle généré par esbuild (client/src compilé) : jamais linté.
-    ignores: ['**/dist/**', '**/node_modules/**', 'client/public/**'],
+    // client/public/**, admin/public/** contiennent le bundle généré par esbuild : jamais linté.
+    ignores: ['**/dist/**', '**/node_modules/**', 'client/public/**', 'admin/public/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

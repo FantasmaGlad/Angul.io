@@ -1,8 +1,15 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import { Pool } from 'pg';
+import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
+import { hashPassword } from '../accounts/passwords.js';
+import { AccountsService } from '../accounts/service.js';
+import { AdminAuth } from '../admin/adminAuth.js';
 import type { GameMod } from '../engine/mod.js';
 import { RoomManager, type ModResolver } from '../engine/roomManager.js';
 import { startGameServer, type GameServerHandle } from './server.js';
+
+const DATABASE_URL = process.env.DATABASE_URL;
 
 type Message = Record<string, unknown>;
 
@@ -554,5 +561,193 @@ describe('startGameServer', () => {
     await waitUntil(() => messages.some((m) => m.type === 'died'), 1000);
 
     socket.close();
+  });
+});
+
+// Tests d'intégration réels contre PostgreSQL (même principe que accountsRepository.test.ts) :
+// interface admin (Lot 5) et restriction de la création de salon aux comptes Premium (Lot 6.4)
+// dépendent toutes deux d'un vrai `AccountsService`, pas seulement du `RoomManager`/`ModResolver`
+// de test utilisé ci-dessus (qui reste, lui, indépendant de la base — voir Lot 6.4, décision de
+// dégradation gracieuse sans `accounts`).
+describe.skipIf(!DATABASE_URL)('startGameServer (avec comptes joueurs)', () => {
+  const pool = new Pool({ connectionString: DATABASE_URL });
+  const createdPseudos: string[] = [];
+  let handle: GameServerHandle | undefined;
+  const managers: RoomManager[] = [];
+
+  afterAll(async () => {
+    if (createdPseudos.length > 0) {
+      await pool.query('DELETE FROM players WHERE pseudo = ANY($1::text[])', [createdPseudos]);
+    }
+    await pool.end();
+  });
+
+  afterEach(() => {
+    handle?.close();
+    handle = undefined;
+    for (const manager of managers) {
+      manager.stopPruning();
+      for (const managed of manager.allManagedRooms()) managed.room.stop();
+    }
+    managers.length = 0;
+  });
+
+  function makeManager(): RoomManager {
+    const manager = new RoomManager(() => ({ mod: { id: 'test' }, mapSize: 1000 }), 20, {
+      emptyRoomGraceMs: 10_000_000,
+    });
+    managers.push(manager);
+    return manager;
+  }
+
+  function uniquePseudo(prefix: string): string {
+    const pseudo = `${prefix}_${randomUUID().slice(0, 8)}`;
+    createdPseudos.push(pseudo);
+    return pseudo;
+  }
+
+  async function startServer(
+    withAdmin = true,
+  ): Promise<{ port: number; accounts: AccountsService }> {
+    const accounts = new AccountsService(pool);
+    const admin = withAdmin ? new AdminAuth(await hashPassword('adminpass123')) : undefined;
+    handle = startGameServer(makeManager(), { port: 0, accounts, admin });
+    const port = await handle.whenReady;
+    return { port, accounts };
+  }
+
+  it('POST /api/rooms refuse un compte non-Premium ou non authentifié, accepte un compte Premium (Lot 6.4)', async () => {
+    const { port, accounts } = await startServer();
+    const pseudo = uniquePseudo('roomcreator');
+    const { token } = await accounts.register(pseudo, 'motdepasse123');
+    const accountId = accounts.resolveToken(token)!;
+
+    const withoutToken = await fetch(`http://localhost:${port}/api/rooms`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Salon', modId: 'test' }),
+    });
+    expect(withoutToken.status).toBe(403);
+
+    const notPremium = await fetch(`http://localhost:${port}/api/rooms`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ name: 'Salon', modId: 'test' }),
+    });
+    expect(notPremium.status).toBe(403);
+
+    await accounts.updateAccountForAdmin(accountId, { premium: true });
+
+    const premium = await fetch(`http://localhost:${port}/api/rooms`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ name: 'Salon', modId: 'test' }),
+    });
+    expect(premium.status).toBe(201);
+  });
+
+  it('POST /api/admin/login : 503 sans ADMIN_PASSWORD_HASH, 401 si mauvais mot de passe, 200 + token sinon', async () => {
+    const { port } = await startServer(false);
+
+    const notConfigured = await fetch(`http://localhost:${port}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'whatever' }),
+    });
+    expect(notConfigured.status).toBe(503);
+  });
+
+  it('POST /api/admin/login accepte le bon mot de passe, refuse le mauvais', async () => {
+    const { port } = await startServer();
+
+    const wrong = await fetch(`http://localhost:${port}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'wrong' }),
+    });
+    expect(wrong.status).toBe(401);
+
+    const right = await fetch(`http://localhost:${port}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'adminpass123' }),
+    });
+    expect(right.status).toBe(200);
+    const { token } = (await right.json()) as { token: string };
+    expect(typeof token).toBe('string');
+  });
+
+  it('les routes /api/admin/players/* exigent un token admin valide (Lot 5.1)', async () => {
+    const { port } = await startServer();
+
+    const noToken = await fetch(`http://localhost:${port}/api/admin/players?q=x`);
+    expect(noToken.status).toBe(401);
+
+    const badToken = await fetch(`http://localhost:${port}/api/admin/players?q=x`, {
+      headers: { Authorization: 'Bearer bogus' },
+    });
+    expect(badToken.status).toBe(401);
+  });
+
+  it('recherche, consulte et modifie un compte via les routes admin (Lot 5.2-5.4)', async () => {
+    const { port, accounts } = await startServer();
+    const pseudo = uniquePseudo('adminroute');
+    const { token: playerToken } = await accounts.register(pseudo, 'motdepasse123');
+    const accountId = accounts.resolveToken(playerToken)!;
+
+    const loginResponse = await fetch(`http://localhost:${port}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'adminpass123' }),
+    });
+    const { token: adminToken } = (await loginResponse.json()) as { token: string };
+    const authHeaders = { Authorization: `Bearer ${adminToken}` };
+
+    const searchResponse = await fetch(
+      `http://localhost:${port}/api/admin/players?q=${encodeURIComponent(pseudo)}`,
+      { headers: authHeaders },
+    );
+    expect(searchResponse.status).toBe(200);
+    const results = (await searchResponse.json()) as Array<{ id: number; pseudo: string }>;
+    expect(results.some((r) => r.id === accountId)).toBe(true);
+
+    const detailResponse = await fetch(`http://localhost:${port}/api/admin/players/${accountId}`, {
+      headers: authHeaders,
+    });
+    expect(detailResponse.status).toBe(200);
+    expect(await detailResponse.json()).toMatchObject({ pseudo, level: 1, xp: 0, premium: false });
+
+    const missingResponse = await fetch(`http://localhost:${port}/api/admin/players/999999999`, {
+      headers: authHeaders,
+    });
+    expect(missingResponse.status).toBe(404);
+
+    const patchResponse = await fetch(`http://localhost:${port}/api/admin/players/${accountId}`, {
+      method: 'PATCH',
+      headers: { ...authHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ premium: true, xp: 500, cosmetics: ['chapeau'] }),
+    });
+    expect(patchResponse.status).toBe(200);
+    expect(await patchResponse.json()).toMatchObject({
+      premium: true,
+      xp: 500,
+      cosmetics: ['chapeau'],
+    });
+
+    // Le pseudo redevient authentifiable normalement (pas banni) — puis on le bannit et on
+    // vérifie que la connexion est bien refusée ensuite (Lot 5.2).
+    const banResponse = await fetch(`http://localhost:${port}/api/admin/players/${accountId}`, {
+      method: 'PATCH',
+      headers: { ...authHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ banned: true }),
+    });
+    expect(banResponse.status).toBe(200);
+
+    const loginAfterBan = await fetch(`http://localhost:${port}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pseudo, password: 'motdepasse123' }),
+    });
+    expect(loginAfterBan.status).toBe(401);
   });
 });

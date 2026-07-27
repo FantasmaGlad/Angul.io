@@ -39,8 +39,8 @@ mathématiques exactes (masse, vitesse, split, fusion, decay…) mod par mod. Le
 | [2](#lot-2--salons-rooms) | Salons (rooms) | MVP | ✅ Fait — ⚠️ voir 2.5 (isolation CPU non garantie, mono-thread) |
 | [3](#lot-3--comptes-joueurs--persistance) | Comptes joueurs & persistance | MVP | ✅ Fait |
 | [4](#lot-4--deuxième-mode-de-jeu-validation-de-lapi-de-modding) | Deuxième mode de jeu (validation API) | MVP | ✅ Fait |
-| [5](#lot-5--interface-dadministration) | Interface d'administration | MVP | ⬜ À faire |
-| [6](#lot-6--statut-premium--dons) | Statut Premium & dons | MVP | ⬜ À faire |
+| [5](#lot-5--interface-dadministration) | Interface d'administration | MVP | ✅ Fait — ⚠️ 5.5 différé (Phase 2) |
+| [6](#lot-6--statut-premium--dons) | Statut Premium & dons | MVP | ✅ Fait — ⚠️ voir 6.1 (compte Ko-fi réel pas encore créé), 6.5 différé |
 | [7](#lot-7--client-mobile-pwa) | Client mobile (PWA) | MVP | ⬜ À faire |
 | [8](#lot-8--infrastructure--déploiement) | Infrastructure & déploiement | MVP | 🔶 En cours — install.sh écrit (8.3/8.4/8.5), pas encore exécuté sur le Wyse réel |
 | [9](#lot-9--documentation--ouverture-communautaire-de-lapi-de-modding) | Documentation & ouverture communautaire | Phase 2 | ⬜ À faire |
@@ -667,33 +667,76 @@ d'envisager l'ouverture communautaire (Phase 2).
 Objectif : donner un outil de gestion du jeu, séparé du client joueur (§5.4).
 
 ### 5.1 — Authentification admin
-- **Statut :** ⬜ À faire
-- **Contenu :** compte admin unique pour le MVP, authentification séparée du compte joueur.
+- **Statut :** ✅ Fait (2026-07-27)
+- **Contenu :** `server/src/admin/adminAuth.ts` (`AdminAuth`) — compte admin **unique** pour le
+  MVP (cahier des charges §5.4), entièrement séparé de `AccountsService` : pas de ligne en base,
+  un seul mot de passe haché (argon2, réutilise `accounts/passwords.ts`) fourni via la variable
+  d'environnement `ADMIN_PASSWORD_HASH` (`server/.env`, absente du dépôt), généré par le nouveau
+  script `server/scripts/hashPassword.mjs` (`npm run hash-password --workspace=server -- <mdp>`).
+  Sessions en mémoire par token opaque, même magasin que les comptes joueurs
+  (`sessionStore.ts`), un seul id conceptuel constant côté admin. `POST /api/admin/login`
+  (`net/server.ts`) renvoie 503 si `ADMIN_PASSWORD_HASH` n'est pas configuré (comportement
+  optionnel, même philosophie que `accounts`), 401 si le mot de passe est incorrect, 200 +
+  token sinon. Toutes les routes `/api/admin/*` passent par `requireAdmin()` (Bearer token).
 - **Dépendances :** Lot 3.2.
-- **Critère d'acceptation :** l'interface admin n'est accessible qu'après authentification
-  admin dédiée.
+- **Critère d'acceptation :** **validé** — 4 tests `adminAuth.test.ts`, tests réseau dédiés
+  (`server.test.ts`, "avec comptes joueurs") couvrant 503/401/200 et le rejet des routes
+  `/api/admin/players/*` sans token valide. **Validé manuellement en conditions réelles** :
+  connexion réussie dans le navigateur avec le mot de passe configuré en local, refusée avec un
+  mauvais mot de passe.
 
 ### 5.2 — Gestion des comptes joueurs
-- **Statut :** ⬜ À faire
-- **Contenu :** recherche, consultation, modification, bannissement d'un compte.
+- **Statut :** ✅ Fait (2026-07-27)
+- **Contenu :** `AccountsRepository.searchByPseudo` (`ILIKE`, insensible à la casse) et
+  `adminUpdateAccount` (patch dynamique, un seul aller-retour SQL) ; `AccountsService`
+  expose `searchAccountsForAdmin`/`getAccountForAdmin`/`updateAccountForAdmin` (jamais
+  `passwordHash` exposé). Bannissement : nouvelle colonne `banned` sur `players`
+  (migration `1785135367447_add-banned-flag.cjs`) ; `AccountsService.login` la vérifie **après**
+  le mot de passe (ne fuit rien à qui ne connaît pas déjà le mot de passe, cohérent avec le
+  message générique existant) ; bannir révoque immédiatement les sessions actives du compte
+  (`SessionStore.revokeSessionsForAccount`, nouveau) — sans ça, un token déjà émis resterait
+  valable jusqu'à la prochaine reconnexion. Routes `GET /api/admin/players?q=`,
+  `GET /api/admin/players/:id`, `PATCH /api/admin/players/:id` (`net/server.ts`).
 - **Dépendances :** 5.1, Lot 3.4.
-- **Critère d'acceptation :** un compte peut être recherché par pseudo, consulté, banni,
-  et un compte banni ne peut plus se connecter.
+- **Critère d'acceptation :** **validé** — tests dédiés (`accountsRepository.test.ts`,
+  `service.test.ts`, `server.test.ts`) couvrant recherche par sous-chaîne, patch partiel,
+  révocation de session au bannissement, refus de connexion (401, message dédié) après
+  bannissement. **Validé manuellement en conditions réelles** (navigateur + interface admin) :
+  compte recherché par pseudo, consulté, banni depuis l'interface — tentative de connexion du
+  compte banni ensuite refusée (confirmé via `curl`, 401).
 
 ### 5.3 — Gestion manuelle XP/niveau
-- **Statut :** ⬜ À faire
-- **Contenu :** correction manuelle en cas de bug ou de litige.
+- **Statut :** ✅ Fait (2026-07-27)
+- **Contenu :** même route `PATCH /api/admin/players/:id` que 5.2/5.4 (patch unique pour les
+  quatre types de correction manuelle, `AdminAccountPatch`) — `level`/`xp` acceptés
+  indépendamment l'un de l'autre (pas de recalcul automatique de l'un à partir de l'autre,
+  contrairement à `recordGameResult`/Lot 3.5 : ici l'admin corrige explicitement, y compris pour
+  un cas où la formule XP→niveau aurait changé entre-temps). Validation basique côté service
+  (entiers positifs) plutôt qu'une vraie règle métier.
 - **Dépendances :** 5.2.
-- **Critère d'acceptation :** l'admin peut modifier le niveau/XP d'un compte et voir le
-  changement reflété côté joueur.
+- **Critère d'acceptation :** **validé** — `service.test.ts` (rejet niveau/XP invalide),
+  **validé manuellement en conditions réelles** : XP modifié à 250 depuis l'interface admin,
+  confirmé en base (`psql`) et par un nouvel appel `GET /api/admin/players/:id`.
 
 ### 5.4 — Gestion manuelle des cosmétiques et activation Premium
-- **Statut :** ⬜ À faire
-- **Contenu :** attribution manuelle de cosmétiques, activation du statut Premium (lien
-  avec Lot 6.3, tant que l'automatisation n'existe pas).
+- **Statut :** ✅ Fait (2026-07-27)
+- **Contenu :** `admin/` devient une vraie app (placeholder du Lot 0 remplacé) : `admin/src/
+  adminApi.ts` (client HTTP), `admin/src/index.ts` (login, recherche, panneau de détail/édition
+  — niveau, XP, cases Premium/Banni, cosmétiques en texte séparé par virgules, meilleurs
+  scores en lecture seule), `admin/public/index.html` (même langage visuel "labo premium"
+  glassmorphism que le client joueur). Bundlée avec esbuild comme `client/`, servie par le même
+  process de jeu sous `/admin/*` (`net/server.ts`, `adminStaticDir` — répertoire distinct de
+  `staticDir`, "séparée du client joueur" au sens du cahier des charges). **Bug détecté et
+  corrigé en testant manuellement** : `/admin` (sans slash final) plus un script chargé via un
+  chemin *relatif* (`./bundle.js`) résolvait vers `/bundle.js` — le bundle du **client joueur**,
+  pas celui de l'admin (résolution d'URL relative standard : `admin` sans `/` final est traité
+  comme un fichier, pas un répertoire). Corrigé par un chemin absolu (`/admin/bundle.js`).
 - **Dépendances :** 5.2, Lot 3.4.
-- **Critère d'acceptation :** l'admin peut activer le statut Premium d'un compte, qui
-  débloque immédiatement la création de salon côté joueur (Lot 6.4).
+- **Critère d'acceptation :** **validé manuellement de bout en bout dans le navigateur** (Browser
+  pane) : connexion admin, recherche d'un compte de test, activation Premium + édition
+  cosmétiques + XP en un seul enregistrement, confirmé en base (`psql`) — puis vérifié que le
+  compte élevé au statut Premium débloque immédiatement la création de salon côté client
+  (Lot 6.4, testé dans la foulée).
 
 ### 5.5 — Gestion des salons actifs & modération des mods (Phase 2, différé)
 - **Statut :** ⏸️ Différé (Phase 2)
@@ -707,33 +750,69 @@ Objectif : donner un outil de gestion du jeu, séparé du client joueur (§5.4).
 Objectif : mettre en place le circuit don → statut Premium (§5.3).
 
 ### 6.1 — Choix de la plateforme de don
-- **Statut :** ⬜ À faire
-- **Contenu :** comparer les options (Ko-fi, Liberapay, PayPal.Me, GitHub Sponsors...) selon
-  frais, simplicité d'intégration, disponibilité en France.
+- **Statut :** ✅ Fait (2026-07-27)
+- **Contenu :** **Ko-fi retenu** — 0% de commission plateforme (formule gratuite, seuls les
+  frais du processeur de paiement s'appliquent), aucune création de société requise, don
+  ponctuel libre sans palier (conforme à "1€ ou 10€ donnent le même statut", cahier des charges
+  §5.3), disponible depuis la France. Écarté : Liberapay (orienté dons récurrents, moins connu
+  du grand public), PayPal.Me (frais PayPal plus élevés, pas de page dédiée expliquant le
+  statut Premium), GitHub Sponsors (processus d'éligibilité/vérification avant le premier don
+  possible, plus lent à mettre en place pour un MVP). Décision et constante `DONATION_URL`
+  documentées dans `client/src/support.ts`.
 - **Dépendances :** aucune.
-- **Critère d'acceptation :** plateforme choisie et actée dans le Journal des décisions.
+- **Critère d'acceptation :** **validé** — plateforme choisie et actée ci-dessus et dans le
+  Journal des décisions. **Point non automatisable par un agent, à faire manuellement par
+  l'utilisateur avant mise en production** : le compte Ko-fi réel n'existe pas encore
+  (création de compte tiers hors de portée d'un agent, cf. règles de sécurité de session) —
+  `DONATION_URL` (`client/src/support.ts`) pointe vers un espace réservé
+  (`https://ko-fi.com/angulio`) à remplacer par l'URL réelle une fois le compte créé.
 
 ### 6.2 — Page dédiée don/soutien
-- **Statut :** ⬜ À faire
-- **Contenu :** page client expliquant le statut Premium et pointant vers le lien de don.
+- **Statut :** ✅ Fait (2026-07-27)
+- **Contenu :** `client/src/support.ts` (`DONATION_URL`, `SUPPORT_BODY`) + panneau
+  `#supportOverlay` (`client/public/index.html`, même glassmorphism que `#profileOverlay`) —
+  explique le don libre, le statut Premium et son avantage MVP (création de salon), et
+  l'activation manuelle (indiquer son pseudo dans le message de don). Accessible depuis un
+  bouton "Soutenir" dans la section Compte du lobby (visible à tout moment, connecté ou non) et
+  depuis le message "Réservé aux comptes Premium" qui remplace le formulaire de création de
+  salon pour un compte non-Premium (voir 6.4).
 - **Dépendances :** 6.1.
-- **Critère d'acceptation :** page accessible depuis le menu principal.
+- **Critère d'acceptation :** **validé manuellement dans le navigateur** — panneau accessible
+  depuis le lobby (bouton "Soutenir"), contenu et lien de don corrects, bouton "Fermer"
+  fonctionnel.
 
 ### 6.3 — Activation manuelle du statut Premium (MVP)
-- **Statut :** ⬜ À faire
-- **Contenu :** processus manuel : toi (admin) actives le statut via l'interface (Lot 5.4)
-  après réception d'un don.
+- **Statut :** ✅ Fait (2026-07-27)
+- **Contenu :** couvert par l'interface admin (Lot 5.4) — case à cocher "Premium" dans le
+  panneau de détail d'un compte, un seul appel `PATCH /api/admin/players/:id` pour l'activer
+  (avec, si besoin au même moment, XP/niveau/cosmétiques). Le circuit complet reste manuel de
+  bout en bout comme prévu pour le MVP : don Ko-fi → l'utilisateur voit le pseudo indiqué par
+  le donateur dans le message de don (6.2) → active Premium dans l'admin.
 - **Dépendances :** Lot 5.4.
-- **Critère d'acceptation :** un don reçu peut être suivi d'une activation Premium en moins
-  de quelques clics dans l'admin.
+- **Critère d'acceptation :** **validé manuellement en conditions réelles** — compte de test
+  recherché puis élevé au statut Premium en un seul enregistrement depuis l'interface admin
+  (quelques clics), confirmé en base (`psql`) et effectif immédiatement côté client (6.4).
 
 ### 6.4 — Fonctionnalité rattachée : création de salon réservée Premium
-- **Statut :** ⬜ À faire
-- **Contenu :** restriction de la création de salon (Lot 2.2) aux comptes Premium ; les
-  comptes standards rejoignent les salons existants.
+- **Statut :** ✅ Fait (2026-07-27)
+- **Contenu :** `net/server.ts`, `handleCreateRoom` — avec `accounts` configuré, résout le
+  Bearer token en compte puis vérifie `AccountsService.isPremium` avant tout traitement de la
+  requête ; refuse (403, message pointant vers la page Soutien) un invité ou un compte
+  standard. **Décision de dégradation gracieuse** : sans `accounts` configuré (DB absente, ex.
+  dev/CI sans Postgres), la création reste ouverte à tous comme avant ce Lot — le concept même
+  de compte/Premium n'existe pas dans cet environnement, cohérent avec le reste de
+  `GameServerOptions.accounts` (optionnel partout ailleurs). Côté client : `lobby.ts`
+  `createRoom` transmet le token (`Authorization: Bearer`) ; `index.ts` charge le statut
+  Premium du compte connecté après connexion/inscription (`fetchProfile`) et bascule
+  `#createRoomForm`/`#createRoomLocked` en conséquence — évite de montrer un formulaire voué à
+  échouer plutôt que de compter uniquement sur l'erreur serveur.
 - **Dépendances :** Lot 3.4, Lot 2.2.
-- **Critère d'acceptation :** un compte non-Premium ne voit pas/ne peut pas utiliser le
-  bouton de création de salon ; un compte Premium le peut.
+- **Critère d'acceptation :** **validé** — tests réseau dédiés (`server.test.ts`, "avec comptes
+  joueurs") : 403 sans token, 403 avec un compte non-Premium, 201 après activation Premium.
+  **Validé manuellement de bout en bout dans le navigateur** : compte standard/invité voit le
+  message "Réservé aux comptes Premium" à la place du formulaire ; compte élevé au statut
+  Premium (via l'admin) voit le formulaire se débloquer après reconnexion et crée effectivement
+  un salon, rejoint immédiatement.
 
 ### 6.5 — Automatisation du lien don → activation (différé)
 - **Statut :** ⏸️ Différé
@@ -997,6 +1076,7 @@ Lot/Sous-Lot significatif terminé. Les entrées les plus récentes en haut.*
 
 | Date | Entrée |
 |---|---|
+| 2026-07-27 | **Lots 5 et 6 clos : interface d'administration et statut Premium/dons.** `admin/` devient une vraie app (le placeholder du Lot 0 est remplacé) : login par mot de passe unique haché (`ADMIN_PASSWORD_HASH`, argon2, script `hashPassword.mjs` pour le générer), recherche/consultation/édition de compte (niveau, XP, cosmétiques, Premium, bannissement) via un patch unique `PATCH /api/admin/players/:id`, servie sous `/admin/*` par le même process de jeu (répertoire statique distinct du client joueur). **Bug trouvé et corrigé en testant manuellement dans le navigateur** (pas seulement en tests automatisés) : `/admin` sans slash final + un script chargé en chemin relatif (`./bundle.js`) résolvait vers le bundle du **client joueur** au lieu de celui de l'admin (résolution d'URL relative standard) — corrigé par un chemin absolu. Bannissement : nouvelle colonne `banned`, vérifiée après le mot de passe à la connexion (ne fuit rien à qui ne le connaît pas), et révocation immédiate des sessions actives du compte banni (nouveau `SessionStore.revokeSessionsForAccount`) plutôt que d'attendre une expiration qui n'existe pas. **Lot 6** : plateforme de don choisie (**Ko-fi**, 0% commission, pas de société requise, don libre sans palier) — le compte réel reste à créer manuellement par l'utilisateur (hors de portée d'un agent), `DONATION_URL` est un espace réservé documenté dans `client/src/support.ts`. Page Soutien ajoutée au lobby (panneau glassmorphism, même style que le profil). Création de salon restreinte aux comptes Premium (`isPremium`, cahier des charges §5.3) : 403 côté serveur pour un invité/compte standard, formulaire remplacé côté client par un message explicatif tant que le compte connu n'est pas Premium — avec dégradation gracieuse existante (sans base de données configurée, la restriction ne s'applique pas, comme le reste de `GameServerOptions.accounts`). 15 nouveaux tests serveur (dont un bloc entier de tests réseau "avec comptes joueurs" contre un vrai PostgreSQL), 189 tests passants au total. **Validé manuellement de bout en bout dans le navigateur** (Browser pane) pour l'ensemble du circuit : connexion admin → recherche → activation Premium d'un compte de test → reconnexion côté client → formulaire de création de salon débloqué → salon créé et rejoint ; bannissement testé séparément (connexion refusée ensuite, 401). |
 | 2026-07-27 | **Lot 4 clos : mode Hardcore, second mode aux mécaniques structurellement nouvelles.** Choisi plutôt que Précision/Sniper (l'autre recommandation) après avoir remarqué que ce dernier, tel que décrit, se réduit à `food.density → ~0` — purement paramétrique, n'aurait rien prouvé de plus qu'un troisième Folie. Hardcore introduit : (1) un multiplicateur de masse gagnée en mangeant un autre joueur (×10 par défaut), (2) la perte totale de la progression du compte à la mort. Implémenté par **composition** plutôt que duplication : `createHardcoreMod` enveloppe `createParametricMod` et ne réécrit que `onCollision` et un nouveau hook — un patron de mod non anticipé avant ce Lot, à garder en tête pour la Phase 2 (modding communautaire, Lot 9). **Seul ajustement à l'API de hooks** : `GameMod.transformScoreForAccount?` (voir 4.5) — tout le reste (onCollision générique, découplage réseau/mod déjà acquis au Lot 2) a suffi sans toucher à `engine/`. 8 nouveaux tests + 1 test existant mis à jour (`listAvailableModIds` liste désormais 3 modes). Validé manuellement : salon Hardcore créé/rejoint depuis le lobby (aucun changement client nécessaire), joueur authentifié confirmé en base (`psql`) recevant 0 crédit après une vie à 45-50 de masse, contre 50 XP pour le même scénario en Vanilla (non-régression). |
 | 2026-07-27 | **Flake de test pré-existant repéré, non lié aux changements de la session** : `server/src/net/server.test.ts` ("diffuse l'état du monde... avec le morceau du joueur") a échoué une fois sur une exécution complète (`entities.some(e => e.x===0 && e.y===0)` côté "son propre morceau"), puis est repassé au vert de façon reproductible sur toutes les exécutions suivantes. Cause probable : le `RoomManager` de test démarre un vrai timer de tick (20Hz) dès la création du salon, qui peut broadcaster un premier `state` juste avant que le test n'ait fini d'attacher ses assertions sur le message capturé — timing non déterministe entre un vrai timer et l'event loop du test, pas un bug fonctionnel du code de production. Non traité dans l'immédiat (rare, non reproductible à la demande) ; à stabiliser si ça devient gênant en CI (ex. `vi.useFakeTimers()` sur ce test précis, ou une assertion moins sensible à l'ordre des messages `state` reçus). |
 | 2026-07-26 | **Refonte du lobby** (demande utilisateur : tenir sans scroller, thème clair fixe façon "labo premium", vraie glassmorphism, arène transparente). Thème sombre adaptatif (`prefers-color-scheme: dark`) **retiré** du lobby — clair fixe, décision délibérée, pas une régression. `#lobbyOverlay` passe d'un fond opaque à un voile translucide (`rgba(238,238,240,0.4)`, sans flou propre, déjà porté par `#lobbyPanel`) : laisse apparaître l'arène (grille) derrière le verre, vraie glassmorphism plutôt qu'un fond plein. Fond "labo premium" (dégradés + grille de points) déplacé du seul `#lobbyOverlay` vers `html`/`body`, partagé par toute l'appli. **Arène transparente** (`render.ts`) : `ctx.clearRect` remplace le `fillRect` blanc opaque ; couleur de grille recalibrée en hairline translucide (`rgba(17,17,19,0.1)`) pour rester visible sur le nouveau fond clair. **Bug trouvé en cours de route** : `#statsPanel`/`#hud` (`#gameOverlay`) étaient toujours présents dans le DOM même hors partie (juste masqués visuellement par l'ancien fond opaque du lobby) — devenus visibles par transparence une fois le lobby translucide. Corrigé : `#gameOverlay` masqué par défaut, affiché seulement à l'entrée en partie (`index.ts`, `enterGame`/`onClose`). **Mise en page** : lobby restructuré en deux colonnes (`.lobby-columns`, panneau élargi à 720px, repli une colonne sous 640px) et espacements resserrés — tient désormais dans un viewport standard (~720px de haut) sans avoir à scroller, alors que l'ancienne colonne unique le nécessitait. **Bug rapporté séparément et corrigé au passage** : le champ "Nom du salon" (`<input>` brut, sans le wrapper `.field`/`.field-row` qui porte la marge ailleurs) touchait directement la ligne mode/Privé juste en dessous — marge dédiée ajoutée. |

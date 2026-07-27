@@ -5,6 +5,11 @@ export interface SessionStore {
   /** `undefined` si le token est inconnu ou a été révoqué. */
   resolveSession(token: string): number | undefined;
   revokeSession(token: string): void;
+  /** Révoque toutes les sessions actives d'un compte (Lot 5.2) — utilisé quand l'admin bannit un
+   * compte : sans ça, un token déjà émis resterait valide jusqu'à expiration naturelle (qui
+   * n'existe pas, voir plus bas), permettant à un compte banni de continuer à jouer tant qu'il ne
+   * se reconnecte pas. */
+  revokeSessionsForAccount(accountId: number): void;
 }
 
 /**
@@ -30,6 +35,11 @@ export function createSessionStore(): SessionStore {
     },
     revokeSession(token: string): void {
       accountIdByToken.delete(token);
+    },
+    revokeSessionsForAccount(accountId: number): void {
+      for (const [token, id] of accountIdByToken) {
+        if (id === accountId) accountIdByToken.delete(token);
+      }
     },
   };
 }

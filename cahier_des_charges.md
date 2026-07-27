@@ -352,6 +352,11 @@ le classement par mode, extensible plus tard sans migration lourde.
 - Point à trancher plus tard : le statut Premium est-il permanent (un don = un accès à vie) ou
   faut-il envisager une autre logique (renouvellement, paliers de fonctionnalités supplémentaires) ?
   Pour le MVP, on part sur **permanent**, le plus simple à annoncer et à implémenter.
+- **Décision (Lot 6.1, plan_implementation.md) :** plateforme retenue **Ko-fi** (0% de
+  commission sur la formule gratuite, don ponctuel libre sans palier, aucune société requise,
+  disponible depuis la France). Lien fait avec le compte joueur en indiquant son pseudo dans le
+  message de don (activation manuelle par l'admin, voir §5.4) — le compte Ko-fi réel reste à
+  créer manuellement avant mise en production.
 
 ### 5.4 Interface d'administration
 

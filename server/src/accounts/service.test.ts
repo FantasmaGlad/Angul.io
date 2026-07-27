@@ -84,4 +84,62 @@ describe.skipIf(!DATABASE_URL)('AccountsService (Postgres)', () => {
     expect(profile?.xp).toBe(200);
     expect(profile?.bestScores).toEqual([{ modeId: 'folie', bestScore: 200 }]);
   });
+
+  it('isPremium : false pour invité/compte inconnu/standard, true après activation admin (Lot 6.4)', async () => {
+    const service = new AccountsService(pool);
+    const pseudo = uniquePseudo('premium');
+    const { token } = await service.register(pseudo, 'motdepasse123');
+    const accountId = service.resolveToken(token)!;
+
+    expect(await service.isPremium(undefined)).toBe(false);
+    expect(await service.isPremium(-1)).toBe(false);
+    expect(await service.isPremium(accountId)).toBe(false);
+
+    await service.updateAccountForAdmin(accountId, { premium: true });
+    expect(await service.isPremium(accountId)).toBe(true);
+  });
+
+  it('un compte banni ne peut plus se connecter (Lot 5.2) ; le bannissement révoque ses sessions actives', async () => {
+    const service = new AccountsService(pool);
+    const pseudo = uniquePseudo('banned');
+    const { token } = await service.register(pseudo, 'motdepasse123');
+    const accountId = service.resolveToken(token)!;
+    expect(service.resolveToken(token)).toBe(accountId);
+
+    await service.updateAccountForAdmin(accountId, { banned: true });
+
+    // La session déjà émise avant le ban ne doit plus être valable (révocation immédiate).
+    expect(service.resolveToken(token)).toBeUndefined();
+    await expect(service.login(pseudo, 'motdepasse123')).rejects.toThrow(/banni/);
+  });
+
+  it('searchAccountsForAdmin/getAccountForAdmin exposent id/banned mais jamais passwordHash', async () => {
+    const service = new AccountsService(pool);
+    const pseudo = uniquePseudo('adminview');
+    await service.register(pseudo, 'motdepasse123');
+
+    const results = await service.searchAccountsForAdmin(pseudo);
+    expect(results).toHaveLength(1);
+    expect(results[0]).not.toHaveProperty('passwordHash');
+    expect(results[0]).toMatchObject({ pseudo, banned: false });
+
+    const detail = await service.getAccountForAdmin(results[0]!.id);
+    expect(detail).toMatchObject({ pseudo, bestScores: [] });
+    expect(await service.getAccountForAdmin(-1)).toBeUndefined();
+  });
+
+  it('updateAccountForAdmin rejette un niveau/XP invalide, renvoie undefined pour un compte inconnu', async () => {
+    const service = new AccountsService(pool);
+    const pseudo = uniquePseudo('adminpatch');
+    const { token } = await service.register(pseudo, 'motdepasse123');
+    const accountId = service.resolveToken(token)!;
+
+    await expect(service.updateAccountForAdmin(accountId, { level: 0 })).rejects.toBeInstanceOf(
+      AccountError,
+    );
+    await expect(service.updateAccountForAdmin(accountId, { xp: -1 })).rejects.toBeInstanceOf(
+      AccountError,
+    );
+    expect(await service.updateAccountForAdmin(-1, { premium: true })).toBeUndefined();
+  });
 });

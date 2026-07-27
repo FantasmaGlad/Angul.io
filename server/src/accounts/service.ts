@@ -1,5 +1,10 @@
 import type { Pool } from 'pg';
-import { AccountsRepository, PseudoTakenError } from './accountsRepository.js';
+import {
+  AccountsRepository,
+  PseudoTakenError,
+  type AccountRow,
+  type AdminAccountPatch,
+} from './accountsRepository.js';
 import { xpForScore } from './levels.js';
 import { hashPassword, verifyPassword } from './passwords.js';
 import { createSessionStore, type SessionStore } from './sessionStore.js';
@@ -7,6 +12,8 @@ import { createSessionStore, type SessionStore } from './sessionStore.js';
 const MIN_PSEUDO_LENGTH = 3;
 const MAX_PSEUDO_LENGTH = 20;
 const MIN_PASSWORD_LENGTH = 8;
+const MAX_COSMETIC_LENGTH = 40;
+const MAX_COSMETICS_COUNT = 50;
 
 export interface AuthResult {
   token: string;
@@ -24,6 +31,24 @@ export interface AccountProfile {
   xp: number;
   premium: boolean;
   cosmetics: string[];
+  bestScores: BestScore[];
+}
+
+/** Vue d'un compte destinée à l'interface admin (Lot 5.2-5.4) — inclut `id` (nécessaire pour
+ * cibler les endpoints admin) et `banned`, jamais exposés au profil joueur lui-même
+ * (`AccountProfile`) ; n'expose jamais `passwordHash`. */
+export interface AdminAccountView {
+  id: number;
+  pseudo: string;
+  level: number;
+  xp: number;
+  premium: boolean;
+  cosmetics: string[];
+  banned: boolean;
+}
+
+/** Vue admin détaillée d'un compte, avec ses meilleurs scores (Lot 5.2, "consultation"). */
+export interface AdminAccountDetail extends AdminAccountView {
   bestScores: BestScore[];
 }
 
@@ -68,6 +93,9 @@ export class AccountsService {
       // le message d'erreur de connexion (l'inscription, elle, le révèle nécessairement).
       throw new AccountError('Pseudo ou mot de passe incorrect.');
     }
+    // Vérifié après le mot de passe (Lot 5.2) : ce message ne fuit donc rien à qui ne connaît
+    // pas déjà le bon mot de passe, contrairement au message générique ci-dessus.
+    if (account.banned) throw new AccountError('Ce compte a été banni.');
     return { token: this.sessions.createSession(account.id), pseudo: account.pseudo };
   }
 
@@ -96,6 +124,85 @@ export class AccountsService {
    * n'existe à ce jour, voir levels.ts). */
   async recordGameResult(accountId: number, modeId: string, score: number): Promise<void> {
     await this.repository.recordGameResult(accountId, modeId, Math.round(score), xpForScore(score));
+  }
+
+  /** Lot 6.4 — un compte non-Premium (ou un invité, `accountId` `undefined`) ne peut pas créer
+   * de salon (cahier des charges §5.3) ; `false` pour un compte introuvable plutôt qu'une
+   * exception, net/server.ts traite les deux cas de la même façon (403). */
+  async isPremium(accountId: number | undefined): Promise<boolean> {
+    if (accountId === undefined) return false;
+    const account = await this.repository.findById(accountId);
+    return account?.premium ?? false;
+  }
+
+  // --- Interface admin (Lot 5.2-5.4) --------------------------------------------------------
+
+  /** `query` vide liste les premiers comptes par ordre alphabétique (voir
+   * `AccountsRepository.searchByPseudo`) — pratique pour parcourir la base depuis l'admin. */
+  async searchAccountsForAdmin(query: string): Promise<AdminAccountView[]> {
+    const rows = await this.repository.searchByPseudo(query);
+    return rows.map(toAdminView);
+  }
+
+  async getAccountForAdmin(accountId: number): Promise<AdminAccountDetail | undefined> {
+    const account = await this.repository.findById(accountId);
+    if (!account) return undefined;
+    const bestScores = await this.repository.getBestScores(accountId);
+    return { ...toAdminView(account), bestScores };
+  }
+
+  /** Correction manuelle admin (Lot 5.2 bannissement, 5.3 XP/niveau, 5.4 cosmétiques/Premium) —
+   * une seule route pour les quatre, le patch ne contient que les champs à modifier. Bannir
+   * révoque immédiatement les sessions actives du compte (voir `SessionStore`) : sans ça, un
+   * joueur banni resterait connecté jusqu'à sa prochaine reconnexion. */
+  async updateAccountForAdmin(
+    accountId: number,
+    patch: AdminAccountPatch,
+  ): Promise<AdminAccountView | undefined> {
+    validateAdminPatch(patch);
+    const updated = await this.repository.adminUpdateAccount(accountId, patch);
+    if (!updated) return undefined;
+    if (patch.banned === true) this.sessions.revokeSessionsForAccount(accountId);
+    return toAdminView(updated);
+  }
+}
+
+function toAdminView(account: AccountRow): AdminAccountView {
+  return {
+    id: account.id,
+    pseudo: account.pseudo,
+    level: account.level,
+    xp: account.xp,
+    premium: account.premium,
+    cosmetics: account.cosmetics,
+    banned: account.banned,
+  };
+}
+
+/** Correction manuelle admin : erreurs "attendues" mêmes principes que `validatePseudo`/
+ * `validatePassword` (traduites en 400 par net/server.ts), pas des bugs serveur. Bornes larges
+ * (pas de vraie règle métier derrière) — juste de quoi empêcher une valeur absurde tapée par
+ * erreur dans le formulaire admin (ex. XP négatif) de corrompre durablement un compte. */
+function validateAdminPatch(patch: AdminAccountPatch): void {
+  if (patch.level !== undefined && (!Number.isInteger(patch.level) || patch.level < 1)) {
+    throw new AccountError('Le niveau doit être un entier positif.');
+  }
+  if (patch.xp !== undefined && (!Number.isInteger(patch.xp) || patch.xp < 0)) {
+    throw new AccountError("L'XP doit être un entier positif ou nul.");
+  }
+  if (patch.cosmetics !== undefined) {
+    if (patch.cosmetics.length > MAX_COSMETICS_COUNT) {
+      throw new AccountError(`Au maximum ${MAX_COSMETICS_COUNT} cosmétiques par compte.`);
+    }
+    if (
+      patch.cosmetics.some(
+        (c) => typeof c !== 'string' || c.length === 0 || c.length > MAX_COSMETIC_LENGTH,
+      )
+    ) {
+      throw new AccountError(
+        `Chaque cosmétique doit être un texte de 1 à ${MAX_COSMETIC_LENGTH} caractères.`,
+      );
+    }
   }
 }
 

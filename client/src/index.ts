@@ -24,6 +24,7 @@ import { createRoom, fetchAvailableModes, fetchPublicRooms, type RoomSummary } f
 import { GameConnection } from './net.js';
 import { computeCamera, interpolateEntities, renderFrame } from './render.js';
 import { ownAggregate, speedBetween } from './stats.js';
+import { DONATION_URL, SUPPORT_BODY } from './support.js';
 
 const INPUT_SEND_INTERVAL_MS = 50; // aligné sur le tick serveur par défaut (20 Hz)
 /** Intervalle attendu entre deux messages `state` (20 Hz par défaut, voir Room/index.ts côté
@@ -53,6 +54,8 @@ const roomNameInput = document.getElementById('roomNameInput') as HTMLInputEleme
 const roomModeSelect = document.getElementById('roomModeSelect') as HTMLSelectElement;
 const roomPrivateCheckbox = document.getElementById('roomPrivateCheckbox') as HTMLInputElement;
 const createRoomButton = document.getElementById('createRoomButton') as HTMLButtonElement;
+const createRoomForm = document.getElementById('createRoomForm') as HTMLDivElement;
+const createRoomLocked = document.getElementById('createRoomLocked') as HTMLDivElement;
 const joinCodeInput = document.getElementById('joinCodeInput') as HTMLInputElement;
 const joinCodeButton = document.getElementById('joinCodeButton') as HTMLButtonElement;
 const lobbyError = document.getElementById('lobbyError') as HTMLParagraphElement;
@@ -78,6 +81,16 @@ const profilePremium = document.getElementById('profilePremium') as HTMLSpanElem
 const profileCosmetics = document.getElementById('profileCosmetics') as HTMLSpanElement;
 const profileBestScores = document.getElementById('profileBestScores') as HTMLUListElement;
 const closeProfileButton = document.getElementById('closeProfileButton') as HTMLButtonElement;
+
+// --- Soutien / Premium (Lot 6.2/6.4) ---
+const openSupportButton = document.getElementById('openSupportButton') as HTMLButtonElement;
+const openSupportFromLockButton = document.getElementById(
+  'openSupportFromLockButton',
+) as HTMLButtonElement;
+const supportOverlay = document.getElementById('supportOverlay') as HTMLDivElement;
+const supportBody = document.getElementById('supportBody') as HTMLParagraphElement;
+const supportLink = document.getElementById('supportLink') as HTMLAnchorElement;
+const closeSupportButton = document.getElementById('closeSupportButton') as HTMLButtonElement;
 
 function resizeCanvas(): void {
   canvas.width = window.innerWidth;
@@ -181,7 +194,7 @@ createRoomButton.addEventListener('click', () => {
     }
     try {
       const visibility = roomPrivateCheckbox.checked ? 'private' : 'public';
-      const room = await createRoom(name, roomModeSelect.value, visibility);
+      const room = await createRoom(name, roomModeSelect.value, visibility, authSession?.token);
       // Un salon privé ne se rejoint jamais par son id brut (voir roomManager.ts) : seul le
       // code d'invitation y donne accès, y compris pour son propre créateur.
       enterGame(room.inviteCode ?? room.id, room.inviteCode);
@@ -206,6 +219,10 @@ joinCodeButton.addEventListener('click', () => {
 
 let authSession: AuthResult | undefined = loadSession();
 let authMode: 'login' | 'register' = 'login';
+// Lot 6.4 : statut Premium du compte connecté, inconnu (`false`) tant que le profil n'a pas été
+// chargé — évite d'afficher le formulaire "Créer un salon" à quelqu'un qui n'a pas le droit de
+// l'utiliser (le serveur le refuserait de toute façon, 403, mais autant ne pas le montrer).
+let isPremium = false;
 
 function renderAccountUI(): void {
   const loggedIn = authSession !== undefined;
@@ -219,6 +236,26 @@ function renderAccountUI(): void {
   }
 }
 
+function refreshCreateRoomAccess(): void {
+  const unlocked = authSession !== undefined && isPremium;
+  createRoomForm.style.display = unlocked ? 'block' : 'none';
+  createRoomLocked.style.display = unlocked ? 'none' : 'block';
+}
+
+async function refreshPremiumStatus(): Promise<void> {
+  if (!authSession) {
+    isPremium = false;
+    refreshCreateRoomAccess();
+    return;
+  }
+  try {
+    isPremium = (await fetchProfile(authSession.token)).premium;
+  } catch {
+    isPremium = false;
+  }
+  refreshCreateRoomAccess();
+}
+
 function setAuthMode(mode: 'login' | 'register'): void {
   authMode = mode;
   accountToggleModeButton.textContent = mode === 'login' ? "S'inscrire" : 'Se connecter';
@@ -227,6 +264,20 @@ function setAuthMode(mode: 'login' | 'register'): void {
 }
 setAuthMode(authMode);
 renderAccountUI();
+refreshCreateRoomAccess();
+void refreshPremiumStatus();
+
+supportBody.textContent = SUPPORT_BODY;
+supportLink.href = DONATION_URL;
+openSupportButton.addEventListener('click', () => {
+  supportOverlay.style.display = 'flex';
+});
+openSupportFromLockButton.addEventListener('click', () => {
+  supportOverlay.style.display = 'flex';
+});
+closeSupportButton.addEventListener('click', () => {
+  supportOverlay.style.display = 'none';
+});
 
 accountToggleModeButton.addEventListener('click', () => {
   setAuthMode(authMode === 'login' ? 'register' : 'login');
@@ -243,6 +294,7 @@ accountSubmitButton.addEventListener('click', () => {
       saveSession(authSession);
       accountPasswordInput.value = '';
       renderAccountUI();
+      void refreshPremiumStatus();
     } catch (error) {
       accountError.textContent = (error as Error).message;
     }
@@ -253,6 +305,7 @@ logoutButton.addEventListener('click', () => {
   authSession = undefined;
   clearSession();
   renderAccountUI();
+  void refreshPremiumStatus();
 });
 
 viewProfileButton.addEventListener('click', () => {

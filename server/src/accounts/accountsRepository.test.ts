@@ -82,4 +82,41 @@ describe.skipIf(!DATABASE_URL)('AccountsRepository (Postgres)', () => {
       { modeId: 'vanilla', bestScore: 150 },
     ]);
   });
+
+  it('searchByPseudo trouve par sous-chaîne, insensible à la casse', async () => {
+    const pseudo = uniquePseudo('SearchMe');
+    const account = await repository.createAccount(pseudo, 'hash');
+    createdIds.push(account.id);
+
+    const results = await repository.searchByPseudo(pseudo.slice(0, -2).toLowerCase());
+    expect(results.some((row) => row.id === account.id)).toBe(true);
+
+    expect(await repository.searchByPseudo(uniquePseudo('nope'))).toEqual([]);
+  });
+
+  it('adminUpdateAccount ne modifie que les champs fournis (Lot 5.2-5.4)', async () => {
+    const pseudo = uniquePseudo('admin');
+    const account = await repository.createAccount(pseudo, 'hash');
+    createdIds.push(account.id);
+
+    const afterPremium = await repository.adminUpdateAccount(account.id, { premium: true });
+    expect(afterPremium?.premium).toBe(true);
+    expect(afterPremium?.level).toBe(1); // inchangé
+
+    const afterMultiple = await repository.adminUpdateAccount(account.id, {
+      level: 5,
+      xp: 999,
+      cosmetics: ['hat'],
+      banned: true,
+    });
+    expect(afterMultiple).toMatchObject({
+      level: 5,
+      xp: 999,
+      cosmetics: ['hat'],
+      banned: true,
+      premium: true, // inchangé par ce second appel
+    });
+
+    expect(await repository.adminUpdateAccount(-1, { premium: true })).toBeUndefined();
+  });
 });

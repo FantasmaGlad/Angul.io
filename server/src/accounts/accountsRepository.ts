@@ -9,6 +9,17 @@ export interface AccountRow {
   xp: number;
   premium: boolean;
   cosmetics: string[];
+  banned: boolean;
+}
+
+/** Champs modifiables par l'admin (Lot 5.2-5.4) — tous optionnels, seuls les champs fournis sont
+ * écrits (voir `adminUpdateAccount`). */
+export interface AdminAccountPatch {
+  level?: number;
+  xp?: number;
+  premium?: boolean;
+  cosmetics?: string[];
+  banned?: boolean;
 }
 
 export interface BestScoreRow {
@@ -34,9 +45,10 @@ interface PlayerRow {
   xp: number;
   premium: boolean;
   cosmetics: string[];
+  banned: boolean;
 }
 
-const ACCOUNT_COLUMNS = 'id, pseudo, password_hash, level, xp, premium, cosmetics';
+const ACCOUNT_COLUMNS = 'id, pseudo, password_hash, level, xp, premium, cosmetics, banned';
 
 function toAccountRow(row: PlayerRow): AccountRow {
   return {
@@ -47,6 +59,7 @@ function toAccountRow(row: PlayerRow): AccountRow {
     xp: row.xp,
     premium: row.premium,
     cosmetics: row.cosmetics,
+    banned: row.banned,
   };
 }
 
@@ -86,6 +99,38 @@ export class AccountsRepository {
     const result = await this.pool.query<PlayerRow>(
       `SELECT ${ACCOUNT_COLUMNS} FROM players WHERE id = $1`,
       [id],
+    );
+    return result.rows[0] ? toAccountRow(result.rows[0]) : undefined;
+  }
+
+  /** Recherche par sous-chaîne de pseudo, insensible à la casse (Lot 5.2) — `query` vide
+   * renvoie les `limit` premiers comptes par ordre alphabétique plutôt qu'une liste vide,
+   * pratique pour parcourir la base depuis l'admin sans devoir connaître un pseudo exact. */
+  async searchByPseudo(query: string, limit = 20): Promise<AccountRow[]> {
+    const result = await this.pool.query<PlayerRow>(
+      `SELECT ${ACCOUNT_COLUMNS} FROM players WHERE pseudo ILIKE $1 ORDER BY pseudo LIMIT $2`,
+      [`%${query}%`, limit],
+    );
+    return result.rows.map(toAccountRow);
+  }
+
+  /** Écrit une correction manuelle admin (Lot 5.2-5.4 : bannissement, XP/niveau, cosmétiques,
+   * statut Premium) — seuls les champs présents dans `patch` sont modifiés. `undefined` si le
+   * compte n'existe pas (traduit en 404 côté HTTP, voir net/server.ts). */
+  async adminUpdateAccount(id: number, patch: AdminAccountPatch): Promise<AccountRow | undefined> {
+    const columns: Array<[string, unknown]> = [];
+    if (patch.level !== undefined) columns.push(['level', patch.level]);
+    if (patch.xp !== undefined) columns.push(['xp', patch.xp]);
+    if (patch.premium !== undefined) columns.push(['premium', patch.premium]);
+    if (patch.cosmetics !== undefined) columns.push(['cosmetics', patch.cosmetics]);
+    if (patch.banned !== undefined) columns.push(['banned', patch.banned]);
+    if (columns.length === 0) return this.findById(id);
+
+    const setClause = columns.map(([column], index) => `${column} = $${index + 2}`).join(', ');
+    const values = columns.map(([, value]) => value);
+    const result = await this.pool.query<PlayerRow>(
+      `UPDATE players SET ${setClause} WHERE id = $1 RETURNING ${ACCOUNT_COLUMNS}`,
+      [id, ...values],
     );
     return result.rows[0] ? toAccountRow(result.rows[0]) : undefined;
   }

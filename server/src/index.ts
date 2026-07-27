@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 // charge pas index.ts), qui configure DATABASE_URL autrement (variable d'environnement CI).
 import 'dotenv/config';
 import { AccountsService } from './accounts/service.js';
+import { AdminAuth } from './admin/adminAuth.js';
 import { getPool } from './db/pool.js';
 import type { GameMod } from './engine/mod.js';
 import { RoomManager, type ModResolver } from './engine/roomManager.js';
@@ -58,15 +59,23 @@ const defaultRoom = roomManager.createRoom({
 // configuré de base de données (voir GameServerOptions.accounts, net/server.ts).
 const accounts = process.env.DATABASE_URL ? new AccountsService(getPool()) : undefined;
 
+// Interface admin (Lot 5.1) : optionnelle de la même façon — sans `ADMIN_PASSWORD_HASH`,
+// `/api/admin/*` répond 503 plutôt que de planter au démarrage (voir AdminAuth.isConfigured,
+// server/scripts/hashPassword.mjs pour générer le hash).
+const admin = new AdminAuth(process.env.ADMIN_PASSWORD_HASH);
+
 startGameServer(roomManager, {
   port: PORT,
   staticDir: fileURLToPath(new URL('../../client/public', import.meta.url)),
+  adminStaticDir: fileURLToPath(new URL('../../admin/public', import.meta.url)),
   availableModIds: listAvailableModIds(),
   accounts,
+  admin,
 });
 
 console.log(
   `Angul.io — serveur démarré sur le port ${PORT}, tick ${TICK_RATE_HZ}Hz. ` +
     `Salon par défaut : "${defaultRoom.name}" (mode ${defaultRoom.modId}, id ${defaultRoom.id}). ` +
-    `Comptes joueurs : ${accounts ? 'activés' : 'désactivés (DATABASE_URL absent)'}.`,
+    `Comptes joueurs : ${accounts ? 'activés' : 'désactivés (DATABASE_URL absent)'}. ` +
+    `Interface admin : ${admin.isConfigured ? 'activée' : 'désactivée (ADMIN_PASSWORD_HASH absent)'}.`,
 );

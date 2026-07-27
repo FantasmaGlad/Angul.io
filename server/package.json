@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "loadtest": "node scripts/loadtest.mjs",
+    "hash-password": "node scripts/hashPassword.mjs",
     "migrate:up": "node-pg-migrate up --envPath ./.env",
     "migrate:down": "node-pg-migrate down --envPath ./.env",
     "migrate:create": "node-pg-migrate create"
