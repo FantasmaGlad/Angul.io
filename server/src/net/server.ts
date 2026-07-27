@@ -310,57 +310,59 @@ export function startGameServer(
         return;
       }
 
-      if (message.type === 'join' && !playerId) {
+      if (message.type === 'join') {
         const nickname = message.nickname.trim().slice(0, MAX_NICKNAME_LENGTH) || 'Joueur';
 
-        // Capacité de salon (refonte UI/UX, champ "Nombre de Joueurs") : vérifiée avant toute
-        // création de joueur/socket enregistrée — un salon plein refuse la connexion plutôt que
-        // de la laisser ouverte sans jamais recevoir de `welcome`.
-        if (managed.room.world.allPlayers().length >= managed.maxPlayers) {
-          logEvent('join_rejected', { roomId: managed.id, reason: 'room_full' });
-          socket.close(WS_CLOSE_ROOM_FULL, 'Salon complet.');
-          return;
-        }
+        if (!playerId) {
+          // Premier Join sur cette connexion
+          if (managed.room.world.allPlayers().length >= managed.maxPlayers) {
+            logEvent('join_rejected', { roomId: managed.id, reason: 'room_full' });
+            socket.close(WS_CLOSE_ROOM_FULL, 'Salon complet.');
+            return;
+          }
 
-        // Unicité de pseudo par salon (refonte UI/UX) : comparée aux joueurs déjà EN JEU dans CE
-        // salon (pas au pseudo de compte, ni aux autres salons) — insensible à la casse. Deux
-        // blobs au même nom dans le même salon prêteraient à confusion (le pseudo s'affiche
-        // au-dessus du morceau, voir render.ts), donc refusé plutôt que dédupliqué en silence.
-        const nicknameTaken = managed.room.world
-          .allPlayers()
-          .some((player) => player.nickname.toLowerCase() === nickname.toLowerCase());
-        if (nicknameTaken) {
-          logEvent('join_rejected', { roomId: managed.id, reason: 'nickname_taken', nickname });
-          socket.close(WS_CLOSE_NICKNAME_TAKEN, 'Pseudo déjà utilisé sur ce salon.');
-          return;
-        }
+          const nicknameTaken = managed.room.world
+            .allPlayers()
+            .some((player) => player.nickname.toLowerCase() === nickname.toLowerCase());
+          if (nicknameTaken) {
+            logEvent('join_rejected', { roomId: managed.id, reason: 'nickname_taken', nickname });
+            socket.close(WS_CLOSE_NICKNAME_TAKEN, 'Pseudo déjà utilisé sur ce salon.');
+            return;
+          }
 
-        playerId = String(runtime.nextPlayerId++);
-        runtime.sockets.set(playerId, socket);
-        if (accountId !== undefined) {
-          runtime.accountIdByPlayer.set(playerId, accountId);
-          runtime.maxMassByPlayer.set(playerId, 0);
-        }
-        managed.room.addPlayer(playerId, nickname);
-        logEvent('player_join', { roomId: managed.id, playerId, nickname });
-        send(socket, { type: 'welcome', playerId, mapSize: managed.room.world.mapSize });
+          playerId = String(runtime.nextPlayerId++);
+          runtime.sockets.set(playerId, socket);
+          if (accountId !== undefined) {
+            runtime.accountIdByPlayer.set(playerId, accountId);
+            runtime.maxMassByPlayer.set(playerId, 0);
+          }
+          managed.room.addPlayer(playerId, nickname);
+          logEvent('player_join', { roomId: managed.id, playerId, nickname });
+          send(socket, { type: 'welcome', playerId, mapSize: managed.room.world.mapSize });
 
-        // Le nouvel arrivant apprend les pseudos déjà connus (les autres, pas lui — couvert
-        // par la diffusion ci-dessous, qui l'inclut).
-        for (const existingPlayer of managed.room.world.allPlayers()) {
-          if (existingPlayer.id === playerId) continue;
-          send(socket, {
-            type: 'player',
-            playerId: existingPlayer.id,
-            nickname: existingPlayer.nickname,
-          });
+          for (const existingPlayer of managed.room.world.allPlayers()) {
+            if (existingPlayer.id === playerId) continue;
+            send(socket, {
+              type: 'player',
+              playerId: existingPlayer.id,
+              nickname: existingPlayer.nickname,
+            });
+          }
+          const playerInfo: ServerMessage = { type: 'player', playerId, nickname };
+          for (const s of runtime.sockets.values()) send(s, playerInfo);
+        } else {
+          // Re-Join (Respawn) sur une connexion existante après une mort
+          const existingPlayer = managed.room.world.getPlayer(playerId);
+          if (!existingPlayer || existingPlayer.pieceIds.length === 0) {
+            managed.room.addPlayer(playerId, nickname);
+            logEvent('player_respawn', { roomId: managed.id, playerId, nickname });
+            send(socket, { type: 'welcome', playerId, mapSize: managed.room.world.mapSize });
+          }
         }
-        // Tout le monde (dans ce salon) apprend le nouveau pseudo — message rare, pas répété
-        // à chaque tick (Lot 1.8).
-        const playerInfo: ServerMessage = { type: 'player', playerId, nickname };
-        for (const otherSocket of runtime.sockets.values()) send(otherSocket, playerInfo);
         return;
       }
+
+
 
       if (message.type === 'input' && playerId) {
         // `split` n'est vrai que sur le tick où le joueur appuie sur espace (déclenchement, pas

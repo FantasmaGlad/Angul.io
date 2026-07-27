@@ -125,35 +125,42 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     return true;
   }
 
+  function hasMassAdvantage(attacker: Entity, target: Entity): boolean {
+    return attacker.mass >= target.mass * (1 + config.eating.massAdvantage);
+  }
+
   function handleEatAttempt(world: World, attacker: Entity, target: Entity): boolean {
-    if (attacker.mass >= target.mass * (1 + config.eating.massAdvantage)) {
-      const gainedMass = target.mass;
+    if (hasMassAdvantage(attacker, target)) {
+      const dist = distance(attacker.position, target.position);
+      const overlap = circleOverlapArea(attacker.radius, target.radius, dist);
+      const targetArea = Math.PI * target.radius * target.radius;
 
-      if (attacker.ownerId && target.ownerId) {
-        const attackerPlayer = world.getPlayer(attacker.ownerId);
-        const targetPlayer = world.getPlayer(target.ownerId);
-        logEvent('player_eaten', {
-          attackerId: attacker.ownerId,
-          attackerNickname: attackerPlayer?.nickname ?? attacker.ownerId,
-          victimId: target.ownerId,
-          victimNickname: targetPlayer?.nickname ?? target.ownerId,
-          mass: Math.floor(gainedMass),
-        });
+      // Exige un chevauchement d'au moins 1/3 (33.3%) de la surface de la cible pour l'absorber
+      if (overlap >= targetArea / 3) {
+        const gainedMass = target.mass;
+
+        if (attacker.ownerId && target.ownerId) {
+          const attackerPlayer = world.getPlayer(attacker.ownerId);
+          const targetPlayer = world.getPlayer(target.ownerId);
+          logEvent('player_eaten', {
+            attackerId: attacker.ownerId,
+            attackerNickname: attackerPlayer?.nickname ?? attacker.ownerId,
+            victimId: target.ownerId,
+            victimNickname: targetPlayer?.nickname ?? target.ownerId,
+            mass: Math.floor(gainedMass),
+          });
+        }
+
+        world.setMass(attacker, attacker.mass + gainedMass);
+        world.removeEntity(target.id);
+        const now = performance.now();
+        creditMassEatenXp(world, attacker.ownerId, gainedMass, now);
+        creditPlayerEatenXp(world, attacker.ownerId, now);
+        return true;
       }
-
-      world.setMass(attacker, attacker.mass + gainedMass);
-      world.removeEntity(target.id);
-      // XP (demande utilisateur, engine/xp.ts) : "1 masse mangée = 1xp" + bonus fixe "1 joueur
-      // mangé = 400xp" (qui déclenche/prolonge aussi le combo) — les deux comptent pour ce même
-      // événement d'absorption d'un joueur, pas l'un à la place de l'autre.
-      const now = performance.now();
-      creditMassEatenXp(world, attacker.ownerId, gainedMass, now);
-      creditPlayerEatenXp(world, attacker.ownerId, now);
-      return true;
     }
     return false;
   }
-
 
   let foodSpawnCredit = 0;
 
@@ -169,9 +176,9 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     },
 
     onPlayerDeath(world, playerId) {
-      // Respawn immédiat — le MVP ne modélise pas d'écran d'attente entre deux vies.
-      spawnPlayerPiece(world, playerId);
+      // Attendre que le joueur réclame son respawn via le menu / bouton Rejouer
     },
+
 
     onPlayerInput(world: World, playerId: PlayerId, input: PlayerInput) {
       const pieces = world.getPiecesByOwner(playerId);
@@ -253,10 +260,13 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         return;
       }
 
-      // Deux morceaux de joueurs différents : absorption si avantage de masse suffisant, sinon répulsion
-      if (!handleEatAttempt(world, a, b) && !handleEatAttempt(world, b, a)) {
+      // Deux morceaux de joueurs différents : absorption si avantage de masse + 1/3 chevauchement,
+      // sinon répulsion uniquement si aucun des deux n'a d'avantage de masse (afin d'autoriser le chevauchement progressif).
+      const eaten = handleEatAttempt(world, a, b) || handleEatAttempt(world, b, a);
+      if (!eaten && !hasMassAdvantage(a, b) && !hasMassAdvantage(b, a)) {
         applyRepulsion(a, b);
       }
+
     },
   };
 }

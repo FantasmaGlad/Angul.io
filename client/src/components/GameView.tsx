@@ -117,7 +117,10 @@ export default function GameView({
       if (message.type === 'welcome') {
         selfPlayerId = message.playerId;
         mapSize = message.mapSize;
-      } else if (message.type === 'player') {
+        maxMassThisLife = 50;
+        setDeathState({ isDead: false, finalScore: 0 });
+      }
+ else if (message.type === 'player') {
         nicknames.set(message.playerId, message.nickname);
       } else if (message.type === 'state') {
         previousSnapshot = latestSnapshot;
