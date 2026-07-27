@@ -24,6 +24,10 @@ interface CreateRoomPanelProps {
   onOpenSupport: () => void;
 }
 
+function generate6DigitCode(): string {
+  return String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0');
+}
+
 export default function CreateRoomPanel({
   modes,
   authToken,
@@ -38,7 +42,7 @@ export default function CreateRoomPanel({
   const [duration, setDuration] = useState(DURATION_OPTIONS[DURATION_OPTIONS.length - 1]!.value);
   const [isPrivate, setIsPrivate] = useState(true);
   const [botsEnabled, setBotsEnabled] = useState(true);
-  const [createdCode, setCreatedCode] = useState('');
+  const [previewCode, setPreviewCode] = useState(() => generate6DigitCode());
   const [joinCode, setJoinCode] = useState('');
   const [formError, setFormError] = useState('');
 
@@ -48,10 +52,13 @@ export default function CreateRoomPanel({
 
   const canCreateRoom = isLoggedIn && isPremium;
 
+  const handleRegenerateCode = (): void => {
+    setPreviewCode(generate6DigitCode());
+  };
+
   const handleCreate = (): void => {
     void (async () => {
       setFormError('');
-      setCreatedCode('');
       const name = roomName.trim();
       if (!name) {
         setFormError('Le nom du salon est requis.');
@@ -70,21 +77,15 @@ export default function CreateRoomPanel({
             maxPlayers: Number.isInteger(parsedMaxPlayers) ? parsedMaxPlayers : undefined,
             durationMs,
             botsEnabled,
+            inviteCode: isPrivate ? previewCode : undefined,
           },
         );
-        if (room.inviteCode) {
-          setCreatedCode(room.inviteCode);
-          return;
-        }
-        onJoinRoom(room.id);
+        const finalCode = room.inviteCode || previewCode;
+        onJoinRoom(room.id, isPrivate ? finalCode : undefined);
       } catch (error) {
         setFormError((error as Error).message);
       }
     })();
-  };
-
-  const handleJoinCreatedRoom = (): void => {
-    onJoinRoom(createdCode, createdCode);
   };
 
   const handleJoinCode = (): void => {
@@ -182,32 +183,32 @@ export default function CreateRoomPanel({
               </label>
             </div>
 
-
-            {createdCode && (
+            {isPrivate && (
               <label className="field">
-                <span className="field-label">CODE GÉNÉRÉ</span>
-                <input className="clean-input code-output" value={createdCode} readOnly />
+                <span className="field-label">CODE DU SALON (À LA VOLÉE)</span>
+                <div className="join-code-row">
+                  <input className="clean-input code-output" value={previewCode} readOnly />
+                  <button
+                    className="btn-secondary-action"
+                    type="button"
+                    onClick={handleRegenerateCode}
+                    title="Générer un autre code"
+                  >
+                    Régénérer
+                  </button>
+                </div>
               </label>
             )}
 
-            {createdCode ? (
-              <button
-                className="btn-primary-action"
-                type="button"
-                onClick={handleJoinCreatedRoom}
-              >
-                REJOINDRE MAINTENANT
-              </button>
-            ) : (
-              <button
-                className="btn-primary-action"
-                type="button"
-                onClick={handleCreate}
-              >
-                CRÉER ET REJOINDRE
-              </button>
-            )}
+            <button
+              className="btn-primary-action"
+              type="button"
+              onClick={handleCreate}
+            >
+              CRÉER ET REJOINDRE
+            </button>
           </div>
+
         ) : (
           <div className="premium-promo-card">
             <p className="premium-promo-text">

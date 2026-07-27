@@ -759,6 +759,7 @@ async function handleCreateRoom(
       : undefined;
 
   const botsEnabled = isRecord(body) && typeof body.botsEnabled === 'boolean' ? body.botsEnabled : undefined;
+  const inviteCode = isRecord(body) && typeof body.inviteCode === 'string' ? body.inviteCode : undefined;
 
   if (!name) {
     logEvent('room_create_rejected', { reason: 'missing_name' });
@@ -772,8 +773,9 @@ async function handleCreateRoom(
   }
 
   try {
-    const summary = roomManager.createRoom({ name, modId, visibility, maxPlayers, durationMs, botsEnabled });
+    const summary = roomManager.createRoom({ name, modId, visibility, maxPlayers, durationMs, botsEnabled, inviteCode });
     respondJson(res, 201, summary);
+
 
   } catch (error) {
     logEvent('room_create_rejected', { reason: (error as Error).message });

@@ -30,6 +30,8 @@ export interface CreateRoomOptions {
   durationMs?: number;
   /** Activation/Désactivation des bots (IA) pour ce salon (si false, aucun bot n'apparaît). */
   botsEnabled?: boolean;
+  /** Code d'invitation à 6 chiffres pré-généré par le client (ou généré automatiquement si omis/pris). */
+  inviteCode?: string;
 }
 
 /** Vue publique d'un salon, sans exposer la `Room` ni ses internes (utilisée par le lobby, Lot 2.2). */
@@ -126,7 +128,12 @@ export class RoomManager {
     // revanche, cet id est prévisible et énumérable (1, 2, 3…) : un salon privé ne doit
     // jamais être rejoignable par son seul id (voir `inviteCode`, Lot 2.3).
     const id = String(this.nextRoomId++);
-    const inviteCode = options.visibility === 'private' ? this.generateInviteCode() : undefined;
+    const inviteCode =
+      options.visibility === 'private'
+        ? (options.inviteCode && /^\d{6}$/.test(options.inviteCode) && !this.isInviteCodeTaken(options.inviteCode)
+            ? options.inviteCode
+            : this.generateInviteCode())
+        : undefined;
     const entry: RoomEntry = {
       id,
       name: options.name,
@@ -258,13 +265,18 @@ export class RoomManager {
    * brute bien plus vite qu'un UUID si jamais un attaquant s'y met sérieusement. Ré-essaie en
    * cas de collision avec un salon privé déjà actif (improbable vu `maxRooms`, mais un code
    * dupliqué rendrait deux salons indiscernables au moment de rejoindre). */
+  private isInviteCodeTaken(code: string): boolean {
+    return [...this.rooms.values()].some((entry) => entry.inviteCode === code);
+  }
+
   private generateInviteCode(): string {
     let code: string;
     do {
       code = String(randomInt(0, INVITE_CODE_UPPER_BOUND)).padStart(INVITE_CODE_DIGITS, '0');
-    } while ([...this.rooms.values()].some((entry) => entry.inviteCode === code));
+    } while (this.isInviteCodeTaken(code));
     return code;
   }
+
 
   private toSummary(entry: RoomEntry): RoomSummary {
     return {

@@ -45,6 +45,8 @@ export interface CreateRoomOptions {
   durationMs?: number;
   /** "Activer les bots (IA)" — omis = bots activés selon la configuration du mode. */
   botsEnabled?: boolean;
+  /** Code d'invitation pré-généré à la volée par le client pour le salon privé. */
+  inviteCode?: string;
 }
 
 /** `token` (Lot 6.4) : la création de salon est réservée aux comptes Premium — le serveur
@@ -69,8 +71,10 @@ export async function createRoom(
       maxPlayers: options.maxPlayers,
       durationMs: options.durationMs,
       botsEnabled: options.botsEnabled,
+      inviteCode: options.inviteCode,
     }),
   });
+
 
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: string };
