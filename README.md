@@ -19,9 +19,14 @@ fait, en cours, et restant à faire.
 ```
 shared/   code TypeScript partagé (types, constantes) entre server/client/admin
 server/   serveur de jeu (boucle de simulation, WebSocket, API de mods)
-client/   client web joueur (rendu Canvas, PWA)
-admin/    interface d'administration
+client/   client web joueur (rendu Canvas + interface React, PWA)
+admin/    interface d'administration (React)
 ```
+
+Interface (`client/`, `admin/`) : React + Vite, design minimaliste — voir
+[cahier_des_charges_ui_ux.md](cahier_des_charges_ui_ux.md) pour les décisions de design/
+architecture UI et la stratégie d'optimisation (code-splitting, canvas hors du cycle de rendu
+React).
 
 ## Développement
 

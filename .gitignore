@@ -2,10 +2,11 @@ node_modules/
 dist/
 build/
 *.tsbuildinfo
-client/public/bundle.js
-client/public/bundle.js.map
-admin/public/bundle.js
-admin/public/bundle.js.map
+# client/public et admin/public sont entièrement générés par `vite build` (migration React) —
+# seuls client/static/* (icônes, manifest, service worker) et les *.html sources (client/,
+# admin/, à la racine de chaque app, hors public/) sont des fichiers suivis par git.
+client/public/
+admin/public/
 .env
 .env.*
 !.env.example

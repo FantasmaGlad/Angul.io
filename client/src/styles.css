@@ -1,0 +1,547 @@
+/* ---------------------------------------------------------------------------------------
+ * Design minimaliste (cahier_des_charges_ui_ux.md §1, révisé) — inspiré de l'outil Cobalt :
+ * fond sombre plat, un seul accent, pas de dégradé, pas de flou/glassmorphism, pas d'emoji.
+ * Le canvas de jeu (render.ts) n'est pas concerné par ces tokens (§1.5).
+ * --------------------------------------------------------------------------------------- */
+:root {
+  --bg: #0b0b0d;
+  --surface: #141416;
+  --surface-hover: #1c1c1f;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --text: #f2f2f3;
+  --text-soft: #8b8b93;
+  --text-faint: #55555c;
+
+  --accent: #5b7cfa;
+  --accent-strong: #4a68e0;
+  --accent-ink: #ffffff;
+  --danger: #ff5c5c;
+  --success: #4ade80;
+
+  /* Couleur signature par mode (chips/bordures, usage fonctionnel minimal — pas décoratif). */
+  --c-vanilla: #34d399;
+  --c-hardcore: #f87171;
+  --c-folie: #a78bfa;
+
+  --radius-lg: 16px;
+  --radius-md: 10px;
+  --radius-pill: 999px;
+  --shadow-modal: 0 12px 32px rgba(0, 0, 0, 0.5);
+
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+body {
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+}
+canvas {
+  display: block;
+  background: transparent;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  font-weight: 600;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    opacity 0.12s ease;
+}
+button:active {
+  opacity: 0.85;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  padding: 12px 20px;
+  font-size: 14px;
+}
+.btn-primary:hover {
+  background: var(--accent-strong);
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--border);
+  padding: 9px 16px;
+  font-size: 13px;
+}
+.btn-ghost:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
+input {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 11px 16px;
+}
+input::placeholder {
+  color: var(--text-faint);
+}
+input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+select {
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 9px 12px;
+}
+
+.field {
+  display: block;
+  margin-bottom: 14px;
+  text-align: left;
+}
+.field-label,
+.section-title {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+  margin-bottom: 8px;
+}
+
+.error-text {
+  min-height: 1.2em;
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--danger);
+}
+.status-text {
+  min-height: 1.2em;
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--success);
+}
+
+/* --- HUD de jeu (§4.7) --------------------------------------------------------------- */
+.game-overlay {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.stats-panel {
+  min-width: 190px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px 18px;
+}
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 13px;
+  padding: 4px 0;
+}
+.stat-row + .stat-row {
+  border-top: 1px solid var(--border);
+}
+.stat-label {
+  color: var(--text-soft);
+}
+.stat-value {
+  font-weight: 600;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.hud-status {
+  color: var(--text);
+  font-size: 13px;
+}
+.debug-overlay {
+  display: none;
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  max-width: 420px;
+  background: rgba(0, 0, 0, 0.85);
+  color: #e5e5e8;
+  font: 12px/1.5 var(--font-mono);
+  padding: 10px 14px;
+  border-radius: 8px;
+  white-space: pre-wrap;
+  pointer-events: none;
+  border: 1px solid var(--border);
+}
+.debug-overlay.visible {
+  display: block;
+}
+
+/* --- Accueil (§4.1) ------------------------------------------------------------------- */
+.home-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  box-sizing: border-box;
+}
+.home-card {
+  width: 360px;
+  max-width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 32px 28px 26px;
+  text-align: center;
+}
+.home-logo {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 4px;
+  color: var(--text);
+}
+.home-tagline {
+  margin: 0 0 24px;
+  font-size: 12.5px;
+  color: var(--text-soft);
+}
+
+.home-nav {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.nav-link {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-soft);
+  letter-spacing: 0.02em;
+}
+.nav-link:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.nav-link.is-account-active {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+/* --- Sous-panneaux (modales — §3.1) ---------------------------------------------------- */
+.panel-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+  z-index: 5;
+}
+.panel-backdrop.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.panel {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+}
+.panel-card {
+  width: 420px;
+  max-width: 100%;
+  max-height: 88vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px 26px;
+  box-shadow: var(--shadow-modal);
+}
+.panel-card::-webkit-scrollbar {
+  width: 8px;
+}
+.panel-card::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 8px;
+}
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 16px;
+}
+.panel-header h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+}
+.panel-close {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  padding: 7px 14px;
+  color: var(--text-soft);
+}
+.panel-close:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.lobby-section {
+  margin-bottom: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.lobby-section:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+
+.room-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.room-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.room-label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  overflow: hidden;
+  min-width: 0;
+}
+.mode-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.room-label span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.room-list button {
+  background: var(--surface-hover);
+  color: var(--text);
+  flex-shrink: 0;
+  padding: 6px 14px;
+  font-size: 12.5px;
+}
+.room-list button:hover {
+  background: var(--border-strong);
+}
+
+.field-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-soft);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+.checkbox-field input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.account-status {
+  font-size: 13px;
+  margin: 0 0 12px;
+  color: var(--text);
+}
+
+.mode-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mode-card {
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--mode-color, var(--text-faint));
+}
+.mode-card-name {
+  margin: 0 0 4px;
+  font-weight: 700;
+  font-size: 14px;
+}
+.mode-card-desc {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-soft);
+  line-height: 1.5;
+}
+
+.placeholder {
+  text-align: center;
+  padding: 28px 8px;
+}
+.placeholder-tag {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 4px 10px;
+  margin-bottom: 12px;
+}
+.placeholder p {
+  color: var(--text-soft);
+  font-size: 13.5px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+a.btn-primary {
+  display: block;
+  text-align: center;
+  text-decoration: none;
+  margin-top: 16px;
+}
+
+/* --- Profil (superposé au panneau Compte — §4.5) --------------------------------------- */
+.profile-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.6);
+}
+.profile-panel {
+  width: 360px;
+  max-width: 100%;
+  max-height: 88vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 26px;
+  box-shadow: var(--shadow-modal);
+}
+.profile-panel button {
+  width: 100%;
+  margin-top: 18px;
+}
+.profile-scores {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.profile-scores li {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0.001ms !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .home-card,
+  .panel-card,
+  .profile-panel {
+    width: 100%;
+  }
+  .panel {
+    padding: 12px;
+  }
+}

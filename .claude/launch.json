@@ -5,7 +5,8 @@
       "name": "server",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "start", "--workspace=server"],
-      "port": 8080
+      "port": 8080,
+      "autoPort": true
     }
   ]
 }

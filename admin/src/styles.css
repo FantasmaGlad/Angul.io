@@ -1,0 +1,398 @@
+/* ---------------------------------------------------------------------------------------
+ * Design minimaliste (cahier_des_charges_ui_ux.md §1/§3.3, révisé) — inspiré de l'outil
+ * Cobalt : fond sombre plat, un seul accent, pas de dégradé, pas de flou/glassmorphism, pas
+ * d'emoji. Tokens volontairement identiques à client/src/styles.css (cohérence visuelle entre
+ * les deux apps, servies séparément — §3.3) ; dupliqués plutôt que partagés via un paquet
+ * commun pour rester simple à ce stade (deux petites apps, pas de troisième consommateur).
+ * --------------------------------------------------------------------------------------- */
+:root {
+  --bg: #0b0b0d;
+  --surface: #141416;
+  --surface-hover: #1c1c1f;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --text: #f2f2f3;
+  --text-soft: #8b8b93;
+  --text-faint: #55555c;
+
+  --accent: #5b7cfa;
+  --accent-strong: #4a68e0;
+  --accent-ink: #ffffff;
+  --danger: #ff5c5c;
+  --success: #4ade80;
+
+  --radius-lg: 16px;
+  --radius-md: 10px;
+  --radius-pill: 999px;
+  --shadow-modal: 0 12px 32px rgba(0, 0, 0, 0.5);
+
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+}
+h1,
+h2 {
+  margin: 0;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  font-weight: 600;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    opacity 0.12s ease;
+}
+button:active {
+  opacity: 0.85;
+}
+
+input {
+  box-sizing: border-box;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 9px 12px;
+}
+input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  padding: 9px 18px;
+  font-size: 13.5px;
+}
+.btn-primary:hover {
+  background: var(--accent-strong);
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--border);
+  padding: 9px 16px;
+  font-size: 13px;
+}
+.btn-ghost:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
+.error-text {
+  min-height: 1.2em;
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--danger);
+}
+.status-text {
+  min-height: 1.2em;
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--success);
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 22px 24px;
+}
+
+/* --- Connexion ------------------------------------------------------------------------- */
+.login-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.login-overlay .panel {
+  width: 320px;
+  text-align: center;
+}
+.login-overlay h1 {
+  font-size: 19px;
+}
+.login-password-input {
+  width: 100%;
+  margin: 14px 0 0;
+}
+.login-button {
+  width: 100%;
+  margin-top: 14px;
+}
+
+/* --- Coquille applicative : navigation latérale + contenu (§3.2/§5) --------------------- */
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 24px 16px;
+  box-sizing: border-box;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+.sidebar-logo {
+  font-size: 15px;
+  font-weight: 700;
+  padding: 0 8px;
+}
+.sidebar-logo span {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+  margin-top: 2px;
+}
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+.side-link {
+  display: block;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  font-size: 13.5px;
+  color: var(--text-soft);
+  text-align: left;
+}
+.side-link:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.side-link.active {
+  background: var(--bg);
+  color: var(--text);
+  border-color: var(--border);
+  font-weight: 700;
+}
+
+.main-content {
+  flex: 1;
+  min-width: 0;
+  padding: 32px;
+  box-sizing: border-box;
+}
+.view {
+  max-width: 900px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.view-subtitle {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--text-soft);
+}
+.search-row {
+  display: flex;
+  gap: 8px;
+}
+.search-row input {
+  flex: 1;
+}
+
+.result-list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.result-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.result-item {
+  cursor: pointer;
+}
+.result-item:hover {
+  background: var(--surface-hover);
+}
+.badge {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 14px;
+}
+.field-grid label,
+.checkbox-row label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+  margin-bottom: 6px;
+}
+.field-grid input {
+  width: 100%;
+}
+.checkbox-row {
+  display: flex;
+  gap: 24px;
+  margin-top: 14px;
+}
+.checkbox-row > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.checkbox-row label {
+  margin: 0;
+}
+.checkbox-row input {
+  width: auto;
+  accent-color: var(--accent);
+}
+.section-title {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+  margin: 18px 0 0;
+}
+.save-button {
+  margin-top: 18px;
+}
+
+/* Premium & dons (§5.5) */
+.premium-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.premium-row .pseudo {
+  font-weight: 700;
+  flex: 1;
+}
+.btn-activate {
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  padding: 6px 14px;
+  font-size: 12.5px;
+}
+.btn-activate:hover {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.btn-activate:disabled {
+  opacity: 0.5;
+  cursor: default;
+  border-color: var(--border);
+  color: var(--text-soft);
+}
+.btn-activate:disabled:hover {
+  background: transparent;
+}
+
+/* Emplacements "à venir" (§10) */
+.placeholder {
+  text-align: center;
+  padding: 40px 20px;
+}
+.placeholder-tag {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 4px 10px;
+  margin-bottom: 12px;
+}
+.placeholder p {
+  color: var(--text-soft);
+  font-size: 13.5px;
+  line-height: 1.6;
+  max-width: 440px;
+  margin: 0 auto;
+}
+
+@media (max-width: 760px) {
+  .app-shell {
+    flex-direction: column;
+  }
+  .sidebar {
+    width: auto;
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .sidebar-nav {
+    flex-direction: row;
+  }
+  .main-content {
+    padding: 18px;
+  }
+}

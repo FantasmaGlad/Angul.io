@@ -45,4 +45,12 @@ export class GameConnection {
       this.pendingMessages.push(message);
     }
   }
+
+  /** Ferme la connexion côté client — à appeler quand le composant qui la possède est démonté
+   * (GameView.tsx) pour ne pas laisser un socket ouvert en arrière-plan (notamment le double
+   * montage volontaire de React.StrictMode en développement, qui appellerait sinon deux fois la
+   * connexion sans jamais fermer la première). */
+  close(): void {
+    this.socket.close();
+  }
 }

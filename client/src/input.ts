@@ -15,6 +15,10 @@ export interface InputTracker {
   getInputVector(): Vector2;
   /** true une seule fois par pression de la barre espace (consommé après lecture). */
   consumeSplit(): boolean;
+  /** Retire les écouteurs attachés par `attachInput` — à appeler quand le canvas associé est
+   * démonté (ex. retour à l'accueil, GameView.tsx) pour ne pas accumuler d'écouteurs `keydown`
+   * au fil des parties successives (chaque partie remonte un nouveau canvas). */
+  detach(): void;
 }
 
 /** Le joueur vise toujours depuis le centre de son écran — cohérent avec une caméra centrée
@@ -24,14 +28,16 @@ export function attachInput(canvas: HTMLCanvasElement): InputTracker {
   let mouseY = canvas.height / 2;
   let splitRequested = false;
 
-  canvas.addEventListener('mousemove', (event: MouseEvent) => {
+  const onMouseMove = (event: MouseEvent): void => {
     mouseX = event.clientX;
     mouseY = event.clientY;
-  });
-
-  window.addEventListener('keydown', (event: KeyboardEvent) => {
+  };
+  const onKeyDown = (event: KeyboardEvent): void => {
     if (event.code === 'Space') splitRequested = true;
-  });
+  };
+
+  canvas.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('keydown', onKeyDown);
 
   return {
     getInputVector(): Vector2 {
@@ -45,6 +51,10 @@ export function attachInput(canvas: HTMLCanvasElement): InputTracker {
       const value = splitRequested;
       splitRequested = false;
       return value;
+    },
+    detach(): void {
+      canvas.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('keydown', onKeyDown);
     },
   };
 }
