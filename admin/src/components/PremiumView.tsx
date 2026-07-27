@@ -81,7 +81,8 @@ export default function PremiumView({ token, onAuthError }: PremiumViewProps) {
                     disabled={account.premium}
                     onClick={() => activate(account.id)}
                   >
-                    {account.premium ? 'Premium ✓' : 'Activer Premium'}
+                    {account.premium ? 'Premium (Actif)' : 'Activer Premium'}
+
                   </button>
                 </div>
               </li>

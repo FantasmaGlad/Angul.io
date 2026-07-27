@@ -15,16 +15,16 @@ export const DEFAULT_BOT_PROPORTIONS: BotProportions = {
 };
 
 export const CHALLENGER_NAMES = [
-  '👑 Titan',
-  '⚔️ Vortex',
-  '🔥 Apex',
-  '⚡ Kraken',
-  '🔮 Oblivion',
-  '💀 Phantom',
-  '🛡️ Valkyrie',
-  '💥 Nemesis',
-  '🐉 Hydra',
-  '🌌 Eclipse',
+  'Titan',
+  'Vortex',
+  'Apex',
+  'Kraken',
+  'Oblivion',
+  'Phantom',
+  'Valkyrie',
+  'Nemesis',
+  'Hydra',
+  'Eclipse',
 ];
 
 /** Sélectionne aléatoirement un type de bot selon la pondération des proportions. */
@@ -41,7 +41,7 @@ export function selectRandomBotProfile(
   return 'fou';
 }
 
-/** Génère un pseudo de debug selon le type (ex: fuis_1, neutre_2, agressif_1, fou_1). */
+/** Génère un pseudo selon le type (ex: fuis_1, neutre_2, agressif_1, fou_1). */
 export function generateBotNickname(profile: BotProfileKind, index: number): string {
   if (profile === 'challenger') {
     const nameIndex = (index - 1) % CHALLENGER_NAMES.length;

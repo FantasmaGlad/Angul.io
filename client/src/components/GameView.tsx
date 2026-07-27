@@ -313,7 +313,7 @@ export default function GameView({
 
       {/* Top 10 Live Leaderboard */}
       <div className="leaderboard-overlay">
-        <div className="leaderboard-header">🏆 CLASSEMENT (TOP 10)</div>
+        <div className="leaderboard-header">CLASSEMENT (TOP 10)</div>
         <div className="leaderboard-list">
           {leaderboard.length === 0 ? (
             <div className="leaderboard-row">— En attente —</div>
@@ -336,7 +336,7 @@ export default function GameView({
       {deathState.isDead && (
         <div className="death-overlay">
           <div className="death-modal">
-            <h2>💀 Éliminé !</h2>
+            <h2>Éliminé</h2>
             <p>Votre cellule a été absorbée.</p>
             <div className="death-stats">
               <span className="death-stat-label">Score Final (Masse Max)</span>
@@ -350,15 +350,16 @@ export default function GameView({
                   connectionRef.current?.send({ type: 'join', nickname });
                 }}
               >
-                🎮 Rejouer (Respawn)
+                Rejouer (Respawn)
               </button>
               <button className="play-button" style={{ background: '#334155' }} onClick={() => onExit()}>
-                🏠 Menu Principal
+                Menu Principal
               </button>
             </div>
           </div>
         </div>
       )}
+
 
       <pre className="debug-overlay" ref={debugOverlayRef} />
     </>
