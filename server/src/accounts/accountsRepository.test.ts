@@ -71,7 +71,7 @@ describe.skipIf(!DATABASE_URL)('AccountsRepository (Postgres)', () => {
     await repository.recordGameResult(account.id, 'vanilla', 30, 30);
     const afterLowerScore = await repository.findById(account.id);
     expect(afterLowerScore?.xp).toBe(110);
-    expect(afterLowerScore?.level).toBe(2); // 110 XP -> niveau 2 (levels.test.ts)
+    expect(afterLowerScore?.level).toBe(1); // 110 XP -> niveau 1 (coût du niveau 1 = 1000, levels.test.ts)
     expect(await repository.getBestScores(account.id)).toEqual([
       { modeId: 'vanilla', bestScore: 80 },
     ]);

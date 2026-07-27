@@ -144,9 +144,9 @@ export class Room {
   }
 
   /** Délègue au mod (voir `GameMod.transformScoreForAccount`, Lot 4) — identité si le mod ne
-   * l'implémente pas (score brut inchangé). */
-  transformScoreForAccount(rawScore: number): number {
-    return this.mod.transformScoreForAccount?.(rawScore) ?? rawScore;
+   * l'implémente pas (score/XP bruts inchangés). */
+  transformScoreForAccount(rawScore: number, rawXp: number): { score: number; xp: number } {
+    return this.mod.transformScoreForAccount?.(rawScore, rawXp) ?? { score: rawScore, xp: rawXp };
   }
 
   onState(listener: (tick: number) => void): void {

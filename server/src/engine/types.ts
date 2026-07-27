@@ -1,4 +1,5 @@
 import type { Vector2 } from '@angulio/shared';
+import type { LifeStats } from './xp.js';
 
 export type EntityId = string;
 export type PlayerId = string;
@@ -22,6 +23,11 @@ export interface PlayerState {
   pieceIds: EntityId[];
   /** Suivi générique par le moteur pour détecter la transition vivant -> mort (voir Room). */
   alive: boolean;
+  /** Stats XP/combo de la vie en cours (voir engine/xp.ts) — remises à zéro par net/server.ts au
+   * moment où la vie est créditée au compte (`World.resetLifeStats`), jamais par le mod
+   * lui-même : le respawn immédiat après une mort recrée un morceau avant que le réseau ait eu
+   * la main pour lire le cumul de la vie qui vient de se terminer. */
+  lifeStats: LifeStats;
 }
 
 export interface PlayerInput {

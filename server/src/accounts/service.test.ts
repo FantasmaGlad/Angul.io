@@ -79,9 +79,10 @@ describe.skipIf(!DATABASE_URL)('AccountsService (Postgres)', () => {
     const { token } = await service.register(pseudo, 'motdepasse123');
     const accountId = service.resolveToken(token)!;
 
-    await service.recordGameResult(accountId, 'folie', 200);
+    // Score (masse max atteinte) et XP (engine/xp.ts) sont désormais deux valeurs distinctes.
+    await service.recordGameResult(accountId, 'folie', 200, 850);
     const profile = await service.getProfile(accountId);
-    expect(profile?.xp).toBe(200);
+    expect(profile?.xp).toBe(850);
     expect(profile?.bestScores).toEqual([{ modeId: 'folie', bestScore: 200 }]);
   });
 

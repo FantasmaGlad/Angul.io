@@ -1,11 +1,13 @@
 # Métriques et formules — Angul.io
 
-**Version :** 0.5 — Document de référence technique. (v0.3 ajoute le contrôle par
+**Version :** 0.6 — Document de référence technique. (v0.3 ajoute le contrôle par
 intensité du curseur, §5.1 ; v0.4 corrige le modèle de decay §6 — seuil absolu par mode,
 `Mm`/`Ml` de la feuille Excel, plutôt que la masse de départ ; v0.5 remplace la
 distribution continue de masse de nourriture par des types de pellets à poids de spawn
 discrets et double la densité de nourriture des deux modes, §7 — demande utilisateur,
-pas la feuille Excel.)
+pas la feuille Excel ; v0.6 corrige §10 — deux morceaux du même joueur non encore
+fusionnables se repoussent désormais au lieu de se chevaucher librement — et ajoute le
+système d'XP/niveaux/combo, §15, demande utilisateur.)
 **Origine des valeurs :** dérivées du cahier des charges (§3.5) pour la première version
 (v0.1), puis **révisées et étendues** à partir de la feuille de calcul fournie par
 l'utilisateur ("Angul.io - Master Sheet Engine & Documentation Technique.xlsx") qui
@@ -402,6 +404,13 @@ Formule de l'aire d'intersection de deux cercles : voir `shared/src/geometry.ts`
 
 **Effet** : masse additive, position barycentrique pondérée par la masse — inchangé.
 
+**Correctif v0.6 (demande utilisateur : "après un split, les entités se chevauchent au lieu de
+collisionner")** — tant que la condition ci-dessus n'est pas remplie (cooldown pas écoulé ou
+chevauchement insuffisant), les deux morceaux se repoussent désormais **comme deux morceaux de
+joueurs différents** (§9, `applyRepulsion`) plutôt que de se traverser librement. Avant ce
+correctif, `tryMerge` ne faisait rien du tout en cas d'échec — voir
+`server/src/mods/parametric/index.ts` (`onCollision`, `tryMerge` renvoie désormais un booléen).
+
 ---
 
 ## 11. Bords de la carte
@@ -483,6 +492,69 @@ gain(attaquant) = masse(cible) × massGainMultiplier      (au lieu de gain = mas
 d'exemple du cahier des charges ("x10 ou configurable"), pas mesurée en playtest à ce jour.
 La condition pour avoir le droit de manger (`eating.massAdvantage`, 5 %) reste inchangée : seul
 le montant gagné change, pas qui a le droit de manger qui.
+
+---
+
+## 15. XP, niveaux et combo (v0.6, demande utilisateur)
+
+Système ajouté indépendamment du schéma paramétrique (§1) : il s'applique à **tous** les modes
+(Vanilla, Folie, Hardcore) via `server/src/engine/xp.ts`, branché dans les points d'absorption
+existants (`mods/parametric/index.ts` `onCollision`/`handleEatAttempt`, dupliqué dans
+`mods/hardcore/index.ts` pour son propre multiplicateur de masse). Distinct du **score**
+(`player_best_scores`, toujours la masse maximale atteinte pendant la vie, inchangé) : l'XP est
+désormais une valeur calculée indépendamment, créditée séparément à `players.xp`.
+
+### 15.1 Gain d'XP
+
+```
+XP_masse  = masse_gagnée × 1           (nourriture ET joueurs, à chaque gain de masse par absorption)
+XP_joueur = 400                       (bonus fixe, une fois par joueur mangé, en plus de XP_masse)
+```
+
+Pour Hardcore, `masse_gagnée` est déjà multipliée par `massGainMultiplier` (§14.1, x10 par
+défaut) au moment où `XP_masse` est calculée — un joueur mangé en Hardcore rapporte donc
+nettement plus d'XP qu'en Vanilla, cohérent avec le risque encouru (et de toute façon annulé à la
+mort/déconnexion, §14.1, `transformScoreForAccount`, qui renvoie désormais `{score:0, xp:0}`).
+
+### 15.2 Combo de joueurs mangés
+
+```
+Déclenchement : 2 joueurs mangés en moins de 5s        → combo niveau 1 (multiplicateur x1,2)
+Prolongation  : joueur supplémentaire mangé en <10s     → niveau += 1, multiplicateur × 1,2 (composé)
+                du précédent (fenêtre plus large que le déclenchement initial)
+Plafond       : multiplicateur jamais > x10 ("Boost Max")
+Durée d'effet : le multiplicateur s'applique à tout XP gagné (masse ET bonus joueur) pendant les
+                20 secondes suivant le dernier déclenchement/prolongation (fenêtre reprise à zéro
+                à chaque prolongation)
+```
+
+Formellement (`chain` = nombre de joueurs mangés dans la tentative/chaîne en cours) :
+
+```
+multiplicateur(chain) = MIN(10, 1,2^(chain - 1))     pour chain ≥ 2 (chain=2 → x1,2, valeur donnée)
+```
+
+Les paliers intermédiaires (entre x1,2 au déclenchement et x10 au plafond) ne sont pas spécifiés
+par la demande initiale — la progression géométrique ci-dessus est une interpolation raisonnable
+entre les deux points donnés, ajustable sans changer l'architecture (`server/src/engine/xp.ts`).
+
+Le niveau affiché côté client ("Combo x{niveau}", `WorldStateMessage.self.combo.level`) est
+`chain - 1` — un compteur entier simple, distinct du multiplicateur décimal réel (détail de
+calcul serveur non transmis au client).
+
+### 15.3 Niveau de compte
+
+```
+coût(1)   = 1000
+coût(N+1) = coût(N) × 1,2 − 150        (ex. coût(2) = 1000×1,2−150 = 1050, valeur donnée)
+```
+
+`players.xp` (Lot 3.5) reste un cumul total ; le niveau (`levelForXp`, `server/src/accounts/
+levels.ts`) consomme les paliers un par un (coût(1), puis coût(2), etc.) jusqu'à épuisement du
+cumul — remplace l'ancienne courbe provisoire en racine carrée (v0.1-0.5, `XP_PER_LEVEL_SQUARED`).
+Le coût croît d'environ 20 %/niveau une fois la constante `-150` négligeable devant le coût
+courant (point fixe instable à 750 : toute suite démarrant au-dessus, comme ici à 1000, diverge
+vers le haut plutôt que de se stabiliser).
 
 **Perte totale de la progression XP de la partie en cas de mort** — contrairement aux autres
 modes (la masse maximale atteinte pendant la vie est créditée au compte même après une mort,

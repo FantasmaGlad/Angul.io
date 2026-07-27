@@ -1,17 +1,19 @@
 # Cahier des charges UI/UX — Angul.io
 
-**Version :** 0.2 — Design/architecture figés et implémentés pour l'accueil, le lobby, le HUD de
-jeu et l'admin ; reste à trancher : quelques questions ouvertes du §12, et les impacts backend du
-§10 (non bloquants).
+**Version :** 0.3 — Deuxième refonte visuelle (palette jaune/noir/blanc, disposition d'accueil à 3
+colonnes + nav haute + fond spectateur live) implémentée par-dessus le socle React/minimaliste de
+la v0.2 ; reste ouvert : "Guilde"/"Clan" (§0/§12), modération en direct des salons, file de dons
+automatisée.
 **Date :** 27 juillet 2026 (créé), révisé le 27 juillet 2026 (migration React + refonte
-minimaliste)
+minimaliste), re-révisé le 27 juillet 2026 (palette claire + accueil 3 colonnes, mockup fourni)
 **Périmètre :** refonte complète de l'interface d'accueil/lobby joueur, de l'interface de jeu
 (HUD), et de l'interface d'administration.
 
 Ce document a servi à figer les décisions de design et d'architecture UI avant l'implémentation,
 comme le [cahier_des_charges.md](cahier_des_charges.md) l'a fait pour le moteur de jeu — il reste
 la référence à jour de ces décisions (§1-§2 révisés le 27/07 pour refléter le passage à React et
-au style minimaliste), pas un historique figé du jour de sa création.
+au style minimaliste, puis re-révisés le 27/07 pour la palette claire et la nouvelle disposition
+d'accueil), pas un historique figé du jour de sa création.
 
 ---
 
@@ -49,51 +51,65 @@ actuel (React + Vite, design minimaliste).
 
 ### 1.1 Ton et univers visuel
 
-**Révision (2026-07-27) :** la direction "coloré et ludique" (arcade/casual) initialement
-retenue a été abandonnée après premier passage en revue — remplacée par une direction
-**minimaliste, inspirée de l'outil Cobalt** : fond sombre plat, un seul accent de marque, pas
-de dégradé décoratif, pas d'emoji. Objectif inchangé (donner envie de jouer, rester
-lisible/accessible), mais obtenu par la sobriété plutôt que par la couleur : hiérarchie visuelle
-claire, beaucoup d'espace, un seul geste de couleur là où ça compte (bouton "Jouer", accents de
-mode) plutôt qu'une interface saturée.
+**Révision (2026-07-27, migration React) :** la direction "coloré et ludique" (arcade/casual)
+initialement retenue a été abandonnée après premier passage en revue — remplacée par une
+direction **minimaliste, inspirée de l'outil Cobalt** : fond sombre plat, un seul accent de
+marque, pas de dégradé décoratif, pas d'emoji.
+
+**Deuxième révision (2026-07-27, mockup fourni) :** le fond bascule de sombre à **clair**
+(blanc/gris très clair) et l'accent de marque passe du bleu/violet au **jaune**, pour matcher une
+identité de marque fournie (palette jaune/noir/blanc). Le vocabulaire de composants posé par la
+première révision (boutons pilule, cartes à coins arrondis modérés, bordures fines, pas de
+glassmorphism/flou, pas d'emoji, densité faible sur l'accueil) **reste inchangé** — seule la
+palette (fond clair, accent jaune) et la disposition de l'accueil (§3.1/§4.1, nav haute + 3
+colonnes au lieu d'une carte centrée + panneaux modaux) changent. Un fond spectateur (§4.1) rend
+désormais le canvas de jeu visible en transparence derrière l'accueil — cohérent avec le choix
+initial de `render.ts` de dessiner sur un canvas transparent plutôt qu'un fond opaque (§1.5).
 
 Principes directeurs (mis à jour) :
 - **Formes rondes mais sobres** — boutons pilule, cartes à coins arrondis (rayon modéré, pas
   exagéré) — reste un écho à la mécanique de jeu (cellules circulaires) sans devenir un élément
   décoratif dominant.
-- **Fond sombre plat, un seul accent de marque** (bleu/violet sobre) pour l'action principale
-  ("Jouer") et les éléments interactifs actifs. Les couleurs de mode (Vanilla/Hardcore/Folie,
-  §1.2) restent utilisées, mais en usage strictement fonctionnel (petit point, bordure fine) —
-  jamais comme remplissage décoratif de grandes surfaces.
+- **Fond clair plat, un seul accent de marque** (jaune) pour l'action principale ("Rejoindre") et
+  les éléments interactifs actifs. Les couleurs de mode (Vanilla/Hardcore/Folie, §1.2) restent
+  utilisées, mais en usage strictement fonctionnel (petit point, bordure fine) — jamais comme
+  remplissage décoratif de grandes surfaces.
 - **Pas de glassmorphism/flou** : surfaces pleines, bordures fines (1px, opacité faible),
   élévation par une ombre discrète plutôt que par un flou d'arrière-plan.
 - **Densité d'information faible sur l'accueil, plus élevée dans les sous-écrans** (voir §3.1) —
-  ce principe reste inchangé par rapport à la version initiale.
+  nuancé par la deuxième révision : les salons/modes sont désormais visibles en permanence sur
+  l'accueil (§3.1/§4.1), la densité y est donc plus élevée qu'avant, mais reste organisée en
+  colonnes distinctes plutôt qu'en un mur d'informations.
 
-### 1.2 Palette de couleurs — tranchée (2026-07-27)
+### 1.2 Palette de couleurs — tranchée (2026-07-27, re-tranchée le 27/07 : palette claire)
 
-Fond sombre plat, tokens définis dans `client/src/styles.css` et dupliqués à l'identique dans
+Fond clair plat, tokens définis dans `client/src/styles.css` et dupliqués à l'identique dans
 `admin/src/styles.css` (§3.3, cohérence entre les deux apps) :
 
 | Token | Valeur | Usage |
 |---|---|---|
-| `--bg` | `#0B0B0D` | Fond de page, quasi-noir |
-| `--surface` | `#141416` | Cartes, panneaux, champs |
-| `--surface-hover` | `#1C1C1F` | États survolés |
-| `--border` / `--border-strong` | `rgba(255,255,255,.08)` / `.16` | Bordures fines, jamais d'ombre large |
-| `--text` / `--text-soft` / `--text-faint` | `#F2F2F3` / `#8B8B93` / `#55555C` | Hiérarchie de texte |
-| `--accent` | `#5B7CFA` (bleu/violet) | Bouton "Jouer", éléments actifs — **le seul accent de marque** |
-| `--danger` / `--success` | `#FF5C5C` / `#4ADE80` | États d'erreur/confirmation |
-| `--c-vanilla` / `--c-hardcore` / `--c-folie` | `#34D399` / `#F87171` / `#A78BFA` | Couleur signature par mode — usage fonctionnel minimal (point, bordure fine), pas décoratif |
+| `--bg` | `#FFFFFF` | Fond de page — laisse voir le fond spectateur en transparence sur l'accueil (§4.1) |
+| `--surface` | `#F1F1EF` | Cartes, panneaux, champs |
+| `--surface-hover` | `#E7E7E3` | États survolés |
+| `--border` / `--border-strong` | `rgba(0,4,1,.10)` / `.20` | Bordures fines, jamais d'ombre large |
+| `--text` / `--text-soft` / `--text-faint` | `#000401` / `#55564F` / `#8A8B84` | Hiérarchie de texte |
+| `--accent` / `--accent-strong` | `#FFD32C` / `#E0BC00` | Bouton "Rejoindre", éléments actifs — **le seul accent de marque** |
+| `--brand-yellow-pale` / `--brand-yellow-light` | `#FFEA99` / `#FFDE21` | Teintes de badge/highlight discrets (ex. badge "Niveau") |
+| `--danger` / `--success` | `#C23B3B` / `#2F8A4E` | États d'erreur/confirmation |
+| `--c-vanilla` / `--c-hardcore` / `--c-folie` | `#1F9D74` / `#C94F4F` / `#7C5CD4` | Couleur signature par mode — usage fonctionnel minimal (point, bordure fine), pas décoratif ; assombries par rapport à la v0.2 pour rester lisibles sur fond blanc |
 
-La palette "pastilles de nourriture" évoquée dans une version antérieure de ce document a été
-abandonnée comme palette d'accent générale (trop colorée pour la direction minimaliste retenue)
-mais son principe survit à échelle réduite : chaque **mode de jeu** garde sa couleur signature
-(`--c-vanilla`/`--c-hardcore`/`--c-folie`), utilisée uniquement pour les distinguer visuellement
-(chip de salon, bordure de carte de mode), jamais en remplissage.
+Palette de marque fournie, à la base des tokens ci-dessus : `#E0BC00` (jaune foncé), `#FFD32C`
+(jaune), `#FFDE21` (jaune clair), `#FFEA99` (jaune très clair), `#FFFFFF` (blanc), `#000401`
+(noir). Cohérent avec le principe déjà en place (§1.1) : l'accent (jaune) reste un usage
+fonctionnel ciblé (bouton principal, badges), jamais un remplissage décoratif de grandes surfaces.
 
-Pas de mode clair prévu pour l'instant : contrairement à la version précédente (thème clair
-fixe), la nouvelle direction est **sombre par défaut**, cohérente avec l'esthétique Cobalt visée.
+La palette "pastilles de nourriture" évoquée dans une version antérieure de ce document reste hors
+périmètre comme palette d'accent générale ; le principe de couleur signature par **mode de jeu**
+(`--c-vanilla`/`--c-hardcore`/`--c-folie`) est inchangé, utilisé uniquement pour les distinguer
+visuellement (chip de salon, bordure de carte de mode), jamais en remplissage.
+
+Pas de mode sombre prévu pour l'instant : la direction est désormais **claire par défaut**
+(inverse de la v0.2), cohérente avec la nouvelle identité de marque jaune/noir/blanc.
 
 ### 1.3 Typographie — tranchée
 
@@ -114,12 +130,21 @@ numériques du HUD (masse/vitesse) — lisibilité technique, cohérent avec le 
   panneau), pas de rebond/spring ni de confettis — cohérent avec la sobriété Cobalt.
 - **`prefers-reduced-motion` reste respecté** malgré des animations déjà minimales (voir §9).
 
-### 1.5 Ce qui NE change PAS visuellement
+### 1.5 Ce qui NE change PAS visuellement (et ce qui change malgré tout, deuxième révision)
 
 - Le canvas de jeu lui-même (rendu des cellules, pastilles, grille) reste piloté par
   `render.ts` — cette refonte ne touche pas au rendu du monde de jeu, seulement aux couches
   d'interface autour (accueil, HUD, admin). Un futur ajustement des couleurs de rendu en jeu
   pour coller à la nouvelle palette reste possible mais est hors périmètre de ce document.
+- **Exception (2026-07-27, demande explicite) :** la couleur des morceaux de joueur est
+  désormais **hardcodée en un vert unique** (`#253D2C`, `DEFAULT_BLOB_COLOR` dans `render.ts`) à
+  la place de la couleur dérivée par hash de l'id de joueur — un placeholder temporaire en
+  attendant un vrai système de personnalisation (couleur débloquable par cosmétique).
+- **Nouveau (2026-07-27) :** ce même canvas (`render.ts`) est désormais aussi utilisé en dehors
+  d'une partie, comme fond animé de l'accueil (`SpectatorBackground.tsx`, §4.1) — une vraie
+  connexion WebSocket en lecture seule au salon permanent, caméra fixe plutôt que centrée sur un
+  joueur. Le fond de page passe donc de sombre plein à transparent (§1.2) précisément pour laisser
+  ce canvas visible.
 
 ---
 
@@ -190,23 +215,38 @@ de bundle, avec un mandat clair d'**optimiser au maximum** en contrepartie (§2.
 
 ### 3.1 Application joueur — accueil minimal + sous-menus
 
-Décision explicite : **l'écran d'accueil reste minimaliste, orienté "jouer vite"**. Tout le
-reste (compte, salons, classements, modes, cosmétiques) vit dans des **sous-menus** accessibles
-depuis l'accueil, pas empilé sur l'écran principal.
+**Révision (2026-07-27, mockup fourni) :** la disposition change de "carte centrée + barre
+d'icônes ouvrant des panneaux modaux" à une disposition **permanente à 3 colonnes**, surmontée
+d'une nav haute et terminée par un pied de page — le contenu de l'ancien sous-menu "Salons" (liste
+publique, créer, rejoindre par code) est désormais **toujours visible** sur l'accueil, plus caché
+derrière une icône. "Jouer vite" reste l'objectif (§4.1), mais réalisé différemment : voir les
+salons disponibles ne demande plus un clic supplémentaire.
 
 ```
 Accueil (défaut)
-├─ Champ pseudo (pré-rempli si connecté) + gros bouton "Jouer"
-├─ Icône Compte/Profil (état visuel différent connecté/non connecté)
-├─ Icône Salons (liste publique, créer, rejoindre par code)
-├─ Icône Classements
-├─ Icône Modes de jeu
-└─ Icône Soutenir (Premium/dons)
+├─ Nav haute : marque · Classement · Modes de Jeux · À Propos · compte (avatar + pseudo + Clan + Niveau)
+├─ Colonne gauche  : sélecteur de mode + classement des salons publics de ce mode
+├─ Colonne centre  : compteur "N Joueurs Connectés", pseudo du blob, bouton "Rejoindre"
+│                    (rejoint le salon permanent, §12), classement global des salons (tous modes)
+├─ Colonne droite  : "Créer un Salon Privé" (Premium) + "Rejoindre par code" (tous)
+└─ Pied de page    : version, marque, lien Soutenir
 ```
 
-Chaque icône ouvre un **panneau/sous-menu** (modale ou tiroir, à trancher en maquette — voir
-§12) plutôt qu'une nouvelle page pleine, pour garder la sensation d'un accueil unique et rapide,
-cohérent avec le fonctionnement actuel en overlays superposés au canvas.
+Panneaux modaux restants (toujours des sous-menus au sens du §3.1 initial, ouverts depuis la nav
+haute/le pied de page/le cercle de compte, pas empilés sur l'écran principal) : Compte/Profil,
+Modes de jeu (description détaillée par mode), Classements, Soutenir, Paramètres (plafond FPS,
+déplacé dans le panneau Compte faute de place dédiée dans la nav), À Propos (nouveau).
+
+Fond de l'accueil : transparent, laisse voir une vraie vue en direct (zoomée, caméra fixe) du
+salon permanent en lecture seule (`SpectatorBackground.tsx`, §1.5/§4.1) — respecte
+`prefers-reduced-motion` (rien n'est monté si demandé).
+
+**Transition d'entrée en jeu (demande utilisateur) :** au clic sur "Rejoindre" (ou tout autre
+déclencheur d'entrée en partie — salon de la liste, code, création), l'UI (`.home-ui` : nav,
+colonnes, pied de page) zoome légèrement en arrière et s'estompe pendant ~450ms, tandis que le
+fond spectateur zoome en avant (grossissement centré) — donne l'impression de "plonger" dans le
+monde avant que `GameView` ne prenne le relais. Respecte `prefers-reduced-motion` (transitions
+neutralisées globalement, §9).
 
 ### 3.2 Application admin — restructuration complète
 
@@ -234,25 +274,41 @@ actuel de `admin/public/index.html`).
 
 ## 4. Écrans détaillés — client joueur
 
-### 4.1 Accueil
+### 4.1 Accueil (révisé 2026-07-27, mockup fourni)
 
 | Élément | Contenu | État |
 |---|---|---|
-| Logo/titre | "Angul.io" | Toujours visible |
-| Champ pseudo | Pré-rempli si compte connecté, sinon libre (jeu en invité conservé) | Vide / pré-rempli / erreur (pseudo pris) |
-| Bouton "Jouer" | Action principale — voir décision de matchmaking rapide en §12 | Normal / chargement (recherche de salon) |
-| Barre d'icônes | Compte, Salons, Classements, Modes, Soutenir | Badge sur "Compte" si connecté ; badge "Premium" si actif |
+| Marque (nav haute) | Cercle plein, lien silencieux (`aria-label="Angul.io"`) | Toujours visible |
+| Nav haute (liens texte) | Classement, Modes de Jeux, À Propos | — |
+| Compte (nav haute, droite) | Cercle + pseudo + "Clan —" (statique, §0/§12) + badge "Niveau {n}" | "Connexion" si non connecté |
+| Colonne gauche | Sélecteur de mode (`<select>`) + classement (rang, nom, count/capacité) des salons publics de ce mode | "Aucun salon public pour ce mode." si vide |
+| Colonne centre | "N Joueurs Connectés" (`GET /api/stats`, §10), champ pseudo du blob (indépendant du compte, pré-rempli si connecté), swatch de couleur (fixe, §1.5), bouton "Rejoindre" | Erreur affichée sous le bouton (ex. pseudo déjà pris sur le salon visé) |
+| Colonne centre (suite) | Classement global des salons les plus peuplés, tous modes confondus | Distinct du classement filtré de la colonne gauche |
+| Colonne droite | "Créer un Salon Privé" (Premium) : Nom, Mode, **Nombre de Joueurs**, **Durée**, Public/Privé, Code de la Partie ; "Rejoindre par code" (tous) | Formulaire masqué (message Premium) si non éligible |
+| Pied de page | Version, "Angul.io 2026", lien "Soutenir le Projet" | Toujours visible |
+| Fond | Canvas spectateur transparent (§1.5) | Coupé si `prefers-reduced-motion` |
 
-### 4.2 Sous-menu Salons
+Bouton "Rejoindre" : voir décision de ciblage explicite du salon permanent en §12 (tranché).
 
-- Liste des salons publics : nom, **chip coloré du mode** (§1.2), nombre de joueurs / capacité,
-  bouton rejoindre.
-- État vide : message + suggestion de créer un salon (si Premium) ou d'attendre.
-- Section "Créer un salon" : réservée Premium (comportement actuel conservé), formulaire nom +
-  mode + privé/public.
-- Section "Rejoindre via code" : champ code + bouton.
+### 4.2 Salons (désormais intégré à l'accueil, plus un sous-menu séparé)
+
+- Colonne gauche + colonne centre (§4.1) : deux classements de salons publics (par mode / global),
+  chacun avec **chip coloré du mode implicite** (regroupement par colonne plutôt qu'un chip par
+  ligne, la colonne gauche étant déjà filtrée par mode) et `count/maxPlayers`.
+- État vide : message, pas de suggestion active de créer un salon (le formulaire de création est
+  déjà visible juste à côté, colonne droite).
+- Colonne droite "Créer un Salon Privé" : réservée Premium, formulaire Nom + Mode + **Nombre de
+  Joueurs** (capacité, nouveau champ) + **Durée** (nouveau champ — fermeture automatique du salon
+  à l'échéance, tous les joueurs connectés sont alors renvoyés à l'accueil) + Public/Privé. Le
+  champ "Code de la Partie" affiche le code généré après création (le créateur reste sur
+  l'accueil, libre de le noter/partager, avant de cliquer "Rejoindre maintenant").
+- "Rejoindre par code" : champ + bouton, **non réservé Premium** (accessible à tous, y compris
+  invité), inchangé fonctionnellement depuis la version précédente.
 
 ### 4.3 Sous-menu Modes de jeu (nouveau contenu structuré)
+
+Ouvert depuis le lien "Modes de Jeux" de la nav haute (§4.1, avant : icône dans la barre de
+navigation de l'accueil) — contenu inchangé.
 
 Nécessite que le serveur expose, en plus de l'identifiant de mode, un **nom affichable et une
 description courte** par mode (aujourd'hui `GET /api/modes` ne renvoie que des identifiants
@@ -265,6 +321,12 @@ bruts — impact backend, voir §10). Pour chacun des 3 modes existants (`vanill
 
 ### 4.4 Sous-menu Classements (nouveau)
 
+Ouvert depuis le lien "Classement" de la nav haute (§4.1) — à ne pas confondre avec les
+classements de **salons** (par nombre de joueurs) désormais visibles en permanence dans les
+colonnes gauche/centre de l'accueil (§4.1/§4.2) : celui-ci reste le classement des **joueurs**
+(meilleur score), toujours un panneau à part, toujours un placeholder tant que l'endpoint
+d'agrégation (§10) n'existe pas.
+
 - Classement global (meilleur score toutes parties confondues) + filtre par mode.
 - Pseudo du joueur connecté mis en évidence s'il apparaît dans le classement affiché.
 - Nécessite un nouvel endpoit d'agrégation côté serveur (voir §10) — n'existe pas aujourd'hui
@@ -272,19 +334,30 @@ bruts — impact backend, voir §10). Pour chacun des 3 modes existants (`vanill
 
 ### 4.5 Sous-menu Compte / Profil
 
+Ouvert depuis le cercle de compte de la nav haute (§4.1, avant : icône "Compte" de la barre de
+navigation de l'accueil).
+
 - Non connecté : formulaire connexion/inscription (comportement actuel conservé).
 - Connecté : pseudo, niveau (barre de progression XP plutôt que chiffre brut — plus ludique),
   meilleurs scores par mode, cosmétiques débloqués (grille de vignettes plutôt que texte),
-  badge Premium si actif, bouton déconnexion.
+  badge Premium si actif, bouton déconnexion, lien **Paramètres** (plafond FPS — déplacé ici, la
+  nouvelle nav haute n'ayant plus d'icône dédiée, voir §3.1).
 
 ### 4.6 Sous-menu Soutenir
+
+Ouvert depuis le lien "Soutenir le Projet" du pied de page (§4.1, avant : icône de la barre de
+navigation de l'accueil).
 
 - Reprend le contenu actuel (explication don libre, lien Ko-fi) avec le nouveau style visuel ;
   logique inchangée (cahier des charges §5.3, activation manuelle par l'admin).
 
 ### 4.7 Écran de jeu (HUD)
 
-- Canvas inchangé (§2.3).
+- Canvas inchangé (§2.3), à l'exception de la couleur de blob désormais hardcodée (§1.5).
+- **Nouveau (2026-07-27) :** le pseudo du blob est unique par salon — un pseudo déjà utilisé par
+  un joueur connecté à ce salon est refusé à la connexion (message clair sur l'accueil, pas une
+  erreur en cours de partie), pour éviter la confusion visuelle de deux blobs identiques (le
+  pseudo s'affiche au-dessus du morceau).
 - Panneau de stats restylé selon la nouvelle direction (§1) : Pseudo, Guilde\*, Masse, Vitesse
   — \*voir décision à trancher en §12 sur "Guilde". **Accélération retirée** (2026-07-27, demande
   explicite) : métrique jugée peu lisible pour un joueur, la simulation continue de la calculer
@@ -292,6 +365,11 @@ bruts — impact backend, voir §10). Pour chacun des 3 modes existants (`vanill
 - Ajout envisageable, cohérent avec la direction "ludique" : petites notifications éphémères
   ("Tu as mangé *Untel*", "Niveau supérieur !") — à cadrer précisément si retenu (hors périmètre
   strict de cette refonte visuelle si ça implique de la logique serveur nouvelle).
+- **Nouveau (demande utilisateur, système d'XP/combo — voir metriques.md §15) :** bannière
+  "Combo x{niveau}" en gros texte extra-bold, couleur vert → jaune → orange → rouge selon le
+  niveau, effet d'apparition en mise à l'échelle (grossissement à 120%) — reste affichée 5
+  secondes puis s'estompe (fade out), et réapparaît/rejoue l'animation à chaque nouveau niveau de
+  combo (`GameView.tsx`, `.combo-banner`).
 - Overlay de debug (F3) : reste au style diagnostique actuel, volontairement distinct (déjà le
   cas aujourd'hui, à conserver).
 
@@ -411,6 +489,24 @@ Ces ajouts backend sont listés ici pour que le chiffrage du chantier soit réal
 **pas** un pré-requis bloquant pour démarrer le travail visuel (§1-§3, design system, accueil,
 sous-menus avec les données déjà disponibles).
 
+### 10.1 Réalisés lors de la refonte accueil (2026-07-27, mockup fourni)
+
+Impacts backend supplémentaires apparus avec cette deuxième refonte (fond spectateur, colonnes
+salon/mode, nouveaux champs de création) — implémentés dans le même effort, pas seulement
+recensés :
+
+| Besoin UI | Endpoint/donnée ajoutée | Écran concerné |
+|---|---|---|
+| "N Joueurs Connectés" | `GET /api/stats` (`{ playersOnline }`, tous salons confondus, y compris privés) | §4.1 colonne centre |
+| Capacité de salon ("Nombre de Joueurs") | `RoomSummary.maxPlayers` (`GET /api/rooms`), `POST /api/rooms { maxPlayers }`, appliqué au `join` réseau (`server/src/net/server.ts`) | §4.1/§4.2 colonne droite |
+| Durée de salon ("Durée") | `POST /api/rooms { durationMs }`, `RoomManager.expireRoom` (fermeture + déconnexion forcée des joueurs restants) | §4.2 colonne droite |
+| Cibler le salon par défaut sans compter sur l'ordre de la liste | `RoomSummary.permanent` | §4.1 bouton "Rejoindre", fond spectateur |
+| Fond spectateur (vue live du salon permanent) | Connexion WebSocket `?spectate=1` (lecture seule, jamais ajouté à `world`) | §1.5/§4.1 |
+| Unicité de pseudo par salon | Rejet au `join` (code de fermeture WS dédié, `shared/src/protocol.ts`) | §4.7 |
+
+Compte Premium "Fanta" (demande explicite) : migration de données
+(`server/migrations/*_seed-fanta-premium.cjs`, simple `UPDATE`), pas un ajout d'endpoint.
+
 ---
 
 ## 11. Plan de migration proposé (phasage)
@@ -437,21 +533,30 @@ de [plan_implementation.md](plan_implementation.md) :
 
 - [x] **Framework** — **tranché : React + Vite** (§2.2), avec mandat d'optimisation maximale
       (§2.5, code-splitting + canvas hors React + pas de librairie UI tierce).
-- [x] **Palette exacte** — **tranché : minimaliste façon Cobalt** (§1.2), fond sombre plat, un
-      seul accent de marque (`#5B7CFA`), palette pastille réduite à un usage fonctionnel par
-      mode (chip/bordure), pas de fond dégradé.
+- [x] **Palette exacte** — **re-tranché le 27/07 (mockup fourni) : palette jaune/noir/blanc**
+      (§1.2), fond **clair** plat (inverse de la palette Cobalt sombre initiale), un seul accent
+      de marque (`#FFD32C`), palette pastille toujours réduite à un usage fonctionnel par mode
+      (chip/bordure), pas de fond dégradé.
 - [x] **Typographies** — **tranché : police système uniquement** (§1.3), pas de police web
       externe.
 - [x] **Sous-menus** — **tranché (implémenté) : modale centrée** (`client/src/components/
       Panel.tsx`), même famille visuelle que le profil, cohérent avec l'existant plutôt qu'un
       tiroir latéral ou une page dédiée.
-- [x] **"Jouer" en un clic** — **tranché (implémenté) : assignation automatique** au premier
-      salon public de la liste fraîchement récupérée (voir `App.tsx`, `handlePlay`) ; s'il n'y en
-      a aucun, ouverture du panneau Salons avec un message explicite. Reste un choix par défaut
-      simple (pas de vrai matchmaking par charge/mode) — à raffiner si le besoin se confirme.
-- [ ] **"Guilde" dans le HUD** : garder ce champ comme promesse de fonctionnalité future (reste
-      un `—` statique dans la nouvelle UI), ou le retirer tant qu'aucun système de guilde n'est
-      spécifié (§0, §4.7) ?
+- [x] **"Jouer" en un clic** — **re-tranché le 27/07 : cible explicitement le salon `permanent`**
+      (demande utilisateur : "le premier serveur vanilla, toujours en ligne") plutôt que le
+      premier de la liste par coïncidence d'ordre (voir `App.tsx`, `handlePlay`,
+      `RoomSummary.permanent`). S'il n'y en a aucun (environnement de test sans salon par
+      défaut), message d'erreur explicite sur l'accueil — reste un choix par défaut simple (pas
+      de vrai matchmaking par charge/mode).
+- [x] **Fond de l'accueil** — **tranché le 27/07 : vrai fond spectateur live** (pas une animation
+      décorative), voir §1.5/§4.1/§10.1.
+- [x] **Durée de vie d'un salon privé** — **tranché le 27/07 : fermeture automatique + retour à
+      l'accueil** des joueurs connectés à l'échéance (pas un simple verrouillage des nouvelles
+      connexions), voir §4.2/§10.1.
+- [ ] **"Guilde"/"Clan" dans le HUD et la nav haute** : garder ces champs comme promesse de
+      fonctionnalité future (restent des `—` statiques dans la nouvelle UI), ou les retirer tant
+      qu'aucun système de guilde/clan n'est spécifié (§0, §4.1, §4.7) ? Toujours ouvert malgré la
+      refonte accueil (le mockup fourni affiche "Clan" mais sans en spécifier le contenu).
 - [ ] **Modération en direct des salons actifs** (déconnexion forcée d'un joueur) : dans le
       périmètre de cette refonte, ou reporté comme le prévoyait le cahier des charges principal
       (§5.4, Phase 2) ? Impacte §5.4 et §10.

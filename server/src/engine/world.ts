@@ -1,6 +1,7 @@
 import { distance, massToRadius, type Vector2 } from '@angulio/shared';
 import { SpatialHash } from './spatialHash.js';
 import type { Entity, EntityId, EntityKind, PlayerId, PlayerState } from './types.js';
+import { createLifeStats } from './xp.js';
 
 export interface WorldOptions {
   mapSize: number;
@@ -115,9 +116,24 @@ export class World {
   // --- Joueurs -----------------------------------------------------------
 
   addPlayer(id: PlayerId, nickname: string): PlayerState {
-    const player: PlayerState = { id, nickname, pieceIds: [], alive: false };
+    const player: PlayerState = {
+      id,
+      nickname,
+      pieceIds: [],
+      alive: false,
+      lifeStats: createLifeStats(),
+    };
     this.players.set(id, player);
     return player;
+  }
+
+  /** Remet à zéro les stats XP/combo d'un joueur (voir engine/xp.ts) — appelé par net/server.ts
+   * juste après avoir lu/crédité `lifeStats.xpEarned` au compte, jamais par un mod (voir le
+   * commentaire de `PlayerState.lifeStats`). Ne fait rien pour un id inconnu (joueur déjà
+   * déconnecté entre-temps). */
+  resetLifeStats(id: PlayerId): void {
+    const player = this.players.get(id);
+    if (player) player.lifeStats = createLifeStats();
   }
 
   removePlayer(id: PlayerId): void {

@@ -66,11 +66,18 @@ export interface WorldStateMessage {
   tick: number;
   entities: EntitySnapshot[];
   /** Valeurs propres au destinataire de ce message, jamais partagées avec les autres clients
-   * (contrairement à `entities`, diffusé tel quel) — pour l'instant seulement le taux
-   * d'accélération courant (uc/s²) du joueur, pour le panneau de stats (Pseudo/Guilde/Masse/
-   * Vitesse/Accélération). Absent si le mod n'expose pas `getAccelerationForMass` ou si le
-   * joueur n'a aucun morceau. */
-  self?: { accelerationPerSec2: number };
+   * (contrairement à `entities`, diffusé tel quel). */
+  self?: {
+    /** Taux d'accélération courant (uc/s²) du joueur, pour le panneau de stats (Pseudo/Guilde/
+     * Masse/Vitesse). Absent si le mod n'expose pas `getAccelerationForMass` ou si le joueur n'a
+     * aucun morceau. */
+    accelerationPerSec2?: number;
+    /** Combo de joueurs mangés actif (demande utilisateur, voir server/src/engine/xp.ts) — un
+     * compteur entier ("Combo x{level}", niveau 1 au premier déclenchement) plutôt que le
+     * multiplicateur d'XP décimal réel, plus lisible en gros texte à l'écran. Absent si aucun
+     * combo n'est actif pour ce joueur. */
+    combo?: { level: number };
+  };
 }
 
 /** Réponse immédiate à un `ping` (voir ClientPingMessage). */
@@ -93,3 +100,12 @@ export interface PlayerDiedMessage {
 
 export type ServerMessage =
   WelcomeMessage | WorldStateMessage | PlayerInfoMessage | PlayerDiedMessage | PongMessage;
+
+/** Codes de fermeture WebSocket applicatifs (plage privée 4000-4999 de la RFC 6455), partagés
+ * entre le serveur (net/server.ts, qui ferme la socket avec l'un de ces codes) et le client
+ * (GameView.tsx, qui les inspecte dans `CloseEvent.code` pour choisir un message clair) — évite
+ * que les deux côtés se resynchronisent "à l'œil" sur des nombres magiques dupliqués. */
+export const WS_CLOSE_ROOM_NOT_FOUND = 4004;
+export const WS_CLOSE_NICKNAME_TAKEN = 4009;
+export const WS_CLOSE_ROOM_FULL = 4010;
+export const WS_CLOSE_ROOM_EXPIRED = 4011;

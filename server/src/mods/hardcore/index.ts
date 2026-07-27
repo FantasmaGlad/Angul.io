@@ -1,6 +1,7 @@
 import type { GameMod } from '../../engine/mod.js';
 import type { Entity } from '../../engine/types.js';
 import type { World } from '../../engine/world.js';
+import { creditMassEatenXp, creditPlayerEatenXp } from '../../engine/xp.js';
 import type { ParametricModConfig } from '../parametric/config.js';
 import { createParametricMod } from '../parametric/index.js';
 
@@ -34,8 +35,15 @@ export function createHardcoreMod(
    * sauf le montant gagné — c'est la seule différence de mécanique de ce mode avec Vanilla. */
   function handleEatAttempt(world: World, attacker: Entity, target: Entity): boolean {
     if (attacker.mass >= target.mass * (1 + config.eating.massAdvantage)) {
-      world.setMass(attacker, attacker.mass + target.mass * hardcoreConfig.massGainMultiplier);
+      const gainedMass = target.mass * hardcoreConfig.massGainMultiplier;
+      world.setMass(attacker, attacker.mass + gainedMass);
       world.removeEntity(target.id);
+      // XP (engine/xp.ts) : la masse gagnée (déjà multipliée x10 par défaut) compte intégralement
+      // pour "1 masse mangée = 1xp" — cohérent avec un mode à haut risque/haute récompense ; de
+      // toute façon annulée à la mort/déconnexion par `transformScoreForAccount` ci-dessous.
+      const now = performance.now();
+      creditMassEatenXp(world, attacker.ownerId, gainedMass, now);
+      creditPlayerEatenXp(world, attacker.ownerId, now);
       return true;
     }
     return false;
@@ -68,8 +76,9 @@ export function createHardcoreMod(
 
     transformScoreForAccount() {
       // "Perte totale de la progression XP de la partie en cas de mort" (§3.4 #2) : contrairement
-      // aux autres modes, une vie qui se termine (mort ou déconnexion, Lot 3.5) ne crédite rien.
-      return 0;
+      // aux autres modes, une vie qui se termine (mort ou déconnexion, Lot 3.5) ne crédite ni
+      // score ni XP — comme si la vie n'avait pas eu lieu.
+      return { score: 0, xp: 0 };
     },
   };
 }

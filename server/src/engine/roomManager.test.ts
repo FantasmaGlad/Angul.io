@@ -261,4 +261,75 @@ describe('RoomManager', () => {
       expect(removed).toEqual([summary.id]);
     });
   });
+
+  describe('capacité et durée de vie (refonte UI/UX accueil)', () => {
+    it('expose une capacité par défaut et le flag permanent sur RoomSummary', () => {
+      const manager = makeManager();
+      const summary = manager.createRoom({
+        name: 'Défaut',
+        modId: 'vanilla',
+        visibility: 'public',
+        permanent: true,
+      });
+
+      expect(summary.maxPlayers).toBeGreaterThan(0);
+      expect(summary.permanent).toBe(true);
+    });
+
+    it('reflète la capacité personnalisée ("Nombre de Joueurs")', () => {
+      const manager = makeManager();
+      const summary = manager.createRoom({
+        name: 'A',
+        modId: 'vanilla',
+        visibility: 'public',
+        maxPlayers: 12,
+      });
+
+      expect(summary.maxPlayers).toBe(12);
+      expect(manager.getManagedRoom(summary.id)?.maxPlayers).toBe(12);
+    });
+
+    it('un salon sans permanent:true a permanent:false par défaut', () => {
+      const manager = makeManager();
+      const summary = manager.createRoom({ name: 'A', modId: 'vanilla', visibility: 'public' });
+
+      expect(summary.permanent).toBe(false);
+    });
+
+    it('ferme automatiquement un salon à l’échéance de sa durée de vie, même avec un joueur connecté', async () => {
+      const manager = makeManager(testResolver(), 20, { emptyRoomGraceMs: 10_000_000 });
+      const removed: string[] = [];
+      manager.onRoomRemoved((id) => removed.push(id));
+      const summary = manager.createRoom({
+        name: 'Éphémère',
+        modId: 'vanilla',
+        visibility: 'public',
+        durationMs: 5,
+      });
+      manager.getManagedRoom(summary.id)!.room.addPlayer('p1', 'Alice');
+
+      await new Promise((resolve) => setTimeout(resolve, 30));
+
+      expect(manager.getManagedRoom(summary.id)).toBeUndefined();
+      expect(removed).toEqual([summary.id]);
+    });
+
+    it('un salon sans durationMs ne s’auto-supprime jamais par expiration', async () => {
+      const manager = makeManager(testResolver(), 20, { emptyRoomGraceMs: 10_000_000 });
+      const summary = manager.createRoom({ name: 'A', modId: 'vanilla', visibility: 'public' });
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(manager.getManagedRoom(summary.id)).toBeDefined();
+    });
+
+    it('expireRoom sur un id déjà supprimé ne fait rien (pas d’erreur, pas de double notification)', () => {
+      const manager = makeManager();
+      const removed: string[] = [];
+      manager.onRoomRemoved((id) => removed.push(id));
+
+      expect(() => manager.expireRoom('id-inconnu')).not.toThrow();
+      expect(removed).toEqual([]);
+    });
+  });
 });

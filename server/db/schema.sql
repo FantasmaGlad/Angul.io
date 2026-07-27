@@ -16,6 +16,8 @@
 --   1785093515852_add-password-hash.cjs → players.password_hash
 --   1785093516340_full-account-model.cjs→ players.{level,xp,premium,cosmetics} + player_best_scores
 --   1785135367447_add-banned-flag.cjs   → players.banned
+--   1785167636144_seed-fanta-premium.cjs→ UPDATE de données (pas de schéma) : premium=TRUE pour
+--                                          le compte "Fanta" (refonte UI/UX accueil)
 --
 -- Portée : uniquement les données persistantes (PostgreSQL). L'état de partie en cours (positions,
 -- masses, salons actifs) vit en mémoire côté serveur (server/src/engine/) et n'est jamais écrit

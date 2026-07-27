@@ -232,16 +232,14 @@ function drawGrid(
   ctx.stroke();
 }
 
-/** Couleur déterministe à partir de l'id du propriétaire — stable entre les morceaux d'un
- * même joueur (utile après un split) sans avoir besoin d'un état côté client. Jamais appelée
- * pour de la nourriture : `renderFrame` la dessine à part (voir `FOOD_COLOR`), en un seul
- * appel `fill` groupé plutôt qu'un par particule. */
-function colorFor(entity: EntitySnapshot): string {
-  if (!entity.p) return '#888888';
+/** Couleur de blob "pour l'instant" (demande utilisateur, refonte UI/UX) — placeholder unique en
+ * attendant un vrai système de personnalisation (choix/déblocage de couleur par cosmétique) :
+ * tous les morceaux de tous les joueurs partagent cette même couleur, y compris dans le fond
+ * spectateur de l'accueil (SpectatorBackground.tsx, qui réutilise cette même fonction). */
+export const DEFAULT_BLOB_COLOR = '#253D2C';
 
-  let hash = 0;
-  for (let i = 0; i < entity.p.length; i++) {
-    hash = (hash * 31 + entity.p.charCodeAt(i)) >>> 0;
-  }
-  return `hsl(${hash % 360}, 70%, 55%)`;
+/** Jamais appelée pour de la nourriture : `renderFrame` la dessine à part (voir `FOOD_COLOR`),
+ * en un seul appel `fill` groupé plutôt qu'un par particule. */
+function colorFor(entity: EntitySnapshot): string {
+  return entity.p ? DEFAULT_BLOB_COLOR : '#888888';
 }

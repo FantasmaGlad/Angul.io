@@ -39,6 +39,23 @@ describe('createHardcoreMod — onCollision (absorption entre joueurs)', () => {
     expect(attacker.mass).toBeCloseTo(105 + 100 * 3, 6);
   });
 
+  it("crédite l'XP sur la masse gagnée déjà multipliée (x10), pas la masse brute de la cible", () => {
+    const config = testConfig();
+    const mod = createHardcoreMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    world.addPlayer('p2', 'Bob');
+    const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 105);
+    const target = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
+
+    mod.onCollision?.(world, attacker, target);
+
+    const stats = world.getPlayer('p1')!.lifeStats;
+    expect(stats.massEaten).toBeCloseTo(1000, 6); // 100 * 10, pas 100
+    expect(stats.playersEaten).toBe(1);
+    expect(stats.xpEarned).toBeCloseTo(1000 + 400, 6);
+  });
+
   it("n'absorbe pas sans l'avantage de masse requis (répulsion déléguée, inchangée)", () => {
     const config = testConfig();
     const mod = createHardcoreMod(config);
@@ -92,10 +109,10 @@ describe('createHardcoreMod — onCollision (nourriture et fusion, comportement 
 });
 
 describe('createHardcoreMod — transformScoreForAccount', () => {
-  it('renvoie toujours 0 (perte totale de la progression XP de la partie à la mort)', () => {
+  it('renvoie toujours {score:0, xp:0} (perte totale de la progression de la partie à la mort)', () => {
     const mod = createHardcoreMod(testConfig());
-    expect(mod.transformScoreForAccount?.(500)).toBe(0);
-    expect(mod.transformScoreForAccount?.(0)).toBe(0);
+    expect(mod.transformScoreForAccount?.(500, 300)).toEqual({ score: 0, xp: 0 });
+    expect(mod.transformScoreForAccount?.(0, 0)).toEqual({ score: 0, xp: 0 });
   });
 });
 

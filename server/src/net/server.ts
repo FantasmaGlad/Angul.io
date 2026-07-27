@@ -4,6 +4,10 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { join, normalize, resolve } from 'node:path';
 import {
   distance,
+  WS_CLOSE_NICKNAME_TAKEN,
+  WS_CLOSE_ROOM_EXPIRED,
+  WS_CLOSE_ROOM_FULL,
+  WS_CLOSE_ROOM_NOT_FOUND,
   type ClientMessage,
   type EntitySnapshot,
   type ServerMessage,
@@ -14,6 +18,7 @@ import { AccountError, type AccountsService } from '../accounts/service.js';
 import type { AdminAuth } from '../admin/adminAuth.js';
 import type { ManagedRoom, RoomManager, RoomVisibility } from '../engine/roomManager.js';
 import type { Entity, PlayerId } from '../engine/types.js';
+import { activeComboLevel } from '../engine/xp.js';
 import { logEvent } from '../log.js';
 
 export interface GameServerOptions {
@@ -48,6 +53,14 @@ const MAX_NICKNAME_LENGTH = 20;
 const MAX_ROOM_NAME_LENGTH = 40;
 const MAX_REQUEST_BODY_BYTES = 10_000;
 const INTEREST_RADIUS_PX_DEFAULT = 3000;
+/** Bornes de validation "clémente" (mêmes principes que `parseAdminPatch`) pour les nouveaux
+ * champs du formulaire "Créer un salon privé" (refonte UI/UX : Nombre de Joueurs, Durée) — une
+ * valeur hors bornes ou du mauvais type est simplement ignorée (repli sur le défaut de
+ * `RoomManager`), pas un 400 qui ferait échouer toute la création pour un souci mineur de forme. */
+const MIN_ROOM_MAX_PLAYERS = 2;
+const MAX_ROOM_MAX_PLAYERS = 200;
+const MIN_ROOM_DURATION_MS = 60_000; // 1 minute
+const MAX_ROOM_DURATION_MS = 24 * 60 * 60_000; // 24h
 
 export interface GameServerHandle {
   /** Résout avec le port réellement utilisé (utile en test avec `port: 0`). */
@@ -70,6 +83,11 @@ interface RoomRuntime {
    * uniquement — c'est le "score" écrit en base à la mort (Lot 3.5), en l'absence de tout autre
    * système de score. Remise à 0 à chaque respawn, pas seulement à la connexion. */
   maxMassByPlayer: Map<PlayerId, number>;
+  /** Ids de `sockets` correspondant à un spectateur (fond animé de l'accueil, refonte UI/UX) —
+   * jamais ajoutés à `world` (aucun morceau, jamais compté dans `playerCount`/`maxPlayers`), donc
+   * exclus de `recordAccountStats`/`room.removePlayer` à la fermeture de leur socket : il n'y a
+   * ni compte ni joueur du monde à nettoyer pour eux. */
+  spectatorIds: Set<PlayerId>;
 }
 
 /**
@@ -101,6 +119,7 @@ export function startGameServer(
       nextPlayerId: 1,
       accountIdByPlayer: new Map(),
       maxMassByPlayer: new Map(),
+      spectatorIds: new Set(),
     };
     runtimes.set(managed.id, runtime);
 
@@ -134,7 +153,19 @@ export function startGameServer(
         const totalMass = ownPieces.reduce((sum, piece) => sum + piece.mass, 0);
         const accelerationPerSec2 =
           totalMass > 0 ? managed.room.getAccelerationForMass(totalMass) : undefined;
-        const self = accelerationPerSec2 !== undefined ? { accelerationPerSec2 } : undefined;
+
+        // Combo de joueurs mangés (demande utilisateur, engine/xp.ts) : absent pour un
+        // spectateur (jamais ajouté à `world`, voir le mode spectateur ci-dessous) ou tant
+        // qu'aucun combo n'est actif pour ce joueur.
+        const player = managed.room.world.getPlayer(playerId);
+        const comboLevel = player
+          ? activeComboLevel(player.lifeStats.combo, performance.now())
+          : undefined;
+
+        const selfFields: { accelerationPerSec2?: number; combo?: { level: number } } = {};
+        if (accelerationPerSec2 !== undefined) selfFields.accelerationPerSec2 = accelerationPerSec2;
+        if (comboLevel !== undefined) selfFields.combo = { level: comboLevel };
+        const self = Object.keys(selfFields).length > 0 ? selfFields : undefined;
 
         send(socket, { type: 'state', tick, entities, self });
 
@@ -170,10 +201,21 @@ export function startGameServer(
   // après coup (lobby, Lot 2.2) — RoomManager ne sait rien du réseau, c'est ici qu'on l'y relie.
   for (const managed of roomManager.allManagedRooms()) wireRoom(managed);
   roomManager.onRoomCreated(wireRoom);
-  // Un salon supprimé automatiquement (vide depuis trop longtemps, durcissement avant
-  // exposition publique) n'a par construction plus aucun joueur donc plus aucune socket
-  // active dans son runtime — on libère simplement l'entrée pour ne pas la garder en mémoire.
-  roomManager.onRoomRemoved((roomId) => runtimes.delete(roomId));
+  // Un salon supprimé pour cause de vacance prolongée (durcissement avant exposition publique)
+  // n'a par construction plus aucune socket active dans son runtime. Ce n'est en revanche plus
+  // vrai depuis l'ajout de la durée de vie de salon (refonte UI/UX, `RoomManager.expireRoom`) :
+  // un salon peut expirer avec des joueurs encore connectés — fermer explicitement leurs sockets
+  // ici évite de les laisser "orphelines" (plus aucun tick/diffusion d'état ne viendra jamais,
+  // sans cette fermeture le client resterait bloqué sur un écran de jeu figé).
+  roomManager.onRoomRemoved((roomId) => {
+    const runtime = runtimes.get(roomId);
+    if (runtime) {
+      for (const socket of runtime.sockets.values()) {
+        socket.close(WS_CLOSE_ROOM_EXPIRED, 'Salon fermé (durée écoulée).');
+      }
+    }
+    runtimes.delete(roomId);
+  });
 
   const httpServer = createServer((req, res) => {
     void handleHttpRequest(
@@ -198,10 +240,36 @@ export function startGameServer(
       // Pas de salon par défaut implicite : depuis le lobby (Lot 2.2), le client choisit
       // toujours un salon avant d'ouvrir la connexion WebSocket.
       logEvent('join_rejected', { requestedRoomId: roomId });
-      socket.close(4004, 'Salon introuvable');
+      socket.close(WS_CLOSE_ROOM_NOT_FOUND, 'Salon introuvable');
       return;
     }
     const runtime = runtimes.get(managed.id)!;
+
+    // Mode spectateur (`?spectate=1`, refonte UI/UX — fond animé de l'accueil) : une lecture
+    // seule du salon, jamais un joueur. Aucun message `join` n'est attendu ni nécessaire : le
+    // `welcome` part immédiatement, et comme ce socket n'est jamais ajouté à `world`
+    // (`spectatorIds` sert uniquement à l'exclure du nettoyage de compte à la fermeture), la
+    // boucle de diffusion existante (`managed.room.onState`, plus haut) n'a besoin d'aucune
+    // adaptation : `getPiecesByOwner` renvoie déjà `[]` pour un id absent de `world`, et
+    // `centroidOf([])` retombe déjà sur le centre de la carte (voir plus bas) — exactement le
+    // cadrage voulu pour un fond décoratif.
+    if (requestUrl.searchParams.get('spectate') === '1') {
+      const spectatorId = `spec-${runtime.nextPlayerId++}`;
+      runtime.sockets.set(spectatorId, socket);
+      runtime.spectatorIds.add(spectatorId);
+      logEvent('spectator_join', { roomId: managed.id, spectatorId });
+      send(socket, {
+        type: 'welcome',
+        playerId: spectatorId,
+        mapSize: managed.room.world.mapSize,
+      });
+      socket.on('close', () => {
+        runtime.sockets.delete(spectatorId);
+        runtime.spectatorIds.delete(spectatorId);
+      });
+      return;
+    }
+
     // `?token=` (Lot 3.3) : un jeton absent/inconnu laisse simplement la partie continuer en
     // invité (pas d'erreur) — l'authentification est un ajout au-dessus du flux existant, pas
     // un prérequis pour jouer (voir GameServerOptions.accounts).
@@ -219,13 +287,36 @@ export function startGameServer(
       }
 
       if (message.type === 'join' && !playerId) {
+        const nickname = message.nickname.trim().slice(0, MAX_NICKNAME_LENGTH) || 'Joueur';
+
+        // Capacité de salon (refonte UI/UX, champ "Nombre de Joueurs") : vérifiée avant toute
+        // création de joueur/socket enregistrée — un salon plein refuse la connexion plutôt que
+        // de la laisser ouverte sans jamais recevoir de `welcome`.
+        if (managed.room.world.allPlayers().length >= managed.maxPlayers) {
+          logEvent('join_rejected', { roomId: managed.id, reason: 'room_full' });
+          socket.close(WS_CLOSE_ROOM_FULL, 'Salon complet.');
+          return;
+        }
+
+        // Unicité de pseudo par salon (refonte UI/UX) : comparée aux joueurs déjà EN JEU dans CE
+        // salon (pas au pseudo de compte, ni aux autres salons) — insensible à la casse. Deux
+        // blobs au même nom dans le même salon prêteraient à confusion (le pseudo s'affiche
+        // au-dessus du morceau, voir render.ts), donc refusé plutôt que dédupliqué en silence.
+        const nicknameTaken = managed.room.world
+          .allPlayers()
+          .some((player) => player.nickname.toLowerCase() === nickname.toLowerCase());
+        if (nicknameTaken) {
+          logEvent('join_rejected', { roomId: managed.id, reason: 'nickname_taken', nickname });
+          socket.close(WS_CLOSE_NICKNAME_TAKEN, 'Pseudo déjà utilisé sur ce salon.');
+          return;
+        }
+
         playerId = String(runtime.nextPlayerId++);
         runtime.sockets.set(playerId, socket);
         if (accountId !== undefined) {
           runtime.accountIdByPlayer.set(playerId, accountId);
           runtime.maxMassByPlayer.set(playerId, 0);
         }
-        const nickname = message.nickname.trim().slice(0, MAX_NICKNAME_LENGTH) || 'Joueur';
         managed.room.addPlayer(playerId, nickname);
         logEvent('player_join', { roomId: managed.id, playerId, nickname });
         send(socket, { type: 'welcome', playerId, mapSize: managed.room.world.mapSize });
@@ -309,13 +400,22 @@ function recordAccountStats(
   if (!accounts) return;
   const accountId = runtime.accountIdByPlayer.get(playerId);
   if (accountId === undefined) return;
-  const rawScore = runtime.maxMassByPlayer.get(playerId) ?? 0;
-  // Lot 4 (Hardcore) : un mod peut annuler tout crédit pour cette vie (voir
-  // `GameMod.transformScoreForAccount`) — identité pour les mods qui ne l'implémentent pas.
-  const score = managed.room.transformScoreForAccount(rawScore);
-  if (score <= 0) return;
 
-  accounts.recordGameResult(accountId, managed.modId, score).catch((error: unknown) => {
+  const rawScore = runtime.maxMassByPlayer.get(playerId) ?? 0;
+  const player = managed.room.world.getPlayer(playerId);
+  const rawXp = player?.lifeStats.xpEarned ?? 0;
+  // Remise à zéro immédiatement après lecture (pas par le mod lui-même, voir engine/xp.ts) : le
+  // respawn immédiat du MVP recrée un morceau avant que ce point du réseau ait pu lire le cumul
+  // de la vie qui vient de se terminer, donc c'est ici — juste après l'avoir lu — qu'il faut
+  // repartir de zéro pour la vie suivante.
+  if (player) managed.room.world.resetLifeStats(playerId);
+
+  // Lot 4 (Hardcore) : un mod peut annuler tout crédit (score ET xp) pour cette vie (voir
+  // `GameMod.transformScoreForAccount`) — identité pour les mods qui ne l'implémentent pas.
+  const { score, xp } = managed.room.transformScoreForAccount(rawScore, rawXp);
+  if (score <= 0 && xp <= 0) return;
+
+  accounts.recordGameResult(accountId, managed.modId, score, xp).catch((error: unknown) => {
     logEvent('account_stats_write_failed', {
       roomId: managed.id,
       playerId,
@@ -407,6 +507,18 @@ async function handleHttpRequest(
 
   if (url.pathname === '/api/modes' && req.method === 'GET') {
     respondJson(res, 200, availableModIds);
+    return;
+  }
+
+  if (url.pathname === '/api/stats' && req.method === 'GET') {
+    // "N Joueurs Connectés" (refonte UI/UX, accueil) : compte réel tous salons confondus, y
+    // compris privés — un simple total n'expose rien de leur contenu (nom, mode…), contrairement
+    // à `GET /api/rooms` qui ignore volontairement les salons privés. Exclut nativement les
+    // spectateurs (jamais ajoutés à `world`, voir le mode spectateur plus haut).
+    const playersOnline = roomManager
+      .allManagedRooms()
+      .reduce((sum, managed) => sum + managed.room.world.allPlayers().length, 0);
+    respondJson(res, 200, { playersOnline });
     return;
   }
 
@@ -586,6 +698,26 @@ async function handleCreateRoom(
   const name = typeof nameRaw === 'string' ? nameRaw.trim().slice(0, MAX_ROOM_NAME_LENGTH) : '';
   const visibility: RoomVisibility = visibilityRaw === 'private' ? 'private' : 'public';
 
+  // Nombre de Joueurs / Durée (refonte UI/UX, formulaire "Créer un salon privé") : validation
+  // clémente, une valeur absente/hors bornes est ignorée (repli sur le défaut de RoomManager)
+  // plutôt que de faire échouer toute la création pour un souci mineur de forme.
+  const maxPlayersRaw = isRecord(body) ? body.maxPlayers : undefined;
+  const maxPlayers =
+    typeof maxPlayersRaw === 'number' &&
+    Number.isInteger(maxPlayersRaw) &&
+    maxPlayersRaw >= MIN_ROOM_MAX_PLAYERS &&
+    maxPlayersRaw <= MAX_ROOM_MAX_PLAYERS
+      ? maxPlayersRaw
+      : undefined;
+
+  const durationMsRaw = isRecord(body) ? body.durationMs : undefined;
+  const durationMs =
+    typeof durationMsRaw === 'number' &&
+    durationMsRaw >= MIN_ROOM_DURATION_MS &&
+    durationMsRaw <= MAX_ROOM_DURATION_MS
+      ? durationMsRaw
+      : undefined;
+
   if (!name) {
     logEvent('room_create_rejected', { reason: 'missing_name' });
     respondJson(res, 400, { error: 'Le nom du salon est requis.' });
@@ -598,7 +730,7 @@ async function handleCreateRoom(
   }
 
   try {
-    const summary = roomManager.createRoom({ name, modId, visibility });
+    const summary = roomManager.createRoom({ name, modId, visibility, maxPlayers, durationMs });
     respondJson(res, 201, summary);
   } catch (error) {
     logEvent('room_create_rejected', { reason: (error as Error).message });

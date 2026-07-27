@@ -79,7 +79,8 @@ Angul.io/
 │   │   ├── ..._init.cjs                     Table players (squelette)
 │   │   ├── ..._add-password-hash.cjs        + password_hash
 │   │   ├── ..._full-account-model.cjs       + level/xp/premium/cosmetics, player_best_scores
-│   │   └── ..._add-banned-flag.cjs          + banned
+│   │   ├── ..._add-banned-flag.cjs          + banned
+│   │   └── ..._seed-fanta-premium.cjs       UPDATE de données (pas de schéma) : premium=TRUE pour "Fanta"
 │   ├── configs/                       Configs des modes de jeu "paramétriques" (JSON)
 │   │   ├── vanilla.json
 │   │   ├── hardcore.json
@@ -100,7 +101,8 @@ Angul.io/
 │       │   ├── room.ts / room.test.ts       Un salon = une simulation indépendante
 │       │   ├── roomManager.ts / .test.ts    Registre des salons (créer/lister/rejoindre)
 │       │   ├── roomIsolation.test.ts        Vérifie l'étanchéité entre salons
-│       │   └── resetSchedule.ts             Planification du reset auto (quotidien ou intervalle)
+│       │   ├── resetSchedule.ts             Planification du reset auto (quotidien ou intervalle)
+│       │   └── xp.ts / xp.test.ts           XP/combo (masse mangée, joueurs mangés, multiplicateur), voir metriques.md §15
 │       ├── mods/                      Modes de jeu (implémentations de GameMod)
 │       │   ├── parametric/                  Modes définis uniquement par des valeurs (JSON)
 │       │   │   ├── config.ts                Schéma de config (ParametricModConfig)
@@ -135,16 +137,16 @@ Angul.io/
 │   ├── public/                        ⚠️ GÉNÉRÉ par `vite build` — jamais édité à la main, gitignored
 │   └── src/
 │       ├── main.tsx                   Point d'entrée React (createRoot, <App/>)
-│       ├── App.tsx                    État racine (accueil/jeu, session, panneaux ouverts, lobby)
+│       ├── App.tsx                    État racine (accueil/jeu, session, panneaux ouverts, lobby, stats)
 │       ├── styles.css                 Design tokens + toutes les classes CSS (source unique de style)
 │       ├── modes.ts                   Métadonnées d'affichage par mode (nom/description/couleur)
 │       ├── components/                Composants React (voir §4)
 │       ├── auth.ts                    Client API comptes (login/register/profile)
-│       ├── lobby.ts                   Client API salons (liste/création/modes)
+│       ├── lobby.ts                   Client API salons (liste/création/modes/stats serveur)
 │       ├── support.ts                 Contenu de la page Soutenir (lien de don, texte)
 │       ├── net.ts / net.test.ts       Connexion WebSocket au serveur de jeu (GameConnection)
 │       ├── input.ts                   Capture souris/clavier → vecteur de direction + split
-│       ├── render.ts / render.test.ts Rendu Canvas 2D (caméra, interpolation, dessin des entités)
+│       ├── render.ts / render.test.ts Rendu Canvas 2D (caméra, interpolation, dessin des entités, couleur de blob)
 │       ├── stats.ts / stats.test.ts   Agrégation des morceaux du joueur (masse, barycentre)
 │       └── debugOverlay.ts / .test.ts Écran de diagnostic F3 (FPS, GPU, réseau, système)
 │
@@ -191,20 +193,31 @@ exclus de git (`.gitignore`). Le dossier source des assets statiques du client s
 
 ### 4.1 Client (`client/src/components/`)
 
+Refonte accueil (2026-07-27, mockup fourni) : l'ancien `RoomsPanel.tsx` (modale) a été supprimé,
+son contenu redistribué entre `ModeRoomList.tsx`/`PlayPanel.tsx`/`CreateRoomPanel.tsx`, désormais
+visibles en permanence sur l'accueil plutôt que cachés dans un panneau.
+
 | Composant | Rôle |
 |---|---|
-| `Home.tsx` | Écran d'accueil minimal : pseudo, bouton "Jouer", barre de navigation vers les panneaux |
+| `Home.tsx` | Composition racine de l'accueil : `TopNav` + 3 colonnes + `BottomBar` + `SpectatorBackground` |
+| `TopNav.tsx` | Nav haute : marque, liens Classement/Modes de Jeux/À Propos, cercle de compte (pseudo/Clan/Niveau) |
+| `ModeRoomList.tsx` | Colonne gauche : sélecteur de mode + classement des salons publics de ce mode |
+| `PlayPanel.tsx` | Colonne centre : compteur de joueurs connectés, pseudo du blob, bouton "Rejoindre", classement global des salons |
+| `CreateRoomPanel.tsx` | Colonne droite : création de salon privé (Premium — nom, mode, capacité, durée, public/privé) + rejoindre par code (tous) |
+| `BottomBar.tsx` | Pied de page : version, marque, lien Soutenir |
+| `SpectatorBackground.tsx` | Fond animé : connexion WebSocket en lecture seule (`?spectate=1`) au salon permanent, caméra fixe, réutilise `render.ts` |
+| `AboutPanel.tsx` | À Propos : nom du projet, version, licence |
 | `Panel.tsx` | Coquille commune à tous les sous-panneaux (titre + bouton fermer) |
-| `AccountPanel.tsx` | Connexion/inscription, ou état connecté + accès au profil |
-| `RoomsPanel.tsx` | Liste des salons publics, création (Premium), rejoindre par code |
+| `AccountPanel.tsx` | Connexion/inscription, ou état connecté + accès au profil + Paramètres |
 | `ModesPanel.tsx` | Cartes des modes de jeu (nom/description/couleur, via `modes.ts`) |
 | `LeaderboardPanel.tsx` | Placeholder "bientôt disponible" (endpoint backend manquant, §10 doc UI/UX) |
 | `SupportPanel.tsx` | Explication du don libre + lien Ko-fi |
+| `SettingsPanel.tsx` | Plafond FPS (réglage local à l'appareil) |
 | `ProfileModal.tsx` | Niveau/XP/Premium/cosmétiques/meilleurs scores du compte connecté |
-| `GameView.tsx` | **Le seul composant qui touche au canvas** — monte `<canvas>`, ouvre la connexion WebSocket, lance la boucle de rendu ; tout est impératif à l'intérieur (pas de state React par frame), voir §2.5 du doc UI/UX |
+| `GameView.tsx` | **Le seul composant qui touche au canvas en partie** — monte `<canvas>`, ouvre la connexion WebSocket, lance la boucle de rendu ; tout est impératif à l'intérieur (pas de state React par frame), voir §2.5 du doc UI/UX |
 
-`App.tsx` est le composant racine : bascule entre `Home`+panneaux et `GameView`, détient
-l'état de session (auth, salons, modes, panneau ouvert).
+`App.tsx` est le composant racine : bascule entre `Home` (accueil) et `GameView` (en partie),
+détient l'état de session (auth, salons, modes, compteur de joueurs, panneau ouvert).
 
 ### 4.2 Admin (`admin/src/components/`)
 
@@ -259,6 +272,10 @@ Voir [server/db/schema.sql](server/db/schema.sql) pour le détail commenté des 
   mémoire serveur (`server/src/accounts/sessionStore.ts`), perdus au redémarrage.
 - **Pas de table "modes"** : les modes de jeu sont des fichiers de config (`server/configs/*.json`)
   chargés dynamiquement, pas des lignes en base.
+- **Pas de table "salons"** : capacité (`maxPlayers`), durée de vie (`durationMs`), flag `permanent`
+  et unicité de pseudo par salon (refonte accueil, 2026-07-27) sont de l'état de salon **en
+  mémoire** (`server/src/engine/roomManager.ts`, `world.ts`), cohérent avec le principe déjà en
+  place (mémoire pour le chaud, PostgreSQL pour le froid — cahier_des_charges.md §4.4).
 
 La source de vérité **exécutable** reste `server/migrations/` (node-pg-migrate) —
 `server/db/schema.sql` est une photographie de documentation, à maintenir à la main en même

@@ -43,8 +43,10 @@ export interface GameMod {
 
   /** Lot 4 (mode Hardcore, cahier des charges §3.4 #2 : "perte totale de la progression XP de
    * la partie en cas de mort") — appelé juste avant l'écriture des stats en base (Lot 3.5, à
-   * la mort ou à la déconnexion) avec la masse maximale atteinte pendant cette vie ; la valeur
-   * renvoyée est ce qui est effectivement crédité au compte (score et XP). Optionnel : un mod
-   * qui ne l'implémente pas (Vanilla, Folie) laisse le score brut inchangé (identité). */
-  transformScoreForAccount?(rawScore: number): number;
+   * la mort ou à la déconnexion) avec la masse maximale atteinte pendant cette vie (`rawScore`,
+   * crédité à `player_best_scores`) et l'XP accumulée pendant cette même vie (`rawXp`, voir
+   * `engine/xp.ts` — combo déjà appliqué) ; les valeurs renvoyées sont ce qui est effectivement
+   * crédité au compte. Optionnel : un mod qui ne l'implémente pas (Vanilla, Folie) laisse les
+   * deux valeurs brutes inchangées (identité). */
+  transformScoreForAccount?(rawScore: number, rawXp: number): { score: number; xp: number };
 }

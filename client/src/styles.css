@@ -1,33 +1,46 @@
 /* ---------------------------------------------------------------------------------------
- * Design minimaliste (cahier_des_charges_ui_ux.md §1, révisé) — inspiré de l'outil Cobalt :
- * fond sombre plat, un seul accent, pas de dégradé, pas de flou/glassmorphism, pas d'emoji.
- * Le canvas de jeu (render.ts) n'est pas concerné par ces tokens (§1.5).
+ * Design minimaliste (cahier_des_charges_ui_ux.md §1, révision refonte accueil) — fond clair,
+ * un seul accent de marque (jaune), pas de dégradé, pas de flou/glassmorphism, pas d'emoji. Le
+ * vocabulaire de composants (pilule, cartes à coins arrondis, bordures fines, pas d'ombre large)
+ * reste inchangé depuis la direction "Cobalt" précédente — seule la palette a basculé de sombre
+ * à claire pour matcher la nouvelle identité de marque (jaune/noir/blanc). Le canvas de jeu
+ * (render.ts) n'est pas concerné par ces tokens (§1.5), à l'exception du fond de page qui doit
+ * rester visible à travers lui (voir SpectatorBackground.tsx, canvas transparent).
  * --------------------------------------------------------------------------------------- */
 :root {
-  --bg: #0b0b0d;
-  --surface: #141416;
-  --surface-hover: #1c1c1f;
-  --border: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.16);
-  --text: #f2f2f3;
-  --text-soft: #8b8b93;
-  --text-faint: #55555c;
+  --bg: #ffffff;
+  --surface: #f1f1ef;
+  --surface-hover: #e7e7e3;
+  --border: rgba(0, 4, 1, 0.1);
+  --border-strong: rgba(0, 4, 1, 0.2);
+  --text: #000401;
+  --text-soft: #55564f;
+  --text-faint: #8a8b84;
 
-  --accent: #5b7cfa;
-  --accent-strong: #4a68e0;
-  --accent-ink: #ffffff;
-  --danger: #ff5c5c;
-  --success: #4ade80;
+  /* Palette de marque (fournie) : jaunes du plus soutenu au plus clair. */
+  --brand-yellow-dark: #e0bc00;
+  --brand-yellow: #ffd32c;
+  --brand-yellow-light: #ffde21;
+  --brand-yellow-pale: #ffea99;
 
-  /* Couleur signature par mode (chips/bordures, usage fonctionnel minimal — pas décoratif). */
-  --c-vanilla: #34d399;
-  --c-hardcore: #f87171;
-  --c-folie: #a78bfa;
+  --accent: var(--brand-yellow);
+  --accent-strong: var(--brand-yellow-dark);
+  /* Texte noir sur jaune clair (pas blanc) : c'est la paire qui passe le contraste AA ici. */
+  --accent-ink: #000401;
+  --danger: #c23b3b;
+  --success: #2f8a4e;
+
+  /* Couleur signature par mode (chips/bordures, usage fonctionnel minimal — pas décoratif) —
+   * mêmes teintes que la version précédente, légèrement assombries pour rester lisibles en
+   * bordure fine sur fond blanc (au lieu de fond sombre). */
+  --c-vanilla: #1f9d74;
+  --c-hardcore: #c94f4f;
+  --c-folie: #7c5cd4;
 
   --radius-lg: 16px;
   --radius-md: 10px;
   --radius-pill: 999px;
-  --shadow-modal: 0 12px 32px rgba(0, 0, 0, 0.5);
+  --shadow-modal: 0 12px 32px rgba(0, 4, 1, 0.18);
 
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -220,64 +233,395 @@ select {
   display: block;
 }
 
-/* --- Accueil (§4.1) ------------------------------------------------------------------- */
-.home-overlay {
+/* --- Combo XP (demande utilisateur, §4.7) ---------------------------------------------------
+   "Combo x{niveau}" en gros à l'écran, extra bold, couleur vert -> jaune -> orange -> rouge selon
+   le niveau, effet d'apparition en mise à l'échelle (grossissement à 120%) rejoué à chaque
+   changement de niveau (voir GameView.tsx, classe `combo-pop` retirée/ré-ajoutée). Reste affichée
+   5s (GameView.tsx, `COMBO_BANNER_DISPLAY_MS`) puis s'estompe via `.fading` (transition
+   `opacity`) plutôt qu'une disparition instantanée. */
+.combo-banner {
+  display: none;
+  opacity: 0;
+  position: fixed;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 42px;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  pointer-events: none;
+  z-index: 3;
+  text-shadow: 0 2px 10px rgba(0, 4, 1, 0.2);
+  transition: opacity 0.6s ease;
+}
+.combo-banner.visible {
+  display: block;
+  opacity: 1;
+}
+.combo-banner.visible.fading {
+  opacity: 0;
+}
+.combo-banner.combo-green {
+  color: var(--success);
+}
+.combo-banner.combo-yellow {
+  color: #d4a017;
+}
+.combo-banner.combo-orange {
+  color: #e0731b;
+}
+.combo-banner.combo-red {
+  color: var(--danger);
+}
+.combo-banner.combo-pop {
+  animation: combo-pop-anim 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes combo-pop-anim {
+  0% {
+    transform: translateX(-50%) scale(0.6);
+    opacity: 0;
+  }
+  60% {
+    transform: translateX(-50%) scale(1.2);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(-50%) scale(1);
+    opacity: 1;
+  }
+}
+
+/* --- Accueil (§4.1, refonte UI/UX : nav haute + 3 colonnes + pied de page + fond spectateur) -- */
+.home-shell {
+  position: relative;
+  z-index: 0;
+  min-height: 100%;
+}
+
+/* `.home-ui` regroupe tout SAUF le fond spectateur (nav/colonnes/pied de page) — élément séparé
+   du fond exprès : la transition d'entrée en jeu (demande utilisateur) doit pouvoir "zoomer en
+   arrière"/estomper l'UI et "zoomer en avant" le fond indépendamment l'un de l'autre. */
+.home-ui {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  transform-origin: center center;
+  transition:
+    opacity 0.4s ease,
+    transform 0.45s ease;
+}
+.home-ui.leaving {
+  opacity: 0;
+  transform: scale(0.94);
+  pointer-events: none;
+}
+
+/* Fond animé (SpectatorBackground.tsx) : toujours derrière `.home-shell` (z-index négatif),
+   jamais interactif (les clics doivent atteindre l'UI, pas le canvas). `.zooming` (transition
+   d'entrée en jeu) grossit le fond depuis son centre pour donner l'impression de plonger dans le
+   monde pendant que `.home-ui.leaving` s'estompe par-dessus. */
+.spectator-background {
   position: fixed;
   inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  transform-origin: center center;
+  transition: transform 0.5s ease;
+}
+.spectator-background.zooming {
+  transform: scale(1.6);
+}
+
+.top-nav {
   display: flex;
   align-items: center;
+  gap: 20px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+}
+.brand-mark {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--text);
+  border: none;
+}
+.top-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  flex: 1;
+}
+.top-nav-links button {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 4px 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-soft);
+}
+.top-nav-links button:hover {
+  color: var(--text);
+}
+.account-cluster {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  border: none;
+  padding: 4px 6px;
+}
+.account-cluster:hover {
+  background: var(--surface-hover);
+  border-radius: var(--radius-md);
+}
+.account-avatar {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--text);
+}
+.account-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.25;
+}
+.account-pseudo {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.account-clan {
+  font-size: 11px;
+  color: var(--text-soft);
+}
+.account-level {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--brand-yellow-pale);
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.home-columns {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 260px) minmax(0, 340px) minmax(0, 300px);
   justify-content: center;
-  padding: 20px;
+  gap: 20px;
+  padding: 28px 24px;
   box-sizing: border-box;
 }
-.home-card {
-  width: 360px;
-  max-width: 100%;
+.home-column {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 32px 28px 26px;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.mode-select-field select,
+.create-room-panel select {
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: var(--radius-pill);
+  padding: 11px 16px;
+}
+.mode-select-field {
+  display: block;
+  margin-bottom: 14px;
+}
+
+.rank-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rank-list-empty {
+  font-size: 12.5px;
+  color: var(--text-soft);
+  padding: 8px 2px;
+}
+.rank-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 9px 12px;
+  text-align: left;
+  font-weight: 400;
+}
+.rank-row:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+.rank-index {
+  flex-shrink: 0;
+  min-width: 16px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 12.5px;
+  color: var(--text-soft);
+}
+.rank-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.rank-count {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.play-panel {
   text-align: center;
 }
-.home-logo {
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  margin: 0 0 4px;
-  color: var(--text);
+.players-online {
+  margin: 0 0 18px;
 }
-.home-tagline {
-  margin: 0 0 24px;
+.players-online-count {
+  display: block;
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1.1;
+  font-family: var(--font-mono);
+}
+.players-online-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+.blob-color-swatch {
+  display: block;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  margin: 14px auto;
+  border: 1px solid var(--border-strong);
+}
+.play-button {
+  width: 100%;
+  padding: 14px 20px;
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+.play-panel .rank-list {
+  margin-top: 18px;
+  text-align: left;
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-flex;
+  width: 38px;
+  height: 22px;
+  flex-shrink: 0;
+}
+.toggle-switch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.toggle-track {
+  position: absolute;
+  inset: 0;
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+  transition: background 0.12s ease;
+  pointer-events: none;
+}
+.toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 4, 1, 0.3);
+  transition: transform 0.12s ease;
+}
+.toggle-switch input:checked + .toggle-track {
+  background: var(--accent);
+}
+.toggle-switch input:checked + .toggle-track::after {
+  transform: translateX(16px);
+}
+
+.join-by-code-section {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.bottom-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 24px;
+  border-top: 1px solid var(--border);
   font-size: 12.5px;
   color: var(--text-soft);
 }
 
-.home-nav {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin-top: 20px;
-  padding-top: 18px;
-  border-top: 1px solid var(--border);
-}
-.nav-link {
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 10px 6px;
-  font-size: 11.5px;
+.lobby-error-toast {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  background: var(--surface);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font-size: 12.5px;
   font-weight: 600;
-  color: var(--text-soft);
-  letter-spacing: 0.02em;
+  padding: 8px 16px;
+  border-radius: var(--radius-pill);
 }
-.nav-link:hover {
-  background: var(--surface-hover);
-  color: var(--text);
-  border-color: var(--border-strong);
-}
-.nav-link.is-account-active {
-  color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+
+@media (max-width: 900px) {
+  .home-columns {
+    grid-template-columns: 1fr;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+  .top-nav {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+  .top-nav-links {
+    order: 3;
+    flex-basis: 100%;
+    justify-content: center;
+  }
 }
 
 /* --- Sous-panneaux (modales — §3.1) ---------------------------------------------------- */
@@ -542,6 +886,7 @@ a.btn-primary {
 @media (prefers-reduced-motion: reduce) {
   * {
     transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
   }
 }
 

@@ -27,6 +27,17 @@ export interface CreateRoomOptions {
    * du cahier des charges (§2.1) se limite à ce niveau (modèle de données) pour l'instant :
    * aucun contrôle dans le lobby (client) pour le personnaliser à la création. */
   resetSchedule?: RoomResetSchedule | null;
+  /** Capacité maximale de joueurs (refonte UI/UX, formulaire "Créer un salon privé" —
+   * "Nombre de Joueurs") — défaut `DEFAULT_MAX_PLAYERS_PER_ROOM` si omis (couvre le salon
+   * permanent et tout salon créé sans le préciser). Appliquée au moment du `join` réseau (voir
+   * net/server.ts), pas ici : `RoomManager` ne connaît rien des sockets. */
+  maxPlayers?: number;
+  /** Durée de vie du salon (ms) avant fermeture automatique (refonte UI/UX, champ "Durée" du
+   * formulaire de création) — `undefined`/omis = salon sans expiration (comportement d'avant
+   * ce champ). À l'expiration, `expireRoom` est invoqué automatiquement (voir `createRoom`),
+   * distinct de `pruneEmptyRooms` qui ne supprime que des salons déjà vides : ici le salon peut
+   * très bien avoir des joueurs encore connectés au moment de l'expiration. */
+  durationMs?: number;
 }
 
 /** Vue publique d'un salon, sans exposer la `Room` ni ses internes (utilisée par le lobby, Lot 2.2). */
@@ -36,6 +47,12 @@ export interface RoomSummary {
   modId: string;
   visibility: RoomVisibility;
   playerCount: number;
+  /** Capacité maximale de joueurs (refonte UI/UX) — affichée côté client en "count/maxPlayers". */
+  maxPlayers: number;
+  /** `true` pour le salon par défaut créé au démarrage (voir index.ts, `CreateRoomOptions.permanent`)
+   * — permet au client de cibler explicitement ce salon (bouton "Rejoindre", fond spectateur)
+   * plutôt que de compter sur l'ordre de la liste renvoyée par `listPublicRooms`. */
+  permanent: boolean;
 }
 
 /** Réponse de `createRoom` pour un salon privé : inclut le code d'invitation, à communiquer au
@@ -52,6 +69,9 @@ export interface ManagedRoom {
   readonly visibility: RoomVisibility;
   readonly inviteCode?: string;
   readonly room: Room;
+  /** Capacité maximale de joueurs — voir `CreateRoomOptions.maxPlayers`. Appliquée par
+   * net/server.ts au moment du `join` réseau. */
+  readonly maxPlayers: number;
 }
 
 interface RoomEntry extends ManagedRoom {
@@ -60,6 +80,11 @@ interface RoomEntry extends ManagedRoom {
    * de grâce avant suppression automatique (voir `pruneEmptyRooms`). Initialisé à la création :
    * un salon tout juste créé n'est pas immédiatement éligible à la suppression. */
   lastNonEmptyAt: number;
+  /** Minuterie d'expiration (voir `CreateRoomOptions.durationMs`/`expireRoom`) — absente si le
+   * salon n'a pas de durée de vie fixée. Conservée pour pouvoir l'annuler si le salon est
+   * supprimé d'une autre façon avant son échéance (évite un `expireRoom` orphelin sur un id déjà
+   * réutilisé, même si l'id court n'est en pratique jamais réutilisé — voir `nextRoomId`). */
+  expireTimer?: ReturnType<typeof setTimeout>;
 }
 
 export interface RoomManagerOptions {
@@ -80,6 +105,11 @@ const DEFAULT_EMPTY_ROOM_GRACE_MS = 10 * 60_000; // 10 minutes
 const DEFAULT_PRUNE_INTERVAL_MS = 30_000;
 const INVITE_CODE_DIGITS = 6;
 const INVITE_CODE_UPPER_BOUND = 10 ** INVITE_CODE_DIGITS;
+/** Capacité par défaut d'un salon dont `maxPlayers` n'a pas été précisé (salon permanent créé
+ * par index.ts, ou tout salon créé sans le champ "Nombre de Joueurs") — largement au-dessus de
+ * la charge cible du MVP (10-50 joueurs simultanés, cahier des charges §2.1), simple garde-fou
+ * plutôt qu'une vraie contrainte de capacité pour l'usage courant. */
+const DEFAULT_MAX_PLAYERS_PER_ROOM = 100;
 
 /**
  * Registre des salons actifs en mémoire (Lot 2.1). Un salon unique codé en dur (Lot 1) devient un
@@ -143,9 +173,13 @@ export class RoomManager {
       visibility: options.visibility,
       inviteCode,
       room,
+      maxPlayers: options.maxPlayers ?? DEFAULT_MAX_PLAYERS_PER_ROOM,
       permanent: options.permanent ?? false,
       lastNonEmptyAt: Date.now(),
     };
+    if (options.durationMs !== undefined) {
+      entry.expireTimer = setTimeout(() => this.expireRoom(id), options.durationMs);
+    }
     this.rooms.set(id, entry);
     for (const listener of this.createListeners) listener(entry);
     logEvent('room_created', {
@@ -154,6 +188,8 @@ export class RoomManager {
       modId: options.modId,
       visibility: options.visibility,
       permanent: entry.permanent,
+      maxPlayers: entry.maxPlayers,
+      durationMs: options.durationMs,
     });
 
     const summary = this.toSummary(entry);
@@ -214,19 +250,45 @@ export class RoomManager {
       }
 
       if (now - entry.lastNonEmptyAt >= this.emptyRoomGraceMs) {
-        entry.room.stop();
-        this.rooms.delete(entry.id);
-        for (const listener of this.removeListeners) listener(entry.id);
-        logEvent('room_removed', { roomId: entry.id, reason: 'empty_timeout' });
+        this.removeEntry(entry, 'empty_timeout');
       }
     }
   }
 
-  /** Arrête la tâche de nettoyage automatique — à appeler à l'extinction du serveur (ou entre
-   * deux tests, pour ne pas laisser un timer actif). Ne touche pas aux `Room` individuelles :
-   * chacune doit être arrêtée séparément (`managed.room.stop()`) si nécessaire. */
+  /** Ferme un salon à l'échéance de sa durée de vie (`CreateRoomOptions.durationMs`) —
+   * contrairement à `pruneEmptyRooms`, s'applique **inconditionnellement** : des joueurs peuvent
+   * très bien être encore connectés au moment de l'expiration. Le réseau (net/server.ts,
+   * `onRoomRemoved`) est responsable de fermer leurs sockets — `RoomManager` ne sait rien du
+   * réseau, il ne fait que notifier la suppression comme pour n'importe quel autre salon retiré. */
+  expireRoom(id: string): void {
+    const entry = this.rooms.get(id);
+    if (!entry) return; // déjà supprimé par un autre chemin (ex. vidé puis élagué avant l'échéance)
+    this.removeEntry(entry, 'duration_expired');
+  }
+
+  /** Point de suppression unique d'un salon, quelle que soit la raison (`pruneEmptyRooms` ou
+   * `expireRoom`) : arrête la `Room`, annule une éventuelle minuterie d'expiration encore en
+   * attente (évite un `expireRoom` orphelin si le salon a déjà été supprimé autrement), retire
+   * l'entrée et notifie les auditeurs (voir `onRoomRemoved`, utilisé par net/server.ts pour
+   * nettoyer/fermer les sockets de ce salon). */
+  private removeEntry(entry: RoomEntry, reason: string): void {
+    entry.room.stop();
+    if (entry.expireTimer) clearTimeout(entry.expireTimer);
+    this.rooms.delete(entry.id);
+    for (const listener of this.removeListeners) listener(entry.id);
+    logEvent('room_removed', { roomId: entry.id, reason });
+  }
+
+  /** Arrête la tâche de nettoyage automatique et toute minuterie d'expiration de salon encore en
+   * attente (`CreateRoomOptions.durationMs`) — à appeler à l'extinction du serveur (ou entre deux
+   * tests, pour ne pas laisser de timer actif appeler `expireRoom` après coup). Ne touche pas aux
+   * `Room` individuelles : chacune doit être arrêtée séparément (`managed.room.stop()`) si
+   * nécessaire. */
   stopPruning(): void {
     clearInterval(this.pruneTimer);
+    for (const entry of this.rooms.values()) {
+      if (entry.expireTimer) clearTimeout(entry.expireTimer);
+    }
   }
 
   /** Code à 6 chiffres (ex. "042817"), plus court et plus facile à partager à l'oral/par
@@ -250,6 +312,8 @@ export class RoomManager {
       modId: entry.modId,
       visibility: entry.visibility,
       playerCount: entry.room.world.allPlayers().length,
+      maxPlayers: entry.maxPlayers,
+      permanent: entry.permanent,
     };
   }
 }

@@ -12,6 +12,7 @@ import {
 import type { GameMod } from '../../engine/mod.js';
 import type { Entity, PlayerId, PlayerInput } from '../../engine/types.js';
 import type { World } from '../../engine/world.js';
+import { creditMassEatenXp, creditPlayerEatenXp } from '../../engine/xp.js';
 import { applyBorder } from './border.js';
 import type { ParametricModConfig } from './config.js';
 import {
@@ -103,26 +104,36 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
   }
 
   /** Cooldown de fusion mass-dépendant : T(m) = Tbase + gamma_rec*m (par morceau, feuille
-   * Excel — gamma_rec est 0 pour Vanilla et Folie à ce jour, donc un cooldown fixe en pratique). */
-  function tryMerge(world: World, a: Entity, b: Entity): void {
+   * Excel — gamma_rec est 0 pour Vanilla et Folie à ce jour, donc un cooldown fixe en pratique).
+   * Renvoie `true` si la fusion a eu lieu — l'appelant (`onCollision`) s'en sert pour savoir s'il
+   * doit à la place repousser les deux morceaux (voir le correctif "chevauchement post-split"). */
+  function tryMerge(world: World, a: Entity, b: Entity): boolean {
     const stateA = pieceState(a);
     const stateB = pieceState(b);
     const requiredA = config.merge.baseTimeSec + config.merge.massFactor * stateA.massAtSplit;
     const requiredB = config.merge.baseTimeSec + config.merge.massFactor * stateB.massAtSplit;
-    if (stateA.splitElapsedS < requiredA || stateB.splitElapsedS < requiredB) return;
+    if (stateA.splitElapsedS < requiredA || stateB.splitElapsedS < requiredB) return false;
 
     const overlap = circleOverlapArea(a.radius, b.radius, distance(a.position, b.position));
     const totalArea =
       massToArea(a.mass, config.areaConstant) + massToArea(b.mass, config.areaConstant);
-    if (overlap < totalArea * config.merge.overlapMinFraction) return;
+    if (overlap < totalArea * config.merge.overlapMinFraction) return false;
 
     world.mergeEntities(a, b);
+    return true;
   }
 
   function handleEatAttempt(world: World, attacker: Entity, target: Entity): boolean {
     if (attacker.mass >= target.mass * (1 + config.eating.massAdvantage)) {
-      world.setMass(attacker, attacker.mass + target.mass);
+      const gainedMass = target.mass;
+      world.setMass(attacker, attacker.mass + gainedMass);
       world.removeEntity(target.id);
+      // XP (demande utilisateur, engine/xp.ts) : "1 masse mangée = 1xp" + bonus fixe "1 joueur
+      // mangé = 400xp" (qui déclenche/prolonge aussi le combo) — les deux comptent pour ce même
+      // événement d'absorption d'un joueur, pas l'un à la place de l'autre.
+      const now = performance.now();
+      creditMassEatenXp(world, attacker.ownerId, gainedMass, now);
+      creditPlayerEatenXp(world, attacker.ownerId, now);
       return true;
     }
     return false;
@@ -208,13 +219,21 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         if (piece.mass >= config.eating.minMassToEatFood) {
           world.setMass(piece, piece.mass + particle.mass);
           world.removeEntity(particle.id);
+          // "1 masse mangée = 1xp" (engine/xp.ts) — bénéficie d'un combo actif comme n'importe
+          // quel autre gain d'XP, mais la nourriture ne déclenche/prolonge jamais elle-même le
+          // combo (réservé aux joueurs mangés, voir `handleEatAttempt`).
+          creditMassEatenXp(world, piece.ownerId, particle.mass, performance.now());
         }
         return;
       }
 
-      // Deux morceaux du même joueur : candidats à la fusion, jamais à l'absorption ni la répulsion
+      // Deux morceaux du même joueur : candidats à la fusion, jamais à l'absorption — mais tant
+      // que la fusion n'a pas lieu (cooldown post-split pas écoulé, ou chevauchement insuffisant),
+      // ils doivent quand même se repousser comme deux morceaux de joueurs différents, plutôt que
+      // de se chevaucher librement (correctif : "après un split, les entités se chevauchent au
+      // lieu de collisionner").
       if (a.ownerId && a.ownerId === b.ownerId) {
-        tryMerge(world, a, b);
+        if (!tryMerge(world, a, b)) applyRepulsion(a, b);
         return;
       }
 

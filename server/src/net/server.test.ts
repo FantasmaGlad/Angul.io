@@ -342,6 +342,47 @@ describe('startGameServer', () => {
     socket.close();
   });
 
+  it('renseigne `self.combo` quand un combo est actif pour ce joueur (refonte XP)', async () => {
+    const mod: GameMod = {
+      id: 'test',
+      onPlayerJoin: (world, playerId) => {
+        world.spawnPiece(playerId, { x: 0, y: 0 }, 50);
+      },
+    };
+    const manager = makeManager(() => ({ mod, mapSize: 1000 }));
+    const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
+    handle = startGameServer(manager, { port: 0 });
+    const port = await handle.whenReady;
+
+    const socket = await connectedClient(port, summary.id);
+    const messages = collectMessages(socket);
+    socket.send(JSON.stringify({ type: 'join', nickname: 'Test' }));
+    await waitUntil(() => messages.some((m) => m.type === 'welcome'));
+    const welcome = messages.find((m) => m.type === 'welcome')!;
+
+    // Simule un combo déjà déclenché (voir xp.test.ts pour la logique de déclenchement/
+    // prolongation elle-même) plutôt que de rejouer toute la mécanique d'absorption ici.
+    const player = manager
+      .getManagedRoom(summary.id)!
+      .room.world.getPlayer(welcome.playerId as string)!;
+    player.lifeStats.combo = {
+      chain: 3,
+      multiplier: 1.44,
+      expiresAtMs: performance.now() + 20_000,
+      lastEatAtMs: performance.now(),
+    };
+
+    manager.getManagedRoom(summary.id)!.room.tick();
+    await waitUntil(() => messages.some((m) => m.type === 'state'));
+    const state = messages.find((m) => m.type === 'state') as {
+      self?: { combo?: { level: number } };
+    };
+
+    expect(state.self?.combo).toEqual({ level: 2 }); // chain 3 -> niveau affiché 2
+
+    socket.close();
+  });
+
   it('répond à un `ping` par un `pong` renvoyant le même horodatage', async () => {
     const manager = makeManager(testResolver());
     const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
@@ -433,6 +474,139 @@ describe('startGameServer', () => {
     socketB.close();
   });
 
+  describe('refonte UI/UX accueil (spectateur, unicité de pseudo, capacité, stats)', () => {
+    it('refuse un second join avec un pseudo déjà utilisé dans le même salon (insensible à la casse)', async () => {
+      const manager = makeManager(testResolver());
+      const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
+      handle = startGameServer(manager, { port: 0 });
+      const port = await handle.whenReady;
+
+      const first = await connectedClient(port, summary.id);
+      const firstMessages = collectMessages(first);
+      first.send(JSON.stringify({ type: 'join', nickname: 'Alice' }));
+      await waitUntil(() => firstMessages.some((m) => m.type === 'welcome'));
+
+      const second = await connectedClient(port, summary.id);
+      const closeCode = new Promise<number>((resolve) => second.once('close', resolve));
+      second.send(JSON.stringify({ type: 'join', nickname: 'ALICE' }));
+
+      expect(await closeCode).toBe(4009);
+      first.close();
+    });
+
+    it('accepte un pseudo repris après le départ du premier joueur qui l’utilisait', async () => {
+      const manager = makeManager(testResolver());
+      const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
+      handle = startGameServer(manager, { port: 0 });
+      const port = await handle.whenReady;
+
+      const first = await connectedClient(port, summary.id);
+      const firstMessages = collectMessages(first);
+      first.send(JSON.stringify({ type: 'join', nickname: 'Alice' }));
+      await waitUntil(() => firstMessages.some((m) => m.type === 'welcome'));
+      first.close();
+      await waitUntil(
+        () => manager.getManagedRoom(summary.id)!.room.world.allPlayers().length === 0,
+      );
+
+      const second = await connectedClient(port, summary.id);
+      const secondMessages = collectMessages(second);
+      second.send(JSON.stringify({ type: 'join', nickname: 'Alice' }));
+
+      await waitUntil(() => secondMessages.some((m) => m.type === 'welcome'));
+      second.close();
+    });
+
+    it('refuse un join au-delà de la capacité du salon (maxPlayers)', async () => {
+      const manager = makeManager(testResolver());
+      const summary = manager.createRoom({
+        name: 'A',
+        modId: 'test',
+        visibility: 'public',
+        maxPlayers: 1,
+      });
+      handle = startGameServer(manager, { port: 0 });
+      const port = await handle.whenReady;
+
+      const first = await connectedClient(port, summary.id);
+      const firstMessages = collectMessages(first);
+      first.send(JSON.stringify({ type: 'join', nickname: 'Alice' }));
+      await waitUntil(() => firstMessages.some((m) => m.type === 'welcome'));
+
+      const second = await connectedClient(port, summary.id);
+      const closeCode = new Promise<number>((resolve) => second.once('close', resolve));
+      second.send(JSON.stringify({ type: 'join', nickname: 'Bob' }));
+
+      expect(await closeCode).toBe(4010);
+      first.close();
+    });
+
+    it('un spectateur (?spectate=1) reçoit un welcome sans envoyer de join, et n’est jamais compté dans playerCount', async () => {
+      const manager = makeManager(testResolver(4242));
+      const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
+      handle = startGameServer(manager, { port: 0 });
+      const port = await handle.whenReady;
+
+      const spectator = new WebSocket(`ws://localhost:${port}/?roomId=${summary.id}&spectate=1`);
+      await waitForOpen(spectator);
+      const messages = collectMessages(spectator);
+
+      await waitUntil(() => messages.some((m) => m.type === 'welcome'));
+      expect(messages.find((m) => m.type === 'welcome')).toMatchObject({ mapSize: 4242 });
+      expect(manager.getManagedRoom(summary.id)!.room.world.allPlayers()).toHaveLength(0);
+
+      spectator.close();
+    });
+
+    it('GET /api/stats renvoie le nombre total de joueurs connectés, tous salons confondus', async () => {
+      const manager = makeManager(testResolver());
+      const roomA = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
+      const roomB = manager.createRoom({ name: 'B', modId: 'test', visibility: 'private' });
+      handle = startGameServer(manager, { port: 0 });
+      const port = await handle.whenReady;
+
+      const socketA = await connectedClient(port, roomA.id);
+      const messagesA = collectMessages(socketA);
+      socketA.send(JSON.stringify({ type: 'join', nickname: 'Alice' }));
+      await waitUntil(() => messagesA.some((m) => m.type === 'welcome'));
+
+      const socketB = await connectedClient(port, roomB.inviteCode!);
+      const messagesB = collectMessages(socketB);
+      socketB.send(JSON.stringify({ type: 'join', nickname: 'Bob' }));
+      await waitUntil(() => messagesB.some((m) => m.type === 'welcome'));
+
+      const response = await fetch(`http://localhost:${port}/api/stats`);
+      expect(await response.json()).toEqual({ playersOnline: 2 });
+
+      socketA.close();
+      socketB.close();
+    });
+
+    it('ferme de force les sockets encore connectées quand un salon expire (durationMs)', async () => {
+      const manager = makeManager(testResolver());
+      // `durationMs` réel non utilisé ici (un délai assez court pour un test serait sujet à une
+      // course avec la connexion/join elle-même, plus lente que quelques dizaines de ms sous
+      // charge) — `expireRoom` est invoqué manuellement, comme `pruneEmptyRooms` ailleurs dans la
+      // suite, pour tester le comportement réseau de façon déterministe plutôt qu'en dépendant
+      // d'un vrai minuteur.
+      const summary = manager.createRoom({ name: 'Éphémère', modId: 'test', visibility: 'public' });
+      handle = startGameServer(manager, { port: 0 });
+      const port = await handle.whenReady;
+
+      const socket = await connectedClient(port, summary.id);
+      const messages = collectMessages(socket);
+      socket.send(JSON.stringify({ type: 'join', nickname: 'Alice' }));
+      await waitUntil(() => messages.some((m) => m.type === 'welcome'));
+
+      const closeCode = new Promise<number>((resolve) => {
+        socket.once('close', (code) => resolve(code));
+      });
+      manager.expireRoom(summary.id);
+
+      expect(await closeCode).toBe(4011);
+    });
+  });
+
   it('GET /api/rooms liste les salons publics avec leur nombre de joueurs', async () => {
     const manager = makeManager(testResolver());
     manager.createRoom({ name: 'Public', modId: 'test', visibility: 'public' });
@@ -444,7 +618,15 @@ describe('startGameServer', () => {
     const rooms = (await response.json()) as Array<{ name: string; playerCount: number }>;
 
     expect(rooms).toEqual([
-      { id: '1', name: 'Public', modId: 'test', visibility: 'public', playerCount: 0 },
+      {
+        id: '1',
+        name: 'Public',
+        modId: 'test',
+        visibility: 'public',
+        playerCount: 0,
+        maxPlayers: 100,
+        permanent: false,
+      },
     ]);
   });
 
@@ -614,12 +796,13 @@ describe.skipIf(!DATABASE_URL)('startGameServer (avec comptes joueurs)', () => {
 
   async function startServer(
     withAdmin = true,
-  ): Promise<{ port: number; accounts: AccountsService }> {
+  ): Promise<{ port: number; accounts: AccountsService; manager: RoomManager }> {
     const accounts = new AccountsService(pool);
     const admin = withAdmin ? new AdminAuth(await hashPassword('adminpass123')) : undefined;
-    handle = startGameServer(makeManager(), { port: 0, accounts, admin });
+    const manager = makeManager();
+    handle = startGameServer(manager, { port: 0, accounts, admin });
     const port = await handle.whenReady;
-    return { port, accounts };
+    return { port, accounts, manager };
   }
 
   it('POST /api/rooms refuse un compte non-Premium ou non authentifié, accepte un compte Premium (Lot 6.4)', async () => {
@@ -650,6 +833,45 @@ describe.skipIf(!DATABASE_URL)('startGameServer (avec comptes joueurs)', () => {
       body: JSON.stringify({ name: 'Salon', modId: 'test' }),
     });
     expect(premium.status).toBe(201);
+  });
+
+  it("crédite l'XP accumulée (engine/xp.ts) au compte à la déconnexion (refonte XP)", async () => {
+    const { port, accounts, manager } = await startServer(false);
+    const pseudo = uniquePseudo('xpplayer');
+    const { token } = await accounts.register(pseudo, 'motdepasse123');
+    const accountId = accounts.resolveToken(token)!;
+    const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
+
+    const socket = new WebSocket(
+      `ws://localhost:${port}/?roomId=${summary.id}&token=${encodeURIComponent(token)}`,
+    );
+    await waitForOpen(socket);
+    const messages = collectMessages(socket);
+    socket.send(JSON.stringify({ type: 'join', nickname: 'Test' }));
+    await waitUntil(() => messages.some((m) => m.type === 'welcome'));
+    const welcome = messages.find((m) => m.type === 'welcome')!;
+
+    // Simule le cumul d'XP d'une vie (masse mangée + joueurs mangés + combo, engine/xp.ts) sans
+    // avoir à rejouer toute la mécanique d'absorption ici — déjà couvert par xp.test.ts et les
+    // tests des mods paramétrique/hardcore.
+    const player = manager
+      .getManagedRoom(summary.id)!
+      .room.world.getPlayer(welcome.playerId as string)!;
+    player.lifeStats.xpEarned = 1234;
+
+    socket.close();
+    await waitUntil(() => socket.readyState === WebSocket.CLOSED);
+
+    // L'écriture en base est asynchrone (best-effort, voir recordAccountStats) : on interroge le
+    // profil jusqu'à ce qu'elle soit visible plutôt que d'attendre un délai fixe arbitraire.
+    const deadline = Date.now() + 2000;
+    let profile = await accounts.getProfile(accountId);
+    while (profile?.xp !== 1234 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      profile = await accounts.getProfile(accountId);
+    }
+
+    expect(profile?.xp).toBe(1234);
   });
 
   it('POST /api/admin/login : 503 sans ADMIN_PASSWORD_HASH, 401 si mauvais mot de passe, 200 + token sinon', async () => {

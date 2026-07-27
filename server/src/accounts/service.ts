@@ -5,7 +5,6 @@ import {
   type AccountRow,
   type AdminAccountPatch,
 } from './accountsRepository.js';
-import { xpForScore } from './levels.js';
 import { hashPassword, verifyPassword } from './passwords.js';
 import { createSessionStore, type SessionStore } from './sessionStore.js';
 
@@ -119,11 +118,23 @@ export class AccountsService {
     };
   }
 
-  /** Lot 3.5 — appelé à la mort/déconnexion d'un joueur authentifié avec la masse maximale
-   * atteinte pendant cette vie (voir net/server.ts) comme "score" (aucun système de score dédié
-   * n'existe à ce jour, voir levels.ts). */
-  async recordGameResult(accountId: number, modeId: string, score: number): Promise<void> {
-    await this.repository.recordGameResult(accountId, modeId, Math.round(score), xpForScore(score));
+  /** Lot 3.5 — appelé à la mort/déconnexion d'un joueur authentifié : `score` est la masse
+   * maximale atteinte pendant cette vie (crédité à `player_best_scores`), `xpEarned` est l'XP
+   * accumulée pendant cette même vie (masse mangée + joueurs mangés + combo, voir
+   * `engine/xp.ts` — déjà calculée par le moteur, pas recalculée ici) ; les deux transitent déjà
+   * par `GameMod.transformScoreForAccount` côté appelant (net/server.ts) avant d'arriver ici. */
+  async recordGameResult(
+    accountId: number,
+    modeId: string,
+    score: number,
+    xpEarned: number,
+  ): Promise<void> {
+    await this.repository.recordGameResult(
+      accountId,
+      modeId,
+      Math.round(score),
+      Math.max(0, Math.round(xpEarned)),
+    );
   }
 
   /** Lot 6.4 — un compte non-Premium (ou un invité, `accountId` `undefined`) ne peut pas créer

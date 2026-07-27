@@ -6,6 +6,12 @@ export interface RoomSummary {
   modId: string;
   visibility: 'public' | 'private';
   playerCount: number;
+  /** Capacité maximale de joueurs (refonte UI/UX, "Nombre de Joueurs") — affiché en "count/max". */
+  maxPlayers: number;
+  /** `true` pour le salon par défaut créé au démarrage du serveur — cible explicite du bouton
+   * "Rejoindre" et du fond spectateur de l'accueil (voir App.tsx), plutôt que de compter sur
+   * l'ordre de la liste renvoyée par le serveur. */
+  permanent: boolean;
 }
 
 /** Réponse à la création d'un salon : inclut le code d'invitation pour un salon privé (Lot
@@ -25,6 +31,20 @@ export async function fetchAvailableModes(): Promise<string[]> {
   return (await response.json()) as string[];
 }
 
+/** "N Joueurs Connectés" (refonte UI/UX, accueil) — total réel tous salons confondus (y compris
+ * privés), voir `GET /api/stats` côté serveur. */
+export async function fetchServerStats(): Promise<{ playersOnline: number }> {
+  const response = await fetch('/api/stats');
+  return (await response.json()) as { playersOnline: number };
+}
+
+export interface CreateRoomOptions {
+  /** "Nombre de Joueurs" (refonte UI/UX) — omis = capacité par défaut du serveur. */
+  maxPlayers?: number;
+  /** "Durée" (refonte UI/UX) — durée de vie du salon en ms, omis = pas d'expiration. */
+  durationMs?: number;
+}
+
 /** `token` (Lot 6.4) : la création de salon est réservée aux comptes Premium — le serveur
  * refuse (403) sans token ou sans statut Premium associé, voir net/server.ts. */
 export async function createRoom(
@@ -32,6 +52,7 @@ export async function createRoom(
   modId: string,
   visibility: 'public' | 'private' = 'public',
   token?: string,
+  options: CreateRoomOptions = {},
 ): Promise<CreatedRoomSummary> {
   const response = await fetch('/api/rooms', {
     method: 'POST',
@@ -39,7 +60,13 @@ export async function createRoom(
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ name, modId, visibility }),
+    body: JSON.stringify({
+      name,
+      modId,
+      visibility,
+      maxPlayers: options.maxPlayers,
+      durationMs: options.durationMs,
+    }),
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: string };

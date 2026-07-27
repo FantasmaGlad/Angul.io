@@ -96,6 +96,17 @@ describe('Room — cycle de vie des hooks', () => {
     expect(withoutHook.getAccelerationForMass(10)).toBeUndefined();
   });
 
+  it('délègue transformScoreForAccount au mod, identité (score/xp bruts) si absent', () => {
+    const withHook = makeDeterministicRoom(
+      { id: 'test', transformScoreForAccount: () => ({ score: 0, xp: 0 }) },
+      0.05,
+    );
+    expect(withHook.transformScoreForAccount(500, 300)).toEqual({ score: 0, xp: 0 });
+
+    const withoutHook = makeDeterministicRoom({ id: 'test' }, 0.05);
+    expect(withoutHook.transformScoreForAccount(500, 300)).toEqual({ score: 500, xp: 300 });
+  });
+
   it('notifie les listeners onPlayerDeath indépendamment du mod (utile au réseau)', () => {
     const mod: GameMod = { id: 'test' };
     const room = makeDeterministicRoom(mod, 0.05);

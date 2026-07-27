@@ -1,3 +1,4 @@
+import { distance } from '@angulio/shared';
 import { describe, expect, it } from 'vitest';
 import { World } from '../../engine/world.js';
 import { createParametricMod } from './index.js';
@@ -179,6 +180,37 @@ describe('createParametricMod — fusion', () => {
 
     expect(world.getPiecesByOwner('p1')).toHaveLength(2);
   });
+
+  it('repousse les morceaux du même joueur tant que la fusion n’est pas possible (correctif : ils se chevauchaient librement au lieu de collisionner)', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    const a = world.spawnPiece('p1', { x: 500, y: 500 }, 100);
+    const b = world.spawnPiece('p1', { x: 505, y: 500 }, 100); // très chevauchés (5px d'écart)
+    pieceState(a).splitElapsedS = 1; // cooldown post-split pas écoulé
+    pieceState(b).splitElapsedS = 1;
+    const distanceBefore = distance(a.position, b.position);
+
+    mod.onCollision?.(world, a, b);
+
+    expect(world.getPiecesByOwner('p1')).toHaveLength(2); // toujours pas fusionnés
+    expect(distance(a.position, b.position)).toBeGreaterThan(distanceBefore); // repoussés
+  });
+
+  it('ne repousse plus une fois la fusion effectuée (un seul morceau restant)', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    const a = world.spawnPiece('p1', { x: 500, y: 500 }, 100);
+    const b = world.spawnPiece('p1', { x: 505, y: 500 }, 100);
+    pieceState(a).splitElapsedS = config.merge.baseTimeSec;
+    pieceState(b).splitElapsedS = config.merge.baseTimeSec;
+
+    expect(() => mod.onCollision?.(world, a, b)).not.toThrow();
+    expect(world.getPiecesByOwner('p1')).toHaveLength(1);
+  });
 });
 
 describe('createParametricMod — manger', () => {
@@ -209,6 +241,39 @@ describe('createParametricMod — manger', () => {
 
     expect(world.getEntity(particle.id)).toBeUndefined();
     expect(piece.mass).toBeCloseTo(51, 6);
+  });
+
+  it("crédite l'XP au joueur qui mange un autre joueur (masse + bonus fixe, engine/xp.ts)", () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    world.addPlayer('p2', 'Bob');
+    const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 105);
+    const target = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
+
+    mod.onCollision?.(world, attacker, target);
+
+    const stats = world.getPlayer('p1')!.lifeStats;
+    expect(stats.massEaten).toBe(100);
+    expect(stats.playersEaten).toBe(1);
+    expect(stats.xpEarned).toBe(100 + 400); // 1 masse = 1xp + bonus fixe de 400xp
+  });
+
+  it("crédite l'XP de masse (mais pas le bonus joueur) en mangeant une particule", () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    const piece = world.spawnPiece('p1', { x: 500, y: 500 }, 50);
+    const particle = world.spawnParticle({ x: 500, y: 500 }, 7);
+
+    mod.onCollision?.(world, piece, particle);
+
+    const stats = world.getPlayer('p1')!.lifeStats;
+    expect(stats.massEaten).toBe(7);
+    expect(stats.playersEaten).toBe(0);
+    expect(stats.xpEarned).toBe(7);
   });
 });
 

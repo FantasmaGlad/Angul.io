@@ -1,30 +1,35 @@
 /* ---------------------------------------------------------------------------------------
- * Design minimaliste (cahier_des_charges_ui_ux.md §1/§3.3, révisé) — inspiré de l'outil
- * Cobalt : fond sombre plat, un seul accent, pas de dégradé, pas de flou/glassmorphism, pas
+ * Design minimaliste (cahier_des_charges_ui_ux.md §1/§3.3, révision refonte accueil) — fond
+ * clair, un seul accent de marque (jaune), pas de dégradé, pas de flou/glassmorphism, pas
  * d'emoji. Tokens volontairement identiques à client/src/styles.css (cohérence visuelle entre
  * les deux apps, servies séparément — §3.3) ; dupliqués plutôt que partagés via un paquet
  * commun pour rester simple à ce stade (deux petites apps, pas de troisième consommateur).
  * --------------------------------------------------------------------------------------- */
 :root {
-  --bg: #0b0b0d;
-  --surface: #141416;
-  --surface-hover: #1c1c1f;
-  --border: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.16);
-  --text: #f2f2f3;
-  --text-soft: #8b8b93;
-  --text-faint: #55555c;
+  --bg: #ffffff;
+  --surface: #f1f1ef;
+  --surface-hover: #e7e7e3;
+  --border: rgba(0, 4, 1, 0.1);
+  --border-strong: rgba(0, 4, 1, 0.2);
+  --text: #000401;
+  --text-soft: #55564f;
+  --text-faint: #8a8b84;
 
-  --accent: #5b7cfa;
-  --accent-strong: #4a68e0;
-  --accent-ink: #ffffff;
-  --danger: #ff5c5c;
-  --success: #4ade80;
+  --brand-yellow-dark: #e0bc00;
+  --brand-yellow: #ffd32c;
+  --brand-yellow-light: #ffde21;
+  --brand-yellow-pale: #ffea99;
+
+  --accent: var(--brand-yellow);
+  --accent-strong: var(--brand-yellow-dark);
+  --accent-ink: #000401;
+  --danger: #c23b3b;
+  --success: #2f8a4e;
 
   --radius-lg: 16px;
   --radius-md: 10px;
   --radius-pill: 999px;
-  --shadow-modal: 0 12px 32px rgba(0, 0, 0, 0.5);
+  --shadow-modal: 0 12px 32px rgba(0, 4, 1, 0.18);
 
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
