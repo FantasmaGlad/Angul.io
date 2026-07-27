@@ -79,4 +79,32 @@ describe('BotManager', () => {
     room.reset();
     expect(room.botManager?.activeBotCount).toBe(15);
   });
+
+  it('réserve toujours au moins une place pour un joueur humain dans un salon à petite capacité', () => {
+    const config = testConfig({
+      bots: {
+        enabled: true,
+        targetRatio: 0.5,
+        updateFrequencyHz: 2,
+        proportions: { fuis: 25, neutre: 30, agressif: 30, fou: 15 },
+      },
+    });
+    const mod = createParametricMod(config);
+    const room = new Room(mod, {
+      mapSize: 1000,
+      tickRateHz: 20,
+      maxPlayers: 2, // Salon privé à 2 joueurs max
+      bots: config.bots,
+    });
+
+    room.tick();
+    // Moins de 2 bots pour laisser au moins 1 place au joueur humain
+    expect(room.botManager?.activeBotCount).toBeLessThan(2);
+    expect(room.world.allPlayers().length).toBeLessThan(2);
+
+    room.addPlayer('human-1', 'JoueurHumain');
+    expect(room.world.getPlayer('human-1')).toBeDefined();
+    expect(room.world.allPlayers().length).toBeLessThanOrEqual(2);
+  });
 });
+

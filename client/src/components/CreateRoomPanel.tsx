@@ -6,9 +6,6 @@ const MIN_ROOM_MAX_PLAYERS = 2;
 const MAX_ROOM_MAX_PLAYERS = 200;
 const DEFAULT_ROOM_MAX_PLAYERS = 50;
 
-/** Options de durée du formulaire "Durée" (nouveau champ, demande utilisateur) — préréglages
- * plutôt qu'un champ libre : plus simple à choisir, et évite une valeur absurde (ex. 3 secondes)
- * qui fermerait le salon quasi immédiatement. `undefined` = pas d'expiration automatique. */
 const DURATION_OPTIONS: Array<{ value: string; label: string; ms: number | undefined }> = [
   { value: '15m', label: '15 minutes', ms: 15 * 60_000 },
   { value: '30m', label: '30 minutes', ms: 30 * 60_000 },
@@ -27,12 +24,6 @@ interface CreateRoomPanelProps {
   onOpenSupport: () => void;
 }
 
-/** Colonne droite de l'accueil (refonte UI/UX, mockup fourni) : création de salon privé (réservée
- * Premium, logique reprise de l'ancien RoomsPanel.tsx) enrichie de deux champs — "Nombre de
- * Joueurs" (capacité) et "Durée" (fermeture automatique du salon à l'échéance, voir
- * server/src/engine/roomManager.ts `expireRoom`) — et d'un bloc "Rejoindre par code" toujours
- * disponible, non réservé Premium (fonctionnalité existante, juste déplacée depuis le panneau
- * modal Salons désormais supprimé). */
 export default function CreateRoomPanel({
   modes,
   authToken,
@@ -80,9 +71,6 @@ export default function CreateRoomPanel({
           },
         );
         if (room.inviteCode) {
-          // Salon privé : on affiche le code (le champ "Code de la Partie" existe précisément
-          // pour ça) et on laisse la main au créateur pour le noter/partager avant de rejoindre,
-          // plutôt que de l'emmener directement en jeu sans jamais le lui montrer.
           setCreatedCode(room.inviteCode);
           return;
         }
@@ -108,122 +96,133 @@ export default function CreateRoomPanel({
 
   return (
     <section className="home-column create-room-panel">
-      <span className="section-title">Créer un Salon Privé</span>
+      <div className="create-section-block">
+        <span className="section-title">CRÉER UN SALON PRIVÉ</span>
 
-      {canCreateRoom ? (
-        <div>
-          <label className="field">
-            <span className="field-label">Nom</span>
-            <input
-              value={roomName}
-              onChange={(event) => setRoomName(event.target.value)}
-              placeholder="Nom du salon"
-              maxLength={40}
-            />
-          </label>
-
-          <label className="field">
-            <span className="field-label">Mode de jeu</span>
-            <select value={selectedMode} onChange={(event) => setSelectedMode(event.target.value)}>
-              {modes.map((modeId) => (
-                <option key={modeId} value={modeId}>
-                  {modeMeta(modeId).label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="field">
-            <span className="field-label">Nombre de Joueurs</span>
-            <input
-              type="number"
-              min={MIN_ROOM_MAX_PLAYERS}
-              max={MAX_ROOM_MAX_PLAYERS}
-              value={maxPlayers}
-              onChange={(event) => setMaxPlayers(event.target.value)}
-            />
-          </label>
-
-          <label className="field">
-            <span className="field-label">Durée</span>
-            <select value={duration} onChange={(event) => setDuration(event.target.value)}>
-              {DURATION_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="field-row">
-            <span className="field-label" style={{ margin: 0 }}>
-              Public
-            </span>
-            <label className="toggle-switch">
+        {canCreateRoom ? (
+          <div className="create-room-form">
+            <label className="field">
+              <span className="field-label">NOM DU SALON</span>
               <input
-                type="checkbox"
-                checked={isPrivate}
-                onChange={(event) => setIsPrivate(event.target.checked)}
+                className="clean-input"
+                value={roomName}
+                onChange={(event) => setRoomName(event.target.value)}
+                placeholder="Nom personnalisé..."
+                maxLength={40}
               />
-              <span className="toggle-track" aria-hidden="true" />
             </label>
-            <span className="field-label" style={{ margin: 0 }}>
-              Privé
-            </span>
+
+            <label className="field">
+              <span className="field-label">MODE DE JEU</span>
+              <select
+                className="clean-select"
+                value={selectedMode}
+                onChange={(event) => setSelectedMode(event.target.value)}
+              >
+                {modes.map((modeId) => (
+                  <option key={modeId} value={modeId}>
+                    {modeMeta(modeId).label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="field-row-split">
+              <label className="field">
+                <span className="field-label">CAPACITÉ</span>
+                <input
+                  className="clean-input"
+                  type="number"
+                  min={MIN_ROOM_MAX_PLAYERS}
+                  max={MAX_ROOM_MAX_PLAYERS}
+                  value={maxPlayers}
+                  onChange={(event) => setMaxPlayers(event.target.value)}
+                />
+              </label>
+
+              <label className="field">
+                <span className="field-label">DURÉE</span>
+                <select
+                  className="clean-select"
+                  value={duration}
+                  onChange={(event) => setDuration(event.target.value)}
+                >
+                  {DURATION_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="field-row-toggle">
+              <span className="field-label">ACCÈS PRIVÉ</span>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={isPrivate}
+                  onChange={(event) => setIsPrivate(event.target.checked)}
+                />
+                <span className="toggle-track" aria-hidden="true" />
+              </label>
+            </div>
+
+            {createdCode && (
+              <label className="field">
+                <span className="field-label">CODE GÉNÉRÉ</span>
+                <input className="clean-input code-output" value={createdCode} readOnly />
+              </label>
+            )}
+
+            {createdCode ? (
+              <button
+                className="btn-primary-action"
+                type="button"
+                onClick={handleJoinCreatedRoom}
+              >
+                REJOINDRE MAINTENANT
+              </button>
+            ) : (
+              <button
+                className="btn-primary-action"
+                type="button"
+                onClick={handleCreate}
+              >
+                CRÉER ET REJOINDRE
+              </button>
+            )}
           </div>
-
-          <label className="field">
-            <span className="field-label">Code de la Partie</span>
-            <input value={createdCode} placeholder="—" readOnly />
-          </label>
-
-          {createdCode ? (
-            <button
-              className="btn-primary"
-              type="button"
-              onClick={handleJoinCreatedRoom}
-              style={{ width: '100%' }}
-            >
-              Rejoindre maintenant
+        ) : (
+          <div className="premium-promo-card">
+            <p className="premium-promo-text">
+              La création de salons personnalisés est réservée aux membres <strong>Premium</strong> (don libre).
+            </p>
+            <button className="btn-secondary-action" type="button" onClick={onOpenSupport}>
+              SOUTENIR LE PROJET
             </button>
-          ) : (
-            <button
-              className="btn-primary"
-              type="button"
-              onClick={handleCreate}
-              style={{ width: '100%' }}
-            >
-              Créer et rejoindre
-            </button>
-          )}
-        </div>
-      ) : (
-        <p className="account-status">
-          Réservé aux comptes <strong>Premium</strong> (don libre, voir{' '}
-          <button className="btn-ghost" type="button" onClick={onOpenSupport}>
-            Soutenir
-          </button>
-          ).
-        </p>
-      )}
+          </div>
+        )}
+      </div>
 
       <div className="join-by-code-section">
-        <span className="section-title">Rejoindre par code</span>
-        <div className="field-row">
+        <span className="section-title">REJOINDRE PAR CODE</span>
+        <div className="join-code-row">
           <input
+            className="clean-input code-input"
             value={joinCode}
             onChange={(event) => setJoinCode(event.target.value)}
-            placeholder="Code d'invitation"
+            placeholder="Code d'accès"
             maxLength={6}
-            inputMode="numeric"
           />
-          <button className="btn-ghost" type="button" onClick={handleJoinCode}>
-            Rejoindre
+          <button className="btn-secondary-action" type="button" onClick={handleJoinCode}>
+            REJOINDRE
+
           </button>
         </div>
       </div>
 
-      <p className="error-text">{formError}</p>
+      {formError && <p className="error-text">{formError}</p>}
     </section>
   );
 }

@@ -45,7 +45,6 @@ export class BotManager {
   update(dt: number): void {
     if (!this.config.enabled) return;
 
-    // S'assure d'ajuster la population si nécessaire
     this.adjustPopulation();
 
     this.accumulatorMs += dt * 1000;
@@ -53,7 +52,6 @@ export class BotManager {
 
     this.accumulatorMs %= this.updateIntervalMs;
 
-    // Évaluation IA pour chaque bot actif
     for (const bot of this.activeBots.values()) {
       const { input, memory } = computeBotInput(
         this.room.world,
@@ -66,33 +64,46 @@ export class BotManager {
     }
   }
 
-  /** Ajuste le nombre de bots actifs selon le nombre de joueurs humains et gère le Top 10 Challengers. */
+  /** Ajuste le nombre de bots actifs selon le nombre de joueurs humains et garantit qu'il reste toujours au moins 1 place disponible pour un humain. */
   adjustPopulation(): void {
     if (!this.config.enabled) return;
 
-    // 1. S'assurer que les 10 Challenger Bots (ranks 1 à 10) sont toujours vivants et actifs
-    for (let rank = 1; rank <= 10; rank++) {
+    const allPlayers = Array.from(this.room.world.allPlayers());
+    const humanCount = allPlayers.filter((p) => !this.activeBots.has(p.id)).length;
+
+    // Toujours réserver au moins 1 place pour un joueur humain s'il n'y a pas d'humain connecté
+    const maxBotsAllowed = Math.max(0, this.maxRoomCapacity - Math.max(1, humanCount));
+
+    // 1. Les Challenger Bots (jusqu'à 10, bridés par la capacité autorisée du salon)
+    const maxChallengers = Math.min(10, maxBotsAllowed);
+    for (let rank = 1; rank <= maxChallengers; rank++) {
       const challengerId = `bot-challenger-${rank}`;
       if (!this.activeBots.has(challengerId)) {
         this.spawnBot('challenger', rank);
       }
     }
 
-    // 2. Ajuster le reste de la population de bots normaux
-    const allPlayers = Array.from(this.room.world.allPlayers());
-    const humanCount = allPlayers.filter((p) => !this.activeBots.has(p.id)).length;
+    // Retirer les challengers si la capacité du salon est inférieure à 10
+    for (let rank = maxChallengers + 1; rank <= 10; rank++) {
+      const challengerId = `bot-challenger-${rank}`;
+      if (this.activeBots.has(challengerId)) {
+        this.activeBots.delete(challengerId);
+        this.room.removePlayer(challengerId);
+      }
+    }
 
+    // 2. Ajuster le reste de la population de bots normaux
     const targetBotCount = Math.floor(this.maxRoomCapacity * (this.config.targetRatio ?? 0.5));
-    const desiredBots = Math.max(10, targetBotCount - humanCount);
+    const desiredBots = Math.min(maxBotsAllowed, Math.max(maxChallengers, targetBotCount - humanCount));
 
     // Si on manque de bots
     while (this.activeBots.size < desiredBots) {
       this.spawnBot();
     }
 
-    // Si on a trop de bots (supprime les bots normaux les plus petits, protège les Challengers)
+    // Si on a trop de bots
     while (this.activeBots.size > desiredBots) {
-      this.removeSmallestNormalBot();
+      this.removeSmallestBot();
     }
   }
 
@@ -126,7 +137,6 @@ export class BotManager {
     this.activeBots.set(botId, bot);
     this.room.addPlayer(botId, nickname);
 
-    // Si c'est un Challenger, lui attribuer son multiplicateur de masse (x5 à x50 de M0)
     if (profile === 'challenger' && rank !== undefined) {
       const multiplier = getChallengerMassMultiplier(rank);
       const pieces = this.room.world.getPiecesByOwner(botId);
@@ -135,15 +145,14 @@ export class BotManager {
         this.room.world.setMass(firstPiece, firstPiece.mass * multiplier);
       }
     }
-
   }
 
-  private removeSmallestNormalBot(): void {
+  /** Supprime le plus petit bot (bots normaux d'abord, puis challengers si nécessaire). */
+  removeSmallestBot(): void {
     let smallestBotId: PlayerId | undefined;
     let minMass = Infinity;
 
     for (const bot of this.activeBots.values()) {
-      // Ne jamais supprimer un Challenger lors de la réduction de population
       if (bot.profile === 'challenger') continue;
 
       const player = this.room.world.getPlayer(bot.id);
@@ -164,13 +173,22 @@ export class BotManager {
       }
     }
 
+    if (!smallestBotId) {
+      for (let rank = 10; rank >= 1; rank--) {
+        const challengerId = `bot-challenger-${rank}`;
+        if (this.activeBots.has(challengerId)) {
+          smallestBotId = challengerId;
+          break;
+        }
+      }
+    }
+
     if (smallestBotId) {
       this.activeBots.delete(smallestBotId);
       this.room.removePlayer(smallestBotId);
     }
   }
 
-  /** Notifié quand un joueur (humain ou bot) meurt. */
   onPlayerDeath(playerId: PlayerId): void {
     if (this.activeBots.has(playerId)) {
       this.activeBots.delete(playerId);
@@ -179,7 +197,6 @@ export class BotManager {
     }
   }
 
-  /** Notifié lors de la réinitialisation du salon (room.reset()). */
   onReset(): void {
     for (const botId of Array.from(this.activeBots.keys())) {
       this.room.world.removePlayer(botId);

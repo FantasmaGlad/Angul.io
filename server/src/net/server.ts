@@ -315,11 +315,25 @@ export function startGameServer(
 
         if (!playerId) {
           // Premier Join sur cette connexion
-          if (managed.room.world.allPlayers().length >= managed.maxPlayers) {
+          const humanCount = Array.from(managed.room.world.allPlayers()).filter(
+            (p) => !managed.room.botManager?.isBot(p.id),
+          ).length;
+
+          if (humanCount >= managed.maxPlayers) {
             logEvent('join_rejected', { roomId: managed.id, reason: 'room_full' });
             socket.close(WS_CLOSE_ROOM_FULL, 'Salon complet.');
             return;
           }
+
+          // Si des bots occupent les dernières places, en supprimer un pour accueillir le joueur humain
+          while (managed.room.world.allPlayers().length >= managed.maxPlayers) {
+            if (managed.room.botManager && managed.room.botManager.activeBotCount > 0) {
+              managed.room.botManager.removeSmallestBot();
+            } else {
+              break;
+            }
+          }
+
 
           const nicknameTaken = managed.room.world
             .allPlayers()

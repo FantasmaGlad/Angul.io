@@ -9,9 +9,6 @@ interface ModeRoomListProps {
   onJoinRoom: (roomId: string) => void;
 }
 
-/** Colonne gauche de l'accueil (refonte UI/UX, mockup fourni) : sélecteur de mode + classement
- * des salons publics de ce mode (par nombre de joueurs décroissant). Distincte du classement
- * global tous modes confondus de `PlayPanel.tsx` (colonne centre). */
 export default function ModeRoomList({
   modes,
   rooms,
@@ -25,34 +22,55 @@ export default function ModeRoomList({
 
   return (
     <section className="home-column mode-room-list">
-      <label className="mode-select-field">
-        <span className="field-label">Mode de jeu</span>
-        <select value={selectedMode} onChange={(event) => onSelectMode(event.target.value)}>
-          {modes.map((modeId) => (
-            <option key={modeId} value={modeId}>
-              {modeMeta(modeId).label}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="mode-selector-header">
+        <span className="section-title">SELECTION DU MODE</span>
+        <div className="mode-tabs-vertical">
+          {modes.map((modeId) => {
+            const meta = modeMeta(modeId);
+            const count = rooms
+              .filter((r) => r.modId === modeId)
+              .reduce((sum, r) => sum + r.playerCount, 0);
+            const isSelected = selectedMode === modeId;
 
-      <ol className="rank-list">
-        {filtered.length === 0 ? (
-          <li className="rank-list-empty">Aucun salon public pour ce mode.</li>
-        ) : (
-          filtered.map((room, index) => (
-            <li key={room.id}>
-              <button type="button" className="rank-row" onClick={() => onJoinRoom(room.id)}>
-                <span className="rank-index">{index + 1}</span>
-                <span className="rank-name">{room.name}</span>
-                <span className="rank-count">
-                  {room.playerCount}/{room.maxPlayers}
-                </span>
+            return (
+              <button
+                key={modeId}
+                type="button"
+                className={`mode-tab-item ${isSelected ? 'active' : ''}`}
+                onClick={() => onSelectMode(modeId)}
+              >
+                <div className="mode-tab-info">
+                  <span className="mode-tab-label">{meta.label}</span>
+                  <span className="mode-tab-count">{count} joueurs</span>
+                </div>
               </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="mode-rooms-container">
+        <span className="section-subtitle">SALONS DISPONIBLES</span>
+        <ol className="rank-list">
+          {filtered.length === 0 ? (
+            <li className="rank-list-empty">
+              Aucun salon public actif pour ce mode.
             </li>
-          ))
-        )}
-      </ol>
+          ) : (
+            filtered.map((room, index) => (
+              <li key={room.id}>
+                <button type="button" className="rank-row" onClick={() => onJoinRoom(room.id)}>
+                  <span className="rank-index">#{index + 1}</span>
+                  <span className="rank-name">{room.name}</span>
+                  <span className="rank-count">
+                    {room.playerCount}/{room.maxPlayers}
+                  </span>
+                </button>
+              </li>
+            ))
+          )}
+        </ol>
+      </div>
     </section>
   );
 }

@@ -1,6 +1,5 @@
 import type { ChangeEvent } from 'react';
 import type { RoomSummary } from '../lobby.js';
-import { DEFAULT_BLOB_COLOR } from '../render.js';
 
 const GLOBAL_RANKING_SIZE = 5;
 
@@ -14,9 +13,6 @@ interface PlayPanelProps {
   onJoinRoom: (roomId: string) => void;
 }
 
-/** Colonne centrale de l'accueil (refonte UI/UX, mockup fourni) : compteur de joueurs connectés,
- * pseudo du blob (indépendant du compte), bouton "Rejoindre" (rejoint le salon permanent — voir
- * App.tsx), puis un classement global des salons les plus peuplés, tous modes confondus. */
 export default function PlayPanel({
   playersOnline,
   nickname,
@@ -32,50 +28,49 @@ export default function PlayPanel({
 
   return (
     <section className="home-column play-panel">
-      <p className="players-online">
+      <div className="players-online-header">
         <span className="players-online-count">{playersOnline ?? '—'}</span>
-        <span className="players-online-label">Joueurs Connectés</span>
-      </p>
+        <span className="players-online-label">JOUEURS EN LIGNE</span>
+      </div>
 
-      <label className="field">
-        <span className="field-label">Pseudo</span>
-        <input
-          value={nickname}
-          onChange={(event: ChangeEvent<HTMLInputElement>) => onNicknameChange(event.target.value)}
-          placeholder="Pseudo"
-          maxLength={20}
-        />
-      </label>
+      <div className="launcher-form">
+        <label className="field">
+          <span className="field-label">PSEUDO DE JEU</span>
+          <input
+            className="clean-input"
+            value={nickname}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => onNicknameChange(event.target.value)}
+            placeholder="Entrez votre pseudo..."
+            maxLength={20}
+          />
+        </label>
 
-      <span
-        className="blob-color-swatch"
-        style={{ background: DEFAULT_BLOB_COLOR }}
-        role="img"
-        aria-label="Couleur du blob (fixe pour l'instant)"
-      />
+        <button className="play-button-main" type="button" onClick={onPlay}>
+          JOUER MAINTENANT
+        </button>
+        {homeError && <p className="error-text">{homeError}</p>}
+      </div>
 
-      <button className="btn-primary play-button" type="button" onClick={onPlay}>
-        Rejoindre
-      </button>
-      <p className="error-text">{homeError}</p>
-
-      <ol className="rank-list">
-        {topRooms.length === 0 ? (
-          <li className="rank-list-empty">Aucun salon public pour le moment.</li>
-        ) : (
-          topRooms.map((room, index) => (
-            <li key={room.id}>
-              <button type="button" className="rank-row" onClick={() => onJoinRoom(room.id)}>
-                <span className="rank-index">{index + 1}</span>
-                <span className="rank-name">{room.name}</span>
-                <span className="rank-count">
-                  {room.playerCount}/{room.maxPlayers}
-                </span>
-              </button>
-            </li>
-          ))
-        )}
-      </ol>
+      <div className="rank-list-container">
+        <span className="section-subtitle">SALONS PUBLICS POPULAIRES</span>
+        <ol className="rank-list">
+          {topRooms.length === 0 ? (
+            <li className="rank-list-empty">Aucun salon public pour le moment.</li>
+          ) : (
+            topRooms.map((room, index) => (
+              <li key={room.id}>
+                <button type="button" className="rank-row" onClick={() => onJoinRoom(room.id)}>
+                  <span className="rank-index">#{index + 1}</span>
+                  <span className="rank-name">{room.name}</span>
+                  <span className="rank-count">
+                    {room.playerCount}/{room.maxPlayers}
+                  </span>
+                </button>
+              </li>
+            ))
+          )}
+        </ol>
+      </div>
     </section>
   );
 }
