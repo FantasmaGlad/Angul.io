@@ -13,7 +13,14 @@ import {
 } from '../debugOverlay.js';
 import { attachInput } from '../input.js';
 import { GameConnection } from '../net.js';
-import { computeCamera, interpolateEntities, renderFrame } from '../render.js';
+import {
+  BASE_SCALE,
+  computeCamera,
+  interpolateEntities,
+  renderFrame,
+  type Camera,
+} from '../render.js';
+import { loadFpsCap } from '../settings.js';
 import { ownAggregate, speedBetween } from '../stats.js';
 
 const INPUT_SEND_INTERVAL_MS = 50; // aligné sur le tick serveur par défaut (20 Hz)
@@ -23,7 +30,7 @@ const INPUT_SEND_INTERVAL_MS = 50; // aligné sur le tick serveur par défaut (2
 const SERVER_STATE_INTERVAL_MS = 50;
 const PING_INTERVAL_MS = 1000;
 /** Facteur purement cosmétique (affichage uniquement) pour donner un ordre de grandeur
- * "physique" repérable (m/s, m/s²) plutôt que l'unité de simulation abstraite. */
+ * "physique" repérable (m/s) plutôt que l'unité de simulation abstraite. */
 const MAP_UNITS_TO_METERS = 0.01;
 
 interface GameViewProps {
@@ -35,11 +42,11 @@ interface GameViewProps {
 }
 
 /** Canvas + boucle de jeu — délibérément impératif et hors du cycle de rendu React (§ optimisation
- * demandée) : la boucle tourne à ~60 im/s et les stats HUD (masse/vitesse/accélération) sont
- * mises à jour ~20 fois/s directement en DOM via des refs plutôt qu'en state React, pour éviter
- * des dizaines de re-renders par seconde sur du texte. Toute la logique métier (WebSocket,
- * rendu, entrées, stats) reste dans les modules existants (net.ts/render.ts/input.ts/stats.ts),
- * inchangés — ce composant ne fait que les orchestrer. */
+ * demandée) : la boucle tourne à ~60 im/s et les stats HUD (masse/vitesse) sont mises à jour
+ * ~20 fois/s directement en DOM via des refs plutôt qu'en state React, pour éviter des dizaines
+ * de re-renders par seconde sur du texte. Toute la logique métier (WebSocket, rendu, entrées,
+ * stats) reste dans les modules existants (net.ts/render.ts/input.ts/stats.ts), inchangés — ce
+ * composant ne fait que les orchestrer. */
 export default function GameView({
   roomIdOrInviteCode,
   inviteCodeToShow,
@@ -51,7 +58,6 @@ export default function GameView({
   const statNicknameRef = useRef<HTMLSpanElement>(null);
   const statMassRef = useRef<HTMLSpanElement>(null);
   const statSpeedRef = useRef<HTMLSpanElement>(null);
-  const statAccelRef = useRef<HTMLSpanElement>(null);
   const hudRef = useRef<HTMLDivElement>(null);
   const debugOverlayRef = useRef<HTMLPreElement>(null);
 
@@ -80,13 +86,16 @@ export default function GameView({
     let latestSnapshot: EntitySnapshot[] = [];
     let latestSnapshotAt = performance.now();
     let selfPlayerId: string | undefined;
-    let selfAccelerationPerSec2: number | undefined;
     let mapSize = 4000;
     let justDied = false;
     let lastPingMs: number | undefined;
     /** Pseudo par id de joueur, appris via les messages `player` (envoyés une fois par joueur,
      * pas répétés sur chaque entité à chaque tick — bande passante). */
     const nicknames = new Map<string, string>();
+    /** Caméra du dernier `frame()` dessiné (boucle RAF) — relue par l'envoi d'input (intervalle
+     * séparé, ~20 Hz) pour convertir la position écran du curseur en position monde, voir
+     * `input.getTarget`. */
+    let latestCamera: Camera = { x: mapSize / 2, y: mapSize / 2, scale: BASE_SCALE };
 
     const input = attachInput(canvas);
 
@@ -107,7 +116,6 @@ export default function GameView({
         previousSnapshot = latestSnapshot;
         latestSnapshot = message.entities;
         latestSnapshotAt = performance.now();
-        selfAccelerationPerSec2 = message.self?.accelerationPerSec2;
       } else if (message.type === 'died') {
         justDied = true;
         setTimeout(() => {
@@ -137,7 +145,8 @@ export default function GameView({
     connection.send({ type: 'join', nickname });
     const inputInterval = setInterval(() => {
       if (!selfPlayerId) return;
-      connection.send({ type: 'input', dir: input.getInputVector(), split: input.consumeSplit() });
+      const { target, intensity } = input.getTarget(latestCamera);
+      connection.send({ type: 'input', target, intensity, split: input.consumeSplit() });
     }, INPUT_SEND_INTERVAL_MS);
     // Latence réelle (aller-retour), affichée dans l'écran de debug F3.
     const pingInterval = setInterval(() => {
@@ -149,6 +158,13 @@ export default function GameView({
     let gpuInfo: GpuInfo | undefined;
     let networkInfo: NetworkInfo | undefined;
     let debugVisible = false;
+
+    // Plafond FPS (§Paramètres) : lu une fois à l'entrée en partie (comme le pseudo), pas
+    // réactif à un changement pendant que la partie est déjà en cours. Purement côté rendu —
+    // n'affecte ni la fréquence d'envoi des inputs (`inputInterval` ci-dessus) ni le tick
+    // serveur, qui restent indépendants.
+    const minFrameIntervalMs = 1000 / loadFpsCap();
+    let lastFrameAt = 0;
 
     function onKeyDown(event: KeyboardEvent): void {
       if (event.key !== 'F3') return;
@@ -167,10 +183,17 @@ export default function GameView({
     let rafId = 0;
     function frame(): void {
       const now = performance.now();
+      if (now - lastFrameAt < minFrameIntervalMs) {
+        rafId = requestAnimationFrame(frame);
+        return;
+      }
+      lastFrameAt = now;
+
       const t = clamp((now - latestSnapshotAt) / SERVER_STATE_INTERVAL_MS, 0, 1);
       const entities = interpolateEntities(previousSnapshot, latestSnapshot, t);
 
       const camera = computeCamera(entities, selfPlayerId, { x: mapSize / 2, y: mapSize / 2 });
+      latestCamera = camera;
       renderFrame(ctx!, canvas!, entities, camera, nicknames);
 
       if (hudRef.current) {
@@ -198,12 +221,6 @@ export default function GameView({
       if (statSpeedRef.current) {
         statSpeedRef.current.textContent =
           speed !== undefined ? `${(speed * MAP_UNITS_TO_METERS).toFixed(1)} m/s` : '—';
-      }
-      if (statAccelRef.current) {
-        statAccelRef.current.textContent =
-          selfAccelerationPerSec2 !== undefined
-            ? `${(selfAccelerationPerSec2 * MAP_UNITS_TO_METERS).toFixed(1)} m/s²`
-            : '—';
       }
 
       const fps = fpsTracker.tick(now);
@@ -267,12 +284,6 @@ export default function GameView({
           <div className="stat-row">
             <span className="stat-label">Vitesse</span>
             <span className="stat-value" ref={statSpeedRef}>
-              —
-            </span>
-          </div>
-          <div className="stat-row">
-            <span className="stat-label">Accélération</span>
-            <span className="stat-value" ref={statAccelRef}>
               —
             </span>
           </div>

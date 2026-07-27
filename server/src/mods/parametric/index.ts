@@ -45,15 +45,18 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
   }
 
   /**
-   * `inputDir` encode à la fois la direction et l'intensité voulues par le joueur : sa norme
-   * (∈ [0, 1], garantie côté client — `client/src/input.ts`) est l'intensité (1 = curseur au
-   * bord ou au-delà du rayon de contrôle), sa direction normalisée est l'angle visé.
+   * Direction ET intensité d'un morceau donné vers la cible du joueur (`inputTarget`, position
+   * monde du curseur — voir pieceState.ts). Calculée **par morceau** (à partir de sa propre
+   * position) plutôt qu'une direction unique partagée par tous les morceaux du joueur : si le
+   * curseur est positionné entre plusieurs morceaux, chacun s'en rapproche indépendamment
+   * (regroupement), au lieu que tous partent dans la même direction relative.
    */
   function inputVectorOf(piece: Entity): { direction: Vector2; intensity: number } {
-    const dir = pieceState(piece).inputDir;
-    const intensity = Math.min(1, length(dir));
-    if (intensity === 0) return { direction: FALLBACK_DIRECTION, intensity: 0 };
-    return { direction: scale(dir, 1 / length(dir)), intensity };
+    const state = pieceState(piece);
+    const offset = sub(state.inputTarget, piece.position);
+    const dist = length(offset);
+    if (dist === 0) return { direction: FALLBACK_DIRECTION, intensity: state.inputIntensity };
+    return { direction: scale(offset, 1 / dist), intensity: state.inputIntensity };
   }
 
   /** Divise un morceau en deux (masse restante m/2, éjecté = m/2 * eta_W — metriques.md §9,
@@ -79,7 +82,8 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     );
 
     const ejectedState = pieceState(ejected);
-    ejectedState.inputDir = { ...originState.inputDir };
+    ejectedState.inputTarget = { ...originState.inputTarget };
+    ejectedState.inputIntensity = originState.inputIntensity;
     ejectedState.splitElapsedS = 0;
     ejectedState.massAtSplit = ejectedMass;
   }
@@ -145,7 +149,9 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     onPlayerInput(world: World, playerId: PlayerId, input: PlayerInput) {
       const pieces = world.getPiecesByOwner(playerId);
       for (const piece of pieces) {
-        pieceState(piece).inputDir = input.dir;
+        const state = pieceState(piece);
+        state.inputTarget = input.target;
+        state.inputIntensity = input.intensity;
       }
 
       if (input.split) {

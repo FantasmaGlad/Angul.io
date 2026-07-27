@@ -252,7 +252,11 @@ export function startGameServer(
         // un état maintenu — voir protocol.ts) : une entrée de log par pression, pas un flot
         // continu comme le serait journaliser chaque message `input` (20/s/joueur).
         if (message.split) logEvent('player_split_requested', { roomId: managed.id, playerId });
-        managed.room.handleInput(playerId, { dir: message.dir, split: message.split });
+        managed.room.handleInput(playerId, {
+          target: message.target,
+          intensity: message.intensity,
+          split: message.split,
+        });
         return;
       }
 

@@ -1,18 +1,22 @@
 import type { Vector2 } from '@angulio/shared';
+import type { Camera } from './render.js';
 
 /** Rayon en pixels écran au-delà duquel l'intensité de déplacement est maximale (100%). En
  *-deçà, l'intensité (et donc la vitesse/accélération appliquées côté serveur) est
  * proportionnelle à la distance du curseur au centre — contrôle "analogique" plutôt que
- * tout-ou-rien. */
+ * tout-ou-rien. Indépendant de la cible visée (voir `getTarget`) : ne module que la vitesse. */
 const CONTROL_RADIUS_PX = 300;
 
 export interface InputTracker {
   /**
-   * Vecteur de direction ET d'intensité vers le curseur : sa norme (∈ [0, 1]) encode
-   * l'intensité (1 = curseur à CONTROL_RADIUS_PX ou plus du centre), sa direction encode
-   * l'angle. {0,0} si le curseur est au centre de l'écran.
+   * Position du curseur convertie en coordonnées monde (via la caméra courante) + intensité de
+   * contrôle ∈ [0,1] (distance au centre de l'écran, plafonnée à `CONTROL_RADIUS_PX`). Envoyé
+   * tel quel au serveur (`PlayerInput`) : chaque morceau du joueur calcule sa propre direction
+   * vers cette cible plutôt que de partager une direction unique — un curseur positionné entre
+   * plusieurs morceaux les fait donc converger (regroupement) au lieu de tous partir dans la
+   * même direction relative.
    */
-  getInputVector(): Vector2;
+  getTarget(camera: Camera): { target: Vector2; intensity: number };
   /** true une seule fois par pression de la barre espace (consommé après lecture). */
   consumeSplit(): boolean;
   /** Retire les écouteurs attachés par `attachInput` — à appeler quand le canvas associé est
@@ -40,12 +44,17 @@ export function attachInput(canvas: HTMLCanvasElement): InputTracker {
   window.addEventListener('keydown', onKeyDown);
 
   return {
-    getInputVector(): Vector2 {
-      const dx = (mouseX - canvas.width / 2) / CONTROL_RADIUS_PX;
-      const dy = (mouseY - canvas.height / 2) / CONTROL_RADIUS_PX;
-      const len = Math.hypot(dx, dy);
-      if (len <= 1) return { x: dx, y: dy };
-      return { x: dx / len, y: dy / len }; // clampé à une norme de 1 (intensité 100%)
+    getTarget(camera: Camera): { target: Vector2; intensity: number } {
+      const dx = mouseX - canvas.width / 2;
+      const dy = mouseY - canvas.height / 2;
+      const intensity = Math.min(1, Math.hypot(dx, dy) / CONTROL_RADIUS_PX);
+      // Écran -> monde : inverse de `toScreenX`/`toScreenY` (render.ts) — le curseur au centre
+      // de l'écran correspond au centre de la caméra (grossièrement la position du joueur).
+      const target: Vector2 = {
+        x: camera.x + dx / camera.scale,
+        y: camera.y + dy / camera.scale,
+      };
+      return { target, intensity };
     },
     consumeSplit(): boolean {
       const value = splitRequested;

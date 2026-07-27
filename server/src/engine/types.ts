@@ -25,6 +25,8 @@ export interface PlayerState {
 }
 
 export interface PlayerInput {
-  dir: Vector2;
+  /** Position visée en coordonnées monde — voir ClientInputMessage (shared/src/protocol.ts). */
+  target: Vector2;
+  intensity: number;
   split: boolean;
 }

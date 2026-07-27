@@ -30,10 +30,18 @@ export interface ClientJoinMessage {
 
 export interface ClientInputMessage {
   type: 'input';
-  /** Direction ET intensité vers le curseur : la norme (∈ [0,1], clampée côté client) code
-   * l'intensité — contrôle "analogique" plutôt que tout-ou-rien ({0,0} si le curseur est au
-   * centre de l'écran). */
-  dir: Vector2;
+  /** Position du curseur en coordonnées MONDE (pas écran), calculée côté client à partir de sa
+   * caméra (centre + zoom, voir client/src/render.ts `Camera`). Le serveur calcule la direction
+   * de chaque morceau individuellement vers ce point (`target - position du morceau`) plutôt que
+   * de leur appliquer une direction unique : si le curseur est positionné entre plusieurs
+   * morceaux du joueur, chacun s'en rapproche indépendamment (regroupement), au lieu que tous
+   * partent dans la même direction relative. */
+  target: Vector2;
+  /** Intensité de contrôle ∈ [0,1] : distance du curseur au centre de l'écran, plafonnée côté
+   * client — contrôle "analogique" (fin près du centre, plein régime au-delà d'un certain
+   * rayon) plutôt que tout-ou-rien. Indépendante de `target` : ne module que la vitesse/le taux
+   * d'accélération, jamais la direction visée. */
+  intensity: number;
   /** true uniquement sur le tick où le split est demandé (déclenchement, pas un état maintenu). */
   split: boolean;
 }

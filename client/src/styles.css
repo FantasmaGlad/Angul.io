@@ -111,6 +111,16 @@ input:focus {
   border-color: var(--accent);
 }
 
+/* input[type=range] (réglage FPS, §Paramètres) : la piste plate ne doit pas hériter du style
+   "champ pilule" ci-dessus, pensé pour du texte. */
+input[type='range'] {
+  padding: 0;
+  border: none;
+  background: transparent;
+  accent-color: var(--accent);
+  height: 20px;
+}
+
 select {
   font-size: 14px;
   font-family: inherit;

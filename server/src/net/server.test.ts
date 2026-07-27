@@ -179,7 +179,11 @@ describe('startGameServer', () => {
   });
 
   it('transmet les inputs au mod via handleInput', async () => {
-    const receivedInputs: Array<{ dir: { x: number; y: number }; split: boolean }> = [];
+    const receivedInputs: Array<{
+      target: { x: number; y: number };
+      intensity: number;
+      split: boolean;
+    }> = [];
     const mod: GameMod = {
       id: 'test',
       onPlayerJoin: (world, playerId) => {
@@ -199,10 +203,12 @@ describe('startGameServer', () => {
     socket.send(JSON.stringify({ type: 'join', nickname: 'Bob' }));
     await waitUntil(() => messages.some((m) => m.type === 'welcome'));
 
-    socket.send(JSON.stringify({ type: 'input', dir: { x: 1, y: 0 }, split: true }));
+    socket.send(
+      JSON.stringify({ type: 'input', target: { x: 1, y: 0 }, intensity: 1, split: true }),
+    );
     await new Promise((resolve) => setTimeout(resolve, 50));
 
-    expect(receivedInputs).toEqual([{ dir: { x: 1, y: 0 }, split: true }]);
+    expect(receivedInputs).toEqual([{ target: { x: 1, y: 0 }, intensity: 1, split: true }]);
 
     socket.close();
   });

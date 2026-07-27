@@ -16,6 +16,7 @@ const NAV_ITEMS: Array<{ panel: PanelName; label: string }> = [
   { panel: 'modes', label: 'Modes' },
   { panel: 'leaderboard', label: 'Classements' },
   { panel: 'support', label: 'Soutenir' },
+  { panel: 'settings', label: 'Paramètres' },
 ];
 
 /** Accueil minimal — "jouer vite" (§3.1/§4.1 cahier_des_charges_ui_ux.md) : pseudo + bouton

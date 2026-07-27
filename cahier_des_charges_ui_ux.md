@@ -102,8 +102,7 @@ Une seule famille, système, dans les deux apps :
 police web externe chargée (évite une dépendance réseau à un CDN de polices, cohérent avec la
 priorité PWA/mobile légère et la sensibilité vie privée du projet). Une police à chasse fixe
 (`ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`) est utilisée pour les valeurs
-numériques du HUD (masse/vitesse/accélération) — lisibilité technique, cohérent avec le ton
-Cobalt.
+numériques du HUD (masse/vitesse) — lisibilité technique, cohérent avec le ton Cobalt.
 
 ### 1.4 Formes, iconographie, motion — révisé
 
@@ -176,7 +175,7 @@ de bundle, avec un mandat clair d'**optimiser au maximum** en contrepartie (§2.
   de parsing/exécution au premier chargement.
 - **Le canvas et la boucle de jeu restent entièrement hors du cycle de rendu React** (§2.3) : pas
   de re-render React à chaque frame (~60 im/s) ni à chaque message réseau (~20 Hz). Les stats du
-  HUD (masse/vitesse/accélération) sont mises à jour par mutation DOM directe via des refs, pas
+  HUD (masse/vitesse) sont mises à jour par mutation DOM directe via des refs, pas
   par `useState` — un `setState` par frame aurait un coût de re-render inutile pour du texte.
   Voir `client/src/components/GameView.tsx`.
 - **Aucune librairie de composants tierce** : le design minimaliste (§1) est simple à exprimer en
@@ -286,9 +285,10 @@ bruts — impact backend, voir §10). Pour chacun des 3 modes existants (`vanill
 ### 4.7 Écran de jeu (HUD)
 
 - Canvas inchangé (§2.3).
-- Panneau de stats restylé selon la nouvelle direction (§1), en conservant les mêmes données
-  (Pseudo, Guilde\*, Masse, Vitesse, Accélération) — \*voir décision à trancher en §12 sur
-  "Guilde".
+- Panneau de stats restylé selon la nouvelle direction (§1) : Pseudo, Guilde\*, Masse, Vitesse
+  — \*voir décision à trancher en §12 sur "Guilde". **Accélération retirée** (2026-07-27, demande
+  explicite) : métrique jugée peu lisible pour un joueur, la simulation continue de la calculer
+  côté serveur (voir `server/src/mods/parametric/physics.ts`), seul l'affichage HUD a été retiré.
 - Ajout envisageable, cohérent avec la direction "ludique" : petites notifications éphémères
   ("Tu as mangé *Untel*", "Niveau supérieur !") — à cadrer précisément si retenu (hors périmètre
   strict de cette refonte visuelle si ça implique de la logique serveur nouvelle).

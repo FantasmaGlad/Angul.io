@@ -76,10 +76,11 @@ describe('Room — cycle de vie des hooks', () => {
     const room = makeDeterministicRoom(mod, 0.05);
     room.addPlayer('p1', 'Alice');
 
-    room.handleInput('p1', { dir: { x: 1, y: 0 }, split: false });
+    room.handleInput('p1', { target: { x: 1, y: 0 }, intensity: 1, split: false });
 
     expect(onPlayerInput).toHaveBeenCalledWith(room.world, 'p1', {
-      dir: { x: 1, y: 0 },
+      target: { x: 1, y: 0 },
+      intensity: 1,
       split: false,
     });
   });

@@ -13,9 +13,10 @@ const RoomsPanel = lazy(() => import('./components/RoomsPanel.js'));
 const ModesPanel = lazy(() => import('./components/ModesPanel.js'));
 const LeaderboardPanel = lazy(() => import('./components/LeaderboardPanel.js'));
 const SupportPanel = lazy(() => import('./components/SupportPanel.js'));
+const SettingsPanel = lazy(() => import('./components/SettingsPanel.js'));
 const ProfileModal = lazy(() => import('./components/ProfileModal.js'));
 
-export type PanelName = 'account' | 'rooms' | 'modes' | 'leaderboard' | 'support';
+export type PanelName = 'account' | 'rooms' | 'modes' | 'leaderboard' | 'support' | 'settings';
 
 interface GameSession {
   roomIdOrInviteCode: string;
@@ -179,6 +180,7 @@ export default function App() {
         {openPanel === 'modes' && <ModesPanel onClose={() => setOpenPanel(null)} modes={modes} />}
         {openPanel === 'leaderboard' && <LeaderboardPanel onClose={() => setOpenPanel(null)} />}
         {openPanel === 'support' && <SupportPanel onClose={() => setOpenPanel(null)} />}
+        {openPanel === 'settings' && <SettingsPanel onClose={() => setOpenPanel(null)} />}
         {profileOpen && authSession && (
           <ProfileModal authToken={authSession.token} onClose={() => setProfileOpen(false)} />
         )}

@@ -62,7 +62,12 @@ describe('GameConnection', () => {
     const fakeSocket = socketOf(connection);
     fakeSocket.triggerOpen();
 
-    const input: ClientMessage = { type: 'input', dir: { x: 1, y: 0 }, split: false };
+    const input: ClientMessage = {
+      type: 'input',
+      target: { x: 1, y: 0 },
+      intensity: 1,
+      split: false,
+    };
     connection.send(input);
 
     expect(fakeSocket.sent).toEqual([JSON.stringify(input)]);
@@ -73,7 +78,7 @@ describe('GameConnection', () => {
     const fakeSocket = socketOf(connection);
     connection.send({ type: 'join', nickname: 'Bob' });
     fakeSocket.triggerOpen();
-    connection.send({ type: 'input', dir: { x: 0, y: 1 }, split: true });
+    connection.send({ type: 'input', target: { x: 0, y: 1 }, intensity: 1, split: true });
 
     expect(fakeSocket.sent).toHaveLength(2);
   });

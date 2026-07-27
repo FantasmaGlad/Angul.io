@@ -41,7 +41,7 @@ describe('createParametricMod — onTick (vitesse/accélération)', () => {
     world.addPlayer('p1', 'Alice');
     const piece = world.spawnPiece('p1', { x: 500, y: 500 }, 50);
 
-    mod.onPlayerInput?.(world, 'p1', { dir: { x: 1, y: 0 }, split: false });
+    mod.onPlayerInput?.(world, 'p1', { target: { x: 600, y: 500 }, intensity: 1, split: false });
     // dt assez grand pour que l'accélération (1500 px/s²) atteigne v(50)=300 px/s en un seul tick
     mod.onTick?.(world, 0.2);
 
@@ -56,7 +56,7 @@ describe('createParametricMod — onTick (vitesse/accélération)', () => {
     world.addPlayer('p1', 'Alice');
     const piece = world.spawnPiece('p1', { x: 500, y: 500 }, 50);
 
-    mod.onPlayerInput?.(world, 'p1', { dir: { x: 1, y: 0 }, split: false });
+    mod.onPlayerInput?.(world, 'p1', { target: { x: 600, y: 500 }, intensity: 1, split: false });
     mod.onTick?.(world, 0.01); // 1500*0.01 = 15 px/s de changement max, très inférieur à 300
 
     expect(piece.velocity.x).toBeCloseTo(15, 6);
@@ -79,8 +79,8 @@ describe('createParametricMod — onTick (vitesse/accélération)', () => {
     world.addPlayer('p1', 'Alice');
     const piece = world.spawnPiece('p1', { x: 500, y: 500 }, 50);
 
-    // dir de norme 0.5 -> intensité 50% (curseur à mi-chemin du rayon de contrôle)
-    mod.onPlayerInput?.(world, 'p1', { dir: { x: 0.5, y: 0 }, split: false });
+    // intensité 50% (curseur à mi-chemin du rayon de contrôle), direction +x
+    mod.onPlayerInput?.(world, 'p1', { target: { x: 600, y: 500 }, intensity: 0.5, split: false });
     mod.onTick?.(world, 0.1); // 1500*0.1*0.5 = 75 px/s de changement max, sous la cible réduite (150)
 
     expect(piece.velocity.x).toBeCloseTo(75, 6);
@@ -110,7 +110,7 @@ describe('createParametricMod — split', () => {
     world.addPlayer('p1', 'Alice');
     const piece = world.spawnPiece('p1', { x: 1000, y: 1000 }, 200);
 
-    mod.onPlayerInput?.(world, 'p1', { dir: { x: 1, y: 0 }, split: true });
+    mod.onPlayerInput?.(world, 'p1', { target: { x: 1100, y: 1000 }, intensity: 1, split: true });
 
     const pieces = world.getPiecesByOwner('p1');
     expect(pieces).toHaveLength(2);
@@ -129,7 +129,7 @@ describe('createParametricMod — split', () => {
     world.addPlayer('p1', 'Alice');
     world.spawnPiece('p1', { x: 1000, y: 1000 }, 200);
 
-    mod.onPlayerInput?.(world, 'p1', { dir: { x: 1, y: 0 }, split: true });
+    mod.onPlayerInput?.(world, 'p1', { target: { x: 1100, y: 1000 }, intensity: 1, split: true });
 
     const pieces = world.getPiecesByOwner('p1');
     const totalMass = pieces.reduce((sum, p) => sum + p.mass, 0);
@@ -143,7 +143,7 @@ describe('createParametricMod — split', () => {
     world.addPlayer('p1', 'Alice');
     world.spawnPiece('p1', { x: 500, y: 500 }, 50);
 
-    mod.onPlayerInput?.(world, 'p1', { dir: { x: 1, y: 0 }, split: true });
+    mod.onPlayerInput?.(world, 'p1', { target: { x: 600, y: 500 }, intensity: 1, split: true });
 
     expect(world.getPiecesByOwner('p1')).toHaveLength(1);
   });
