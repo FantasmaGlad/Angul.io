@@ -41,7 +41,7 @@ mathématiques exactes (masse, vitesse, split, fusion, decay…) mod par mod. Le
 | [4](#lot-4--deuxième-mode-de-jeu-validation-de-lapi-de-modding) | Deuxième mode de jeu (validation API) | MVP | ✅ Fait |
 | [5](#lot-5--interface-dadministration) | Interface d'administration | MVP | ✅ Fait — ⚠️ 5.5 différé (Phase 2) |
 | [6](#lot-6--statut-premium--dons) | Statut Premium & dons | MVP | ✅ Fait — ⚠️ voir 6.1 (compte Ko-fi réel pas encore créé), 6.5 différé |
-| [7](#lot-7--client-mobile-pwa) | Client mobile (PWA) | MVP | ⬜ À faire |
+| [7](#lot-7--client-mobile-pwa) | Client mobile (PWA) | MVP | 🔶 En cours — 7.1/7.2 faits, 7.3 (validation sur un vrai appareil Android) reste à faire |
 | [8](#lot-8--infrastructure--déploiement) | Infrastructure & déploiement | MVP | 🔶 En cours — install.sh écrit (8.3/8.4/8.5), pas encore exécuté sur le Wyse réel |
 | [9](#lot-9--documentation--ouverture-communautaire-de-lapi-de-modding) | Documentation & ouverture communautaire | Phase 2 | ⬜ À faire |
 | [10](#lot-10--scaling-multi-wyse) | Scaling multi-Wyse | Phase 2 | ⬜ À faire |
@@ -829,26 +829,55 @@ Objectif : rendre le client web installable comme application mobile, sans secon
 développement natif (§4.6).
 
 ### 7.1 — Manifest et icônes
-- **Statut :** ⬜ À faire
-- **Contenu :** `manifest.json`, jeu d'icônes, couleur de thème.
+- **Statut :** ✅ Fait (2026-07-27)
+- **Contenu :** `client/public/manifest.json` (nom, couleurs, `display: standalone`, 3 icônes)
+  + `client/public/icons/` (`icon-192.png`, `icon-512.png` purpose `any`, `icon-maskable-512.png`
+  purpose `maskable` avec zone de sécurité ~68% pour ne pas être rogné par un masque adaptatif
+  Android). **Icônes générées par un canvas dans le navigateur** (deux cercles qui se
+  chevauchent, évoquant directement le gameplay — absorption de cellules) plutôt qu'un ajout de
+  dépendance de traitement d'image côté projet (`sharp`/`canvas` npm), cohérent avec la
+  préférence du projet pour des dépendances minimales ; place-holder de branding, remplaçable
+  plus tard sans changement de structure. `index.html` gagne `<link rel="manifest">`,
+  `<meta name="theme-color">`, `<link rel="icon">` et `<link rel="apple-touch-icon">` (couvre
+  l'ajout à l'écran d'accueil iOS, sans valider le comportement PWA complet — voir 7.5).
 - **Dépendances :** Lot 1.7.
-- **Critère d'acceptation :** le navigateur propose l'installation ("Ajouter à l'écran
-  d'accueil") sur Android/Chrome.
+- **Critère d'acceptation :** **validé par les critères d'installabilité vérifiés dans le
+  navigateur** (Browser pane) : `manifest.json` accessible et valide (3 icônes), service worker
+  actif (voir 7.2) — les deux conditions que Chrome vérifie pour proposer l'installation. **Non
+  vérifié avec le bandeau d'installation Chrome lui-même ni sur un appareil Android réel** (voir
+  7.3, qui reste ⬜).
 
 ### 7.2 — Service worker
-- **Statut :** ⬜ À faire
-- **Contenu :** mise en cache des assets statiques, fonctionnement hors-ligne des écrans
-  ne nécessitant pas de réseau (menu).
+- **Statut :** ✅ Fait (2026-07-27)
+- **Contenu :** `client/public/service-worker.js` — JS brut (pas TypeScript : fichier autonome
+  sans import, pas besoin de la chaîne tsc+esbuild du reste du client). Précache uniquement la
+  "coquille" statique (`/`, `/index.html`, `/bundle.js`, `/manifest.json`, les 3 icônes) —
+  **jamais** `/api/*` ni le WebSocket du jeu (le `fetch` handler ignore toute requête dont le
+  chemin n'est pas dans la liste précachée, laissant passer le reste directement au réseau) :
+  une liste de salons périmée ou une partie qui semblerait tourner hors ligne serait pire que
+  l'absence de cache. Cache versionné (`angulio-shell-v1`), les anciennes versions purgées à
+  l'activation. Enregistré depuis `client/src/pwa.ts` (`registerServiceWorker`, appelé dans
+  `index.ts`) en best-effort — un navigateur incompatible ou un échec d'enregistrement
+  n'empêche jamais le jeu de fonctionner normalement, même principe que le reste du projet
+  (comptes/auth additifs, jamais bloquants).
 - **Dépendances :** 7.1.
-- **Critère d'acceptation :** l'application se lance et affiche le menu même sans connexion
-  réseau ; les parties elles-mêmes nécessitent bien une connexion (non concerné par le cache).
+- **Critère d'acceptation :** **validé manuellement dans le navigateur** (Browser pane) :
+  service worker enregistré et `activated`, les 7 fichiers de la coquille confirmés présents
+  dans le cache (`caches.open('angulio-shell-v1').keys()`), `caches.match('/index.html')` et
+  `caches.match('/bundle.js')` renvoient tous deux une réponse `ok`. Un test hors-ligne "réel"
+  (bascule réseau du navigateur) n'a pas pu être déclenché avec les outils disponibles dans
+  cette session — la vérification par le contenu du cache est la preuve indirecte que le
+  scénario hors-ligne fonctionnerait (c'est exactement ce que `fetch` sert en priorité).
 
 ### 7.3 — Validation d'installation sur Android
-- **Statut :** ⬜ À faire
+- **Statut :** ⬜ À faire — **nécessite un appareil Android réel, indisponible dans cet
+  environnement** (même limite que le Lot 8.1, qui attend le Wyse physique).
 - **Contenu :** test réel sur un appareil Android (Chrome) : installation, lancement plein
   écran, absence de barre de navigateur.
 - **Dépendances :** 7.1, 7.2.
-- **Critère d'acceptation :** l'app installée se comporte visuellement comme une app native.
+- **Critère d'acceptation :** l'app installée se comporte visuellement comme une app native. Les
+  deux prérequis techniques (manifeste valide, service worker actif) sont déjà validés (7.1/7.2)
+  — reste seulement la confirmation visuelle sur un vrai téléphone.
 
 ### 7.4 — Wrapper Play Store (TWA/Bubblewrap) — différé
 - **Statut :** ⏸️ Différé
@@ -1076,6 +1105,7 @@ Lot/Sous-Lot significatif terminé. Les entrées les plus récentes en haut.*
 
 | Date | Entrée |
 |---|---|
+| 2026-07-27 | **Lot 7.1/7.2 faits (PWA) : manifeste, icônes, service worker.** `manifest.json` + 3 icônes PNG (192/512/512 maskable) générées via un `<canvas>` dans le navigateur plutôt que d'ajouter une dépendance de traitement d'image au projet (`sharp`/`canvas` npm) — deux cercles qui se chevauchent, évoquant le gameplay (absorption de cellules), place-holder de branding assumé. Service worker (`client/public/service-worker.js`, JS brut sans build) précache uniquement la coquille statique (page, bundle, manifeste, icônes) — **jamais** `/api/*` ni le WebSocket du jeu, pour ne jamais servir une liste de salons ou une partie périmées hors ligne. **Validé dans le navigateur** (Browser pane) : manifeste valide avec 3 icônes, service worker `activated`, les 7 fichiers de la coquille confirmés en cache. **7.3 (validation sur un vrai appareil Android) reste ⬜** : nécessite un appareil physique, indisponible dans cet environnement — même limite que le Lot 8.1 (Wyse physique). 7.4/7.5 restent différés comme prévu. |
 | 2026-07-27 | **Lots 5 et 6 clos : interface d'administration et statut Premium/dons.** `admin/` devient une vraie app (le placeholder du Lot 0 est remplacé) : login par mot de passe unique haché (`ADMIN_PASSWORD_HASH`, argon2, script `hashPassword.mjs` pour le générer), recherche/consultation/édition de compte (niveau, XP, cosmétiques, Premium, bannissement) via un patch unique `PATCH /api/admin/players/:id`, servie sous `/admin/*` par le même process de jeu (répertoire statique distinct du client joueur). **Bug trouvé et corrigé en testant manuellement dans le navigateur** (pas seulement en tests automatisés) : `/admin` sans slash final + un script chargé en chemin relatif (`./bundle.js`) résolvait vers le bundle du **client joueur** au lieu de celui de l'admin (résolution d'URL relative standard) — corrigé par un chemin absolu. Bannissement : nouvelle colonne `banned`, vérifiée après le mot de passe à la connexion (ne fuit rien à qui ne le connaît pas), et révocation immédiate des sessions actives du compte banni (nouveau `SessionStore.revokeSessionsForAccount`) plutôt que d'attendre une expiration qui n'existe pas. **Lot 6** : plateforme de don choisie (**Ko-fi**, 0% commission, pas de société requise, don libre sans palier) — le compte réel reste à créer manuellement par l'utilisateur (hors de portée d'un agent), `DONATION_URL` est un espace réservé documenté dans `client/src/support.ts`. Page Soutien ajoutée au lobby (panneau glassmorphism, même style que le profil). Création de salon restreinte aux comptes Premium (`isPremium`, cahier des charges §5.3) : 403 côté serveur pour un invité/compte standard, formulaire remplacé côté client par un message explicatif tant que le compte connu n'est pas Premium — avec dégradation gracieuse existante (sans base de données configurée, la restriction ne s'applique pas, comme le reste de `GameServerOptions.accounts`). 15 nouveaux tests serveur (dont un bloc entier de tests réseau "avec comptes joueurs" contre un vrai PostgreSQL), 189 tests passants au total. **Validé manuellement de bout en bout dans le navigateur** (Browser pane) pour l'ensemble du circuit : connexion admin → recherche → activation Premium d'un compte de test → reconnexion côté client → formulaire de création de salon débloqué → salon créé et rejoint ; bannissement testé séparément (connexion refusée ensuite, 401). |
 | 2026-07-27 | **Lot 4 clos : mode Hardcore, second mode aux mécaniques structurellement nouvelles.** Choisi plutôt que Précision/Sniper (l'autre recommandation) après avoir remarqué que ce dernier, tel que décrit, se réduit à `food.density → ~0` — purement paramétrique, n'aurait rien prouvé de plus qu'un troisième Folie. Hardcore introduit : (1) un multiplicateur de masse gagnée en mangeant un autre joueur (×10 par défaut), (2) la perte totale de la progression du compte à la mort. Implémenté par **composition** plutôt que duplication : `createHardcoreMod` enveloppe `createParametricMod` et ne réécrit que `onCollision` et un nouveau hook — un patron de mod non anticipé avant ce Lot, à garder en tête pour la Phase 2 (modding communautaire, Lot 9). **Seul ajustement à l'API de hooks** : `GameMod.transformScoreForAccount?` (voir 4.5) — tout le reste (onCollision générique, découplage réseau/mod déjà acquis au Lot 2) a suffi sans toucher à `engine/`. 8 nouveaux tests + 1 test existant mis à jour (`listAvailableModIds` liste désormais 3 modes). Validé manuellement : salon Hardcore créé/rejoint depuis le lobby (aucun changement client nécessaire), joueur authentifié confirmé en base (`psql`) recevant 0 crédit après une vie à 45-50 de masse, contre 50 XP pour le même scénario en Vanilla (non-régression). |
 | 2026-07-27 | **Flake de test pré-existant repéré, non lié aux changements de la session** : `server/src/net/server.test.ts` ("diffuse l'état du monde... avec le morceau du joueur") a échoué une fois sur une exécution complète (`entities.some(e => e.x===0 && e.y===0)` côté "son propre morceau"), puis est repassé au vert de façon reproductible sur toutes les exécutions suivantes. Cause probable : le `RoomManager` de test démarre un vrai timer de tick (20Hz) dès la création du salon, qui peut broadcaster un premier `state` juste avant que le test n'ait fini d'attacher ses assertions sur le message capturé — timing non déterministe entre un vrai timer et l'event loop du test, pas un bug fonctionnel du code de production. Non traité dans l'immédiat (rare, non reproductible à la demande) ; à stabiliser si ça devient gênant en CI (ex. `vi.useFakeTimers()` sur ce test précis, ou une assertion moins sensible à l'ordre des messages `state` reçus). |

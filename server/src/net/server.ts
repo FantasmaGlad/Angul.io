@@ -835,5 +835,11 @@ function contentTypeFor(filePath: string): string {
   if (filePath.endsWith('.html')) return 'text/html; charset=utf-8';
   if (filePath.endsWith('.js')) return 'text/javascript; charset=utf-8';
   if (filePath.endsWith('.css')) return 'text/css; charset=utf-8';
+  // .json (manifest.json) et .png (icônes) : ajoutés pour le Lot 7 (PWA) — Chrome accepte un
+  // manifeste servi en `application/octet-stream` en pratique, mais un type MIME correct reste
+  // ce que la spec attend et évite tout comportement de sniffing surprenant sur d'autres
+  // navigateurs.
+  if (filePath.endsWith('.json')) return 'application/json; charset=utf-8';
+  if (filePath.endsWith('.png')) return 'image/png';
   return 'application/octet-stream';
 }

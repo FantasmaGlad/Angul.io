@@ -22,9 +22,12 @@ import {
 import { attachInput } from './input.js';
 import { createRoom, fetchAvailableModes, fetchPublicRooms, type RoomSummary } from './lobby.js';
 import { GameConnection } from './net.js';
+import { registerServiceWorker } from './pwa.js';
 import { computeCamera, interpolateEntities, renderFrame } from './render.js';
 import { ownAggregate, speedBetween } from './stats.js';
 import { DONATION_URL, SUPPORT_BODY } from './support.js';
+
+registerServiceWorker();
 
 const INPUT_SEND_INTERVAL_MS = 50; // aligné sur le tick serveur par défaut (20 Hz)
 /** Intervalle attendu entre deux messages `state` (20 Hz par défaut, voir Room/index.ts côté
