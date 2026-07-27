@@ -7,6 +7,8 @@ set -euo pipefail
 # Pensé pour le Wyse 5070 (§8.2 du cahier des charges) sur Ubuntu Server fraîchement
 # installé. Met en place :
 #   - dépendances système + Node.js (§8.4)
+#   - PostgreSQL + rôle/base applicatifs, `server/.env` (`DATABASE_URL`/`ADMIN_PASSWORD_HASH`)
+#     et migrations (Lot 3, comptes joueurs — voir étape 6 ci-dessous)
 #   - récupération et build du code depuis GitHub
 #   - service systemd du serveur de jeu, démarré automatiquement au boot (§8.4)
 #   - pare-feu ufw (SSH + HTTP/HTTPS uniquement — le port de jeu n'est jamais exposé
@@ -19,16 +21,19 @@ set -euo pipefail
 #   - §8.1 : installation de l'OS et premier accès SSH (préalable à tout le reste).
 #   - §8.2 : redirection de port (NAT/PAT) sur la box Internet vers cette machine,
 #     ports 80 et 443 — impossible à configurer depuis la machine elle-même.
-#   - PostgreSQL (Lot 3, comptes joueurs) : rien dans le code ne l'utilise encore à ce
-#     jour, l'installer maintenant serait un service qui tourne pour rien. Ce script
-#     sera étendu quand le Lot 3 démarrera.
 #
 # Idempotent : relancer ce script après une mise à jour du code (git push) récupère
-# la dernière version, rebuild, et redémarre le service — pas seulement un run jetable.
+# la dernière version, rebuild, rejoue les migrations, et redémarre le service — pas
+# seulement un run jetable. `server/.env` n'est généré qu'au **premier** déploiement
+# (mot de passe PostgreSQL/admin conservés tels quels sur les runs suivants, jamais
+# régénérés dans le dos d'un déploiement existant).
 #
 # Usage :
-#   1. Renseigner DUCKDNS_SUBDOMAIN et DUCKDNS_TOKEN ci-dessous (les autres valeurs par
-#      défaut conviennent pour un déploiement standard).
+#   1. Renseigner DUCKDNS_SUBDOMAIN, DUCKDNS_TOKEN et ADMIN_PASSWORD ci-dessous (les
+#      autres valeurs par défaut conviennent pour un déploiement standard).
+#      ADMIN_PASSWORD n'est nécessaire qu'au premier déploiement (server/.env absent) —
+#      peut être vidé après coup, il n'est jamais réécrit sur le disque tel quel (seul
+#      son hash argon2 l'est, dans server/.env).
 #   2. sudo ./install.sh
 # ==============================================================================
 
@@ -42,6 +47,13 @@ NODE_MAJOR="20"
 DUCKDNS_SUBDOMAIN=""                                  # ex. "angulio" -> angulio.duckdns.org — À REMPLIR
 DUCKDNS_TOKEN=""                                      # jeton depuis https://www.duckdns.org — À REMPLIR
 LETSENCRYPT_EMAIL="clement.barillot3901@gmail.com"    # contact ACME de Caddy, modifiable
+ADMIN_PASSWORD=""                                     # mot de passe admin (Lot 5.1) — requis
+                                                       # seulement au premier déploiement (voir
+                                                       # étape 6 du script) — À REMPLIR puis, si voulu,
+                                                       # vidable après un premier `./install.sh`
+                                                       # réussi (seul son hash est conservé).
+DB_NAME="angulio_prod"
+DB_USER="angulio"
 # --------------------------------------------------------------------------------
 
 if [[ $EUID -ne 0 ]]; then
@@ -62,7 +74,7 @@ log() { echo -e "\n>>> $1"; }
 log "Mise à jour du système et installation des dépendances de base"
 apt-get update -y
 apt-get upgrade -y
-apt-get install -y curl git ufw ca-certificates gnupg apt-transport-https
+apt-get install -y curl git ufw ca-certificates gnupg apt-transport-https openssl postgresql
 
 # --- 2. Node.js -------------------------------------------------------------------
 CURRENT_NODE_MAJOR="$(command -v node >/dev/null && node -v | grep -oE '^v[0-9]+' | tr -d v || echo 0)"
@@ -108,7 +120,47 @@ fi
 log "Installation des dépendances npm et build (shared/server/client/admin)"
 sudo -u "$APP_USER" bash -c "cd '$APP_DIR' && npm ci && npm run build"
 
-# --- 6. Service systemd du serveur de jeu ------------------------------------------
+# --- 6. PostgreSQL (Lot 3, comptes joueurs) : rôle/base applicatifs, server/.env,
+#        migrations ------------------------------------------------------------------
+# Ne génère server/.env (mot de passe PostgreSQL, hash admin) qu'au **premier** déploiement —
+# un run ultérieur ne doit jamais régénérer des identifiants et casser une configuration qui
+# fonctionne déjà (cohérent avec l'idempotence du reste du script).
+systemctl enable --now postgresql
+
+ENV_FILE="${APP_DIR}/server/.env"
+if [[ ! -f "$ENV_FILE" ]]; then
+  log "Premier déploiement : création du rôle/base PostgreSQL et de server/.env"
+
+  if [[ -z "$ADMIN_PASSWORD" ]]; then
+    echo "Renseigne ADMIN_PASSWORD en haut de ce script avant le premier déploiement (voir étape 6 du script)." >&2
+    exit 1
+  fi
+
+  DB_PASSWORD="$(openssl rand -hex 24)"
+  sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1 \
+    || sudo -u postgres psql -c "CREATE ROLE ${DB_USER} LOGIN PASSWORD '${DB_PASSWORD}';"
+  sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1 \
+    || sudo -u postgres psql -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};"
+
+  # Mot de passe admin haché via le même script que le développement local
+  # (server/scripts/hashPassword.mjs) — exécuté depuis server/ pour résoudre `argon2` installé
+  # par `npm ci` juste au-dessus, jamais le mot de passe en clair écrit sur le disque.
+  ADMIN_PASSWORD_HASH="$(sudo -u "$APP_USER" bash -c "cd '${APP_DIR}/server' && node scripts/hashPassword.mjs '${ADMIN_PASSWORD}'")"
+
+  cat > "$ENV_FILE" <<EOF
+DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@localhost:5432/${DB_NAME}
+ADMIN_PASSWORD_HASH=${ADMIN_PASSWORD_HASH}
+EOF
+  chown "$APP_USER:$APP_USER" "$ENV_FILE"
+  chmod 600 "$ENV_FILE"
+else
+  log "server/.env déjà présent : rôle/base PostgreSQL et hash admin conservés tels quels"
+fi
+
+log "Application des migrations PostgreSQL"
+sudo -u "$APP_USER" bash -c "cd '$APP_DIR/server' && npm run migrate:up"
+
+# --- 7. Service systemd du serveur de jeu ------------------------------------------
 log "Écriture du service systemd angulio.service"
 cat > /etc/systemd/system/angulio.service <<EOF
 [Unit]
@@ -132,7 +184,7 @@ systemctl daemon-reload
 systemctl enable angulio
 systemctl restart angulio
 
-# --- 7. Reverse proxy Caddy (HTTPS automatique sur le domaine DuckDNS) -------------
+# --- 8. Reverse proxy Caddy (HTTPS automatique sur le domaine DuckDNS) -------------
 log "Écriture du Caddyfile pour $DOMAIN"
 cat > /etc/caddy/Caddyfile <<EOF
 {
@@ -147,7 +199,7 @@ EOF
 systemctl enable caddy
 systemctl restart caddy
 
-# --- 8. Pare-feu (ufw) : uniquement SSH + HTTP/HTTPS -------------------------------
+# --- 9. Pare-feu (ufw) : uniquement SSH + HTTP/HTTPS -------------------------------
 # Le port de jeu (GAME_PORT) n'est volontairement pas ouvert : le serveur Node
 # n'est joignable que via Caddy (localhost), jamais directement depuis l'extérieur.
 log "Configuration du pare-feu (ufw)"
@@ -156,7 +208,7 @@ ufw allow 80/tcp
 ufw allow 443/tcp
 ufw --force enable
 
-# --- 9. Mise à jour périodique de l'IP DuckDNS (filet de sécurité, §8.3) -----------
+# --- 10. Mise à jour périodique de l'IP DuckDNS (filet de sécurité, §8.3) -----------
 log "Configuration de la mise à jour périodique DuckDNS"
 mkdir -p /opt/duckdns
 cat > /opt/duckdns/update.sh <<EOF
@@ -193,6 +245,7 @@ systemctl enable --now duckdns-update.timer
 # --- Résumé -------------------------------------------------------------------------
 log "Terminé."
 echo "Serveur de jeu : systemctl status angulio        (écoute sur 127.0.0.1:${GAME_PORT})"
+echo "PostgreSQL     : systemctl status postgresql      (base ${DB_NAME}, config dans server/.env)"
 echo "Reverse proxy  : systemctl status caddy           (https://${DOMAIN})"
 echo "DuckDNS        : systemctl status duckdns-update.timer"
 echo

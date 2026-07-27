@@ -926,8 +926,9 @@ Internet (§7).
   DuckDNS doit résoudre vers l'IP publique actuelle et le timer doit tourner sur le Wyse.
 
 ### 8.4 — Script install.sh
-- **Statut :** 🔶 En cours (2026-07-26) — script écrit et vérifié syntaxiquement
-  (`bash -n`), **jamais exécuté sur une machine réelle** (nécessite le Wyse physique, 8.1).
+- **Statut :** 🔶 En cours (mis à jour 2026-07-27) — script étendu (PostgreSQL, voir
+  ci-dessous), re-vérifié syntaxiquement (`bash -n`), **toujours jamais exécuté sur une
+  machine réelle** (nécessite le Wyse physique, 8.1).
 - **Contenu :** [`install.sh`](install.sh) à la racine du dépôt — bootstrap complet et
   idempotent (relançable pour déployer une mise à jour) : dépendances système (`apt`),
   Node.js 20.x (dépôt NodeSource), clonage/mise à jour du code + `npm ci && npm run build`,
@@ -935,15 +936,23 @@ Internet (§7).
   `angulio.service` (`Restart=on-failure`, activé au boot), pare-feu `ufw` (SSH + 80/443
   uniquement — le port du serveur de jeu n'est **jamais** exposé directement, tout passe par
   le reverse proxy), Caddy en reverse proxy + HTTPS automatique (voir 8.5), timer DuckDNS
-  (voir 8.3). **PostgreSQL volontairement exclu** : rien dans le code actuel ne l'utilise
-  (Lot 3 pas commencé) — l'installer maintenant serait un service qui tourne pour rien ; ce
-  script sera étendu quand le Lot 3 démarrera. La dépendance à Lot 3.1 de l'énoncé d'origine
-  de ce sous-lot est donc revue à la baisse en conséquence.
+  (voir 8.3).
+- **Extension du 2026-07-27 (PostgreSQL, Lot 3 étant désormais fait) :** installe le paquet
+  `postgresql`, crée le rôle applicatif et la base (`angulio`/`angulio_prod`, mot de passe
+  généré via `openssl rand -hex 24` — uniquement au **premier** déploiement, jamais régénéré
+  sur un run suivant pour ne pas casser une config existante : `server/.env` sert de marqueur
+  "déjà configuré"), génère `server/.env` (`DATABASE_URL` + `ADMIN_PASSWORD_HASH`, ce dernier
+  haché via le script `server/scripts/hashPassword.mjs` du Lot 5.1 à partir d'une variable
+  `ADMIN_PASSWORD` renseignée en tête de script comme `DUCKDNS_TOKEN`), puis joue les
+  migrations (`npm run migrate:up`) à **chaque** déploiement (idempotent côté
+  node-pg-migrate, contrairement à la création du rôle/de la base). Referme ainsi l'écart
+  explicitement noté au Lot 3 ("pas encore de service PostgreSQL dans install.sh").
 - **Dépendances :** 8.1.
 - **Critère d'acceptation :** ⬜ pas encore validé — exécuter `install.sh` sur une machine
-  Ubuntu fraîche doit amener à un serveur fonctionnel sans étape manuelle supplémentaire
-  (hors configuration réseau §8.2, hors renseignement des identifiants DuckDNS en tête du
-  script). À confirmer sur le Wyse réel, une fois 8.1 fait.
+  Ubuntu fraîche doit amener à un serveur fonctionnel (comptes joueurs et interface admin
+  compris) sans étape manuelle supplémentaire (hors configuration réseau §8.2, hors
+  renseignement des identifiants DuckDNS/du mot de passe admin en tête du script). À
+  confirmer sur le Wyse réel, une fois 8.1 fait.
 
 ### 8.5 — Reverse proxy / TLS
 - **Statut :** 🔶 En cours (2026-07-26) — configuré dans `install.sh` (8.4), pas encore
@@ -1105,6 +1114,7 @@ Lot/Sous-Lot significatif terminé. Les entrées les plus récentes en haut.*
 
 | Date | Entrée |
 |---|---|
+| 2026-07-27 | **Lot 8.4 étendu : `install.sh` intègre désormais PostgreSQL.** Point resté ouvert depuis la clôture du Lot 3 ("pas encore de service PostgreSQL dans install.sh") — traité maintenant que les Lots 5/6/7 sont faits et que le script est de toute façon en train d'être retouché. Ajouts : paquet `postgresql`, création idempotente du rôle/de la base applicatifs (mot de passe généré une seule fois, au premier déploiement — `server/.env` sert de marqueur pour ne jamais régénérer les identifiants d'un déploiement existant), génération de `server/.env` (`DATABASE_URL` + `ADMIN_PASSWORD_HASH`, ce dernier haché via `hashPassword.mjs` du Lot 5.1 à partir d'une nouvelle variable `ADMIN_PASSWORD` en tête de script, même convention que `DUCKDNS_TOKEN`), puis `npm run migrate:up` à chaque déploiement. Toujours seulement vérifié par `bash -n` (`shellcheck` non disponible sur cette machine) — l'exécution réelle reste bloquée sur le Wyse physique (8.1), comme le reste du Lot 8. |
 | 2026-07-27 | **Lot 7.1/7.2 faits (PWA) : manifeste, icônes, service worker.** `manifest.json` + 3 icônes PNG (192/512/512 maskable) générées via un `<canvas>` dans le navigateur plutôt que d'ajouter une dépendance de traitement d'image au projet (`sharp`/`canvas` npm) — deux cercles qui se chevauchent, évoquant le gameplay (absorption de cellules), place-holder de branding assumé. Service worker (`client/public/service-worker.js`, JS brut sans build) précache uniquement la coquille statique (page, bundle, manifeste, icônes) — **jamais** `/api/*` ni le WebSocket du jeu, pour ne jamais servir une liste de salons ou une partie périmées hors ligne. **Validé dans le navigateur** (Browser pane) : manifeste valide avec 3 icônes, service worker `activated`, les 7 fichiers de la coquille confirmés en cache. **7.3 (validation sur un vrai appareil Android) reste ⬜** : nécessite un appareil physique, indisponible dans cet environnement — même limite que le Lot 8.1 (Wyse physique). 7.4/7.5 restent différés comme prévu. |
 | 2026-07-27 | **Lots 5 et 6 clos : interface d'administration et statut Premium/dons.** `admin/` devient une vraie app (le placeholder du Lot 0 est remplacé) : login par mot de passe unique haché (`ADMIN_PASSWORD_HASH`, argon2, script `hashPassword.mjs` pour le générer), recherche/consultation/édition de compte (niveau, XP, cosmétiques, Premium, bannissement) via un patch unique `PATCH /api/admin/players/:id`, servie sous `/admin/*` par le même process de jeu (répertoire statique distinct du client joueur). **Bug trouvé et corrigé en testant manuellement dans le navigateur** (pas seulement en tests automatisés) : `/admin` sans slash final + un script chargé en chemin relatif (`./bundle.js`) résolvait vers le bundle du **client joueur** au lieu de celui de l'admin (résolution d'URL relative standard) — corrigé par un chemin absolu. Bannissement : nouvelle colonne `banned`, vérifiée après le mot de passe à la connexion (ne fuit rien à qui ne le connaît pas), et révocation immédiate des sessions actives du compte banni (nouveau `SessionStore.revokeSessionsForAccount`) plutôt que d'attendre une expiration qui n'existe pas. **Lot 6** : plateforme de don choisie (**Ko-fi**, 0% commission, pas de société requise, don libre sans palier) — le compte réel reste à créer manuellement par l'utilisateur (hors de portée d'un agent), `DONATION_URL` est un espace réservé documenté dans `client/src/support.ts`. Page Soutien ajoutée au lobby (panneau glassmorphism, même style que le profil). Création de salon restreinte aux comptes Premium (`isPremium`, cahier des charges §5.3) : 403 côté serveur pour un invité/compte standard, formulaire remplacé côté client par un message explicatif tant que le compte connu n'est pas Premium — avec dégradation gracieuse existante (sans base de données configurée, la restriction ne s'applique pas, comme le reste de `GameServerOptions.accounts`). 15 nouveaux tests serveur (dont un bloc entier de tests réseau "avec comptes joueurs" contre un vrai PostgreSQL), 189 tests passants au total. **Validé manuellement de bout en bout dans le navigateur** (Browser pane) pour l'ensemble du circuit : connexion admin → recherche → activation Premium d'un compte de test → reconnexion côté client → formulaire de création de salon débloqué → salon créé et rejoint ; bannissement testé séparément (connexion refusée ensuite, 401). |
 | 2026-07-27 | **Lot 4 clos : mode Hardcore, second mode aux mécaniques structurellement nouvelles.** Choisi plutôt que Précision/Sniper (l'autre recommandation) après avoir remarqué que ce dernier, tel que décrit, se réduit à `food.density → ~0` — purement paramétrique, n'aurait rien prouvé de plus qu'un troisième Folie. Hardcore introduit : (1) un multiplicateur de masse gagnée en mangeant un autre joueur (×10 par défaut), (2) la perte totale de la progression du compte à la mort. Implémenté par **composition** plutôt que duplication : `createHardcoreMod` enveloppe `createParametricMod` et ne réécrit que `onCollision` et un nouveau hook — un patron de mod non anticipé avant ce Lot, à garder en tête pour la Phase 2 (modding communautaire, Lot 9). **Seul ajustement à l'API de hooks** : `GameMod.transformScoreForAccount?` (voir 4.5) — tout le reste (onCollision générique, découplage réseau/mod déjà acquis au Lot 2) a suffi sans toucher à `engine/`. 8 nouveaux tests + 1 test existant mis à jour (`listAvailableModIds` liste désormais 3 modes). Validé manuellement : salon Hardcore créé/rejoint depuis le lobby (aucun changement client nécessaire), joueur authentifié confirmé en base (`psql`) recevant 0 crédit après une vie à 45-50 de masse, contre 50 XP pour le même scénario en Vanilla (non-régression). |
