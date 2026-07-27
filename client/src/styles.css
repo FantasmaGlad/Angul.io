@@ -1034,23 +1034,23 @@ a.btn-primary {
   gap: 10px;
 }
 
-/* --- Full Screen Technical Documentation Layout --- */
+/* --- Full Screen Technical Documentation Layout (Design System Aligné) --- */
 .wiki-doc-container {
   position: fixed;
   inset: 0;
   z-index: 100;
   display: flex;
-  background: #090d16;
-  color: #cbd5e1;
-  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
 }
 
 /* Bandeau d'ouverture vertical (Sidebar Gauche) */
 .wiki-sidebar {
   width: 280px;
   flex-shrink: 0;
-  background: #0f172a;
-  border-right: 1px solid #1e293b;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -1059,21 +1059,21 @@ a.btn-primary {
 
 .wiki-sidebar-header {
   padding: 28px 24px 20px;
-  border-bottom: 1px solid #1e293b;
+  border-bottom: 1px solid var(--border);
 }
 
 .wiki-sidebar-title {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 900;
-  letter-spacing: 0.1em;
-  color: #f8fafc;
+  letter-spacing: 0.08em;
+  color: var(--text);
 }
 
 .wiki-sidebar-subtitle {
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.12em;
-  color: #64748b;
+  letter-spacing: 0.1em;
+  color: var(--text-soft);
   margin-top: 4px;
 }
 
@@ -1092,7 +1092,7 @@ a.btn-primary {
   background: transparent;
   border: none;
   border-left: 3px solid transparent;
-  color: #94a3b8;
+  color: var(--text-soft);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.05em;
@@ -1102,55 +1102,58 @@ a.btn-primary {
 }
 
 .wiki-nav-item:hover {
-  background: #1e293b;
-  color: #f8fafc;
+  background: var(--surface-hover);
+  color: var(--text);
 }
 
 .wiki-nav-item.active {
-  background: #1e293b;
-  color: #38bdf8;
-  border-left-color: #38bdf8;
+  background: var(--bg);
+  color: var(--text);
+  border-left-color: var(--accent-strong);
+  font-weight: 800;
 }
 
 .wiki-nav-num {
   font-family: var(--font-mono);
-  color: #64748b;
+  color: var(--text-faint);
   font-size: 11px;
 }
 
 .wiki-nav-item.active .wiki-nav-num {
-  color: #38bdf8;
+  color: var(--accent-strong);
 }
 
 .wiki-sidebar-footer {
   padding: 20px 24px;
-  border-top: 1px solid #1e293b;
+  border-top: 1px solid var(--border);
 }
 
 .wiki-back-button {
   width: 100%;
   padding: 10px 14px;
-  background: #1e293b;
-  border: 1px solid #334155;
-  border-radius: var(--radius-md);
-  color: #f8fafc;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  color: var(--text);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.05em;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: all 0.15s ease;
 }
 
 .wiki-back-button:hover {
-  background: #334155;
+  background: var(--surface-hover);
+  border-color: var(--text);
 }
 
-/* Zone de contenu principal (Documentation froide) */
+/* Zone de contenu principal (Documentation propre & sobre) */
 .wiki-main-content {
   flex: 1;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  background: var(--bg);
 }
 
 .wiki-doc-header {
@@ -1158,19 +1161,23 @@ a.btn-primary {
   align-items: center;
   justify-content: space-between;
   padding: 16px 36px;
-  background: #0f172a;
-  border-bottom: 1px solid #1e293b;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
   font-family: var(--font-mono);
   font-size: 12px;
 }
 
 .wiki-breadcrumb {
-  color: #64748b;
+  color: var(--text-soft);
 }
 
 .wiki-version-tag {
-  color: #38bdf8;
+  color: var(--accent-ink);
+  background: var(--brand-yellow);
   font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
 }
 
 .wiki-doc-body {
@@ -1180,24 +1187,24 @@ a.btn-primary {
 }
 
 .wiki-doc-h1 {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 900;
-  letter-spacing: 0.05em;
-  color: #f8fafc;
+  letter-spacing: 0.04em;
+  color: var(--text);
   margin: 0 0 8px 0;
   font-family: var(--font-mono);
 }
 
 .wiki-doc-intro {
-  font-size: 14px;
-  color: #94a3b8;
+  font-size: 13.5px;
+  color: var(--text-soft);
   margin: 0 0 32px 0;
   line-height: 1.5;
 }
 
 .wiki-doc-block {
-  background: #0f172a;
-  border: 1px solid #1e293b;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 24px;
   margin-bottom: 24px;
@@ -1211,9 +1218,9 @@ a.btn-primary {
 }
 
 .wiki-doc-h2 {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 800;
-  color: #f8fafc;
+  color: var(--text);
   margin: 0;
   letter-spacing: 0.03em;
   font-family: var(--font-mono);
@@ -1223,16 +1230,16 @@ a.btn-primary {
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 3px;
-  background: #1e293b;
-  border: 1px solid #334155;
-  color: #94a3b8;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  color: var(--text-soft);
 }
 
 .wiki-doc-p {
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--text-soft);
   line-height: 1.6;
   margin: 0 0 16px 0;
 }
@@ -1250,27 +1257,29 @@ a.btn-primary {
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 700;
-  color: #64748b;
+  color: var(--text-soft);
   letter-spacing: 0.05em;
-  padding: 8px 12px;
-  background: #1e293b;
-  border: 1px solid #334155;
+  padding: 10px 14px;
+  background: var(--surface-hover);
+  border: 1px solid var(--border-strong);
 }
 
 .wiki-tech-table td {
-  padding: 8px 12px;
-  border: 1px solid #1e293b;
-  color: #cbd5e1;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  background: var(--bg);
 }
 
 .wiki-tech-table tr:nth-child(even) td {
-  background: rgba(255, 255, 255, 0.01);
+  background: var(--surface);
 }
 
 .wiki-tech-table td:first-child {
   font-weight: 600;
-  color: #f8fafc;
+  color: var(--text);
 }
+
 
 
 
