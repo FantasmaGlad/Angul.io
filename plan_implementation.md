@@ -108,13 +108,24 @@ la première ligne de moteur de jeu.
   le README — **validé**.
 
 ### 0.6 — Intégration continue basique (optionnel mais recommandé)
-- **Statut :** ✅ Fait (2026-07-26)
+- **Statut :** ✅ Fait (2026-07-26), **étendu le 2026-07-27**
 - **Contenu :** GitHub Actions (`.github/workflows/ci.yml`) lançant format:check, lint,
-  tests et build à chaque push/PR sur `main`.
+  tests et build à chaque push/PR sur `main`. **Extension (2026-07-27, referme un gap noté
+  depuis la clôture du Lot 3)** : le job démarre désormais un vrai service PostgreSQL
+  (`postgres:18`, identifiants et `DATABASE_URL` en variable d'environnement du job — pas de
+  fichier `server/.env`, vérifié manuellement que `node-pg-migrate`/vitest lisent tous deux
+  directement `process.env.DATABASE_URL` sans en avoir besoin), joue les migrations
+  (`npm run migrate:up --workspace=server`) avant `npm test` — les tests
+  `describe.skipIf(!DATABASE_URL)` (accountsRepository, service, net/server "avec comptes
+  joueurs", plusieurs dizaines de tests au total) s'exécutent donc réellement en CI au lieu
+  d'être silencieusement ignorés.
 - **Dépendances :** 0.3, 0.4.
 - **Critère d'acceptation :** un push avec une erreur de lint ou un test cassé fait échouer
-  la CI visiblement sur GitHub — à confirmer visuellement après le premier push de ce Lot
-  (le workflow n'a pas encore tourné en conditions réelles sur GitHub).
+  la CI visiblement sur GitHub. **Le service Postgres ajouté n'a pas encore tourné en
+  conditions réelles sur GitHub** (repose sur le pattern standard "services: postgres" de
+  GitHub Actions + une vérification manuelle locale du flux `DATABASE_URL` sans fichier
+  `.env`, Docker non disponible dans cet environnement pour une simulation complète) — à
+  confirmer visuellement au prochain push.
 
 ---
 
@@ -558,12 +569,11 @@ support de l'authentification et des statistiques.
   reconnexion (session persistée) → panneau "Profil" affichant XP 50 et le meilleur score
   vanilla à jour.
 
-**Lot 3 clos.** Point non traité, à reprendre plus tard si le besoin se confirme : pas encore
-de service PostgreSQL dans `install.sh` (Lot 8, toujours volontairement différé jusqu'ici) ni de
-service Postgres dans la CI GitHub Actions (`.github/workflows/ci.yml`) — les tests Postgres
-(`describe.skipIf(!DATABASE_URL)`) se contentent d'être ignorés silencieusement en CI pour
-l'instant plutôt que de faire échouer le pipeline, donc rien n'est cassé, mais ils n'y tournent
-pas non plus.
+**Lot 3 clos.** Points non traités à l'époque, **tous deux refermés depuis** (voir Journal,
+2026-07-27) : le service PostgreSQL dans `install.sh` (Lot 8.4) et le service Postgres en CI
+GitHub Actions (`.github/workflows/ci.yml`, Lot 0.6) — les tests Postgres
+(`describe.skipIf(!DATABASE_URL)`) tournaient jusque-là silencieusement ignorés en CI faute de
+base disponible ; ils s'exécutent désormais réellement à chaque push/PR.
 
 ---
 
@@ -1132,6 +1142,7 @@ Lot/Sous-Lot significatif terminé. Les entrées les plus récentes en haut.*
 
 | Date | Entrée |
 |---|---|
+| 2026-07-27 | **Gap CI refermé (Lot 0.6) : PostgreSQL en CI GitHub Actions.** Noté sans être traité depuis la clôture du Lot 3 ("pas encore de service Postgres en CI, tests skip silencieusement") — devenu plus significatif après les Lots 5/6 (beaucoup plus de tests contre Postgres qu'à l'époque). `.github/workflows/ci.yml` gagne un service `postgres:18` (identifiants + `DATABASE_URL` en variable d'environnement du job, aucun fichier `server/.env`) et une étape `npm run migrate:up --workspace=server` avant `npm test`. **Vérifié manuellement en local avant d'ajouter le service** (sans Docker disponible dans cet environnement pour une simulation complète) : `server/.env` renommé temporairement, `DATABASE_URL` réexporté à la main, `migrate:up` fonctionne identiquement (lit `process.env.DATABASE_URL` directement, ne plante pas sur le fichier `--envPath` manquant) — reste à confirmer visuellement sur un vrai run GitHub Actions au prochain push. |
 | 2026-07-27 | **Lot 8.6 (monitoring basique) attaqué : alerte ntfy.sh optionnelle.** Logs déjà couverts sans rien ajouter (`journalctl`, acquis depuis les logs structurés du Lot 1.8/2). Pour l'alerte, plateforme choisie **ntfy.sh** — même contrainte que Ko-fi (Lot 6.1) : pas de création de compte tiers à ma place, donc un service qui fonctionne par simple nom de sujet plutôt qu'un MTA/SMTP nécessitant des identifiants inexistants. `ALERT_NTFY_TOPIC` optionnel dans `install.sh` : vide, aucune alerte configurée (dégradation gracieuse, comme `accounts`/`admin`) ; renseigné, écrit un service `angulio-alert.service` (oneshot, `curl` vers `ntfy.sh/<sujet>`) déclenché via `OnFailure=` sur `angulio.service`, lui-même limité par `StartLimitIntervalSec=60`/`StartLimitBurst=5` pour ne pas alerter sur un simple redémarrage isolé (déjà absorbé par `Restart=on-failure`), seulement sur un vrai crash-loop. Logique de génération des deux variantes du fichier systemd (avec/sans `OnFailure=`) vérifiée par un test isolé du bloc de substitution, en plus de `bash -n` sur le script complet — toujours pas exécuté sur une machine réelle (Wyse physique, 8.1, indisponible). |
 | 2026-07-27 | **Lot 8.4 étendu : `install.sh` intègre désormais PostgreSQL.** Point resté ouvert depuis la clôture du Lot 3 ("pas encore de service PostgreSQL dans install.sh") — traité maintenant que les Lots 5/6/7 sont faits et que le script est de toute façon en train d'être retouché. Ajouts : paquet `postgresql`, création idempotente du rôle/de la base applicatifs (mot de passe généré une seule fois, au premier déploiement — `server/.env` sert de marqueur pour ne jamais régénérer les identifiants d'un déploiement existant), génération de `server/.env` (`DATABASE_URL` + `ADMIN_PASSWORD_HASH`, ce dernier haché via `hashPassword.mjs` du Lot 5.1 à partir d'une nouvelle variable `ADMIN_PASSWORD` en tête de script, même convention que `DUCKDNS_TOKEN`), puis `npm run migrate:up` à chaque déploiement. Toujours seulement vérifié par `bash -n` (`shellcheck` non disponible sur cette machine) — l'exécution réelle reste bloquée sur le Wyse physique (8.1), comme le reste du Lot 8. |
 | 2026-07-27 | **Lot 7.1/7.2 faits (PWA) : manifeste, icônes, service worker.** `manifest.json` + 3 icônes PNG (192/512/512 maskable) générées via un `<canvas>` dans le navigateur plutôt que d'ajouter une dépendance de traitement d'image au projet (`sharp`/`canvas` npm) — deux cercles qui se chevauchent, évoquant le gameplay (absorption de cellules), place-holder de branding assumé. Service worker (`client/public/service-worker.js`, JS brut sans build) précache uniquement la coquille statique (page, bundle, manifeste, icônes) — **jamais** `/api/*` ni le WebSocket du jeu, pour ne jamais servir une liste de salons ou une partie périmées hors ligne. **Validé dans le navigateur** (Browser pane) : manifeste valide avec 3 icônes, service worker `activated`, les 7 fichiers de la coquille confirmés en cache. **7.3 (validation sur un vrai appareil Android) reste ⬜** : nécessite un appareil physique, indisponible dans cet environnement — même limite que le Lot 8.1 (Wyse physique). 7.4/7.5 restent différés comme prévu. |
