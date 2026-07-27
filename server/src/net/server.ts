@@ -1,7 +1,8 @@
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { join, normalize, resolve } from 'node:path';
+import { extname, join, normalize, resolve } from 'node:path';
+
 import {
   distance,
   WS_CLOSE_NICKNAME_TAKEN,
@@ -987,7 +988,7 @@ async function serveStatic(
   }
 
   const rootDir = resolve(dir);
-  const filePath = join(rootDir, normalize(requestedPath || '/index.html'));
+  let filePath = join(rootDir, normalize(requestedPath || '/index.html'));
 
   if (!filePath.startsWith(rootDir)) {
     res.writeHead(403);
@@ -998,10 +999,22 @@ async function serveStatic(
   try {
     await stat(filePath);
   } catch {
-    res.writeHead(404);
-    res.end();
-    return;
+    if (!extname(requestedPath)) {
+      filePath = join(rootDir, 'index.html');
+      try {
+        await stat(filePath);
+      } catch {
+        res.writeHead(404);
+        res.end();
+        return;
+      }
+    } else {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
   }
+
 
   // Sans ça, certains navigateurs réutilisent une version en cache de `bundle.js` après un
   // simple rechargement (pas un hard-refresh) — un correctif côté client peut alors sembler

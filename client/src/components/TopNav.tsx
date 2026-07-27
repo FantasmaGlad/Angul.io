@@ -25,12 +25,13 @@ export default function TopNav({ onOpenPanel, accountActive, pseudo, level }: To
         <button type="button" onClick={() => onOpenPanel('leaderboard')}>
           Classement
         </button>
-        <button type="button" onClick={() => onOpenPanel('modes')}>
+        <button type="button" onClick={() => window.open('/wiki', '_blank')}>
           Modes de Jeux
         </button>
         <button type="button" onClick={() => onOpenPanel('about')}>
           À Propos
         </button>
+
       </nav>
 
       <button

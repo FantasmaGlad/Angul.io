@@ -191,6 +191,24 @@ export default function App() {
 
 
 
+  const handleOpenPanel = useCallback((panel: PanelName) => {
+    if (panel === 'modes') {
+      window.open('/wiki', '_blank');
+      return;
+    }
+    setOpenPanel(panel);
+  }, []);
+
+  const isWikiRoute = window.location.pathname === '/wiki' || window.location.pathname === '/wiki/';
+
+  if (isWikiRoute) {
+    return (
+      <Suspense fallback={null}>
+        <WikiPage modes={modes} />
+      </Suspense>
+    );
+  }
+
   if (session) {
     return (
       <GameView
@@ -211,7 +229,7 @@ export default function App() {
         onPlay={handlePlay}
         leaving={leaving}
         homeError={homeError}
-        onOpenPanel={setOpenPanel}
+        onOpenPanel={handleOpenPanel}
         onOpenSupport={() => setOpenPanel('support')}
         accountActive={authSession !== undefined}
         pseudo={authSession?.pseudo ?? ''}
@@ -242,8 +260,6 @@ export default function App() {
             onOpenSettings={() => setOpenPanel('settings')}
           />
         )}
-        {openPanel === 'modes' && <WikiPage onClose={() => setOpenPanel(null)} modes={modes} />}
-
         {openPanel === 'leaderboard' && <LeaderboardPanel onClose={() => setOpenPanel(null)} />}
         {openPanel === 'support' && <SupportPanel onClose={() => setOpenPanel(null)} />}
         {openPanel === 'settings' && <SettingsPanel onClose={() => setOpenPanel(null)} />}
@@ -255,3 +271,4 @@ export default function App() {
     </>
   );
 }
+

@@ -1,15 +1,40 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { fetchAvailableModes } from '../lobby.js';
 import { modeMeta } from '../modes.js';
 
 interface WikiPageProps {
-  onClose: () => void;
-  modes: string[];
+  onClose?: () => void;
+  modes?: string[];
 }
 
 type WikiSection = 'modes' | 'particles' | 'entities' | 'events';
 
 export default function WikiPage({ onClose, modes }: WikiPageProps) {
   const [activeSection, setActiveSection] = useState<WikiSection>('modes');
+  const [modesList, setModesList] = useState<string[]>(modes || []);
+
+  useEffect(() => {
+    if (modes && modes.length > 0) {
+      setModesList(modes);
+      return;
+    }
+    void (async () => {
+      try {
+        const fetched = await fetchAvailableModes();
+        setModesList(fetched);
+      } catch {
+        setModesList(['vanilla', 'folie', 'equipe', 'bataille_royale', 'tous_contre_tous']);
+      }
+    })();
+  }, [modes]);
+
+  const handleBack = (): void => {
+    if (onClose) {
+      onClose();
+    } else {
+      window.location.href = '/';
+    }
+  };
 
   return (
     <div className="wiki-doc-container">
@@ -52,11 +77,12 @@ export default function WikiPage({ onClose, modes }: WikiPageProps) {
         </nav>
 
         <div className="wiki-sidebar-footer">
-          <button type="button" className="wiki-back-button" onClick={onClose}>
+          <button type="button" className="wiki-back-button" onClick={handleBack}>
             &lt;- RETOUR ACCUEIL
           </button>
         </div>
       </aside>
+
 
       {/* Zone de contenu principal (Style Documentation Froide) */}
       <main className="wiki-main-content">
@@ -76,8 +102,9 @@ export default function WikiPage({ onClose, modes }: WikiPageProps) {
               </p>
 
               <div className="wiki-mode-grid">
-                {modes.map((modeId) => {
+                {modesList.map((modeId) => {
                   const meta = modeMeta(modeId);
+
                   let startMass = '50 UC';
                   let xpMult = '1.0x';
                   let status = 'NOMINAL';
