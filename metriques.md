@@ -442,3 +442,42 @@ il valide déjà une bonne partie de l'objectif du Lot 4 (prouver que l'architec
 supporte plusieurs modes). Un mode aux mécaniques structurellement nouvelles (ex. un mode
 "zombie" avec IA d'entité non-joueur, cf. cahier des charges §3.4) restera un module de
 code à part, documenté ici pour sa seule partie "valeurs numériques" s'il en a.
+
+### 14.1 Hardcore (Lot 4 — mode aux mécaniques structurellement nouvelles)
+
+Choisi comme second mode de validation de l'API de hooks (cahier des charges §3.4, #2) —
+contrairement à Folie, Hardcore n'est **pas** réductible au schéma paramétrique (§1) : il
+introduit deux mécaniques qu'aucun réglage de valeur ne peut exprimer.
+
+**Mouvement/split/fusion/bords/nourriture** : identiques à Vanilla (`server/configs/hardcore.json`
+reprend exactement les valeurs de `vanilla.json`) — rien à changer de ce côté-là, cf. §3.4 #2 du
+cahier des charges qui ne décrit que l'absorption et la mort comme différentes.
+
+**Multiplicateur d'absorption entre joueurs** — seule la masse gagnée en mangeant un **autre
+joueur** est affectée (la nourriture ambiante reste 1:1, comme Vanilla) :
+
+```
+gain(attaquant) = masse(cible) × massGainMultiplier      (au lieu de gain = masse(cible))
+```
+
+`massGainMultiplier = 10` par défaut (configurable par salon, `HardcoreModConfig`) — valeur
+d'exemple du cahier des charges ("x10 ou configurable"), pas mesurée en playtest à ce jour.
+La condition pour avoir le droit de manger (`eating.massAdvantage`, 5 %) reste inchangée : seul
+le montant gagné change, pas qui a le droit de manger qui.
+
+**Perte totale de la progression XP de la partie en cas de mort** — contrairement aux autres
+modes (la masse maximale atteinte pendant la vie est créditée au compte même après une mort,
+Lot 3.5), Hardcore renvoie toujours 0 :
+
+```
+transformScoreForAccount(masseMaxAtteinte) = 0     (au lieu de = masseMaxAtteinte, identité)
+```
+
+Implémenté via un nouveau hook optionnel (`GameMod.transformScoreForAccount`, voir
+`engine/mod.ts` et le bilan de l'API §4.5 du plan) plutôt qu'un cas particulier codé en dur
+dans `net/server.ts` — appelé juste avant l'écriture en base (mort ou déconnexion, les deux
+étant déjà traitées de façon identique par le Lot 3.5).
+
+Fichier source : [server/configs/hardcore.json](server/configs/hardcore.json), code du mode :
+[server/src/mods/hardcore/index.ts](server/src/mods/hardcore/index.ts) — composé au-dessus de
+`createParametricMod` plutôt que dupliqué (voir commentaire en tête du fichier).

@@ -40,4 +40,11 @@ export interface GameMod {
    * dupliquer la formule du mod côté client (voir `WorldStateMessage.self`, protocol.ts).
    * Optionnel : si absent, le champ n'est pas renseigné côté client. */
   getAccelerationForMass?(mass: number): number;
+
+  /** Lot 4 (mode Hardcore, cahier des charges §3.4 #2 : "perte totale de la progression XP de
+   * la partie en cas de mort") — appelé juste avant l'écriture des stats en base (Lot 3.5, à
+   * la mort ou à la déconnexion) avec la masse maximale atteinte pendant cette vie ; la valeur
+   * renvoyée est ce qui est effectivement crédité au compte (score et XP). Optionnel : un mod
+   * qui ne l'implémente pas (Vanilla, Folie) laisse le score brut inchangé (identité). */
+  transformScoreForAccount?(rawScore: number): number;
 }

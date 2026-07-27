@@ -143,6 +143,12 @@ export class Room {
     return this.mod.getAccelerationForMass?.(mass);
   }
 
+  /** Délègue au mod (voir `GameMod.transformScoreForAccount`, Lot 4) — identité si le mod ne
+   * l'implémente pas (score brut inchangé). */
+  transformScoreForAccount(rawScore: number): number {
+    return this.mod.transformScoreForAccount?.(rawScore) ?? rawScore;
+  }
+
   onState(listener: (tick: number) => void): void {
     this.stateListeners.push(listener);
   }

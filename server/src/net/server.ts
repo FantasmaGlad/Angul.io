@@ -295,7 +295,10 @@ function recordAccountStats(
   if (!accounts) return;
   const accountId = runtime.accountIdByPlayer.get(playerId);
   if (accountId === undefined) return;
-  const score = runtime.maxMassByPlayer.get(playerId) ?? 0;
+  const rawScore = runtime.maxMassByPlayer.get(playerId) ?? 0;
+  // Lot 4 (Hardcore) : un mod peut annuler tout crédit pour cette vie (voir
+  // `GameMod.transformScoreForAccount`) — identité pour les mods qui ne l'implémentent pas.
+  const score = managed.room.transformScoreForAccount(rawScore);
   if (score <= 0) return;
 
   accounts.recordGameResult(accountId, managed.modId, score).catch((error: unknown) => {

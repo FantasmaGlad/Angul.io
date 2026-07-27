@@ -158,6 +158,23 @@ formule exacte peut être ajustée en cours de route sans changer l'architecture
   remplie par aucun des deux camps (masses proches) : ils se repoussent simplement, ou
   traversent-ils l'un l'autre sans effet ?
 
+### 3.6 Spécification du mode Hardcore (Lot 4 — validation de l'API de hooks)
+
+Choisi comme deuxième mode de développement (§3.4 #2) précisément parce qu'il n'est **pas**
+réductible à un réglage de valeurs (contrairement à Folie) : il ajoute deux mécaniques que le
+schéma de configuration paramétrique (metriques.md §1) ne peut pas exprimer.
+
+| Paramètre | Valeur | Différence avec Vanilla |
+|---|---|---|
+| Mouvement, split, fusion, bords, nourriture | Identiques à Vanilla (§3.5) | Aucune |
+| Multiplicateur de masse gagnée en mangeant un **autre joueur** | ×10 (configurable) | Vanilla : gain = masse de la cible ; Hardcore : gain = masse de la cible × 10 |
+| Multiplicateur de masse gagnée en mangeant de la **nourriture ambiante** | ×1 (inchangé) | Aucune — l'agressivité voulue vient de la prédation entre joueurs |
+| Condition pour avoir le droit de manger un autre joueur | 5 % d'avantage de masse (inchangé) | Aucune — seul le montant gagné change, pas qui a le droit de manger qui |
+| Conséquence d'une mort sur la progression du compte (Lot 3.5) | Perte totale (0 crédité) | Vanilla : la masse maximale atteinte pendant la vie est créditée même après une mort ; Hardcore : aucun crédit, comme si la vie n'avait pas eu lieu |
+
+Détail des formules : [metriques.md §14.1](metriques.md#141-hardcore-lot-4--mode-aux-mécaniques-structurellement-nouvelles).
+Implémentation : [server/src/mods/hardcore/index.ts](server/src/mods/hardcore/index.ts).
+
 ---
 
 ## 4. Architecture technique

@@ -38,7 +38,7 @@ mathématiques exactes (masse, vitesse, split, fusion, decay…) mod par mod. Le
 | [1](#lot-1--socle-technique-moteur-de-jeu) | Socle technique moteur de jeu | MVP | ✅ Fait — ⚠️ voir 1.8 (bande passante) |
 | [2](#lot-2--salons-rooms) | Salons (rooms) | MVP | ✅ Fait — ⚠️ voir 2.5 (isolation CPU non garantie, mono-thread) |
 | [3](#lot-3--comptes-joueurs--persistance) | Comptes joueurs & persistance | MVP | ✅ Fait |
-| [4](#lot-4--deuxième-mode-de-jeu-validation-de-lapi-de-modding) | Deuxième mode de jeu (validation API) | MVP | ⬜ À faire |
+| [4](#lot-4--deuxième-mode-de-jeu-validation-de-lapi-de-modding) | Deuxième mode de jeu (validation API) | MVP | ✅ Fait |
 | [5](#lot-5--interface-dadministration) | Interface d'administration | MVP | ⬜ À faire |
 | [6](#lot-6--statut-premium--dons) | Statut Premium & dons | MVP | ⬜ À faire |
 | [7](#lot-7--client-mobile-pwa) | Client mobile (PWA) | MVP | ⬜ À faire |
@@ -583,45 +583,82 @@ d'envisager l'ouverture communautaire (Phase 2).
 > réglage de valeurs) pour prouver que l'architecture de hooks elle-même est suffisante.
 
 ### 4.1 — Choix du mode à développer en second
-- **Statut :** ⬜ À faire
-- **Contenu :** trancher parmi la liste du §3.4 — **un mode non paramétrique**, qui
-  demande une logique nouvelle (Folie ne compte pas, voir note ci-dessus). Recommandation
-  inchangée : privilégier **Hardcore** (#2) ou **Précision/Sniper** (#8), plus simples que
-  Classes (#5) ou Battle Royale (#6).
+- **Statut :** ✅ Fait (2026-07-27)
+- **Contenu :** **Hardcore** (#2) retenu, conformément à la recommandation du plan.
+  Précision/Sniper (#8, l'autre option recommandée) a été écarté après relecture : tel que
+  décrit (§3.4), il se réduit entièrement à `food.density → ~0`, donc purement paramétrique
+  (comme Folie) — il n'aurait rien prouvé de plus sur l'API de hooks elle-même. Hardcore, lui,
+  introduit deux mécaniques non réductibles à un réglage de valeurs (voir 4.2).
 - **Dépendances :** Lot 1.6.
-- **Critère d'acceptation :** mode choisi et acté dans le Journal des décisions.
+- **Critère d'acceptation :** **validé** — choix acté ci-dessus et dans le Journal des décisions.
 
 ### 4.2 — Spécification chiffrée du mode choisi
-- **Statut :** ⬜ À faire
-- **Contenu :** figer les valeurs (multiplicateurs, pénalités, densité de spawn, etc.),
-  sur le modèle du tableau §3.5 pour Vanilla, et ajouter une nouvelle section formules
-  dans [metriques.md](metriques.md) (§14) sur le modèle de la section Vanilla.
+- **Statut :** ✅ Fait (2026-07-27)
+- **Contenu :** mouvement/split/fusion/bords/nourriture identiques à Vanilla (aucune raison de
+  les changer, cf. cahier des charges §3.4 #2) — seuls deux paramètres sont propres à Hardcore :
+  multiplicateur de masse gagnée en mangeant un **autre joueur** (×10 par défaut, configurable),
+  et conséquence d'une mort sur le compte (perte totale, 0 crédité, au lieu de la masse maximale
+  atteinte pour les autres modes).
 - **Dépendances :** 4.1.
-- **Critère d'acceptation :** tableau de valeurs ajouté au cahier des charges, et section
-  correspondante ajoutée dans metriques.md.
+- **Critère d'acceptation :** **validé** — tableau de valeurs ajouté au cahier des charges
+  ([§3.6](cahier_des_charges.md)), section formules ajoutée dans
+  [metriques.md §14.1](metriques.md#141-hardcore-lot-4--mode-aux-mécaniques-structurellement-nouvelles).
 
 ### 4.3 — Implémentation du mode comme mod indépendant
-- **Statut :** ⬜ À faire
-- **Contenu :** développement sans aucune modification du moteur central (Lot 1.2/1.3).
+- **Statut :** ✅ Fait (2026-07-27)
+- **Contenu :** `server/src/mods/hardcore/index.ts` (`createHardcoreMod`) — **composé** au-dessus
+  de `createParametricMod` plutôt que dupliqué : délègue tel quel `onTick`/`onPostMove`/
+  `onPlayerJoin`/`onPlayerInput`/`onPlayerDeath`/`getAccelerationForMass` (mouvement identique à
+  Vanilla), ne réécrit que `onCollision` (multiplicateur d'absorption entre joueurs, nourriture
+  et fusion inchangées) et `transformScoreForAccount` (nouveau hook, voir 4.5). Config
+  `server/configs/hardcore.json` (mêmes valeurs que `vanilla.json`, schéma paramétrique standard
+  réutilisé pour la partie mouvement). `server/src/index.ts` gagne un petit registre
+  (`NON_PARAMETRIC_MOD_FACTORIES`) pour que `resolveMod` sache quels `modId` utilisent un mod
+  écrit à la main plutôt que `createParametricMod` — aucune ligne d'`engine/` modifiée hors
+  l'ajout documenté du hook (voir 4.5).
 - **Dépendances :** 4.2.
-- **Critère d'acceptation :** le mode tourne dans un salon dédié ; aucune ligne du moteur
-  central (hors ajout d'un hook manquant, à documenter si nécessaire) n'a été modifiée.
+- **Critère d'acceptation :** **validé** — 8 tests dédiés (`mods/hardcore/index.test.ts` :
+  multiplicateur par défaut et personnalisé, refus sans avantage de masse suffisant délégué à la
+  répulsion, nourriture/fusion inchangées, `transformScoreForAccount` toujours 0, délégation
+  vérifiée pour `onPlayerJoin`/`getAccelerationForMass`). **Validé manuellement en conditions
+  réelles** : salon Hardcore créé et rejoint dans le navigateur, joueur authentifié qui se
+  déconnecte après avoir atteint 45-50 de masse → confirmé en base (`psql`) que `xp`/
+  `player_best_scores` restent inchangés (0 crédité), alors qu'un même scénario en Vanilla
+  crédite bien 50 XP (non-régression confirmée).
 
 ### 4.4 — Sélecteur de mode à la création de salon
-- **Statut :** ⬜ À faire
-- **Contenu :** extension du lobby (Lot 2.2) pour choisir le mode de jeu à la création d'un
-  salon.
+- **Statut :** ✅ Fait (2026-07-27) — **déjà acquis, aucun changement nécessaire**
+- **Contenu :** le lobby (Lot 2.2) et `listAvailableModIds()` (scan de `server/configs/*.json`)
+  étaient déjà entièrement génériques : `hardcore.json` suffit à faire apparaître le mode dans
+  `GET /api/modes` et le `<select>` du lobby, sans toucher au client. Confirme que le découplage
+  décidé au Lot 2 (réseau jamais couplé au mécanisme concret de chargement des mods) tient sa
+  promesse pour un troisième mode, y compris non-paramétrique.
 - **Dépendances :** 4.3, Lot 2.2.
-- **Critère d'acceptation :** un salon peut être créé en mode Vanilla ou dans le second
-  mode, depuis l'interface.
+- **Critère d'acceptation :** **validé** — `GET /api/modes` renvoie
+  `["folie","hardcore","vanilla"]`, salon Hardcore créé via `POST /api/rooms` et rejoint depuis
+  le lobby (navigateur).
 
 ### 4.5 — Bilan de l'API de hooks
-- **Statut :** ⬜ À faire
-- **Contenu :** revue des limites rencontrées pendant 4.3 (hooks manquants, granularité
-  insuffisante, etc.) avant de considérer l'API comme stable pour la Phase 2 (Lot 9).
+- **Statut :** ✅ Fait (2026-07-27)
+- **Contenu :** **un seul ajustement nécessaire** — un nouveau hook optionnel,
+  `GameMod.transformScoreForAccount?(rawScore): number` (`engine/mod.ts`), délégué par
+  `Room.transformScoreForAccount` (identité si le mod ne l'implémente pas) et appelé par
+  `net/server.ts` juste avant l'écriture des stats (Lot 3.5). Nécessaire parce que le Lot 3.5 a
+  été conçu *avant* le Lot 4, sans notion de mode pouvant modifier la conséquence d'une mort sur
+  le compte — plutôt que de coder un cas particulier `if (modId === 'hardcore')` dans
+  `net/server.ts` (coupling direct réseau ↔ mod, exactement ce que l'architecture évite
+  partout ailleurs), l'ajout d'un hook générique garde `net/server.ts` agnostique du mode, comme
+  pour `getAccelerationForMass` (Lot 3.5) avant lui. **Tout le reste a suffi sans modification** :
+  `onCollision` s'est révélé assez générique pour exprimer un multiplicateur d'absorption
+  arbitraire, et la **composition** (un mod qui enveloppe `createParametricMod` et ne réécrit que
+  2 des 7 hooks utilisés) s'est avérée un patron naturel et peu coûteux pour un mode qui ne
+  change qu'une fraction des mécaniques d'un mode existant — pattern qui n'avait pas été
+  anticipé/documenté avant ce Lot et vaut la peine d'être gardé en tête pour de futurs mods
+  communautaires (Lot 9).
 - **Dépendances :** 4.3.
-- **Critère d'acceptation :** liste des ajustements nécessaires (s'il y en a) consignée
-  dans le Journal des décisions, avec décision de les traiter maintenant ou en Phase 2.
+- **Décision :** l'unique ajustement (hook `transformScoreForAccount`) est déjà traité
+  maintenant (pas reporté en Phase 2) — coût marginal (une ligne d'interface + une ligne de
+  délégation dans `Room`), et bloquant pour que 4.3 fonctionne correctement.
 
 ---
 
@@ -960,6 +997,8 @@ Lot/Sous-Lot significatif terminé. Les entrées les plus récentes en haut.*
 
 | Date | Entrée |
 |---|---|
+| 2026-07-27 | **Lot 4 clos : mode Hardcore, second mode aux mécaniques structurellement nouvelles.** Choisi plutôt que Précision/Sniper (l'autre recommandation) après avoir remarqué que ce dernier, tel que décrit, se réduit à `food.density → ~0` — purement paramétrique, n'aurait rien prouvé de plus qu'un troisième Folie. Hardcore introduit : (1) un multiplicateur de masse gagnée en mangeant un autre joueur (×10 par défaut), (2) la perte totale de la progression du compte à la mort. Implémenté par **composition** plutôt que duplication : `createHardcoreMod` enveloppe `createParametricMod` et ne réécrit que `onCollision` et un nouveau hook — un patron de mod non anticipé avant ce Lot, à garder en tête pour la Phase 2 (modding communautaire, Lot 9). **Seul ajustement à l'API de hooks** : `GameMod.transformScoreForAccount?` (voir 4.5) — tout le reste (onCollision générique, découplage réseau/mod déjà acquis au Lot 2) a suffi sans toucher à `engine/`. 8 nouveaux tests + 1 test existant mis à jour (`listAvailableModIds` liste désormais 3 modes). Validé manuellement : salon Hardcore créé/rejoint depuis le lobby (aucun changement client nécessaire), joueur authentifié confirmé en base (`psql`) recevant 0 crédit après une vie à 45-50 de masse, contre 50 XP pour le même scénario en Vanilla (non-régression). |
+| 2026-07-27 | **Flake de test pré-existant repéré, non lié aux changements de la session** : `server/src/net/server.test.ts` ("diffuse l'état du monde... avec le morceau du joueur") a échoué une fois sur une exécution complète (`entities.some(e => e.x===0 && e.y===0)` côté "son propre morceau"), puis est repassé au vert de façon reproductible sur toutes les exécutions suivantes. Cause probable : le `RoomManager` de test démarre un vrai timer de tick (20Hz) dès la création du salon, qui peut broadcaster un premier `state` juste avant que le test n'ait fini d'attacher ses assertions sur le message capturé — timing non déterministe entre un vrai timer et l'event loop du test, pas un bug fonctionnel du code de production. Non traité dans l'immédiat (rare, non reproductible à la demande) ; à stabiliser si ça devient gênant en CI (ex. `vi.useFakeTimers()` sur ce test précis, ou une assertion moins sensible à l'ordre des messages `state` reçus). |
 | 2026-07-26 | **Refonte du lobby** (demande utilisateur : tenir sans scroller, thème clair fixe façon "labo premium", vraie glassmorphism, arène transparente). Thème sombre adaptatif (`prefers-color-scheme: dark`) **retiré** du lobby — clair fixe, décision délibérée, pas une régression. `#lobbyOverlay` passe d'un fond opaque à un voile translucide (`rgba(238,238,240,0.4)`, sans flou propre, déjà porté par `#lobbyPanel`) : laisse apparaître l'arène (grille) derrière le verre, vraie glassmorphism plutôt qu'un fond plein. Fond "labo premium" (dégradés + grille de points) déplacé du seul `#lobbyOverlay` vers `html`/`body`, partagé par toute l'appli. **Arène transparente** (`render.ts`) : `ctx.clearRect` remplace le `fillRect` blanc opaque ; couleur de grille recalibrée en hairline translucide (`rgba(17,17,19,0.1)`) pour rester visible sur le nouveau fond clair. **Bug trouvé en cours de route** : `#statsPanel`/`#hud` (`#gameOverlay`) étaient toujours présents dans le DOM même hors partie (juste masqués visuellement par l'ancien fond opaque du lobby) — devenus visibles par transparence une fois le lobby translucide. Corrigé : `#gameOverlay` masqué par défaut, affiché seulement à l'entrée en partie (`index.ts`, `enterGame`/`onClose`). **Mise en page** : lobby restructuré en deux colonnes (`.lobby-columns`, panneau élargi à 720px, repli une colonne sous 640px) et espacements resserrés — tient désormais dans un viewport standard (~720px de haut) sans avoir à scroller, alors que l'ancienne colonne unique le nécessitait. **Bug rapporté séparément et corrigé au passage** : le champ "Nom du salon" (`<input>` brut, sans le wrapper `.field`/`.field-row` qui porte la marge ailleurs) touchait directement la ligne mode/Privé juste en dessous — marge dédiée ajoutée. |
 | 2026-07-26 | **Lot 3 clos (3.2-3.6) : comptes joueurs, sessions, modèle complet, stats, profil.** Argon2 retenu (§5.1, testé viable sur cette machine avant adoption) pour le hachage, sessions en mémoire par token opaque (pas de JWT, cohérent avec le reste du projet), transmises à la connexion WebSocket via `?token=` (les navigateurs n'autorisent pas d'en-têtes personnalisés sur `WebSocket`). **Une partie en invité reste possible à tout moment** — l'authentification est une couche additive, jamais un prérequis pour jouer. Niveau/XP volontairement provisoires (§5.2 ne tranche pas la formule) : XP = masse maximale atteinte pendant la partie, niveau en racine carrée de l'XP total (`levels.ts`) — le seul système de score disponible à ce jour. Stats écrites à la mort **et** à la déconnexion (une coupure réseau est aussi une "fin de partie"), en best-effort asynchrone pour ne jamais bloquer la diffusion réseau. 24 nouveaux tests (dont 16 contre un vrai PostgreSQL local, `describe.skipIf(!DATABASE_URL)` pour rester silencieux sans base configurée — **pas encore de service Postgres en CI**, à ajouter si ce garde-fou devient limitant). **Validé manuellement de bout en bout** dans le navigateur : inscription → jointure de salon avec token → partie jouée → déconnexion → XP/meilleur score confirmés en base (`psql`) et ré-affichés dans l'écran de profil après reconnexion. |
 | 2026-07-26 | **Zoom recalibré, unités d'affichage m/s(²), retrait du compteur de morceaux** (demandes utilisateur). **Zoom** (`render.ts`) : `BASE_SCALE` passe de 1 à **1.8** (`MAX_SCALE` 2→2.2 en conséquence) — le joueur démarre désormais visuellement zoomé par rapport à la taille "réelle" de son morceau (meilleur contrôle en début de partie), la sensation de dézoom progressif à mesure que la masse grossit reste la même courbe (`√(masse/référence)`), juste recalibrée à un niveau de zoom de départ plus élevé. 2 tests (`render.test.ts`) mis à jour pour référencer `BASE_SCALE` exporté plutôt qu'une valeur `1` en dur. **Unités** (`index.ts`) : Vitesse/Accélération affichées en `m/s`/`m/s²` (facteur cosmétique `MAP_UNITS_TO_METERS = 0.01`, affichage uniquement — la simulation ne modélise aucune unité SI, non représentatif tel que demandé, juste un repère plus parlant que l'unité de carte abstraite). **HUD** : retrait du texte `"X morceau(x) en jeu"` ; ne restent que le message mort/respawn et, le cas échéant, le code d'invitation. |

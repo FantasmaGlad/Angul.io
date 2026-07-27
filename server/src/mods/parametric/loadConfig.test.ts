@@ -28,7 +28,7 @@ describe('loadModConfig', () => {
 });
 
 describe('listAvailableModIds', () => {
-  it('liste vanilla et folie', () => {
-    expect(listAvailableModIds()).toEqual(['folie', 'vanilla']);
+  it('liste vanilla, folie et hardcore (triés par ordre alphabétique)', () => {
+    expect(listAvailableModIds()).toEqual(['folie', 'hardcore', 'vanilla']);
   });
 });

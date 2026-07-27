@@ -5,8 +5,11 @@ import { fileURLToPath } from 'node:url';
 import 'dotenv/config';
 import { AccountsService } from './accounts/service.js';
 import { getPool } from './db/pool.js';
+import type { GameMod } from './engine/mod.js';
 import { RoomManager, type ModResolver } from './engine/roomManager.js';
+import { createHardcoreMod } from './mods/hardcore/index.js';
 import { createParametricMod } from './mods/parametric/index.js';
+import type { ParametricModConfig } from './mods/parametric/config.js';
 import { listAvailableModIds, loadModConfig } from './mods/parametric/loadConfig.js';
 import { startGameServer } from './net/server.js';
 
@@ -14,12 +17,22 @@ const TICK_RATE_HZ = 20;
 const DEFAULT_MOD_ID = process.env.MOD_ID ?? 'vanilla';
 const PORT = Number(process.env.PORT ?? 8080);
 
-// Suppose une carte carrée (largeur = hauteur), vrai pour vanilla/folie à ce jour — le rendu
-// des bords lui-même (border.ts) gère largeur et hauteur indépendamment.
+/** Modes aux mécaniques structurellement nouvelles (Lot 4) — leur fichier de config reste au
+ * format paramétrique standard (server/configs/*.json, réutilisé pour mouvement/split/fusion/
+ * bords/nourriture), mais leur `GameMod` est écrit à la main plutôt que produit par
+ * `createParametricMod` seul. Un mode absent d'ici est traité comme purement paramétrique
+ * (Vanilla, Folie, et tout futur mode qui ne fait que régler des valeurs). */
+const NON_PARAMETRIC_MOD_FACTORIES: Record<string, (config: ParametricModConfig) => GameMod> = {
+  hardcore: createHardcoreMod,
+};
+
+// Suppose une carte carrée (largeur = hauteur), vrai pour vanilla/folie/hardcore à ce jour —
+// le rendu des bords lui-même (border.ts) gère largeur et hauteur indépendamment.
 const resolveMod: ModResolver = (modId) => {
   const config = loadModConfig(modId);
+  const factory = NON_PARAMETRIC_MOD_FACTORIES[modId] ?? createParametricMod;
   return {
-    mod: createParametricMod(config),
+    mod: factory(config),
     mapSize: config.arena.width,
     kArea: config.areaConstant,
   };
