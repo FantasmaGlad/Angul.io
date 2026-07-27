@@ -17,8 +17,9 @@ import {
 // dans un panneau modal — RoomsPanel.tsx a été supprimé, son contenu redistribué dans
 // ModeRoomList/PlayPanel/CreateRoomPanel.
 const AccountPanel = lazy(() => import('./components/AccountPanel.js'));
-const ModesPanel = lazy(() => import('./components/ModesPanel.js'));
+const WikiPage = lazy(() => import('./components/WikiPage.js'));
 const LeaderboardPanel = lazy(() => import('./components/LeaderboardPanel.js'));
+
 const SupportPanel = lazy(() => import('./components/SupportPanel.js'));
 const SettingsPanel = lazy(() => import('./components/SettingsPanel.js'));
 const AboutPanel = lazy(() => import('./components/AboutPanel.js'));
@@ -241,7 +242,8 @@ export default function App() {
             onOpenSettings={() => setOpenPanel('settings')}
           />
         )}
-        {openPanel === 'modes' && <ModesPanel onClose={() => setOpenPanel(null)} modes={modes} />}
+        {openPanel === 'modes' && <WikiPage onClose={() => setOpenPanel(null)} modes={modes} />}
+
         {openPanel === 'leaderboard' && <LeaderboardPanel onClose={() => setOpenPanel(null)} />}
         {openPanel === 'support' && <SupportPanel onClose={() => setOpenPanel(null)} />}
         {openPanel === 'settings' && <SettingsPanel onClose={() => setOpenPanel(null)} />}
