@@ -31,8 +31,9 @@ set -euo pipefail
 # régénérés dans le dos d'un déploiement existant).
 #
 # Usage :
-#   1. Renseigner DUCKDNS_SUBDOMAIN, DUCKDNS_TOKEN et ADMIN_PASSWORD ci-dessous (les
-#      autres valeurs par défaut conviennent pour un déploiement standard).
+#   1. Renseigner DUCKDNS_SUBDOMAIN, DUCKDNS_TOKEN et ADMIN_PASSWORD (ou ADMIN_PASSWORD_HASH,
+#      voir ci-dessous) ci-dessous (les autres valeurs par défaut conviennent pour un
+#      déploiement standard).
 #      ADMIN_PASSWORD n'est nécessaire qu'au premier déploiement (server/.env absent) —
 #      peut être vidé après coup, il n'est jamais réécrit sur le disque tel quel (seul
 #      son hash argon2 l'est, dans server/.env).
@@ -49,11 +50,18 @@ NODE_MAJOR="20"
 DUCKDNS_SUBDOMAIN=""                                  # ex. "angulio" -> angulio.duckdns.org — À REMPLIR
 DUCKDNS_TOKEN=""                                      # jeton depuis https://www.duckdns.org — À REMPLIR
 LETSENCRYPT_EMAIL="clement.barillot3901@gmail.com"    # contact ACME de Caddy, modifiable
-ADMIN_PASSWORD=""                                     # mot de passe admin (Lot 5.1) — requis
+ADMIN_PASSWORD=""                                     # mot de passe admin (Lot 5.1) en clair — requis
                                                        # seulement au premier déploiement (voir
-                                                       # étape 6 du script) — À REMPLIR puis, si voulu,
-                                                       # vidable après un premier `./install.sh`
+                                                       # étape 6 du script) si ADMIN_PASSWORD_HASH
+                                                       # (ci-dessous) est vide — À REMPLIR puis, si
+                                                       # voulu, vidable après un premier `./install.sh`
                                                        # réussi (seul son hash est conservé).
+ADMIN_PASSWORD_HASH=""                                # alternative à ADMIN_PASSWORD : hash argon2 déjà
+                                                       # calculé (ex. réutilisé depuis un autre
+                                                       # environnement via `npm run hash-password`) —
+                                                       # évite de faire transiter le mot de passe en
+                                                       # clair sur cette machine. Prioritaire sur
+                                                       # ADMIN_PASSWORD si les deux sont renseignés.
 DB_NAME="angulio_prod"
 DB_USER="angulio"
 ALERT_NTFY_TOPIC=""    # optionnel (Lot 8.6) — sujet ntfy.sh (https://ntfy.sh) recevant une
@@ -138,8 +146,8 @@ ENV_FILE="${APP_DIR}/server/.env"
 if [[ ! -f "$ENV_FILE" ]]; then
   log "Premier déploiement : création du rôle/base PostgreSQL et de server/.env"
 
-  if [[ -z "$ADMIN_PASSWORD" ]]; then
-    echo "Renseigne ADMIN_PASSWORD en haut de ce script avant le premier déploiement (voir étape 6 du script)." >&2
+  if [[ -z "$ADMIN_PASSWORD" && -z "$ADMIN_PASSWORD_HASH" ]]; then
+    echo "Renseigne ADMIN_PASSWORD ou ADMIN_PASSWORD_HASH en haut de ce script avant le premier déploiement (voir étape 6 du script)." >&2
     exit 1
   fi
 
@@ -149,10 +157,12 @@ if [[ ! -f "$ENV_FILE" ]]; then
   sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1 \
     || sudo -u postgres psql -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};"
 
-  # Mot de passe admin haché via le même script que le développement local
-  # (server/scripts/hashPassword.mjs) — exécuté depuis server/ pour résoudre `argon2` installé
-  # par `npm ci` juste au-dessus, jamais le mot de passe en clair écrit sur le disque.
-  ADMIN_PASSWORD_HASH="$(sudo -u "$APP_USER" bash -c "cd '${APP_DIR}/server' && node scripts/hashPassword.mjs '${ADMIN_PASSWORD}'")"
+  if [[ -z "$ADMIN_PASSWORD_HASH" ]]; then
+    # Mot de passe admin haché via le même script que le développement local
+    # (server/scripts/hashPassword.mjs) — exécuté depuis server/ pour résoudre `argon2` installé
+    # par `npm ci` juste au-dessus, jamais le mot de passe en clair écrit sur le disque.
+    ADMIN_PASSWORD_HASH="$(sudo -u "$APP_USER" bash -c "cd '${APP_DIR}/server' && node scripts/hashPassword.mjs '${ADMIN_PASSWORD}'")"
+  fi
 
   cat > "$ENV_FILE" <<EOF
 DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@localhost:5432/${DB_NAME}
