@@ -76,137 +76,172 @@ export default function RoomsView({ token, onAuthError, onSelectCreativeRoom }: 
     })();
   };
 
+  const carouselRef = useRef<HTMLDivElement>(null);
+  const scrollCarousel = (dir: 'left' | 'right') => {
+    if (!carouselRef.current) return;
+    const amount = dir === 'left' ? -420 : 420;
+    carouselRef.current.scrollBy({ left: amount, behavior: 'smooth' });
+  };
+
   return (
-    <div className="view view-wide">
-      <div className="top-bar">
+    <div className="view view-wide" style={{ height: 'calc(100vh - 56px)', display: 'flex', flexDirection: 'column', gap: 12, maxWidth: '100%' }}>
+      <div className="top-bar" style={{ flexShrink: 0 }}>
         <div>
-          <h2>Salons &amp; Écrans</h2>
+          <h2>Salons &amp; Écrans (Vue Carrousel)</h2>
           <p className="view-subtitle">
-            Salons actifs, supervision globale, joueurs connectés, expulsion, transfert.
+            Supervision globale en carrousel horizontal — aucun défilement vertical requis.
           </p>
         </div>
-        <button className="btn-ghost" type="button" onClick={refresh}>
-          <span className="material-symbols-outlined" style={{ fontSize: 16, verticalAlign: 'middle', marginRight: 4 }}>refresh</span>
-          Rafraîchir
-        </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button className="swiper-arrow-btn" type="button" onClick={() => scrollCarousel('left')} aria-label="Précédent">
+            <span className="material-symbols-outlined">chevron_left</span>
+          </button>
+          <button className="swiper-arrow-btn" type="button" onClick={() => scrollCarousel('right')} aria-label="Suivant">
+            <span className="material-symbols-outlined">chevron_right</span>
+          </button>
+          <button className="btn-ghost" type="button" onClick={refresh}>
+            <span className="material-symbols-outlined" style={{ fontSize: 16, verticalAlign: 'middle', marginRight: 4 }}>refresh</span>
+            Rafraîchir
+          </button>
+        </div>
       </div>
 
-      <p className="error-text">{error}</p>
-      <p className="status-text">{status}</p>
+      {error && <p className="error-text" style={{ margin: 0, flexShrink: 0 }}>{error}</p>}
+      {status && <p className="status-text" style={{ margin: 0, flexShrink: 0 }}>{status}</p>}
 
-      {rooms.map((room) => (
-        <section className="panel" key={room.id}>
-          <div className="room-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <h2 style={{ fontSize: 16 }}>
-                {room.name} <span className="badge">{room.modId}</span>{' '}
-                <span className="badge">{room.visibility}</span>
-              </h2>
-              <p className="view-subtitle">
-                {room.stats.playerCount}/{room.maxPlayers} joueurs · tick {room.tickRateHz}Hz ·
-                avg {room.stats.tickAvgMs.toFixed(1)}ms · p95 {room.stats.tickP95Ms.toFixed(1)}ms
-              </p>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {onSelectCreativeRoom && (
+      {/* Track de Carrousel Horizontal */}
+      <div
+        ref={carouselRef}
+        className="rooms-carousel-track"
+        style={{
+          flex: 1,
+          display: 'flex',
+          gap: 16,
+          overflowX: 'auto',
+          overflowY: 'hidden',
+          paddingBottom: 8,
+          scrollSnapType: 'x mandatory',
+        }}
+      >
+        {rooms.map((room) => (
+          <section
+            className="panel"
+            key={room.id}
+            style={{
+              minWidth: 380,
+              maxWidth: 420,
+              flexShrink: 0,
+              scrollSnapAlign: 'start',
+              display: 'flex',
+              flexDirection: 'column',
+              height: '100%',
+              boxSizing: 'border-box',
+              padding: 16,
+            }}
+          >
+            <div className="room-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+              <div>
+                <h3 style={{ fontSize: 16, margin: 0 }}>
+                  {room.name} <span className="badge">{room.modId}</span>
+                </h3>
+                <p className="view-subtitle" style={{ marginTop: 4 }}>
+                  {room.stats.playerCount}/{room.maxPlayers} joueurs · tick {room.tickRateHz}Hz · avg {room.stats.tickAvgMs.toFixed(1)}ms
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {onSelectCreativeRoom && (
+                  <button
+                    className="btn-primary"
+                    type="button"
+                    style={{ padding: '6px 12px', fontSize: 12 }}
+                    onClick={() => onSelectCreativeRoom(room.id)}
+                    title="Gérer en direct dans le studio"
+                  >
+                    Gérer
+                  </button>
+                )}
                 <button
-                  className="btn-primary"
+                  className="btn-ghost"
                   type="button"
-                  onClick={() => onSelectCreativeRoom(room.id)}
-                  title="Ouvrir l'Espace Créatif pour ce salon"
+                  style={{ padding: '6px 10px', fontSize: 12 }}
+                  onClick={() => setPov({ roomId: room.id, playerId: '', nickname: `Spectateur Salon : ${room.name}` })}
+                  title="Voir l'arène globale"
                 >
-                  <span className="material-symbols-outlined" style={{ fontSize: 18, verticalAlign: 'middle', marginRight: 4 }}>
-                    tune
-                  </span>
-                  Gérer en direct
+                  POV
                 </button>
-              )}
-              <button
-                className="btn-ghost"
-                type="button"
-                onClick={() => setPov({ roomId: room.id, playerId: '', nickname: `Spectateur Salon : ${room.name}` })}
-                title="Voir l'arène globale en direct"
-              >
-                <span className="material-symbols-outlined" style={{ fontSize: 18, verticalAlign: 'middle', marginRight: 4 }}>
-                  visibility
-                </span>
-                Spectateur
-              </button>
+              </div>
             </div>
-          </div>
 
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Joueur</th>
-                <th>Masse</th>
-                <th>Ping</th>
-                <th>Statut</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {room.players.length === 0 ? (
-                <tr>
-                  <td colSpan={5}>Aucun joueur.</td>
-                </tr>
-              ) : (
-                room.players.map((player) => (
-                  <tr key={player.playerId}>
-                    <td>{player.nickname}</td>
-                    <td>{Math.round(player.mass)}</td>
-                    <td>{player.ping !== undefined ? `${player.ping}ms` : '—'}</td>
-                    <td>
-                      {[player.isBot ? 'Bot' : '', player.isFrozen ? 'Gelé' : '']
-                        .filter(Boolean)
-                        .join(' · ') || '—'}
-                    </td>
-                    <td className="row-actions">
-                      {!player.isBot && (
-                        <>
-                          <button
-                            className="btn-ghost"
-                            type="button"
-                            onClick={() =>
-                              setPov({ roomId: room.id, playerId: player.playerId, nickname: player.nickname })
-                            }
-                            title="Suivre la vue joueur"
-                          >
-                            <span className="material-symbols-outlined" style={{ fontSize: 16, verticalAlign: 'middle', marginRight: 2 }}>visibility</span>
-                            POV
-                          </button>
-                          <button
-                            className="btn-ghost"
-                            type="button"
-                            onClick={() => {
-                              setTransferTarget({ roomId: room.id, playerId: player.playerId, nickname: player.nickname });
-                              const otherRooms = rooms.filter((r) => r.id !== room.id);
-                              if (otherRooms.length > 0) setSelectedTargetRoomId(otherRooms[0]!.id);
-                            }}
-                            title="Transférer vers un autre salon"
-                          >
-                            <span className="material-symbols-outlined" style={{ fontSize: 16, verticalAlign: 'middle', marginRight: 2 }}>swap_horiz</span>
-                            Transférer
-                          </button>
-                          <button
-                            className="btn-ghost btn-danger"
-                            type="button"
-                            onClick={() => handleKick(room.id, player.playerId, player.nickname)}
-                            title="Expulser du salon"
-                          >
-                            <span className="material-symbols-outlined" style={{ fontSize: 16, verticalAlign: 'middle', marginRight: 2 }}>person_remove</span>
-                            Expulser
-                          </button>
-                        </>
-                      )}
-                    </td>
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              <table className="data-table" style={{ width: '100%' }}>
+                <thead>
+                  <tr>
+                    <th>Joueur</th>
+                    <th>Masse</th>
+                    <th>Ping</th>
+                    <th>Actions</th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </section>
-      ))}
+                </thead>
+                <tbody>
+                  {room.players.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} style={{ fontStyle: 'italic', color: 'var(--text-soft)' }}>Aucun joueur actif.</td>
+                    </tr>
+                  ) : (
+                    room.players.map((player) => (
+                      <tr key={player.playerId}>
+                        <td style={{ fontWeight: 600 }}>
+                          {player.nickname}
+                          {player.isBot && <span className="badge" style={{ fontSize: 9, marginLeft: 4 }}>Bot</span>}
+                        </td>
+                        <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{Math.round(player.mass)}</td>
+                        <td>{player.ping !== undefined ? `${player.ping}ms` : '—'}</td>
+                        <td className="row-actions">
+                          {!player.isBot && (
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              <button
+                                className="btn-ghost"
+                                type="button"
+                                style={{ padding: '2px 6px', fontSize: 11 }}
+                                onClick={() => setPov({ roomId: room.id, playerId: player.playerId, nickname: player.nickname })}
+                                title="Vue POV du joueur"
+                              >
+                                POV
+                              </button>
+                              <button
+                                className="btn-ghost"
+                                type="button"
+                                style={{ padding: '2px 6px', fontSize: 11 }}
+                                onClick={() => {
+                                  setTransferTarget({ roomId: room.id, playerId: player.playerId, nickname: player.nickname });
+                                  const otherRooms = rooms.filter((r) => r.id !== room.id);
+                                  if (otherRooms.length > 0) setSelectedTargetRoomId(otherRooms[0]!.id);
+                                }}
+                                title="Transférer"
+                              >
+                                Transférer
+                              </button>
+                              <button
+                                className="btn-ghost btn-danger"
+                                type="button"
+                                style={{ padding: '2px 6px', fontSize: 11 }}
+                                onClick={() => handleKick(room.id, player.playerId, player.nickname)}
+                                title="Expulser"
+                              >
+                                Kick
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        ))}
+      </div>
 
       {transferTarget && (
         <div className="context-menu-backdrop" style={{ zIndex: 150 }} onClick={() => setTransferTarget(null)}>

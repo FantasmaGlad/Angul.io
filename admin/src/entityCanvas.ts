@@ -1,5 +1,5 @@
 /** Rendu Canvas partagé par "Salons & Écrans" (POV) et l'Espace Créatif — Carte réactive haute
- * fidélité avec fond grille Onyx, bordures d'arène, textures de skins et curseurs de sélection. */
+ * fidélité 60 FPS avec interpolation temps réel, fond grille Onyx et sprites circulaires mis en cache. */
 import { SKIN_IMAGE_MAP, type EntitySnapshot } from '@angulio/shared';
 
 export interface Camera {
@@ -8,17 +8,19 @@ export interface Camera {
   scale: number;
 }
 
-const FOOD_PALETTE = [
-  '#7dd88a',
-  '#64b5f6',
-  '#ba68c8',
-  '#ffb74d',
-  '#4dd0e1',
-  '#e57373',
-  '#aed581',
-];
+const FOOD_COLORS_BY_MASS: Record<number, string> = {
+  1: '#7dd88a', // Vert
+  2: '#64b5f6', // Bleu
+  3: '#ffd54f', // Jaune
+  4: '#ba68c8', // Violet
+  5: '#e57373', // Rouge
+  6: '#ffb74d', // Orange
+  7: '#f48fb1', // Rose
+};
 
 const skinImageCache = new Map<string, HTMLImageElement>();
+const circularSkinCache = new Map<string, HTMLCanvasElement>();
+
 function getSkinImage(skinName: string): HTMLImageElement | undefined {
   const url = SKIN_IMAGE_MAP[skinName];
   if (!url) return undefined;
@@ -29,6 +31,31 @@ function getSkinImage(skinName: string): HTMLImageElement | undefined {
     skinImageCache.set(skinName, img);
   }
   return img.complete && img.naturalWidth > 0 ? img : undefined;
+}
+
+/** Sprite circulaire pré-découpé sur un canvas hors-écran mis en cache (zéro ctx.clip() par frame) */
+function getCircularSkinSprite(skinName: string): HTMLCanvasElement | undefined {
+  const cached = circularSkinCache.get(skinName);
+  if (cached) return cached;
+
+  const img = getSkinImage(skinName);
+  if (!img) return undefined;
+
+  const size = 160;
+  const sprite = document.createElement('canvas');
+  sprite.width = size;
+  sprite.height = size;
+  const ctx = sprite.getContext('2d');
+  if (!ctx) return undefined;
+
+  const r = size / 2;
+  ctx.beginPath();
+  ctx.arc(r, r, r, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.drawImage(img, 0, 0, size, size);
+
+  circularSkinCache.set(skinName, sprite);
+  return sprite;
 }
 
 export function worldToScreen(
@@ -57,6 +84,40 @@ export function screenToWorld(
   };
 }
 
+/** Interpolateur d'entités léger pour 60 FPS sans saccades entre snapshots serveur (20Hz) */
+export class AdminSnapshotBuffer {
+  private prevEntities: EntitySnapshot[] = [];
+  private currEntities: EntitySnapshot[] = [];
+  private lastUpdateMs = performance.now();
+  private readonly updateIntervalMs = 50; // ~20Hz serveur
+
+  public pushSnapshot(snapshot: EntitySnapshot[]): void {
+    this.prevEntities = this.currEntities.length > 0 ? this.currEntities : snapshot;
+    this.currEntities = snapshot;
+    this.lastUpdateMs = performance.now();
+  }
+
+  public getInterpolatedEntities(): EntitySnapshot[] {
+    if (this.prevEntities.length === 0) return this.currEntities;
+    const alpha = Math.min(1, Math.max(0, (performance.now() - this.lastUpdateMs) / this.updateIntervalMs));
+
+    const prevMap = new Map<string, EntitySnapshot>();
+    for (const e of this.prevEntities) prevMap.set(e.i, e);
+
+    return this.currEntities.map((curr) => {
+      const prev = prevMap.get(curr.i);
+      if (!prev) return curr;
+
+      return {
+        ...curr,
+        x: prev.x + (curr.x - prev.x) * alpha,
+        y: prev.y + (curr.y - prev.y) * alpha,
+        r: prev.r + (curr.r - prev.r) * alpha,
+      };
+    });
+  }
+}
+
 export function drawEntities(
   ctx: CanvasRenderingContext2D,
   entities: EntitySnapshot[],
@@ -72,7 +133,7 @@ export function drawEntities(
   ctx.fillStyle = '#12141a';
   ctx.fillRect(0, 0, width, height);
 
-  // 2. Dessiner la grille du monde de jeu (tous les 100px monde)
+  // 2. Grille Onyx fluide sur tout le viewport
   const step = 100;
   const halfMap = mapSize / 2;
 
@@ -86,7 +147,7 @@ export function drawEntities(
   const startGridY = Math.floor(minY / step) * step;
   const endGridY = Math.ceil(maxY / step) * step;
 
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
   ctx.lineWidth = 1;
   ctx.beginPath();
   for (let gx = startGridX; gx <= endGridX; gx += step) {
@@ -103,37 +164,25 @@ export function drawEntities(
   }
   ctx.stroke();
 
-  // 3. Bordures rouges lumineuses de la carte (Limites de l'arène)
-  const topLeft = worldToScreen(camera, width, height, -halfMap, -halfMap);
-  const bottomRight = worldToScreen(camera, width, height, halfMap, halfMap);
-  const mapW = (bottomRight.x - topLeft.x);
-  const mapH = (bottomRight.y - topLeft.y);
+  // (AUCUN RECTANGLE ROUGE BRUT)
 
-  ctx.strokeStyle = '#e53935';
-  ctx.lineWidth = Math.max(2, 3 * camera.scale);
-  ctx.shadowColor = 'rgba(229, 57, 53, 0.6)';
-  ctx.shadowBlur = 10;
-  ctx.strokeRect(topLeft.x, topLeft.y, mapW, mapH);
-  ctx.shadowBlur = 0; // reset glow
-
-  // Separate food and player pieces
+  // 3. Séparation nourriture et créatures
   const food = entities.filter((e) => e.k === 'f');
   const pieces = entities.filter((e) => e.k === 'c');
 
-  // 4. Dessin des pastilles de nourriture
+  // 4. Rendu des pastilles de nourriture
   for (const entity of food) {
     const { x, y } = worldToScreen(camera, width, height, entity.x, entity.y);
     const r = Math.max(1.5, entity.r * camera.scale);
     if (x < -r || x > width + r || y < -r || y > height + r) continue;
 
-    const colorIndex = Math.abs((Math.floor(entity.x) * 31 + Math.floor(entity.y) * 17)) % FOOD_PALETTE.length;
-    ctx.fillStyle = FOOD_PALETTE[colorIndex]!;
+    ctx.fillStyle = FOOD_COLORS_BY_MASS[Math.round(entity.m)] ?? '#7dd88a';
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  // 5. Dessin des Blobs de Joueurs / Bots
+  // 5. Rendu des Blobs de Joueurs / Bots (60 FPS avec Sprites Circulaires en Cache)
   for (const entity of pieces) {
     const { x, y } = worldToScreen(camera, width, height, entity.x, entity.y);
     const r = Math.max(2, entity.r * camera.scale);
@@ -143,44 +192,30 @@ export function drawEntities(
     const isGod = pId?.startsWith('admin-god-') ?? false;
     const isSelected = pId !== undefined && pId === selectedPlayerId;
     const skinName = pId ? skins.get(pId) : undefined;
-    const skinImg = skinName ? getSkinImage(skinName) : undefined;
+    const skinSprite = skinName ? getCircularSkinSprite(skinName) : undefined;
 
-    // Ombre / Aura si sélectionné ou Dieu
-    if (isSelected) {
-      ctx.shadowColor = '#60a5fa';
-      ctx.shadowBlur = 16;
-    } else if (isGod) {
-      ctx.shadowColor = '#fbbf24';
-      ctx.shadowBlur = 14;
-    }
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.clip();
-
-    // Rendu Image du Skin ou couleur uni
-    if (skinImg) {
-      ctx.drawImage(skinImg, x - r, y - r, r * 2, r * 2);
+    // Rendu du corps du blob avec sprite pré-découpé (instantané) ou couleur uni
+    if (skinSprite) {
+      ctx.drawImage(skinSprite, x - r, y - r, r * 2, r * 2);
     } else {
       ctx.fillStyle = isGod ? '#f59e0b' : '#3b82f6';
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
       ctx.fill();
     }
-    ctx.restore();
 
-    // Bordure circulaire du Blob
-    ctx.strokeStyle = isSelected ? '#3b82f6' : isGod ? '#f59e0b' : 'rgba(255, 255, 255, 0.4)';
+    // Bordure circulaire
+    ctx.strokeStyle = isSelected ? '#60a5fa' : isGod ? '#f59e0b' : 'rgba(255, 255, 255, 0.4)';
     ctx.lineWidth = isSelected ? 3 : 2;
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.shadowBlur = 0; // reset
 
-    // Ring de sélection autour du blob
+    // Ring de sélection autour du blob sélectionné
     if (isSelected) {
       ctx.strokeStyle = '#60a5fa';
       ctx.lineWidth = 2;
-      ctx.setLineDash([6, 4]);
+      ctx.setLineDash([5, 4]);
       ctx.beginPath();
       ctx.arc(x, y, r + 6, 0, Math.PI * 2);
       ctx.stroke();
@@ -188,24 +223,24 @@ export function drawEntities(
     }
 
     // Pseudos + Masse
-    if (pId && r > 10) {
+    if (pId && r > 9) {
       const rawNick = nicknames.get(pId) ?? pId;
       const isBot = pId.startsWith('bot-');
-      const nick = isBot ? `${rawNick}` : rawNick;
+      const nick = rawNick;
       const massText = `${Math.round(entity.m)}`;
 
       ctx.font = 'bold 12px Inter, sans-serif';
       ctx.textAlign = 'center';
 
-      // Outline texte pour lisibilité
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+      // Contour du texte
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
       ctx.lineWidth = 3;
       ctx.strokeText(nick, x, y - r - 8);
 
       ctx.fillStyle = isBot ? '#93c5fd' : '#ffffff';
       ctx.fillText(nick, x, y - r - 8);
 
-      if (r > 20) {
+      if (r > 18) {
         ctx.font = 'bold 11px Inter, sans-serif';
         ctx.strokeText(massText, x, y + 4);
         ctx.fillStyle = '#fde047';
@@ -215,7 +250,7 @@ export function drawEntities(
   }
 }
 
-/** Trouve le morceau de plus grand rayon sous un point écran (clic). */
+/** Trouve le morceau sous le point écran. */
 export function pieceAtScreenPoint(
   entities: EntitySnapshot[],
   camera: Camera,

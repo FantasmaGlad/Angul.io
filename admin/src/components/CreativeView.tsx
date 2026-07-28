@@ -9,7 +9,13 @@ import {
   type AdminRoomView,
 } from '../adminApi.js';
 import { connectAdminSocket, generateGodPlayerId, type AdminSocketHandle } from '../adminSocket.js';
-import { drawEntities, pieceAtScreenPoint, screenToWorld, type Camera } from '../entityCanvas.js';
+import {
+  AdminSnapshotBuffer,
+  drawEntities,
+  pieceAtScreenPoint,
+  screenToWorld,
+  type Camera,
+} from '../entityCanvas.js';
 
 interface CreativeViewProps {
   token: string;
@@ -36,8 +42,8 @@ interface PlayerInspectInfo {
 }
 
 /** Onglet "Espace Créatif" — Studio de Contrôle & Commandement :
- * vue Canvas haute fidélité avec fond grille Onyx, inspection en direct, manipulation physique des joueurs,
- * mode Blob Dieu, diffusion de messages. */
+ * vue Canvas haute fidélité 60 FPS avec interpolation de snapshots, fond grille Onyx,
+ * manipulation physique des joueurs et mode Blob Dieu. */
 export default function CreativeView({ token, onAuthError, initialRoomId }: CreativeViewProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [rooms, setRooms] = useState<AdminRoomView[]>([]);
@@ -90,13 +96,12 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
       if (result.ok) {
         if (desc) showToast(desc, 'success');
       } else {
-        // Fallback REST pour fiabiliser les actions si le canal WS refuse
         try {
           const restRes = await runRoomAction(token, roomId, action);
           if (restRes.ok) {
             if (desc) showToast(desc, 'success');
           } else {
-            showToast("Action refusée (joueur introuvable ou inactif)", 'error');
+            showToast("Action refusée", 'error');
           }
         } catch {
           showToast("Impossible d'exécuter l'action", 'error');
@@ -105,7 +110,7 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
     });
   };
 
-  // --- Boucle Canvas : connexion, rendu, contrôles ---------------------------------
+  // --- Boucle Canvas : connexion, rendu 60 FPS, contrôles ---------------------------------
   useEffect(() => {
     if (!roomId) return;
     const canvas = canvasRef.current;
@@ -122,7 +127,8 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
 
     const nicknames = new Map<string, string>();
     const skinsMap = new Map<string, string>();
-    let entities: EntitySnapshot[] = [];
+    const snapshotBuffer = new AdminSnapshotBuffer();
+
     const camera: Camera = { x: 0, y: 0, scale: 0.25 };
     let followId: string | undefined = selectedPlayerId;
     const pressedKeys = new Set<string>();
@@ -133,7 +139,8 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
     let lastPlayerListUpdateAt = 0;
     const handle = connectAdminSocket(token, roomId, {
       onState: (received) => {
-        entities = received;
+        snapshotBuffer.pushSnapshot(received);
+
         const now = performance.now();
         if (now - lastPlayerListUpdateAt > 200) {
           lastPlayerListUpdateAt = now;
@@ -166,8 +173,8 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
     });
     socketRef.current = handle;
 
-    function centerOf(playerId: string): { x: number; y: number } | undefined {
-      const pieces = entities.filter((e) => e.p === playerId);
+    function centerOf(playerId: string, currentEntities: EntitySnapshot[]): { x: number; y: number } | undefined {
+      const pieces = currentEntities.filter((e) => e.p === playerId);
       if (pieces.length === 0) return undefined;
       return {
         x: pieces.reduce((s, e) => s + e.x, 0) / pieces.length,
@@ -192,11 +199,12 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
     canvas.addEventListener('wheel', onWheel, { passive: false });
 
     function onMouseDown(event: MouseEvent): void {
-      if (event.button === 2) return; // clic droit géré par contextmenu
+      if (event.button === 2) return;
       const godId = godPlayerIdRef.current;
       if (godId) return;
 
-      const clicked = pieceAtScreenPoint(entities, camera, canvas!.width, canvas!.height, event.offsetX, event.offsetY);
+      const currentEntities = snapshotBuffer.getInterpolatedEntities();
+      const clicked = pieceAtScreenPoint(currentEntities, camera, canvas!.width, canvas!.height, event.offsetX, event.offsetY);
       if (clicked?.p) {
         followId = clicked.p;
         setSelectedPlayerId(clicked.p);
@@ -223,7 +231,7 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
           y: world.y,
           intensity: 1,
           split: false,
-        }, `Joueur téléporté vers (${Math.round(world.x)}, ${Math.round(world.y)})`);
+        }, `Joueur téléporté`);
         setSpawnMode('none');
         return;
       }
@@ -249,7 +257,8 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
     }
     function onContextMenu(event: MouseEvent): void {
       event.preventDefault();
-      const clicked = pieceAtScreenPoint(entities, camera, canvas!.width, canvas!.height, event.offsetX, event.offsetY);
+      const currentEntities = snapshotBuffer.getInterpolatedEntities();
+      const clicked = pieceAtScreenPoint(currentEntities, camera, canvas!.width, canvas!.height, event.offsetX, event.offsetY);
       if (clicked?.p && !clicked.p.startsWith('admin-god-')) {
         setSelectedPlayerId(clicked.p);
         setContextMenu({ screenX: event.clientX, screenY: event.clientY, playerId: clicked.p });
@@ -264,14 +273,18 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
     let lastFrameAt = performance.now();
     let godInputAccumMs = 0;
     let raf = 0;
+
+    // Boucle de rendu 60 FPS ultra-fluide avec interpolation
     function frame(): void {
       const now = performance.now();
       const dtMs = now - lastFrameAt;
       lastFrameAt = now;
 
+      const currentEntities = snapshotBuffer.getInterpolatedEntities();
+
       const godId = godPlayerIdRef.current;
       if (godId) {
-        const godCenter = centerOf(godId);
+        const godCenter = centerOf(godId, currentEntities);
         if (godCenter) {
           camera.x = godCenter.x;
           camera.y = godCenter.y;
@@ -289,7 +302,7 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
           });
         }
       } else if (followId) {
-        const center = centerOf(followId);
+        const center = centerOf(followId, currentEntities);
         if (center) {
           camera.x = center.x;
           camera.y = center.y;
@@ -302,7 +315,7 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
         if (pressedKeys.has('s') || pressedKeys.has('arrowdown')) camera.y += speed;
       }
 
-      drawEntities(ctx!, entities, camera, nicknames, skinsMap, selectedPlayerId);
+      drawEntities(ctx!, currentEntities, camera, nicknames, skinsMap, selectedPlayerId);
       raf = requestAnimationFrame(frame);
     }
     raf = requestAnimationFrame(frame);
@@ -634,95 +647,75 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
                       </span>
                     </div>
 
-                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'nowrap', overflowX: 'auto', paddingBottom: 2 }}>
                       <button
                         className="btn-ghost"
                         type="button"
-                        style={{ padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
+                        style={{ padding: '3px 7px', fontSize: 11, borderRadius: 'var(--radius-md)', whiteSpace: 'nowrap' }}
                         onClick={() => setSelectedPlayerId(isSelected ? undefined : p.playerId)}
                         title="Centrer la caméra sur ce joueur"
                       >
-                        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>visibility</span>
+                        <span className="material-symbols-outlined" style={{ fontSize: 13 }}>visibility</span>
                         {isSelected ? 'Détacher' : 'Suivre'}
                       </button>
 
                       <button
                         className="btn-ghost"
                         type="button"
-                        style={{ padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
+                        style={{ padding: '3px 7px', fontSize: 11, borderRadius: 'var(--radius-md)', whiteSpace: 'nowrap' }}
                         onClick={() => runAction({ kind: p.isFrozen ? 'unfreeze' : 'freeze', playerId: p.playerId }, p.isFrozen ? 'Joueur dégelé' : 'Joueur gelé')}
                         title={p.isFrozen ? 'Dégeler' : 'Geler'}
                       >
-                        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>ac_unit</span>
+                        <span className="material-symbols-outlined" style={{ fontSize: 13 }}>ac_unit</span>
                         {p.isFrozen ? 'Dégeler' : 'Geler'}
                       </button>
 
                       <button
                         className="btn-ghost"
                         type="button"
-                        style={{ padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
+                        style={{ padding: '3px 7px', fontSize: 11, borderRadius: 'var(--radius-md)', whiteSpace: 'nowrap' }}
                         onClick={() => runAction({ kind: 'setMass', playerId: p.playerId, mass: p.mass + 500 }, "+500 Masse")}
-                        title="Ajouter +500 de masse"
+                        title="Ajouter +500 de masse (Clic droit pour masse perso)"
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          const val = window.prompt(`Nouvelle masse pour ${p.nickname} ?`, String(Math.round(p.mass)));
+                          if (val && Number.isFinite(Number(val))) runAction({ kind: 'setMass', playerId: p.playerId, mass: Number(val) }, "Masse ajustée");
+                        }}
                       >
-                        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>add</span>
+                        <span className="material-symbols-outlined" style={{ fontSize: 13 }}>add</span>
                         +500m
                       </button>
 
                       <button
                         className="btn-ghost"
                         type="button"
-                        style={{ padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
-                        onClick={() => {
-                          const val = window.prompt(`Nouvelle masse pour ${p.nickname} ?`, String(Math.round(p.mass)));
-                          if (val && Number.isFinite(Number(val))) runAction({ kind: 'setMass', playerId: p.playerId, mass: Number(val) }, "Masse ajustée");
-                        }}
-                        title="Modifier la masse"
-                      >
-                        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>fitness_center</span>
-                        Masse
-                      </button>
-
-                      <button
-                        className="btn-ghost"
-                        type="button"
-                        style={{ padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
+                        style={{ padding: '3px 7px', fontSize: 11, borderRadius: 'var(--radius-md)', whiteSpace: 'nowrap' }}
                         onClick={() => runAction({ kind: 'split', playerId: p.playerId }, "Split forcé déclenché")}
                         title="Split forcé"
                       >
-                        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>call_split</span>
+                        <span className="material-symbols-outlined" style={{ fontSize: 13 }}>call_split</span>
                         Split
                       </button>
 
                       <button
                         className="btn-ghost"
-                        type="button"
-                        style={{ padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
-                        onClick={() => runAction({ kind: 'remerge', playerId: p.playerId }, "Refusion forcée")}
-                        title="Refusion de tous les morceaux"
-                      >
-                        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>merge_type</span>
-                        Refusion
-                      </button>
-
-                      <button
-                        className="btn-ghost"
-                        style={{ color: 'var(--danger)', borderColor: 'var(--danger)', padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
+                        style={{ color: 'var(--danger)', borderColor: 'var(--danger)', padding: '3px 7px', fontSize: 11, borderRadius: 'var(--radius-md)', whiteSpace: 'nowrap' }}
                         type="button"
                         onClick={() => runAction({ kind: 'kill', playerId: p.playerId }, "Joueur éliminé")}
                         title="Éliminer le joueur"
                       >
-                        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>skull</span>
+                        <span className="material-symbols-outlined" style={{ fontSize: 13 }}>skull</span>
                         Kill
                       </button>
 
                       <button
                         className="btn-ghost"
-                        style={{ color: 'var(--danger)', borderColor: 'var(--danger)', padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
+                        style={{ color: 'var(--danger)', borderColor: 'var(--danger)', padding: '3px 7px', fontSize: 11, borderRadius: 'var(--radius-md)', whiteSpace: 'nowrap' }}
                         type="button"
                         onClick={() => handleKickPlayer(p.playerId, p.nickname)}
                         title="Expulser du salon"
                       >
-                        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>logout</span>
+                        <span className="material-symbols-outlined" style={{ fontSize: 13 }}>logout</span>
                         Kick
                       </button>
                     </div>

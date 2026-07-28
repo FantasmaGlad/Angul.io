@@ -235,9 +235,9 @@ input:focus {
 .main-content {
   flex: 1;
   height: 100vh;
-  overflow-y: auto;
+  overflow: hidden;
   min-width: 0;
-  padding: 28px 32px;
+  padding: 20px 24px;
   box-sizing: border-box;
 }
 .view {
@@ -246,6 +246,9 @@ input:focus {
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+.view.view-wide {
+  max-width: 100%;
 }
 .top-bar {
   display: flex;
