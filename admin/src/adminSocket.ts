@@ -11,7 +11,7 @@ import type {
 
 export interface AdminSocketCallbacks {
   onState?: (entities: EntitySnapshot[], leaderboard?: LeaderboardEntry[]) => void;
-  onPlayerInfo?: (playerId: string, nickname: string) => void;
+  onPlayerInfo?: (playerId: string, nickname: string, skin?: string) => void;
   onClose?: (reason: string) => void;
 }
 
@@ -47,8 +47,8 @@ export function connectAdminSocket(
       const state = message as { entities: EntitySnapshot[]; leaderboard?: LeaderboardEntry[] };
       callbacks.onState?.(state.entities, state.leaderboard);
     } else if (typed.type === 'player') {
-      const info = message as { playerId: string; nickname: string };
-      callbacks.onPlayerInfo?.(info.playerId, info.nickname);
+      const info = message as { playerId: string; nickname: string; skin?: string };
+      callbacks.onPlayerInfo?.(info.playerId, info.nickname, info.skin);
     } else if (typed.type === 'admin_action_result') {
       const response = message as { actionId: string; result: AdminActionResult };
       const request = pending.get(response.actionId);

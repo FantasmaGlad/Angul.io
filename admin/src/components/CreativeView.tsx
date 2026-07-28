@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AdminRoomAction, EntitySnapshot } from '@angulio/shared';
-import { broadcastMessage, listRooms, type AdminRoomView } from '../adminApi.js';
+import { SKIN_IMAGE_MAP } from '@angulio/shared';
+import {
+  broadcastMessage,
+  kickPlayer,
+  listRooms,
+  runRoomAction,
+  type AdminRoomView,
+} from '../adminApi.js';
 import { connectAdminSocket, generateGodPlayerId, type AdminSocketHandle } from '../adminSocket.js';
 import { drawEntities, pieceAtScreenPoint, screenToWorld, type Camera } from '../entityCanvas.js';
 
@@ -10,7 +17,7 @@ interface CreativeViewProps {
   initialRoomId?: string;
 }
 
-const KEY_PAN_SPEED = 800; // px monde/s, x3 avec Shift (§4.1)
+const KEY_PAN_SPEED = 800; // px monde/s, x3 avec Shift
 const GOD_INPUT_INTERVAL_MS = 80;
 
 interface ContextMenuState {
@@ -22,24 +29,28 @@ interface ContextMenuState {
 interface PlayerInspectInfo {
   playerId: string;
   nickname: string;
+  skin?: string;
   mass: number;
   isBot: boolean;
   isFrozen: boolean;
 }
 
-/** Onglet "Espace Créatif" (§4 cahier_des_charges_admin.md) — Studio de Contrôle & Commandement :
- * vue Canvas haut débit, panneau latéral d'inspection en direct, manipulation physique des joueurs,
+/** Onglet "Espace Créatif" — Studio de Contrôle & Commandement :
+ * vue Canvas haute fidélité avec fond grille Onyx, inspection en direct, manipulation physique des joueurs,
  * mode Blob Dieu, diffusion de messages. */
 export default function CreativeView({ token, onAuthError, initialRoomId }: CreativeViewProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [rooms, setRooms] = useState<AdminRoomView[]>([]);
   const [roomId, setRoomId] = useState(initialRoomId || '');
-  const [error, setError] = useState('');
-  const [status, setStatus] = useState('');
+  const [toastMsg, setToastMsg] = useState<{ text: string; type: 'info' | 'error' | 'success' } | null>(null);
+
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | undefined>(undefined);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [godActive, setGodActive] = useState(false);
-  const [spawnMode, setSpawnMode] = useState<'none' | 'food' | 'bot'>('none');
+  const [spawnMode, setSpawnMode] = useState<'none' | 'food' | 'bot' | 'teleport'>('none');
+  const [searchFilter, setSearchFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'human' | 'bot'>('all');
+
   const [broadcastText, setBroadcastText] = useState('');
   const [broadcastColor, setBroadcastColor] = useState('#ffffff');
   const [broadcastGlobal, setBroadcastGlobal] = useState(false);
@@ -48,6 +59,11 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
 
   const socketRef = useRef<AdminSocketHandle | null>(null);
   const godPlayerIdRef = useRef<string | undefined>(undefined);
+
+  const showToast = (text: string, type: 'info' | 'error' | 'success' = 'info') => {
+    setToastMsg({ text, type });
+    setTimeout(() => setToastMsg(null), 3000);
+  };
 
   useEffect(() => {
     void (async () => {
@@ -61,21 +77,35 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
         }
       } catch (err) {
         const message = (err as Error).message;
-        setError(message);
+        showToast(message, 'error');
         onAuthError(message);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, initialRoomId]);
 
-  const runAction = (action: AdminRoomAction): void => {
-    void socketRef.current?.sendAction(action).then((result) => {
-      if (!result.ok) setError("Action refusée par le serveur.");
-      else setError('');
+  const runAction = (action: AdminRoomAction, desc?: string): void => {
+    if (!socketRef.current) return;
+    void socketRef.current.sendAction(action).then(async (result) => {
+      if (result.ok) {
+        if (desc) showToast(desc, 'success');
+      } else {
+        // Fallback REST pour fiabiliser les actions si le canal WS refuse
+        try {
+          const restRes = await runRoomAction(token, roomId, action);
+          if (restRes.ok) {
+            if (desc) showToast(desc, 'success');
+          } else {
+            showToast("Action refusée (joueur introuvable ou inactif)", 'error');
+          }
+        } catch {
+          showToast("Impossible d'exécuter l'action", 'error');
+        }
+      }
     });
   };
 
-  // --- Boucle Canvas : connexion, rendu, contrôles (§4.1-4.3) ---------------------------------
+  // --- Boucle Canvas : connexion, rendu, contrôles ---------------------------------
   useEffect(() => {
     if (!roomId) return;
     const canvas = canvasRef.current;
@@ -91,9 +121,9 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
     window.addEventListener('resize', resize);
 
     const nicknames = new Map<string, string>();
-    const colors = new Map<string, string>();
+    const skinsMap = new Map<string, string>();
     let entities: EntitySnapshot[] = [];
-    const camera: Camera = { x: 0, y: 0, scale: 0.15 };
+    const camera: Camera = { x: 0, y: 0, scale: 0.25 };
     let followId: string | undefined = selectedPlayerId;
     const pressedKeys = new Set<string>();
     let isPanning = false;
@@ -105,7 +135,7 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
       onState: (received) => {
         entities = received;
         const now = performance.now();
-        if (now - lastPlayerListUpdateAt > 250) {
+        if (now - lastPlayerListUpdateAt > 200) {
           lastPlayerListUpdateAt = now;
           const playerMap = new Map<string, { mass: number; isFrozen: boolean }>();
           for (const e of received) {
@@ -119,6 +149,7 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
           const list: PlayerInspectInfo[] = Array.from(playerMap.entries()).map(([pId, info]) => ({
             playerId: pId,
             nickname: nicknames.get(pId) || (pId.startsWith('bot-') ? pId : `Joueur #${pId.slice(0, 6)}`),
+            skin: skinsMap.get(pId),
             mass: info.mass,
             isBot: pId.startsWith('bot-'),
             isFrozen: info.isFrozen,
@@ -127,8 +158,11 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
           setLivePlayerList(list);
         }
       },
-      onPlayerInfo: (id, nick) => nicknames.set(id, nick),
-      onClose: (reason) => setError(reason),
+      onPlayerInfo: (id, nick, skin) => {
+        nicknames.set(id, nick);
+        if (skin) skinsMap.set(id, skin);
+      },
+      onClose: (reason) => showToast(reason, 'error'),
     });
     socketRef.current = handle;
 
@@ -152,35 +186,53 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
 
     function onWheel(event: WheelEvent): void {
       event.preventDefault();
-      const factor = event.deltaY > 0 ? 0.9 : 1.1;
-      camera.scale = Math.min(3, Math.max(0.01, camera.scale * factor));
+      const factor = event.deltaY > 0 ? 0.88 : 1.14;
+      camera.scale = Math.min(3, Math.max(0.02, camera.scale * factor));
     }
     canvas.addEventListener('wheel', onWheel, { passive: false });
 
     function onMouseDown(event: MouseEvent): void {
-      if (event.button === 2) return; // clic droit : voir contextmenu ci-dessous
+      if (event.button === 2) return; // clic droit géré par contextmenu
       const godId = godPlayerIdRef.current;
-      if (godId) return; // en mode Dieu, la souris pilote le blob, pas la caméra
+      if (godId) return;
+
       const clicked = pieceAtScreenPoint(entities, camera, canvas!.width, canvas!.height, event.offsetX, event.offsetY);
       if (clicked?.p) {
         followId = clicked.p;
         setSelectedPlayerId(clicked.p);
         return;
       }
-      if (spawnMode !== 'none') {
+
+      if (spawnMode === 'food') {
         const world = screenToWorld(camera, canvas!.width, canvas!.height, event.offsetX, event.offsetY);
-        if (spawnMode === 'food') {
-          runAction({ kind: 'spawnFood', x: world.x, y: world.y, mass: 5 });
-        } else {
-          runAction({ kind: 'spawnBot' });
-        }
+        runAction({ kind: 'spawnFood', x: world.x, y: world.y, mass: 10 }, "Pastille générée");
         return;
       }
+
+      if (spawnMode === 'bot') {
+        runAction({ kind: 'spawnBot' }, "Bot créé");
+        return;
+      }
+
+      if (spawnMode === 'teleport' && selectedPlayerId) {
+        const world = screenToWorld(camera, canvas!.width, canvas!.height, event.offsetX, event.offsetY);
+        runAction({
+          kind: 'godInput',
+          playerId: selectedPlayerId,
+          x: world.x,
+          y: world.y,
+          intensity: 1,
+          split: false,
+        }, `Joueur téléporté vers (${Math.round(world.x)}, ${Math.round(world.y)})`);
+        setSpawnMode('none');
+        return;
+      }
+
       followId = undefined;
-      setSelectedPlayerId(undefined);
       isPanning = true;
       lastPanScreen = { x: event.clientX, y: event.clientY };
     }
+
     function onMouseMove(event: MouseEvent): void {
       lastMouseWorld = screenToWorld(camera, canvas!.width, canvas!.height, event.offsetX, event.offsetY);
       if (isPanning) {
@@ -199,9 +251,11 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
       event.preventDefault();
       const clicked = pieceAtScreenPoint(entities, camera, canvas!.width, canvas!.height, event.offsetX, event.offsetY);
       if (clicked?.p && !clicked.p.startsWith('admin-god-')) {
+        setSelectedPlayerId(clicked.p);
         setContextMenu({ screenX: event.clientX, screenY: event.clientY, playerId: clicked.p });
       }
     }
+
     canvas.addEventListener('mousedown', onMouseDown);
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
@@ -248,7 +302,7 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
         if (pressedKeys.has('s') || pressedKeys.has('arrowdown')) camera.y += speed;
       }
 
-      drawEntities(ctx!, entities, camera, nicknames, colors, selectedPlayerId);
+      drawEntities(ctx!, entities, camera, nicknames, skinsMap, selectedPlayerId);
       raf = requestAnimationFrame(frame);
     }
     raf = requestAnimationFrame(frame);
@@ -267,18 +321,18 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
       socketRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, token, spawnMode]);
+  }, [roomId, token, spawnMode, selectedPlayerId]);
 
   const toggleGodmode = (): void => {
     if (godActive) {
       const id = godPlayerIdRef.current;
-      if (id) runAction({ kind: 'disableGodmode', playerId: id });
+      if (id) runAction({ kind: 'disableGodmode', playerId: id }, "Mode Blob Dieu désactivé");
       godPlayerIdRef.current = undefined;
       setGodActive(false);
     } else {
       const id = generateGodPlayerId();
       godPlayerIdRef.current = id;
-      runAction({ kind: 'enableGodmode', playerId: id, nickname: 'Fantadmin (Dieu)' });
+      runAction({ kind: 'enableGodmode', playerId: id, nickname: 'Fantadmin (Dieu)' }, "Mode Blob Dieu activé !");
       setGodActive(true);
     }
   };
@@ -286,7 +340,7 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
   const boostGodMass = (): void => {
     const id = godPlayerIdRef.current;
     if (!id) return;
-    runAction({ kind: 'setMass', playerId: id, mass: 10_000 });
+    runAction({ kind: 'setMass', playerId: id, mass: 10_000 }, "Masse du Dieu portée à 10 000");
   };
 
   const sendBroadcast = (): void => {
@@ -296,29 +350,58 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
       durationMs: 5000,
       roomId: broadcastGlobal ? undefined : roomId,
     })
-      .then((result) => setStatus(`Annonce envoyée à ${result.sent} joueur(s).`))
-      .catch((err: unknown) => setError((err as Error).message));
+      .then((result) => showToast(`Annonce envoyée à ${result.sent} joueur(s).`, 'success'))
+      .catch((err: unknown) => showToast((err as Error).message, 'error'));
   };
 
   const contextAction = (kind: 'kill' | 'freeze' | 'unfreeze' | 'split' | 'remerge'): void => {
     if (!contextMenu) return;
-    runAction({ kind, playerId: contextMenu.playerId });
+    runAction({ kind, playerId: contextMenu.playerId }, `Action ${kind} exécutée`);
     setContextMenu(null);
   };
 
-  const contextSetMass = (): void => {
-    if (!contextMenu) return;
-    const value = window.prompt('Nouvelle masse totale ?', '1000');
-    if (value && Number.isFinite(Number(value))) {
-      runAction({ kind: 'setMass', playerId: contextMenu.playerId, mass: Number(value) });
-    }
-    setContextMenu(null);
+  const handleKickPlayer = (pId: string, nick: string) => {
+    void kickPlayer(token, roomId, pId)
+      .then(() => showToast(`Joueur ${nick} expulsé avec succès`, 'success'))
+      .catch((err: unknown) => showToast((err as Error).message, 'error'));
   };
 
   const activeRoom = rooms.find((r) => r.id === roomId);
 
+  const filteredPlayers = livePlayerList.filter((p) => {
+    if (typeFilter === 'human' && p.isBot) return false;
+    if (typeFilter === 'bot' && !p.isBot) return false;
+    if (searchFilter.trim()) {
+      return p.nickname.toLowerCase().includes(searchFilter.toLowerCase()) || p.playerId.includes(searchFilter);
+    }
+    return true;
+  });
+
   return (
     <div className="view view-wide creative-view" style={{ maxWidth: '100%', height: 'calc(100vh - 56px)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Toast Notification Notification Pop-over */}
+      {toastMsg && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 24,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 999,
+            background: toastMsg.type === 'error' ? 'var(--danger)' : toastMsg.type === 'success' ? 'var(--success)' : 'var(--accent)',
+            color: '#ffffff',
+            padding: '10px 20px',
+            borderRadius: 'var(--radius-pill)',
+            boxShadow: 'var(--shadow-modal)',
+            fontWeight: 700,
+            fontSize: 13,
+          }}
+        >
+          {toastMsg.text}
+        </div>
+      )}
+
+      {/* Top Header Bar */}
       <div className="top-bar" style={{ flexShrink: 0 }}>
         <div>
           <h2>Espace Créatif &amp; Studio de Contrôle</h2>
@@ -329,7 +412,7 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {activeRoom && (
             <span className="badge" style={{ padding: '6px 12px', borderRadius: 'var(--radius-pill)', background: 'var(--surface-hover)' }}>
-              {activeRoom.name} · {activeRoom.stats.playerCount}/{activeRoom.maxPlayers} joueurs
+              {activeRoom.modId.toUpperCase()} · {activeRoom.stats.playerCount}/{activeRoom.maxPlayers} joueurs
             </span>
           )}
           <select
@@ -346,28 +429,37 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
         </div>
       </div>
 
-      {error && <p className="error-text" style={{ flexShrink: 0, margin: 0 }}>{error}</p>}
-      {status && <p className="status-text" style={{ flexShrink: 0, margin: 0 }}>{status}</p>}
-
+      {/* Main Control Toolbar */}
       <div className="creative-toolbar" style={{ flexShrink: 0 }}>
         <button
           className={spawnMode === 'food' ? 'btn-primary' : 'btn-ghost'}
           type="button"
           onClick={() => setSpawnMode(spawnMode === 'food' ? 'none' : 'food')}
+          title="Cliquez sur la carte pour poser une pastille"
         >
           <span className="material-symbols-outlined" aria-hidden="true">grain</span> Spawn nourriture
         </button>
         <button
           className={spawnMode === 'bot' ? 'btn-primary' : 'btn-ghost'}
           type="button"
-          onClick={() => setSpawnMode(spawnMode === 'bot' ? 'none' : 'bot')}
+          onClick={() => runAction({ kind: 'spawnBot' }, "Bot ajouté")}
         >
           <span className="material-symbols-outlined" aria-hidden="true">smart_toy</span> Spawn bot
         </button>
-        <button className="btn-ghost" type="button" onClick={() => runAction({ kind: 'clearFood' })}>
+        {selectedPlayerId && (
+          <button
+            className={spawnMode === 'teleport' ? 'btn-primary' : 'btn-ghost'}
+            type="button"
+            onClick={() => setSpawnMode(spawnMode === 'teleport' ? 'none' : 'teleport')}
+            title="Cliquez sur la carte pour téléporter le joueur sélectionné"
+          >
+            <span className="material-symbols-outlined" aria-hidden="true">near_me</span> Téléporter à l'emplacement
+          </button>
+        )}
+        <button className="btn-ghost" type="button" onClick={() => runAction({ kind: 'clearFood' }, "Pastilles nettoyées")}>
           <span className="material-symbols-outlined" aria-hidden="true">cleaning_services</span> Vider pastilles
         </button>
-        <button className="btn-ghost" type="button" onClick={() => runAction({ kind: 'clearBots' })}>
+        <button className="btn-ghost" type="button" onClick={() => runAction({ kind: 'clearBots' }, "Bots retirés")}>
           <span className="material-symbols-outlined" aria-hidden="true">no_accounts</span> Supprimer bots
         </button>
         <button
@@ -380,7 +472,7 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
         </button>
         <select
           onChange={(event) => {
-            if (event.target.value) runAction({ kind: 'switchMod', modId: event.target.value });
+            if (event.target.value) runAction({ kind: 'switchMod', modId: event.target.value }, `Mode changé pour ${event.target.value}`);
             event.target.value = '';
           }}
           defaultValue=""
@@ -400,11 +492,12 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
         )}
       </div>
 
+      {/* Broadcast Bar */}
       <div className="creative-broadcast" style={{ flexShrink: 0 }}>
         <input
           value={broadcastText}
           onChange={(event) => setBroadcastText(event.target.value)}
-          placeholder="Message à diffuser aux joueurs…"
+          placeholder="Message à diffuser aux joueurs..."
           maxLength={200}
         />
         <input
@@ -437,11 +530,11 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
         <div
           className="panel"
           style={{
-            width: 310,
+            width: 340,
             flexShrink: 0,
             display: 'flex',
             flexDirection: 'column',
-            gap: 10,
+            gap: 12,
             overflowY: 'auto',
             height: '100%',
             padding: 16,
@@ -450,103 +543,198 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-soft)' }}>
-              Joueurs ({livePlayerList.length})
+              Inspecteur Joueurs ({filteredPlayers.length})
             </span>
             <span className="badge" style={{ fontSize: 10 }}>Live 20Hz</span>
           </div>
 
-          {livePlayerList.length === 0 ? (
+          {/* Search & Type Filter Header */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <input
+              type="text"
+              placeholder="Rechercher par pseudo ou ID..."
+              value={searchFilter}
+              onChange={(e) => setSearchFilter(e.target.value)}
+              style={{ width: '100%', fontSize: 12, padding: '7px 10px' }}
+            />
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button
+                type="button"
+                className={typeFilter === 'all' ? 'btn-primary' : 'btn-ghost'}
+                style={{ padding: '3px 10px', fontSize: 11, flex: 1 }}
+                onClick={() => setTypeFilter('all')}
+              >
+                Tous ({livePlayerList.length})
+              </button>
+              <button
+                type="button"
+                className={typeFilter === 'human' ? 'btn-primary' : 'btn-ghost'}
+                style={{ padding: '3px 10px', fontSize: 11, flex: 1 }}
+                onClick={() => setTypeFilter('human')}
+              >
+                Humains ({livePlayerList.filter((p) => !p.isBot).length})
+              </button>
+              <button
+                type="button"
+                className={typeFilter === 'bot' ? 'btn-primary' : 'btn-ghost'}
+                style={{ padding: '3px 10px', fontSize: 11, flex: 1 }}
+                onClick={() => setTypeFilter('bot')}
+              >
+                Bots ({livePlayerList.filter((p) => p.isBot).length})
+              </button>
+            </div>
+          </div>
+
+          {filteredPlayers.length === 0 ? (
             <p className="view-subtitle" style={{ fontStyle: 'italic', marginTop: 10 }}>
               Aucun joueur actif dans ce salon. Spawnez des bots ou de la nourriture !
             </p>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {livePlayerList.map((p) => (
-                <div
-                  key={p.playerId}
-                  style={{
-                    background: selectedPlayerId === p.playerId ? 'var(--surface-hover)' : 'var(--bg)',
-                    border: `1px solid ${selectedPlayerId === p.playerId ? 'var(--accent)' : 'var(--border)'}`,
-                    borderRadius: 'var(--radius-md)',
-                    padding: '10px 12px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 6,
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}>
-                      {p.nickname}
-                      {p.isBot && <span className="badge" style={{ fontSize: 9, padding: '2px 5px' }}>Bot</span>}
-                      {p.isFrozen && <span className="badge" style={{ fontSize: 9, padding: '2px 5px', background: '#e0f2fe', color: '#0369a1' }}>Gelé</span>}
-                    </span>
-                    <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--accent)' }}>
-                      {Math.round(p.mass)} m
-                    </span>
-                  </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {filteredPlayers.map((p) => {
+                const isSelected = selectedPlayerId === p.playerId;
+                const skinImgUrl = p.skin ? SKIN_IMAGE_MAP[p.skin] : undefined;
 
-                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
-                    <button
-                      className="btn-ghost"
-                      type="button"
-                      style={{ padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
-                      onClick={() => setSelectedPlayerId(selectedPlayerId === p.playerId ? undefined : p.playerId)}
-                      title="Centrer la caméra sur ce joueur"
-                    >
-                      <span className="material-symbols-outlined" style={{ fontSize: 14 }}>visibility</span>
-                      {selectedPlayerId === p.playerId ? 'Détacher' : 'Suivre'}
-                    </button>
-                    <button
-                      className="btn-ghost"
-                      type="button"
-                      style={{ padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
-                      onClick={() => runAction({ kind: p.isFrozen ? 'unfreeze' : 'freeze', playerId: p.playerId })}
-                      title={p.isFrozen ? 'Dégeler' : 'Geler'}
-                    >
-                      <span className="material-symbols-outlined" style={{ fontSize: 14 }}>ac_unit</span>
-                      {p.isFrozen ? 'Dégeler' : 'Geler'}
-                    </button>
-                    <button
-                      className="btn-ghost"
-                      type="button"
-                      style={{ padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
-                      onClick={() => {
-                        const val = window.prompt(`Nouvelle masse pour ${p.nickname} ?`, String(Math.round(p.mass)));
-                        if (val && Number.isFinite(Number(val))) runAction({ kind: 'setMass', playerId: p.playerId, mass: Number(val) });
-                      }}
-                      title="Modifier la masse"
-                    >
-                      <span className="material-symbols-outlined" style={{ fontSize: 14 }}>fitness_center</span>
-                      Masse
-                    </button>
-                    <button
-                      className="btn-ghost"
-                      type="button"
-                      style={{ padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
-                      onClick={() => runAction({ kind: 'split', playerId: p.playerId })}
-                      title="Split forcé"
-                    >
-                      <span className="material-symbols-outlined" style={{ fontSize: 14 }}>call_split</span>
-                      Split
-                    </button>
-                    <button
-                      className="btn-ghost"
-                      style={{ color: 'var(--danger)', borderColor: 'var(--danger)', padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
-                      type="button"
-                      onClick={() => runAction({ kind: 'kill', playerId: p.playerId })}
-                      title="Éliminer le joueur"
-                    >
-                      <span className="material-symbols-outlined" style={{ fontSize: 14 }}>skull</span>
-                      Kill
-                    </button>
+                return (
+                  <div
+                    key={p.playerId}
+                    style={{
+                      background: isSelected ? 'var(--surface-hover)' : 'var(--bg)',
+                      border: `1px solid ${isSelected ? 'var(--accent)' : 'var(--border)'}`,
+                      borderRadius: 'var(--radius-md)',
+                      padding: '10px 12px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 8,
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {skinImgUrl ? (
+                          <img src={skinImgUrl} alt={p.skin} style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'contain' }} />
+                        ) : (
+                          <div style={{ width: 28, height: 28, borderRadius: '50%', background: p.isBot ? '#93c5fd' : '#f59e0b' }} />
+                        )}
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            {p.nickname}
+                            {p.isBot ? (
+                              <span className="badge" style={{ fontSize: 9, padding: '1px 5px', background: '#dbeafe', color: '#1e40af' }}>BOT</span>
+                            ) : (
+                              <span className="badge" style={{ fontSize: 9, padding: '1px 5px', background: '#fef3c7', color: '#92400e' }}>JOUEUR</span>
+                            )}
+                            {p.isFrozen && (
+                              <span className="badge" style={{ fontSize: 9, padding: '1px 5px', background: '#e0f2fe', color: '#0369a1' }}>GELÉ</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--accent)' }}>
+                        {Math.round(p.mass)} m
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      <button
+                        className="btn-ghost"
+                        type="button"
+                        style={{ padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
+                        onClick={() => setSelectedPlayerId(isSelected ? undefined : p.playerId)}
+                        title="Centrer la caméra sur ce joueur"
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>visibility</span>
+                        {isSelected ? 'Détacher' : 'Suivre'}
+                      </button>
+
+                      <button
+                        className="btn-ghost"
+                        type="button"
+                        style={{ padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
+                        onClick={() => runAction({ kind: p.isFrozen ? 'unfreeze' : 'freeze', playerId: p.playerId }, p.isFrozen ? 'Joueur dégelé' : 'Joueur gelé')}
+                        title={p.isFrozen ? 'Dégeler' : 'Geler'}
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>ac_unit</span>
+                        {p.isFrozen ? 'Dégeler' : 'Geler'}
+                      </button>
+
+                      <button
+                        className="btn-ghost"
+                        type="button"
+                        style={{ padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
+                        onClick={() => runAction({ kind: 'setMass', playerId: p.playerId, mass: p.mass + 500 }, "+500 Masse")}
+                        title="Ajouter +500 de masse"
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>add</span>
+                        +500m
+                      </button>
+
+                      <button
+                        className="btn-ghost"
+                        type="button"
+                        style={{ padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
+                        onClick={() => {
+                          const val = window.prompt(`Nouvelle masse pour ${p.nickname} ?`, String(Math.round(p.mass)));
+                          if (val && Number.isFinite(Number(val))) runAction({ kind: 'setMass', playerId: p.playerId, mass: Number(val) }, "Masse ajustée");
+                        }}
+                        title="Modifier la masse"
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>fitness_center</span>
+                        Masse
+                      </button>
+
+                      <button
+                        className="btn-ghost"
+                        type="button"
+                        style={{ padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
+                        onClick={() => runAction({ kind: 'split', playerId: p.playerId }, "Split forcé déclenché")}
+                        title="Split forcé"
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>call_split</span>
+                        Split
+                      </button>
+
+                      <button
+                        className="btn-ghost"
+                        type="button"
+                        style={{ padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
+                        onClick={() => runAction({ kind: 'remerge', playerId: p.playerId }, "Refusion forcée")}
+                        title="Refusion de tous les morceaux"
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>merge_type</span>
+                        Refusion
+                      </button>
+
+                      <button
+                        className="btn-ghost"
+                        style={{ color: 'var(--danger)', borderColor: 'var(--danger)', padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
+                        type="button"
+                        onClick={() => runAction({ kind: 'kill', playerId: p.playerId }, "Joueur éliminé")}
+                        title="Éliminer le joueur"
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>skull</span>
+                        Kill
+                      </button>
+
+                      <button
+                        className="btn-ghost"
+                        style={{ color: 'var(--danger)', borderColor: 'var(--danger)', padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
+                        type="button"
+                        onClick={() => handleKickPlayer(p.playerId, p.nickname)}
+                        title="Expulser du salon"
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>logout</span>
+                        Kick
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
       </div>
 
+      {/* Context Menu on Right Click */}
       {contextMenu && (
         <>
           <div className="context-menu-backdrop" onClick={() => setContextMenu(null)} />
@@ -555,26 +743,28 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
             style={{ left: contextMenu.screenX, top: contextMenu.screenY }}
           >
             <button type="button" onClick={() => contextAction('kill')}>
-              Kill
+              <span className="material-symbols-outlined" style={{ fontSize: 16, marginRight: 6, verticalAlign: 'middle' }}>skull</span> Éliminer (Kill)
             </button>
             <button type="button" onClick={() => contextAction('freeze')}>
-              Geler
+              <span className="material-symbols-outlined" style={{ fontSize: 16, marginRight: 6, verticalAlign: 'middle' }}>ac_unit</span> Geler
             </button>
             <button type="button" onClick={() => contextAction('unfreeze')}>
-              Dégeler
+              <span className="material-symbols-outlined" style={{ fontSize: 16, marginRight: 6, verticalAlign: 'middle' }}>play_arrow</span> Dégeler
             </button>
-            <button type="button" onClick={contextSetMass}>
-              Modifier la masse…
+            <button type="button" onClick={() => runAction({ kind: 'setMass', playerId: contextMenu.playerId, mass: 2000 }, "Masse à 2000")}>
+              <span className="material-symbols-outlined" style={{ fontSize: 16, marginRight: 6, verticalAlign: 'middle' }}>fitness_center</span> Masse à 2000
             </button>
             <button type="button" onClick={() => contextAction('split')}>
-              Split forcé
+              <span className="material-symbols-outlined" style={{ fontSize: 16, marginRight: 6, verticalAlign: 'middle' }}>call_split</span> Split forcé
             </button>
             <button type="button" onClick={() => contextAction('remerge')}>
-              Refusion forcée
+              <span className="material-symbols-outlined" style={{ fontSize: 16, marginRight: 6, verticalAlign: 'middle' }}>merge_type</span> Refusion forcée
             </button>
           </div>
         </>
       )}
+
+      {/* Reset Confirmation Modal */}
       {showResetConfirm && (
         <div className="context-menu-backdrop" style={{ zIndex: 150 }} onClick={() => setShowResetConfirm(false)}>
           <div
@@ -603,7 +793,7 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
                 className="btn-primary btn-danger"
                 type="button"
                 onClick={() => {
-                  runAction({ kind: 'reset' });
+                  runAction({ kind: 'reset' }, "Salon réinitialisé avec succès");
                   setShowResetConfirm(false);
                 }}
               >
