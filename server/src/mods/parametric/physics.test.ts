@@ -12,11 +12,11 @@ describe('velocityForMass — v(m) = MAX(Vfloor, V0·kv·(M0/m)^gamma)', () => {
   const config = testConfig();
 
   it('vaut V0 à la masse de départ', () => {
-    expect(velocityForMass(50, config)).toBeCloseTo(1000, 6);
+    expect(velocityForMass(50, config)).toBeCloseTo(700, 6);
   });
 
   it('décroît avec la masse', () => {
-    expect(velocityForMass(200, config)).toBeCloseTo(870.5505632961241, 6);
+    expect(velocityForMass(200, config)).toBeCloseTo(609.3853943072869, 6);
   });
 
   it('ne descend jamais sous Vfloor', () => {
@@ -27,7 +27,7 @@ describe('velocityForMass — v(m) = MAX(Vfloor, V0·kv·(M0/m)^gamma)', () => {
     const fast = testConfig({
       physics: { ...config.physics, speedMultiplier: 2.5 },
     });
-    expect(velocityForMass(50, fast)).toBeCloseTo(2500, 6);
+    expect(velocityForMass(50, fast)).toBeCloseTo(1750, 6);
   });
 });
 

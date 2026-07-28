@@ -6,7 +6,7 @@
     "minSplitMass": 400
   },
   "physics": {
-    "v0": 1000,
+    "v0": 700,
     "speedMultiplier": 2.5,
     "speedMassExponent": 0.10,
     "velocityFloor": 20,

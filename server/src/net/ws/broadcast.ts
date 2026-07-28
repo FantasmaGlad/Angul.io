@@ -66,6 +66,11 @@ export function wireRoom(
       const visible = new Map<string, Entity>();
       for (const piece of ownPieces) visible.set(piece.id, piece);
 
+      const ownMass = ownPieces.reduce((sum, p) => sum + p.mass, 0);
+      const effectiveRadius = ownMass > 0 
+        ? Math.round(interestRadiusPx + Math.sqrt(ownMass) * 15) 
+        : interestRadiusPx;
+
       if (runtime.spectatorIds.has(playerId)) {
         for (const entity of managed.room.world.allEntities()) {
           visible.set(entity.id, entity);
@@ -73,7 +78,7 @@ export function wireRoom(
       } else {
         for (const id of runtime.interestHash.queryNearby(center)) {
           const entity = managed.room.world.getEntity(id);
-          if (entity && distance(entity.position, center) <= interestRadiusPx) {
+          if (entity && distance(entity.position, center) <= effectiveRadius) {
             visible.set(entity.id, entity);
           }
         }

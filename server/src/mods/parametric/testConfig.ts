@@ -8,7 +8,7 @@ export function testConfig(overrides: Partial<ParametricModConfig> = {}): Parame
     id: 'test',
     player: { startMass: 50, maxSplits: 16, minSplitMass: 100 },
     physics: {
-      v0: 1000,
+      v0: 700,
       speedMultiplier: 1,
       speedMassExponent: 0.10,
       velocityFloor: 20,
