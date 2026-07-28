@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { DEATH_BANNERS, SKIN_IMAGE_MAP, SKINS } from '@angulio/shared';
+import { SKIN_IMAGE_MAP, SKINS } from '@angulio/shared';
 import {
   getAccount,
   resetBestScore,
@@ -390,19 +390,14 @@ export default function PlayersView({ token, onAuthError }: PlayersViewProps) {
               </div>
             </div>
             <div>
-              <label htmlFor="detail-banner">Bannière de mort</label>
-              <select
+              <label htmlFor="detail-banner">Image/GIF de mort (URL ou DataURL)</label>
+              <input
                 id="detail-banner"
                 value={deathBannerId}
                 onChange={(e) => setDeathBannerId(e.target.value)}
+                placeholder="https://... ou data:image/..."
                 style={{ width: '100%', padding: 6 }}
-              >
-                {DEATH_BANNERS.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.label} (Niveau {b.unlockLevel})
-                  </option>
-                ))}
-              </select>
+              />
             </div>
           </div>
 

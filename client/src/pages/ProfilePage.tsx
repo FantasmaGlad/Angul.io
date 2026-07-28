@@ -1,12 +1,10 @@
 import {
-  DEATH_BANNERS,
   MAX_DEATH_MESSAGE_LENGTH,
   SKIN_IMAGE_MAP,
   SKINS,
-  deathBannerById,
   isCustomImageBanner,
 } from '@angulio/shared';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   fetchProfile,
   updateAvatarColor,
@@ -34,6 +32,69 @@ function calculateXpProgress(totalXp: number) {
   }
   const pct = Math.min(100, Math.max(0, Math.floor((remaining / cost) * 100)));
   return { level, currentXpInLevel: remaining, costForNextLevel: cost, pct };
+}
+
+interface AvatarSwiperProps {
+  activeSkin: string;
+  onPickColor: (skin: string) => void;
+  disabled: boolean;
+}
+
+function AvatarSwiper({ activeSkin, onPickColor, disabled }: AvatarSwiperProps) {
+  const trackRef = useRef<HTMLDivElement>(null);
+
+  const scroll = (direction: 'left' | 'right') => {
+    if (!trackRef.current) return;
+    const amount = direction === 'left' ? -280 : 280;
+    trackRef.current.scrollBy({ left: amount, behavior: 'smooth' });
+  };
+
+  return (
+    <div className="avatar-swiper-wrapper">
+      <button
+        type="button"
+        className="swiper-arrow-btn"
+        onClick={() => scroll('left')}
+        aria-label="Défiler vers la gauche"
+      >
+        <span className="material-symbols-outlined">chevron_left</span>
+      </button>
+
+      <div className="avatar-swiper-track" ref={trackRef}>
+        {SKINS.map((skin) => (
+          <button
+            key={skin}
+            type="button"
+            className={`avatar-swiper-card${activeSkin === skin ? ' selected' : ''}`}
+            disabled={disabled}
+            aria-label={`Choisir le skin ${skin}`}
+            onClick={() => onPickColor(skin)}
+          >
+            <img
+              src={SKIN_IMAGE_MAP[skin]}
+              alt={skin}
+              style={{ width: 68, height: 68, objectFit: 'contain' }}
+            />
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{skin}</span>
+            {activeSkin === skin && (
+              <span className="account-badge-pill premium" style={{ fontSize: 9, padding: '2px 6px' }}>
+                Actif
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        className="swiper-arrow-btn"
+        onClick={() => scroll('right')}
+        aria-label="Défiler vers la droite"
+      >
+        <span className="material-symbols-outlined">chevron_right</span>
+      </button>
+    </div>
+  );
 }
 
 export default function ProfilePage({ authToken, onAvatarColorChange, currentSkin }: ProfilePageProps) {
@@ -113,7 +174,6 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
     })();
   };
 
-  const previewBanner = deathBannerById(deathBannerDraft || 'default_skull');
   const xpProg = profile ? calculateXpProgress(profile.xp) : null;
 
   const handleLogout = (): void => {
@@ -143,22 +203,12 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
           </section>
 
           <section className="lobby-section">
-            <span className="section-title">Choix du Skin d'Avatar</span>
-            <div className="avatar-swatch-grid spacious" style={{ marginTop: 12 }}>
-              {SKINS.map((skin) => (
-                <button
-                  key={skin}
-                  type="button"
-                  className={`avatar-swatch${activeSkin === skin ? ' selected' : ''}`}
-                  disabled={savingColor !== null}
-                  aria-label={`Choisir le skin ${skin}`}
-                  onClick={() => handlePickColor(skin)}
-                >
-                  <img src={SKIN_IMAGE_MAP[skin]} alt={skin} className="avatar-skin-img" />
-                  <span className="avatar-skin-name">{skin}</span>
-                </button>
-              ))}
-            </div>
+            <span className="section-title">Choix du Skin d'Avatar (Carrousel)</span>
+            <AvatarSwiper
+              activeSkin={activeSkin}
+              onPickColor={handlePickColor}
+              disabled={savingColor !== null}
+            />
           </section>
         </div>
       )}
@@ -170,7 +220,7 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
               <img
                 src={SKIN_IMAGE_MAP[activeSkin] ?? SKIN_IMAGE_MAP.Banane}
                 alt={activeSkin}
-                style={{ width: 52, height: 52, borderRadius: '50%', border: '2px solid var(--accent)' }}
+                style={{ width: 56, height: 56, borderRadius: '50%', border: '2px solid var(--accent)' }}
               />
               <div>
                 <div style={{ fontWeight: 800, fontSize: 18, color: 'var(--text)' }}>
@@ -196,21 +246,11 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
               <section className="lobby-section">
                 <span className="section-title">Choix du Skin d'Avatar</span>
-                <div className="avatar-swatch-grid spacious" style={{ marginTop: 12 }}>
-                  {SKINS.map((skin) => (
-                    <button
-                      key={skin}
-                      type="button"
-                      className={`avatar-swatch${activeSkin === skin ? ' selected' : ''}`}
-                      disabled={savingColor !== null}
-                      aria-label={`Choisir le skin ${skin}`}
-                      onClick={() => handlePickColor(skin)}
-                    >
-                      <img src={SKIN_IMAGE_MAP[skin]} alt={skin} className="avatar-skin-img" />
-                      <span className="avatar-skin-name">{skin}</span>
-                    </button>
-                  ))}
-                </div>
+                <AvatarSwiper
+                  activeSkin={activeSkin}
+                  onPickColor={handlePickColor}
+                  disabled={savingColor !== null}
+                />
               </section>
 
               {xpProg && (
@@ -338,38 +378,9 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
                     value={isCustomImageBanner(deathBannerDraft) ? deathBannerDraft : ''}
                     onChange={(e) => {
                       const val = e.target.value.trim();
-                      if (val) setDeathBannerDraft(val);
+                      setDeathBannerDraft(val);
                     }}
                   />
-                </div>
-
-                <span className="field-label" style={{ marginTop: 14, display: 'block' }}>
-                  Thèmes prédéfinis
-                </span>
-                <div className="death-banner-grid">
-                  {DEATH_BANNERS.map((banner) => {
-                    const locked = profile.level < banner.unlockLevel;
-                    return (
-                      <button
-                        key={banner.id}
-                        type="button"
-                        className={`death-banner-option${deathBannerDraft === banner.id ? ' selected' : ''}${locked ? ' locked' : ''}`}
-                        style={{
-                          background: `linear-gradient(135deg, ${banner.gradient[0]}, ${banner.gradient[1]})`,
-                        }}
-                        disabled={locked}
-                        onClick={() => setDeathBannerDraft(banner.id)}
-                      >
-                        <span className="material-symbols-outlined" style={{ fontSize: '24px', marginRight: '6px', verticalAlign: 'middle' }}>
-                          {banner.icon}
-                        </span>
-                        <span className="death-banner-label">{banner.label}</span>
-                        {locked && (
-                          <span className="death-banner-lock-badge">Niveau {banner.unlockLevel}</span>
-                        )}
-                      </button>
-                    );
-                  })}
                 </div>
 
                 <span className="field-label" style={{ marginTop: 18, display: 'block' }}>
@@ -381,8 +392,8 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
                     style={{
                       background: isCustomImageBanner(deathBannerDraft)
                         ? `url("${deathBannerDraft}") center/cover no-repeat`
-                        : `linear-gradient(135deg, ${previewBanner.gradient[0]}, ${previewBanner.gradient[1]})`,
-                      minHeight: 90,
+                        : 'linear-gradient(135deg, rgba(30, 32, 34, 0.95), rgba(20, 22, 24, 0.95))',
+                      minHeight: 100,
                       position: 'relative',
                       overflow: 'hidden',
                       borderRadius: 'var(--radius-md)',
@@ -390,17 +401,13 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
                       alignItems: 'center',
                       justifyContent: 'center',
                       color: '#ffffff',
+                      border: '1px solid var(--border-strong)',
                     }}
                   >
                     {isCustomImageBanner(deathBannerDraft) && (
                       <div style={{ position: 'absolute', inset: 0, background: 'rgba(0, 0, 0, 0.45)' }} />
                     )}
                     <div style={{ position: 'relative', zIndex: 1, textAlign: 'center' }}>
-                      {!isCustomImageBanner(deathBannerDraft) && (
-                        <span className="material-symbols-outlined" style={{ fontSize: '28px', display: 'block', marginBottom: '4px' }}>
-                          {previewBanner.icon}
-                        </span>
-                      )}
                       <span style={{ fontWeight: 800, fontSize: 16, textShadow: '0 2px 4px rgba(0,0,0,0.6)' }}>
                         VOUS ÊTES MORT !
                       </span>

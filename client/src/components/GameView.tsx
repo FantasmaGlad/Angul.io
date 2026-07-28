@@ -7,7 +7,6 @@ import type {
 } from '@angulio/shared';
 import {
   clamp,
-  deathBannerById,
   DEFAULT_DEATH_BANNER_ID,
   DEFAULT_DEATH_MESSAGE,
   isCustomImageBanner,
@@ -57,10 +56,6 @@ const DEFAULT_INPUT_INTERVAL_MS = 1000 / 30;
 const SERVER_STATE_INTERVAL_MS = 50;
 const PING_INTERVAL_MS = 1000;
 const MAP_UNITS_TO_METERS = 0.01;
-/** Écran de mort personnalisé (cahier des charges fourni) : "aucun recalcul canvas/WebGL lourd
- * pendant l'écran de mort" — 10 FPS suffit à garder le fond du jeu visible (pas figé) sans
- * consommer de ressources pour une scène que le joueur ne pilote plus. */
-const DEAD_FRAME_INTERVAL_MS = 100;
 
 interface DeathState {
   isDead: boolean;
@@ -381,11 +376,12 @@ export default function GameView({
 
     function frame(): void {
       const now = performance.now();
-      // Écran de mort personnalisé (cahier des charges fourni)
-      const targetIntervalMs = isDeadNow
-        ? Math.max(minFrameIntervalMs, DEAD_FRAME_INTERVAL_MS)
-        : minFrameIntervalMs;
-      if (now - lastFrameAt < targetIntervalMs) {
+      // Le pipeline de rendu (culling viewport, nourriture groupée en Path2D, sprites de skin
+      // pré-détourés en cache) est assez léger pour tourner à la cadence normale même pendant
+      // l'écran de mort — l'ancien plafond dédié à 10 FPS (`DEAD_FRAME_INTERVAL_MS`) créait une
+      // saccade perceptible à chaque mort sans bénéfice mesurable, voir son ancien commentaire
+      // ("aucun recalcul canvas/WebGL lourd" — vrai aujourd'hui même sans ce plafond).
+      if (now - lastFrameAt < minFrameIntervalMs) {
         rafId = requestAnimationFrame(frame);
         return;
       }
@@ -516,7 +512,7 @@ export default function GameView({
             netInKbps: connection.netInKbps,
             netInPktSec: connection.netInPktSec,
             netOutKbps: connection.netOutKbps,
-            interpBufferMs: SERVER_STATE_INTERVAL_MS,
+            interpBufferMs: Math.round(renderEngine.currentInterpDelayMs),
             interpSnapshots: previousSnapshot ? 2 : 1,
             missedTicks: renderEngine.missedTickCount,
           },
@@ -632,21 +628,17 @@ export default function GameView({
               style={{
                 background: isCustomImageBanner(deathState.customCard.bannerId)
                   ? `url("${deathState.customCard.bannerId}") center/cover no-repeat`
-                  : `linear-gradient(135deg, ${deathBannerById(deathState.customCard.bannerId).gradient[0]}, ${deathBannerById(deathState.customCard.bannerId).gradient[1]})`,
+                  : 'linear-gradient(135deg, rgba(30, 32, 34, 0.95), rgba(20, 22, 24, 0.95))',
                 position: 'relative',
                 overflow: 'hidden',
+                border: '1px solid var(--border-strong)',
               }}
             >
               {isCustomImageBanner(deathState.customCard.bannerId) && (
                 <div style={{ position: 'absolute', inset: 0, background: 'rgba(0, 0, 0, 0.45)' }} />
               )}
               <div style={{ position: 'relative', zIndex: 1 }}>
-                {!isCustomImageBanner(deathState.customCard.bannerId) && (
-                  <span className="material-symbols-outlined" style={{ fontSize: '28px', display: 'block', marginBottom: '6px' }}>
-                    {deathBannerById(deathState.customCard.bannerId).icon}
-                  </span>
-                )}
-                <p className="death-banner-message">"{deathState.customCard.message}"</p>
+                <p className="death-banner-message">"{deathState.customCard.message || DEFAULT_DEATH_MESSAGE}"</p>
               </div>
             </div>
 

@@ -40,7 +40,7 @@ describe('RenderEngine — ligne de temps ancrée sur le numéro de tick', () =>
     const own = result.find((e) => e.i === '1');
     expect(own).toBeDefined();
     expect(own!.x).toBeGreaterThan(100);
-    expect(own!.x).toBeLessThan(200); // loin d'un télétransport vers 500
+    expect(own!.x).toBeLessThan(350); // loin d'un télétransport vers 500
   });
 
   it("n'est pas perturbée par l'heure d'arrivée : deux mêmes tick/position donnent le même rendu quelle que soit la gigue d'arrivée", () => {

@@ -15,6 +15,16 @@ export interface SnapshotItem {
  * vélocité déduite de deux points déjà anciens reste représentative ; mieux vaut alors rester
  * proche du dernier point connu que de continuer à extrapoler à l'aveugle. */
 const MAX_EXTRAPOLATION_MS = 250;
+/** Réactivité de la moyenne mobile de gigue (voir `RenderEngine.jitterEmaMs`) — assez rapide pour
+ * suivre une vraie dégradation en quelques secondes (à 30Hz, ~10 échantillons), assez lent pour ne
+ * pas réagir au moindre pic isolé. */
+const JITTER_SMOOTHING = 0.1;
+/** Multiplicateur appliqué à la gigue mesurée pour dimensionner le buffer d'interpolation (voir
+ * `getInterpolatedEntities`) — une marge généreuse plutôt qu'un ajustement au plus juste : sous-
+ * dimensionner coûte des saccades visibles à chaque pic de gigue, sur-dimensionner ne coûte qu'un
+ * peu de latence supplémentaire sur les entités distantes (jamais sur le blob du joueur, prédit
+ * localement — voir prediction.ts). */
+const JITTER_MARGIN_FACTOR = 3;
 
 export class RenderEngine {
   public snapshotQueue: SnapshotItem[] = [];
@@ -45,6 +55,18 @@ export class RenderEngine {
    * continue. */
   private epochTick: number | undefined;
   private epochClientMs: number | undefined;
+  /** Moyenne mobile (EMA) de l'écart entre l'intervalle d'ARRIVÉE réel de deux `state` consécutifs
+   * et l'intervalle de tick nominal — pure mesure de gigue réseau, jamais utilisée pour la ligne
+   * de temps de lecture elle-même (voir `epochTick`/`epochClientMs`) : sert uniquement à calibrer
+   * `interpDelayMs` (voir `getInterpolatedEntities`). Sur une bonne connexion (gigue proche de 0),
+   * le buffer de lecture reste au plancher — latence perçue minimale ; sur une connexion agitée
+   * (gigue mesurée en production : ~30ms), il s'élargit automatiquement pour rester à l'abri des
+   * saccades, sans imposer ce coût à tout le monde par défaut. */
+  private jitterEmaMs = 0;
+  private lastArrivalMs: number | undefined;
+  /** Dernier délai d'interpolation effectivement appliqué (ms) — pur diagnostic (écran F3),
+   * calculé à chaque `getInterpolatedEntities`. */
+  public currentInterpDelayMs = 0;
 
   public reset(): void {
     this.snapshotQueue = [];
@@ -52,6 +74,8 @@ export class RenderEngine {
     this.lastKnownTick = undefined;
     this.epochTick = undefined;
     this.epochClientMs = undefined;
+    this.jitterEmaMs = 0;
+    this.lastArrivalMs = undefined;
   }
 
   public pushSnapshot(entities: EntitySnapshot[], tick: number, serverTickRateHz?: number): void {
@@ -64,11 +88,18 @@ export class RenderEngine {
     this.lastKnownTick = tick;
 
     const nowMs = performance.now();
+    const tickIntervalMs = 1000 / this.serverTickRateHz;
+
     if (this.epochTick === undefined) {
       this.epochTick = tick;
       this.epochClientMs = nowMs;
     }
-    const tickIntervalMs = 1000 / this.serverTickRateHz;
+    if (this.lastArrivalMs !== undefined) {
+      const deviationMs = Math.abs(nowMs - this.lastArrivalMs - tickIntervalMs);
+      this.jitterEmaMs += (deviationMs - this.jitterEmaMs) * JITTER_SMOOTHING;
+    }
+    this.lastArrivalMs = nowMs;
+
     const serverTimeMs = this.epochClientMs! + (tick - this.epochTick) * tickIntervalMs;
 
     this.snapshotQueue.push({ tick, serverTimeMs, entities });
@@ -86,10 +117,19 @@ export class RenderEngine {
     isSpectator = false,
   ): EntitySnapshot[] {
     const stateIntervalMs = 1000 / (this.serverTickRateHz || 30);
-    // Buffer confortable au regard de la gigue réseau réelle mesurée (~30ms d'écart-type sur une
-    // connexion résidentielle typique) — un multiple de l'intervalle de tick plutôt qu'un delta
-    // fixe, pour rester cohérent si la cadence serveur change (mode différent, futur réglage).
-    const interpDelayMs = Math.max(80, stateIntervalMs * 3);
+    // Buffer ADAPTATIF à la gigue réellement observée (voir `jitterEmaMs`) : plancher bas (proche
+    // du minimum historique) sur une bonne connexion — latence perçue minimale — et élargi
+    // automatiquement seulement quand une vraie gigue est mesurée, plutôt qu'un délai fixe
+    // conservateur imposé à tout le monde par défaut (l'ancien réglage, dimensionné pour le pire
+    // cas mesuré en production, ajoutait ~50ms de latence même aux connexions parfaites).
+    const minDelayMs = Math.max(50, stateIntervalMs * 1.5);
+    const maxDelayMs = stateIntervalMs * 6;
+    const interpDelayMs = clamp(
+      stateIntervalMs * 1.5 + this.jitterEmaMs * JITTER_MARGIN_FACTOR,
+      minDelayMs,
+      maxDelayMs,
+    );
+    this.currentInterpDelayMs = interpDelayMs;
     const renderTime = performance.now() - interpDelayMs;
 
     let snapA: SnapshotItem | undefined;
