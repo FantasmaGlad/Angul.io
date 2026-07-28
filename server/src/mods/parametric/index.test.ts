@@ -6,8 +6,8 @@ import { pieceState } from './pieceState.js';
 import { testConfig } from './testConfig.js';
 import { accelerationForMass, velocityForMass } from './physics.js';
 
-function freshWorld(mapSize = 15000): World {
-  return new World({ mapSize });
+function freshWorld(mapSize = 15000, kArea = testConfig().areaConstant): World {
+  return new World({ mapSize, kArea });
 }
 
 describe('createParametricMod — getAccelerationForMass', () => {
@@ -87,10 +87,9 @@ describe('createParametricMod — onTick (vitesse/accélération)', () => {
     world.addPlayer('p1', 'Alice');
     const piece = world.spawnPiece('p1', { x: 500, y: 500 }, 100);
 
-    mod.onTick?.(world, 5);
-
-    // 0.5% par 10s pour masse 100 -> ~0.25% en 5s -> 99.75
-    expect(piece.mass).toBeCloseTo(99.75, 1);
+    // 0.2% par 10s après 10s d'inactivité pour masse < 500
+    mod.onTick?.(world, 10); // 10s sans nourriture -> 0.2% de decay -> 99.8
+    expect(piece.mass).toBeCloseTo(99.8, 1);
   });
 });
 

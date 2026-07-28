@@ -8,7 +8,7 @@
   "physics": {
     "v0": 300,
     "speedMultiplier": 2.5,
-    "speedMassExponent": 0.44,
+    "speedMassExponent": 0.22,
     "velocityFloor": 20,
     "accelerationBase": 1500,
     "accelerationMassExponent": 0.7
@@ -54,7 +54,7 @@
       { "color": "multicolor", "mass": 12, "weight": 15 }
     ]
   },
-  "areaConstant": 3.141592653589793,
+  "areaConstant": 4.71238898038469,
   "bots": {
     "enabled": true,
     "targetRatio": 0.5,

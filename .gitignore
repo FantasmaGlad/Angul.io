@@ -13,3 +13,14 @@ admin/public/
 *.log
 .DS_Store
 coverage/
+
+# AI & Assistant files
+.claude/
+.gemini/
+.antigravity/
+.cursor/
+.windsurf/
+
+# Markdown files (except README.md)
+*.md
+!README.md

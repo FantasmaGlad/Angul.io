@@ -16,11 +16,11 @@ describe('velocityForMass — v(m) = MAX(Vfloor, V0·kv·(M0/m)^gamma)', () => {
   });
 
   it('décroît avec la masse', () => {
-    expect(velocityForMass(200, config)).toBeCloseTo(163.0102293789087, 6);
+    expect(velocityForMass(200, config)).toBeCloseTo(221.14038259366518, 6);
   });
 
   it('ne descend jamais sous Vfloor', () => {
-    expect(velocityForMass(1_000_000, config)).toBe(20);
+    expect(velocityForMass(100_000_000, config)).toBe(20);
   });
 
   it('kv multiplie la vitesse globalement (mode "plus rapide")', () => {
@@ -44,22 +44,27 @@ describe('accelerationForMass — a(m) = A0·(M0/m)^alpha', () => {
 });
 
 describe('applyPassiveDecay — paliers de perte de masse par 10s', () => {
-  it('perd 0.5% en 10s pour masse <= 200', () => {
-    expect(applyPassiveDecay(100, 10, testConfig())).toBeCloseTo(99.5, 1);
-    expect(applyPassiveDecay(200, 10, testConfig())).toBeCloseTo(199.0, 1);
+  it('ne perd rien si la masse a été ingurgitée il y a moins de 10 secondes', () => {
+    expect(applyPassiveDecay(1000, 10, testConfig(), 5)).toBe(1000);
   });
 
-  it('perd 1.0% en 10s pour 200 < masse <= 500', () => {
-    expect(applyPassiveDecay(300, 10, testConfig())).toBeCloseTo(297.0, 1);
-    expect(applyPassiveDecay(500, 10, testConfig())).toBeCloseTo(495.0, 1);
+  it('perd 0.2% en 10s pour masse < 500', () => {
+    expect(applyPassiveDecay(100, 10, testConfig(), 10)).toBeCloseTo(99.8, 1);
+    expect(applyPassiveDecay(400, 10, testConfig(), 10)).toBeCloseTo(399.2, 1);
   });
 
-  it('perd 2.0% en 10s pour masse > 500', () => {
-    expect(applyPassiveDecay(600, 10, testConfig())).toBeCloseTo(588.0, 1);
+  it('perd 0.5% en 10s pour 500 <= masse < 2000', () => {
+    expect(applyPassiveDecay(500, 10, testConfig(), 10)).toBeCloseTo(497.5, 1);
+    expect(applyPassiveDecay(1000, 10, testConfig(), 10)).toBeCloseTo(995.0, 1);
+  });
+
+  it('perd 1.0% en 10s pour masse >= 2000', () => {
+    expect(applyPassiveDecay(2000, 10, testConfig(), 10)).toBeCloseTo(1980.0, 1);
+    expect(applyPassiveDecay(3000, 10, testConfig(), 10)).toBeCloseTo(2970.0, 1);
   });
 
   it('ne perd rien au plancher (2)', () => {
-    expect(applyPassiveDecay(2, 1000, testConfig())).toBe(2);
+    expect(applyPassiveDecay(2, 1000, testConfig(), 15)).toBe(2);
   });
 });
 

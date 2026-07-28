@@ -15,6 +15,8 @@ export interface ParametricPieceState {
   /** Masse du morceau au moment de son dernier split — utilisée par la formule de cooldown de
    * fusion T(m) = Tbase + gamma_rec*m (config.merge.massFactor). */
   massAtSplit: number;
+  /** Secondes écoulées depuis la dernière masse ingurgitée (nourriture ou joueur mangé). */
+  timeSinceLastEatenS: number;
 }
 
 const KEY = 'parametric';
@@ -27,6 +29,7 @@ function defaultState(mass: number): ParametricPieceState {
     inputIntensity: 0,
     splitElapsedS: Number.POSITIVE_INFINITY,
     massAtSplit: mass,
+    timeSinceLastEatenS: 0,
   };
 }
 

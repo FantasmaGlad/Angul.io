@@ -15,25 +15,30 @@ export function accelerationForMass(mass: number, config: ParametricModConfig): 
   return accelerationBase * Math.pow(config.player.startMass / mass, accelerationMassExponent);
 }
 
-function decayLambda(mass: number, config: ParametricModConfig): number {
+function decayLambda(mass: number, config: ParametricModConfig, timeSinceLastEatenS = 10): number {
   const floor = config.decay.floor ?? 2;
-  if (mass <= floor) return 0;
+  if (mass <= floor || timeSinceLastEatenS < 10) return 0;
 
-  let rate = 0.005; // 0.5% par 10s pour masse <= 200
-  if (mass > 500) {
-    rate = 0.02; // 2% par 10s pour masse > 500
-  } else if (mass > 200) {
-    rate = 0.01; // 1% par 10s pour 200 < masse <= 500
+  let rate = 0.002; // 0.2% par 10s en dessous de 500
+  if (mass >= 2000) {
+    rate = 0.01; // 1% par 10s au dessus de 2000
+  } else if (mass >= 500) {
+    rate = 0.005; // 0.5% par 10s entre 500 et 2000
   }
 
   const intervalSec = 10;
   return -Math.log(1 - rate) / intervalSec;
 }
 
-export function applyPassiveDecay(mass: number, dt: number, config: ParametricModConfig): number {
-  const lambda = decayLambda(mass, config);
+export function applyPassiveDecay(
+  mass: number,
+  dt: number,
+  config: ParametricModConfig,
+  timeSinceLastEatenS = 10,
+): number {
+  const lambda = decayLambda(mass, config, timeSinceLastEatenS);
   if (lambda === 0) return mass;
-  return Math.max(mass * Math.exp(-lambda * dt), config.decay.floor);
+  return Math.max(mass * Math.exp(-lambda * dt), config.decay.floor ?? 2);
 }
 
 /** Masse d'une nouvelle particule de nourriture — tirage pondéré parmi les types de pellets du

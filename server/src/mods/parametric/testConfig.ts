@@ -10,7 +10,7 @@ export function testConfig(overrides: Partial<ParametricModConfig> = {}): Parame
     physics: {
       v0: 300,
       speedMultiplier: 1,
-      speedMassExponent: 0.44,
+      speedMassExponent: 0.22,
       velocityFloor: 20,
       accelerationBase: 1500,
       accelerationMassExponent: 0.7,
@@ -32,7 +32,7 @@ export function testConfig(overrides: Partial<ParametricModConfig> = {}): Parame
       respawnRatePerSecond: 100,
       pelletTypes: [{ color: 'vert', mass: 1, weight: 1 }],
     },
-    areaConstant: Math.PI,
+    areaConstant: 1.5 * Math.PI,
     ...overrides,
   };
 }

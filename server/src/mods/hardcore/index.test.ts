@@ -86,7 +86,7 @@ describe('createHardcoreMod — onCollision (nourriture et fusion, comportement 
     mod.onCollision?.(world, piece, particle);
 
     expect(world.getEntity(particle.id)).toBeUndefined();
-    expect(piece.mass).toBeCloseTo(51, 6); // +1, pas +10 : le multiplicateur ne concerne que les joueurs
+    expect(piece.mass).toBeCloseTo(51, 6); // +1 masse (sa masse reste la même, la cellule gagne en taille via areaConstant)
   });
 
   it('deux morceaux du même joueur fusionnent normalement (jamais absorbés avec multiplicateur)', () => {

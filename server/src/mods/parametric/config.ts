@@ -80,6 +80,8 @@ export interface ParametricModConfig {
     /** Masse minimale pour pouvoir manger une particule — absent de la feuille, repris de
      * metriques.md §6 (2). */
     minMassToEatFood: number;
+    /** Multiplicateur de masse gagnée par la nourriture (1.5 = +50% de grossissement). */
+    foodEfficiency?: number;
   };
 
   /** Perte de masse passive — Mm (`floor`) et Ml (les taux/seuil) de la feuille Excel,

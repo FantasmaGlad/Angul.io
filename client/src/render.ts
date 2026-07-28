@@ -5,11 +5,11 @@ import { ownAggregate } from './stats.js';
  * du morceau) plutôt qu'un cadrage 1:1 — meilleur contrôle en début de partie (viser devient
  * plus précis avec un morceau qui occupe plus d'espace à l'écran), et laisse la place à la
  * sensation classique de dézoom progressif à mesure que la masse grossit (demande utilisateur). */
-export const BASE_SCALE = 1.8;
-const MIN_SCALE = 0.15;
+export const BASE_SCALE = 1.2;
+const MIN_SCALE = 0.1;
 /** Légèrement au-dessus de `BASE_SCALE` : laisse un peu de marge de zoom supplémentaire pour
  * les morceaux plus petits que la référence (ex. juste après un split). */
-const MAX_SCALE = 2.2;
+const MAX_SCALE = 1.4667;
 /** Le client n'a pas besoin de connaître M_START du mod actif : cette référence ne sert
  * qu'à calibrer le zoom, pas la simulation elle-même. */
 const REFERENCE_MASS = 50;

@@ -154,6 +154,8 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         }
 
         world.setMass(attacker, attacker.mass + gainedMass);
+        const attackerState = pieceState(attacker);
+        attackerState.timeSinceLastEatenS = 0;
         world.removeEntity(target.id);
         const now = performance.now();
         creditMassEatenXp(world, attacker.ownerId, gainedMass, now);
@@ -204,6 +206,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
 
         const state = pieceState(entity);
         state.splitElapsedS += dt;
+        state.timeSinceLastEatenS += dt;
 
         const { direction, intensity } = inputVectorOf(entity);
         // Le curseur proche du centre donne un contrôle fin (faible intensité) ; loin, le
@@ -212,7 +215,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         const maxChange = accelerationForMass(entity.mass, config) * intensity * dt;
         entity.velocity = moveToward(entity.velocity, targetVelocity, maxChange);
 
-        const decayedMass = applyPassiveDecay(entity.mass, dt, config);
+        const decayedMass = applyPassiveDecay(entity.mass, dt, config, state.timeSinceLastEatenS);
         if (decayedMass !== entity.mass) world.setMass(entity, decayedMass);
       }
 
@@ -241,12 +244,15 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
       if (a.kind === 'particle' || b.kind === 'particle') {
         const [particle, piece] = a.kind === 'particle' ? [a, b] : [b, a];
         if (piece.mass >= config.eating.minMassToEatFood) {
-          world.setMass(piece, piece.mass + particle.mass);
+          const gainedMass = particle.mass;
+          world.setMass(piece, piece.mass + gainedMass);
           world.removeEntity(particle.id);
+          const state = pieceState(piece);
+          state.timeSinceLastEatenS = 0;
           // "1 masse mangée = 1xp" (engine/xp.ts) — bénéficie d'un combo actif comme n'importe
           // quel autre gain d'XP, mais la nourriture ne déclenche/prolonge jamais elle-même le
           // combo (réservé aux joueurs mangés, voir `handleEatAttempt`).
-          creditMassEatenXp(world, piece.ownerId, particle.mass, performance.now());
+          creditMassEatenXp(world, piece.ownerId, gainedMass, performance.now());
         }
         return;
       }

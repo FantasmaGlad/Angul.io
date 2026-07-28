@@ -28,7 +28,7 @@ export default function TopNav({ accountActive, pseudo, level, avatarColor }: To
           Classement
         </button>
         <button type="button" onClick={() => window.open('/wiki', '_blank')}>
-          Modes de Jeux
+          Wiki
         </button>
         <button type="button" onClick={() => navigate('/a-propos')}>
           À Propos
