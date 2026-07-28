@@ -88,7 +88,6 @@ export interface WorldStateMessage {
   };
 }
 
-
 /** Réponse immédiate à un `ping` (voir ClientPingMessage). */
 export interface PongMessage {
   type: 'pong';
@@ -101,6 +100,11 @@ export interface PlayerInfoMessage {
   type: 'player';
   playerId: string;
   nickname: string;
+  /** Couleur du blob de ce joueur (refonte UI/UX, avatar procédural) — choisie par le compte
+   * (`players.avatar_color`) ou dérivée du pseudo pour un invité, voir
+   * `colorForNickname`/`connectionHandler.ts`. Optionnel côté type pour rester tolérant à un
+   * message malformé (voir `render.ts` `colorFor`, repli sur `DEFAULT_BLOB_COLOR`). */
+  color?: string;
 }
 
 export interface PlayerDiedMessage {

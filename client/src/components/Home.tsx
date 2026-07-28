@@ -1,4 +1,3 @@
-import type { PanelName } from '../App.js';
 import type { RoomSummary } from '../lobby.js';
 import BottomBar from './BottomBar.js';
 import CreateRoomPanel from './CreateRoomPanel.js';
@@ -16,11 +15,10 @@ interface HomeProps {
    * monter GameView. */
   leaving: boolean;
   homeError: string;
-  onOpenPanel: (panel: PanelName) => void;
-  onOpenSupport: () => void;
   accountActive: boolean;
   pseudo: string;
   level: number | undefined;
+  avatarColor: string | undefined;
   modes: string[];
   rooms: RoomSummary[];
   selectedMode: string;
@@ -46,11 +44,10 @@ export default function Home({
   onPlay,
   leaving,
   homeError,
-  onOpenPanel,
-  onOpenSupport,
   accountActive,
   pseudo,
   level,
+  avatarColor,
   modes,
   rooms,
   selectedMode,
@@ -70,10 +67,10 @@ export default function Home({
       <SpectatorBackground roomId={defaultRoomId} zooming={leaving} />
       <div className={`home-ui${leaving ? ' leaving' : ''}`}>
         <TopNav
-          onOpenPanel={onOpenPanel}
           accountActive={accountActive}
           pseudo={pseudo}
           level={level}
+          avatarColor={avatarColor}
         />
         <main className="home-columns">
           <ModeRoomList
@@ -98,10 +95,9 @@ export default function Home({
             isPremium={isPremium}
             isLoggedIn={isLoggedIn}
             onJoinRoom={onJoinRoom}
-            onOpenSupport={onOpenSupport}
           />
         </main>
-        <BottomBar onOpenSupport={onOpenSupport} />
+        <BottomBar />
       </div>
     </div>
   );

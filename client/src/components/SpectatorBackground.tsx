@@ -2,7 +2,7 @@ import type { EntitySnapshot, ServerMessage } from '@angulio/shared';
 import { clamp } from '@angulio/shared';
 import { useEffect, useRef } from 'react';
 import { GameConnection } from '../net.js';
-import { BASE_SCALE, interpolateEntities, renderFrame, type Camera } from '../render.js';
+import { interpolateEntities, renderFrame, type Camera } from '../render.js';
 
 /** Même cadence que le tick serveur par défaut (voir Room) — sert de base à l'interpolation
  * d'affichage, comme dans GameView.tsx. */
@@ -42,9 +42,23 @@ export default function SpectatorBackground({ roomId, zooming }: SpectatorBackgr
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
 
+    let mapSize = 15000;
+    let camera: Camera = { x: 7500, y: 7500, scale: 0.1 };
+
+    function updateCameraScale(): void {
+      if (!canvas) return;
+      const fitScale = Math.min(canvas.width / mapSize, canvas.height / mapSize);
+      camera = {
+        x: mapSize / 2,
+        y: mapSize / 2,
+        scale: fitScale,
+      };
+    }
+
     function resizeCanvas(): void {
       canvas!.width = window.innerWidth;
       canvas!.height = window.innerHeight;
+      updateCameraScale();
     }
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
@@ -52,7 +66,6 @@ export default function SpectatorBackground({ roomId, zooming }: SpectatorBackgr
     let previousSnapshot: EntitySnapshot[] | undefined;
     let latestSnapshot: EntitySnapshot[] = [];
     let latestSnapshotAt = performance.now();
-    let camera: Camera = { x: 0, y: 0, scale: BASE_SCALE };
 
     const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
     const connection = new GameConnection(
@@ -60,7 +73,8 @@ export default function SpectatorBackground({ roomId, zooming }: SpectatorBackgr
     );
     connection.onMessage((message: ServerMessage) => {
       if (message.type === 'welcome') {
-        camera = { x: message.mapSize / 2, y: message.mapSize / 2, scale: BASE_SCALE };
+        mapSize = message.mapSize;
+        updateCameraScale();
       } else if (message.type === 'state') {
         previousSnapshot = latestSnapshot;
         latestSnapshot = message.entities;

@@ -1,3 +1,4 @@
+import { BOT_IDENTITIES } from '@angulio/shared';
 import { useEffect, useState } from 'react';
 import { fetchAvailableModes } from '../lobby.js';
 import { modeMeta } from '../modes.js';
@@ -7,7 +8,16 @@ interface WikiPageProps {
   modes?: string[];
 }
 
-type WikiSection = 'modes' | 'particles' | 'entities' | 'events';
+type WikiSection = 'modes' | 'world' | 'foes' | 'events';
+
+/** Étiquette d'ambiance par mode (wiki joueur — pas un statut d'ingénierie). Modes inconnus
+ * (mod futur) : libellé neutre plutôt que de ne rien afficher. */
+function modeVibe(modeId: string): string {
+  if (modeId === 'folie') return 'IMPRÉVISIBLE';
+  if (modeId === 'hardcore') return 'RISQUE MAXIMUM';
+  if (modeId === 'vanilla') return 'CLASSIQUE';
+  return 'À DÉCOUVRIR';
+}
 
 export default function WikiPage({ onClose, modes }: WikiPageProps) {
   const [activeSection, setActiveSection] = useState<WikiSection>('modes');
@@ -23,7 +33,7 @@ export default function WikiPage({ onClose, modes }: WikiPageProps) {
         const fetched = await fetchAvailableModes();
         setModesList(fetched);
       } catch {
-        setModesList(['vanilla', 'folie', 'equipe', 'bataille_royale', 'tous_contre_tous']);
+        setModesList(['vanilla', 'folie', 'hardcore']);
       }
     })();
   }, [modes]);
@@ -36,13 +46,20 @@ export default function WikiPage({ onClose, modes }: WikiPageProps) {
     }
   };
 
+  const sectionTitle: Record<WikiSection, string> = {
+    modes: 'Modes de jeu',
+    world: 'Le monde',
+    foes: 'Adversaires',
+    events: 'À venir',
+  };
+
   return (
     <div className="wiki-doc-container">
       {/* Bandeau d'ouverture vertical (Sidebar de gauche) */}
       <aside className="wiki-sidebar">
         <div className="wiki-sidebar-header">
           <div className="wiki-sidebar-title">ANGUL.IO</div>
-          <div className="wiki-sidebar-subtitle">DOCUMENTATION TECHNIQUE</div>
+          <div className="wiki-sidebar-subtitle">GUIDE DU JOUEUR</div>
         </div>
 
         <nav className="wiki-sidebar-nav">
@@ -55,24 +72,24 @@ export default function WikiPage({ onClose, modes }: WikiPageProps) {
           </button>
           <button
             type="button"
-            className={`wiki-nav-item ${activeSection === 'particles' ? 'active' : ''}`}
-            onClick={() => setActiveSection('particles')}
+            className={`wiki-nav-item ${activeSection === 'world' ? 'active' : ''}`}
+            onClick={() => setActiveSection('world')}
           >
-            <span className="wiki-nav-num">02.</span> PARTICULES & MASSE
+            <span className="wiki-nav-num">02.</span> LE MONDE
           </button>
           <button
             type="button"
-            className={`wiki-nav-item ${activeSection === 'entities' ? 'active' : ''}`}
-            onClick={() => setActiveSection('entities')}
+            className={`wiki-nav-item ${activeSection === 'foes' ? 'active' : ''}`}
+            onClick={() => setActiveSection('foes')}
           >
-            <span className="wiki-nav-num">03.</span> ENTITES & IA
+            <span className="wiki-nav-num">03.</span> ADVERSAIRES
           </button>
           <button
             type="button"
             className={`wiki-nav-item ${activeSection === 'events' ? 'active' : ''}`}
             onClick={() => setActiveSection('events')}
           >
-            <span className="wiki-nav-num">04.</span> EVENEMENTS
+            <span className="wiki-nav-num">04.</span> À VENIR
           </button>
         </nav>
 
@@ -83,22 +100,20 @@ export default function WikiPage({ onClose, modes }: WikiPageProps) {
         </div>
       </aside>
 
-
-      {/* Zone de contenu principal (Style Documentation Froide) */}
+      {/* Zone de contenu principal */}
       <main className="wiki-main-content">
         <header className="wiki-doc-header">
-          <div className="wiki-breadcrumb">
-            angulio / docs / {activeSection}
-          </div>
-          <div className="wiki-version-tag">DOC_VERSION 1.1.0</div>
+          <div className="wiki-breadcrumb">Wiki Angul.io</div>
+          <div className="wiki-version-tag">{sectionTitle[activeSection]}</div>
         </header>
 
         <div className="wiki-doc-body">
           {activeSection === 'modes' && (
             <section className="wiki-doc-section">
-              <h1 className="wiki-doc-h1">01. MODES DE JEU</h1>
+              <h1 className="wiki-doc-h1">Modes de jeu</h1>
               <p className="wiki-doc-intro">
-                Spécifications fonctionnelles et paramètres physiques des modes de jeu disponibles.
+                Trois façons de jouer à Angul.io, du plus classique au plus radical — choisis
+                l'ambiance que tu cherches depuis l'accueil.
               </p>
 
               <div className="wiki-mode-grid">
@@ -106,55 +121,52 @@ export default function WikiPage({ onClose, modes }: WikiPageProps) {
                   const meta = modeMeta(modeId);
 
                   let startMass = '50 UC';
-                  let xpMult = '1.0x';
-                  let status = 'NOMINAL';
+                  let xpPace = 'Normale';
 
                   if (modeId === 'folie') {
                     startMass = '75 UC';
-                    xpMult = '1.5x';
-                    status = 'DYNAMIQUE';
+                    xpPace = '1.5x plus rapide';
                   } else if (modeId === 'hardcore') {
                     startMass = '100 UC';
-                    xpMult = '10.0x';
-                    status = 'HIGH_RISK';
+                    xpPace = '10x plus rapide';
                   }
 
                   return (
                     <div key={modeId} className="wiki-doc-block">
                       <div className="wiki-block-header">
                         <h2 className="wiki-doc-h2">{meta.label.toUpperCase()}</h2>
-                        <span className="wiki-tech-badge">{status}</span>
+                        <span className="wiki-tech-badge">{modeVibe(modeId)}</span>
                       </div>
                       <p className="wiki-doc-p">{meta.description}</p>
 
                       <table className="wiki-tech-table">
                         <thead>
                           <tr>
-                            <th>PROPRIETE</th>
+                            <th>À SAVOIR</th>
                             <th>VALEUR</th>
-                            <th>DESCRIPTION</th>
+                            <th>CE QUE ÇA CHANGE</th>
                           </tr>
                         </thead>
                         <tbody>
                           <tr>
-                            <td>Masse initiale (M0)</td>
+                            <td>Masse de départ</td>
                             <td>{startMass}</td>
-                            <td>Masse attribuée au spawn initial.</td>
+                            <td>Ta taille au moment de rejoindre la partie.</td>
                           </tr>
                           <tr>
-                            <td>Multiplicateur XP</td>
-                            <td>{xpMult}</td>
-                            <td>Facteur de conversion des gains d'expérience.</td>
+                            <td>Progression (XP)</td>
+                            <td>{xpPace}</td>
+                            <td>À quelle vitesse tu montes de niveau sur ton compte.</td>
                           </tr>
                           <tr>
-                            <td>Seuil d'absorption</td>
-                            <td>33.3% (1/3)</td>
-                            <td>Surface minimale d'intersection requise.</td>
+                            <td>Pour avaler quelqu'un</td>
+                            <td>+15% de masse</td>
+                            <td>Il te faut environ un sixième de masse en plus que ta cible.</td>
                           </tr>
                           <tr>
-                            <td>Avantage de masse</td>
-                            <td>+15%</td>
-                            <td>Ratio de masse requis pour engager l'absorption.</td>
+                            <td>Contact nécessaire</td>
+                            <td>1/3 de recouvrement</td>
+                            <td>Ta cellule doit en recouvrir au moins un tiers pour l'absorber.</td>
                           </tr>
                         </tbody>
                       </table>
@@ -165,69 +177,75 @@ export default function WikiPage({ onClose, modes }: WikiPageProps) {
             </section>
           )}
 
-          {activeSection === 'particles' && (
+          {activeSection === 'world' && (
             <section className="wiki-doc-section">
-              <h1 className="wiki-doc-h1">02. PARTICULES ET MASSE</h1>
+              <h1 className="wiki-doc-h1">Le monde</h1>
               <p className="wiki-doc-intro">
-                Anatomie des éléments passifs et des transferts de masse au sein de l'arène.
+                Ce que tu croises dans l'arène : de quoi grossir, et de quoi frapper plus fort.
               </p>
 
               <div className="wiki-doc-block">
-                <h2 className="wiki-doc-h2">PARTICULES DE NOURRITURE (FOOD)</h2>
+                <h2 className="wiki-doc-h2">La nourriture</h2>
                 <p className="wiki-doc-p">
-                  Éléments passifs générés de façon homogène sur la carte. Ils constituent la ressource de base pour augmenter la masse des entités.
+                  De petites pastilles colorées parsèment toute la carte — la ressource de base pour
+                  prendre de la masse. Leur couleur indique leur valeur : plus une pastille est
+                  rare, plus elle te fait grossir. Garde l'œil ouvert pour la pastille arc-en-ciel,
+                  bien plus rare et bien plus généreuse que les autres.
                 </p>
                 <table className="wiki-tech-table">
                   <thead>
                     <tr>
-                      <th>PARAMÈTRE</th>
-                      <th>VALEUR</th>
-                      <th>REMARQUES</th>
+                      <th>PASTILLE</th>
+                      <th>CE QU'ELLE RAPPORTE</th>
+                      <th>REMARQUE</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
-                      <td>Masse unitaire</td>
+                      <td>Pastilles courantes</td>
                       <td>1 à 3 UC</td>
-                      <td>Valeur distribuée de manière aléatoire.</td>
+                      <td>La ressource de base, partout sur la carte.</td>
                     </tr>
                     <tr>
-                      <td>Gain d'XP</td>
-                      <td>1 XP / UC</td>
-                      <td>Calculé directement lors de la consommation.</td>
+                      <td>Pastille arc-en-ciel</td>
+                      <td>12 UC</td>
+                      <td>Rare et bien plus généreuse — à ne pas laisser filer.</td>
                     </tr>
                     <tr>
                       <td>Régénération</td>
                       <td>Continue</td>
-                      <td>Maintenue au plafond calculé pour le salon.</td>
+                      <td>La carte ne reste jamais vide bien longtemps.</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
 
               <div className="wiki-doc-block">
-                <h2 className="wiki-doc-h2">PROJECTIONS DE MASSE (MASS EJECT)</h2>
+                <h2 className="wiki-doc-h2">L'éjection de masse</h2>
                 <p className="wiki-doc-p">
-                  Impulsions de masse émises par les entités pour transférer de la masse ou ajuster la vitesse.
+                  Tu peux éjecter un petit morceau de ta propre masse dans la direction de ton
+                  curseur — un coup de pouce pour accélérer une fuite, ou de quoi nourrir un allié.
+                  Une manœuvre à double tranchant : elle te fait perdre de la masse immédiatement,
+                  alors garde-la pour le bon moment.
                 </p>
                 <table className="wiki-tech-table">
                   <thead>
                     <tr>
-                      <th>PARAMÈTRE</th>
+                      <th>À SAVOIR</th>
                       <th>VALEUR</th>
-                      <th>REMARQUES</th>
+                      <th>REMARQUE</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
                       <td>Masse éjectée</td>
                       <td>12 UC</td>
-                      <td>Déduite immédiatement de la masse de l'émetteur.</td>
+                      <td>Déduite immédiatement de ta propre masse.</td>
                     </tr>
                     <tr>
-                      <td>Vélocité initiale</td>
+                      <td>Vitesse d'éjection</td>
                       <td>Élevée</td>
-                      <td>Décroissance rapide sous l'effet des frottements.</td>
+                      <td>Ralentit vite — vise juste, l'effet ne dure pas.</td>
                     </tr>
                   </tbody>
                 </table>
@@ -235,102 +253,130 @@ export default function WikiPage({ onClose, modes }: WikiPageProps) {
             </section>
           )}
 
-          {activeSection === 'entities' && (
+          {activeSection === 'foes' && (
             <section className="wiki-doc-section">
-              <h1 className="wiki-doc-h1">03. ENTITES ET IA</h1>
+              <h1 className="wiki-doc-h1">Adversaires</h1>
               <p className="wiki-doc-intro">
-                Structure du moteur comportemental des entités autonomes (Bots) et Challengers.
+                Tu ne joueras jamais seul : des robots peuplent chaque salon pour qu'il y ait
+                toujours du monde dans l'arène.
               </p>
 
               <div className="wiki-doc-block">
-                <h2 className="wiki-doc-h2">MOTEUR COMPORTEMENTAL (FREQUENCY: 2 HZ)</h2>
+                <h2 className="wiki-doc-h2">Quatre tempéraments</h2>
                 <p className="wiki-doc-p">
-                  Les bots s'exécutent en boucle locale au niveau du moteur serveur avec une évaluation de trajectoire toutes les 500 ms.
+                  Chaque robot suit l'un de ces quatre comportements — apprends à les reconnaître
+                  pour savoir qui chasser et qui éviter.
                 </p>
                 <table className="wiki-tech-table">
                   <thead>
                     <tr>
-                      <th>PROFIL</th>
-                      <th>PROPORTION</th>
-                      <th>COMPORTEMENT SPECIFIQUE</th>
+                      <th>TEMPÉRAMENT</th>
+                      <th>PART DES ROBOTS</th>
+                      <th>COMMENT LE RECONNAÎTRE</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
-                      <td>FUIS</td>
+                      <td>Les Prudents</td>
                       <td>25%</td>
-                      <td>Région de détection 450px. Évitement actif si prédateur &lt; 350px.</td>
+                      <td>
+                        Détectent le danger de loin et s'enfuient dès qu'un prédateur approche.
+                      </td>
                     </tr>
                     <tr>
-                      <td>NEUTRE</td>
+                      <td>Les Tranquilles</td>
                       <td>30%</td>
-                      <td>Collecte passive. Évitement local si prédateur &lt; 150px.</td>
+                      <td>
+                        Se concentrent sur la nourriture, ne s'écartent qu'au dernier moment si
+                        quelqu'un les menace de près.
+                      </td>
                     </tr>
                     <tr>
-                      <td>AGRESSIF</td>
+                      <td>Les Chasseurs</td>
                       <td>30%</td>
-                      <td>Chasse active. Déclenchement de split si distance &lt;= 300px.</td>
+                      <td>
+                        Traquent activement les proies et n'hésitent pas à se scinder pour attaquer.
+                      </td>
                     </tr>
                     <tr>
-                      <td>FOU</td>
+                      <td>Les Imprévisibles</td>
                       <td>15%</td>
-                      <td>Changements de direction et pauses aléatoires.</td>
+                      <td>Changent de direction sans prévenir — impossibles à anticiper.</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
 
               <div className="wiki-doc-block">
-                <h2 className="wiki-doc-h2">LIGUE DES CHALLENGERS (TOP 1 A 10)</h2>
+                <h2 className="wiki-doc-h2">La Ligue des Challengers</h2>
                 <p className="wiki-doc-p">
-                  10 entités de rang prédéfini maintenues en permanence pour alimenter le haut du classement.
+                  Dix adversaires de rang fixe occupent en permanence le haut du classement. Ils ne
+                  restent jamais éliminés bien longtemps : les vaincre est un exploit, mais ils
+                  reviendront toujours pour une revanche.
                 </p>
                 <table className="wiki-tech-table">
                   <thead>
                     <tr>
                       <th>RANG</th>
-                      <th>MULTIPLICATEUR MASSE</th>
-                      <th>REGENERATION</th>
+                      <th>PUISSANCE</th>
+                      <th>PARTICULARITÉ</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
-                      <td>Rang 1 (Top 1)</td>
-                      <td>50x M0</td>
-                      <td>Réapparition automatique sur élimination.</td>
+                      <td>Rang 1 (le champion)</td>
+                      <td>50x un joueur standard</td>
+                      <td>Revient toujours après sa mort.</td>
                     </tr>
                     <tr>
-                      <td>Rang 5 (Top 5)</td>
-                      <td>30x M0</td>
-                      <td>Réapparition automatique sur élimination.</td>
+                      <td>Rang 5</td>
+                      <td>30x un joueur standard</td>
+                      <td>Revient toujours après sa mort.</td>
                     </tr>
                     <tr>
-                      <td>Rang 10 (Top 10)</td>
-                      <td>5x M0</td>
-                      <td>Réapparition automatique sur élimination.</td>
+                      <td>Rang 10</td>
+                      <td>5x un joueur standard</td>
+                      <td>Revient toujours après sa mort.</td>
                     </tr>
                   </tbody>
                 </table>
+              </div>
+
+              <div className="wiki-doc-block">
+                <h2 className="wiki-doc-h2">Bestiaire</h2>
+                <p className="wiki-doc-p">
+                  {BOT_IDENTITIES.length} noms circulent dans les salons d'Angul.io — croise-les
+                  assez souvent et tu commenceras à reconnaître les habitués.
+                </p>
+                <div className="wiki-bestiary-grid">
+                  {BOT_IDENTITIES.map((bot) => (
+                    <div key={bot.name} className="wiki-bestiary-chip">
+                      <span
+                        className="wiki-bestiary-dot"
+                        style={{ background: bot.color }}
+                        aria-hidden="true"
+                      />
+                      {bot.name}
+                    </div>
+                  ))}
+                </div>
               </div>
             </section>
           )}
 
           {activeSection === 'events' && (
             <section className="wiki-doc-section">
-              <h1 className="wiki-doc-h1">04. EVENEMENTS ET EXTENSIONS</h1>
+              <h1 className="wiki-doc-h1">À venir</h1>
               <p className="wiki-doc-intro">
-                Modules d'extension et événements planifiés pour les futures révisions du moteur.
+                Des idées d'extensions en réflexion pour la suite d'Angul.io.
               </p>
 
               <div className="wiki-doc-block">
-                <h2 className="wiki-doc-h2">ÉVÉNEMENTS DE CARTE (PLANIFIÉ)</h2>
-                <p className="wiki-doc-p">
-                  Documentation des modules d'événements temporaires en cours de spécification.
-                </p>
+                <h2 className="wiki-doc-h2">Événements de carte</h2>
                 <table className="wiki-tech-table">
                   <thead>
                     <tr>
-                      <th>MODULE</th>
+                      <th>IDÉE</th>
                       <th>STATUT</th>
                       <th>DESCRIPTION</th>
                     </tr>
@@ -338,13 +384,13 @@ export default function WikiPage({ onClose, modes }: WikiPageProps) {
                   <tbody>
                     <tr>
                       <td>Anomalies de masse</td>
-                      <td>EN SPÉCIFICATION</td>
-                      <td>Zones d'attraction temporaires à haute densité.</td>
+                      <td>En réflexion</td>
+                      <td>Des zones temporaires à forte concentration de nourriture.</td>
                     </tr>
                     <tr>
-                      <td>Entités World Boss</td>
-                      <td>EN SPÉCIFICATION</td>
-                      <td>Cibles de grande taille à comportement complexe.</td>
+                      <td>Boss de map</td>
+                      <td>En réflexion</td>
+                      <td>Une cible géante, rare, au comportement bien à elle.</td>
                     </tr>
                   </tbody>
                 </table>

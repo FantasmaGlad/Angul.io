@@ -22,7 +22,6 @@ export interface RoomOptions {
   resetSchedule?: RoomResetSchedule | null;
 }
 
-
 /**
  * Assemble World + mod + boucle de tick fixe. Une room = une simulation indépendante
  * (cahier des charges §4.3) ; plusieurs rooms peuvent tourner en parallèle dans le même
@@ -152,7 +151,6 @@ export class Room {
       this.botManager?.adjustPopulation();
     }
   }
-
 
   handleInput(playerId: PlayerId, input: PlayerInput): void {
     this.mod.onPlayerInput?.(this.world, playerId, input);

@@ -17,6 +17,9 @@ export interface AccountProfile {
   premium: boolean;
   cosmetics: string[];
   bestScores: BestScore[];
+  /** Couleur d'avatar choisie (refonte UI/UX, avatar procédural) — `undefined` tant que le
+   * joueur n'a rien choisi explicitement (voir `AVATAR_PALETTE`, `updateAvatarColor`). */
+  avatarColor?: string;
 }
 
 async function postAuth(path: string, pseudo: string, password: string): Promise<AuthResult> {
@@ -47,6 +50,23 @@ export async function fetchProfile(token: string): Promise<AccountProfile> {
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? 'Profil inaccessible.');
+  }
+  return (await response.json()) as AccountProfile;
+}
+
+/** Choix d'avatar (refonte UI/UX) — renvoie le profil à jour, comme `fetchProfile`. */
+export async function updateAvatarColor(
+  token: string,
+  avatarColor: string,
+): Promise<AccountProfile> {
+  const response = await fetch('/api/account/me', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ avatarColor }),
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? "Impossible d'enregistrer la couleur d'avatar.");
   }
   return (await response.json()) as AccountProfile;
 }

@@ -16,6 +16,7 @@ interface ActiveBot {
   profile: BotProfileKind;
   memory: BotStateMemory;
   rank?: number;
+  accumulatorMs: number;
 }
 
 export class BotManager {
@@ -31,7 +32,6 @@ export class BotManager {
     challenger: 0,
   };
 
-  private accumulatorMs = 0;
   private readonly updateIntervalMs: number;
 
   constructor(room: Room, config: BotConfig, maxRoomCapacity: number) {
@@ -41,31 +41,26 @@ export class BotManager {
     this.updateIntervalMs = 1000 / Math.max(0.1, config.updateFrequencyHz || 2);
   }
 
-  /** Exécuté à chaque tick de la room. Déclenche l'IA uniquement à la fréquence configurée (2 Hz). */
+  /** Exécuté à chaque tick de la room. Étale l'évaluation IA des bots sur plusieurs ticks. */
   update(dt: number): void {
     if (!this.config.enabled) return;
 
     this.adjustPopulation();
 
-    this.accumulatorMs += dt * 1000;
-    if (this.accumulatorMs < this.updateIntervalMs) return;
-
-    this.accumulatorMs %= this.updateIntervalMs;
-
+    const dtMs = dt * 1000;
     for (const bot of this.activeBots.values()) {
-      const { input, memory } = computeBotInput(
-        this.room.world,
-        bot.id,
-        bot.profile,
-        bot.memory,
-      );
-      bot.memory = memory;
-      this.room.handleInput(bot.id, input);
+      bot.accumulatorMs += dtMs;
+      if (bot.accumulatorMs >= this.updateIntervalMs) {
+        bot.accumulatorMs %= this.updateIntervalMs;
+        const { input, memory } = computeBotInput(this.room.world, bot.id, bot.profile, bot.memory);
+        bot.memory = memory;
+        this.room.handleInput(bot.id, input);
+      }
     }
   }
 
   /** Ajuste le nombre de bots actifs selon le nombre de joueurs humains et garantit qu'il reste toujours au moins 1 place disponible pour un humain. */
-  adjustPopulation(): void {
+  adjustPopulation(maxSpawnPerTick = 20): void {
     if (!this.config.enabled) return;
 
     const allPlayers = Array.from(this.room.world.allPlayers());
@@ -76,10 +71,15 @@ export class BotManager {
 
     // 1. Les Challenger Bots (jusqu'à 10, bridés par la capacité autorisée du salon)
     const maxChallengers = Math.min(10, maxBotsAllowed);
+    let spawnedThisTick = 0;
+
     for (let rank = 1; rank <= maxChallengers; rank++) {
       const challengerId = `bot-challenger-${rank}`;
       if (!this.activeBots.has(challengerId)) {
-        this.spawnBot('challenger', rank);
+        if (spawnedThisTick < maxSpawnPerTick) {
+          this.spawnBot('challenger', rank);
+          spawnedThisTick++;
+        }
       }
     }
 
@@ -94,14 +94,18 @@ export class BotManager {
 
     // 2. Ajuster le reste de la population de bots normaux
     const targetBotCount = Math.floor(this.maxRoomCapacity * (this.config.targetRatio ?? 0.5));
-    const desiredBots = Math.min(maxBotsAllowed, Math.max(maxChallengers, targetBotCount - humanCount));
+    const desiredBots = Math.min(
+      maxBotsAllowed,
+      Math.max(maxChallengers, targetBotCount - humanCount),
+    );
 
-    // Si on manque de bots
-    while (this.activeBots.size < desiredBots) {
+    // Si on manque de bots : spawn progressif (limité à maxSpawnPerTick par tick)
+    while (this.activeBots.size < desiredBots && spawnedThisTick < maxSpawnPerTick) {
       this.spawnBot();
+      spawnedThisTick++;
     }
 
-    // Si on a trop de bots
+    // Si on a trop de bots : ajustement immédiat
     while (this.activeBots.size > desiredBots) {
       this.removeSmallestBot();
     }
@@ -126,12 +130,16 @@ export class BotManager {
       botId = `bot-${profile}-${index}`;
     }
 
+    // Décalage initial de l'accumulateur pour étaler les calculs d'IA des bots
+    const offsetMs = Math.random() * this.updateIntervalMs;
+
     const bot: ActiveBot = {
       id: botId,
       nickname,
       profile,
       memory: {},
       rank,
+      accumulatorMs: offsetMs,
     };
 
     this.activeBots.set(botId, bot);

@@ -10,6 +10,7 @@ export interface AccountRow {
   premium: boolean;
   cosmetics: string[];
   banned: boolean;
+  avatarColor: string | null;
 }
 
 /** Champs modifiables par l'admin (Lot 5.2-5.4) — tous optionnels, seuls les champs fournis sont
@@ -46,9 +47,11 @@ interface PlayerRow {
   premium: boolean;
   cosmetics: string[];
   banned: boolean;
+  avatar_color: string | null;
 }
 
-const ACCOUNT_COLUMNS = 'id, pseudo, password_hash, level, xp, premium, cosmetics, banned';
+const ACCOUNT_COLUMNS =
+  'id, pseudo, password_hash, level, xp, premium, cosmetics, banned, avatar_color';
 
 function toAccountRow(row: PlayerRow): AccountRow {
   return {
@@ -60,6 +63,7 @@ function toAccountRow(row: PlayerRow): AccountRow {
     premium: row.premium,
     cosmetics: row.cosmetics,
     banned: row.banned,
+    avatarColor: row.avatar_color,
   };
 }
 
@@ -131,6 +135,16 @@ export class AccountsRepository {
     const result = await this.pool.query<PlayerRow>(
       `UPDATE players SET ${setClause} WHERE id = $1 RETURNING ${ACCOUNT_COLUMNS}`,
       [id, ...values],
+    );
+    return result.rows[0] ? toAccountRow(result.rows[0]) : undefined;
+  }
+
+  /** Écrit le choix d'avatar (couleur, refonte UI/UX) — la validation contre la palette curatée
+   * se fait en amont, en couche service (voir `AccountsService.updateAvatarColor`), pas ici. */
+  async updateAvatarColor(id: number, color: string): Promise<AccountRow | undefined> {
+    const result = await this.pool.query<PlayerRow>(
+      `UPDATE players SET avatar_color = $2 WHERE id = $1 RETURNING ${ACCOUNT_COLUMNS}`,
+      [id, color],
     );
     return result.rows[0] ? toAccountRow(result.rows[0]) : undefined;
   }

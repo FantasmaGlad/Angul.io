@@ -19,7 +19,6 @@ export type ModResolver = (modId: string) => {
   bots?: BotConfig;
 };
 
-
 export interface CreateRoomOptions {
   name: string;
   modId: string;
@@ -106,9 +105,7 @@ export class RoomManager {
     }
 
     const { mod, mapSize, kArea, bots } = this.resolveMod(options.modId);
-    const botConfig = bots
-      ? { ...bots, enabled: options.botsEnabled ?? bots.enabled }
-      : undefined;
+    const botConfig = bots ? { ...bots, enabled: options.botsEnabled ?? bots.enabled } : undefined;
 
     const room = new Room(mod, {
       mapSize,
@@ -120,8 +117,6 @@ export class RoomManager {
     });
     room.start();
 
-
-
     // Id court incrémental plutôt qu'un UUID, pour rester cohérent avec les identifiants
     // d'entités/joueurs (Lot 1.8, économie de bande passante) — même si l'id de salon ne
     // transite pas à chaque tick, mieux vaut une seule convention dans tout le projet. En
@@ -130,9 +125,11 @@ export class RoomManager {
     const id = String(this.nextRoomId++);
     const inviteCode =
       options.visibility === 'private'
-        ? (options.inviteCode && /^\d{6}$/.test(options.inviteCode) && !this.isInviteCodeTaken(options.inviteCode)
-            ? options.inviteCode
-            : this.generateInviteCode())
+        ? options.inviteCode &&
+          /^\d{6}$/.test(options.inviteCode) &&
+          !this.isInviteCodeTaken(options.inviteCode)
+          ? options.inviteCode
+          : this.generateInviteCode()
         : undefined;
     const entry: RoomEntry = {
       id,
@@ -276,7 +273,6 @@ export class RoomManager {
     } while (this.isInviteCodeTaken(code));
     return code;
   }
-
 
   private toSummary(entry: RoomEntry): RoomSummary {
     return {

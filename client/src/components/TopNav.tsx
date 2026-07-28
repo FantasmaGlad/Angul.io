@@ -1,13 +1,15 @@
-import type { PanelName } from '../App.js';
+import { navigate } from '../router.js';
 
 interface TopNavProps {
-  onOpenPanel: (panel: PanelName) => void;
   accountActive: boolean;
   pseudo: string;
   level: number | undefined;
+  /** Couleur d'avatar choisie (refonte UI/UX, avatar procédural) — `undefined` tant qu'aucun
+   * choix explicite n'a été fait, voir ProfilePage.tsx. */
+  avatarColor: string | undefined;
 }
 
-export default function TopNav({ onOpenPanel, accountActive, pseudo, level }: TopNavProps) {
+export default function TopNav({ accountActive, pseudo, level, avatarColor }: TopNavProps) {
   const initial = accountActive && pseudo ? pseudo.charAt(0).toUpperCase() : '?';
 
   return (
@@ -16,37 +18,39 @@ export default function TopNav({ onOpenPanel, accountActive, pseudo, level }: To
         type="button"
         className="brand-mark-btn"
         aria-label="Angul.io Accueil"
-        onClick={() => onOpenPanel('about')}
+        onClick={() => navigate('/')}
       >
         <span className="brand-logo-text">ANGUL.IO</span>
       </button>
 
       <nav className="top-nav-links">
-        <button type="button" onClick={() => onOpenPanel('leaderboard')}>
+        <button type="button" onClick={() => navigate('/classement')}>
           Classement
         </button>
         <button type="button" onClick={() => window.open('/wiki', '_blank')}>
           Modes de Jeux
         </button>
-        <button type="button" onClick={() => onOpenPanel('about')}>
+        <button type="button" onClick={() => navigate('/a-propos')}>
           À Propos
         </button>
-
       </nav>
 
       <button
         type="button"
         className="account-cluster"
-        onClick={() => onOpenPanel('account')}
+        onClick={() => navigate(accountActive ? '/profil' : '/compte')}
         aria-label={accountActive ? `Compte : ${pseudo}` : 'Se connecter'}
       >
-        <span className="account-avatar-badge" aria-hidden="true">
+        <span
+          className="account-avatar-badge"
+          style={accountActive && avatarColor ? { background: avatarColor } : undefined}
+          aria-hidden="true"
+        >
           {initial}
         </span>
         {accountActive ? (
           <span className="account-info">
             <span className="account-pseudo">{pseudo}</span>
-            <span className="account-clan">Joueur</span>
           </span>
         ) : (
           <span className="account-info">

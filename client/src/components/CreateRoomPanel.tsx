@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createRoom } from '../lobby.js';
 import { modeMeta } from '../modes.js';
+import { navigate } from '../router.js';
 
 const MIN_ROOM_MAX_PLAYERS = 2;
 const MAX_ROOM_MAX_PLAYERS = 200;
@@ -21,7 +22,6 @@ interface CreateRoomPanelProps {
   isPremium: boolean;
   isLoggedIn: boolean;
   onJoinRoom: (roomIdOrInviteCode: string, inviteCodeToShow?: string) => void;
-  onOpenSupport: () => void;
 }
 
 function generate6DigitCode(): string {
@@ -34,7 +34,6 @@ export default function CreateRoomPanel({
   isPremium,
   isLoggedIn,
   onJoinRoom,
-  onOpenSupport,
 }: CreateRoomPanelProps) {
   const [roomName, setRoomName] = useState('');
   const [selectedMode, setSelectedMode] = useState('');
@@ -200,21 +199,21 @@ export default function CreateRoomPanel({
               </label>
             )}
 
-            <button
-              className="btn-primary-action"
-              type="button"
-              onClick={handleCreate}
-            >
+            <button className="btn-primary-action" type="button" onClick={handleCreate}>
               CRÉER ET REJOINDRE
             </button>
           </div>
-
         ) : (
           <div className="premium-promo-card">
             <p className="premium-promo-text">
-              La création de salons personnalisés est réservée aux membres <strong>Premium</strong> (don libre).
+              La création de salons personnalisés est réservée aux membres <strong>Premium</strong>{' '}
+              (don libre).
             </p>
-            <button className="btn-secondary-action" type="button" onClick={onOpenSupport}>
+            <button
+              className="btn-secondary-action"
+              type="button"
+              onClick={() => navigate('/soutenir')}
+            >
               SOUTENIR LE PROJET
             </button>
           </div>
@@ -233,7 +232,6 @@ export default function CreateRoomPanel({
           />
           <button className="btn-secondary-action" type="button" onClick={handleJoinCode}>
             REJOINDRE
-
           </button>
         </div>
       </div>

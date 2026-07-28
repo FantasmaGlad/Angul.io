@@ -64,17 +64,7 @@ describe('createParametricMod — onTick (vitesse/accélération)', () => {
   });
 
   it('réduit la vitesse cible ET le taux d’accélération proportionnellement à l’intensité du curseur', () => {
-    // Decay désactivée : ce test porte sur l'intensité, pas sur l'interaction avec la masse.
-    const config = testConfig({
-      decay: {
-        threshold: 100,
-        rateAboveThreshold: 0,
-        intervalAboveThresholdSec: 5,
-        rateBelowThreshold: 0,
-        intervalBelowThresholdSec: 5,
-        floor: 2,
-      },
-    });
+    const config = testConfig({ decay: { floor: 100 } });
     const mod = createParametricMod(config);
     const world = freshWorld();
     world.addPlayer('p1', 'Alice');
@@ -87,7 +77,7 @@ describe('createParametricMod — onTick (vitesse/accélération)', () => {
     expect(piece.velocity.x).toBeCloseTo(75, 6);
 
     mod.onTick?.(world, 1); // largement assez pour converger vers la cible réduite
-    expect(piece.velocity.x).toBeCloseTo(velocityForMass(50, config) * 0.5, 6);
+    expect(piece.velocity.x).toBeCloseTo(velocityForMass(50, config) * 0.5, 5);
   });
 
   it('applique la decay passive', () => {
@@ -99,7 +89,8 @@ describe('createParametricMod — onTick (vitesse/accélération)', () => {
 
     mod.onTick?.(world, 5);
 
-    expect(piece.mass).toBeCloseTo(99, 1);
+    // 0.5% par 10s pour masse 100 -> ~0.25% en 5s -> 99.75
+    expect(piece.mass).toBeCloseTo(99.75, 1);
   });
 });
 

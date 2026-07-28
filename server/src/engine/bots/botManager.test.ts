@@ -107,4 +107,3 @@ describe('BotManager', () => {
     expect(room.world.allPlayers().length).toBeLessThanOrEqual(2);
   });
 });
-

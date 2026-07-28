@@ -75,7 +75,6 @@ export async function createRoom(
     }),
   });
 
-
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? 'Impossible de créer le salon.');

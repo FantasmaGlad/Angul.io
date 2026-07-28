@@ -140,4 +140,3 @@ export interface BotConfig {
     fou: number;
   };
 }
-

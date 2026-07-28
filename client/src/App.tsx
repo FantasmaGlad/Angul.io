@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { fetchProfile, loadSession, type AuthResult } from './auth.js';
 import Home from './components/Home.js';
 import GameView from './components/GameView.js';
+import { navigate, usePath } from './router.js';
 import {
   fetchAvailableModes,
   fetchPublicRooms,
@@ -9,23 +10,17 @@ import {
   type RoomSummary,
 } from './lobby.js';
 
-// Panneaux secondaires code-splittés (React.lazy) : pas nécessaires au chemin critique "jouer
-// vite" (§4.1 cahier_des_charges_ui_ux.md) — leur JS n'est chargé que si l'utilisateur ouvre
-// effectivement le panneau correspondant, ce qui réduit le coût d'exécution initial (§
-// optimisation demandée). Les salons/modes eux-mêmes ne sont plus dans ce périmètre (refonte
-// UI/UX) : ils sont désormais visibles en permanence sur l'accueil (voir Home.tsx), pas cachés
-// dans un panneau modal — RoomsPanel.tsx a été supprimé, son contenu redistribué dans
-// ModeRoomList/PlayPanel/CreateRoomPanel.
-const AccountPanel = lazy(() => import('./components/AccountPanel.js'));
+// Sous-pages code-splittées (React.lazy) : pas nécessaires au chemin critique "jouer vite"
+// (§4.1 cahier_des_charges_ui_ux.md) — leur JS n'est chargé que si l'utilisateur navigue
+// effectivement vers la page correspondante. Chacune a sa propre URL (voir router.ts), à la
+// place des anciennes modales superposées (Panel.tsx/ProfileModal.tsx supprimés).
+const AccountPage = lazy(() => import('./pages/AccountPage.js'));
 const WikiPage = lazy(() => import('./components/WikiPage.js'));
-const LeaderboardPanel = lazy(() => import('./components/LeaderboardPanel.js'));
-
-const SupportPanel = lazy(() => import('./components/SupportPanel.js'));
-const SettingsPanel = lazy(() => import('./components/SettingsPanel.js'));
-const AboutPanel = lazy(() => import('./components/AboutPanel.js'));
-const ProfileModal = lazy(() => import('./components/ProfileModal.js'));
-
-export type PanelName = 'account' | 'modes' | 'leaderboard' | 'support' | 'settings' | 'about';
+const ProfilePage = lazy(() => import('./pages/ProfilePage.js'));
+const LeaderboardPage = lazy(() => import('./pages/LeaderboardPage.js'));
+const SupportPage = lazy(() => import('./pages/SupportPage.js'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage.js'));
+const AboutPage = lazy(() => import('./pages/AboutPage.js'));
 
 /** Intervalle de rafraîchissement léger des salons/modes/compteur de joueurs pendant que
  * l'accueil est affiché (refonte UI/UX : ces listes sont désormais visibles en permanence, pas
@@ -52,13 +47,13 @@ export default function App() {
   // arrière" et que le fond spectateur "zoome en avant" avant de monter GameView — voir
   // `enterGame` et Home.tsx/styles.css (`.home-ui.leaving`, `.spectator-background.zooming`).
   const [leaving, setLeaving] = useState(false);
-  const [openPanel, setOpenPanel] = useState<PanelName | null>(null);
-  const [profileOpen, setProfileOpen] = useState(false);
+  const path = usePath();
   const [homeError, setHomeError] = useState('');
 
   const [authSession, setAuthSession] = useState<AuthResult | undefined>(() => loadSession());
   const [isPremium, setIsPremium] = useState(false);
   const [level, setLevel] = useState<number | undefined>(undefined);
+  const [avatarColor, setAvatarColor] = useState<string | undefined>(undefined);
 
   const [rooms, setRooms] = useState<RoomSummary[]>([]);
   const [modes, setModes] = useState<string[]>([]);
@@ -96,10 +91,21 @@ export default function App() {
     return () => clearInterval(intervalId);
   }, [session, refreshLobby]);
 
-  // Sélectionne un mode par défaut dès que la liste est connue (colonne gauche, ModeRoomList).
+  // Sélectionne par défaut le mode réellement actif (le plus de joueurs en ce moment), pas le
+  // premier de la liste (ordre alphabétique des fichiers de config côté serveur) — évite qu'un
+  // nouvel arrivant tombe sur "aucun salon disponible" alors qu'une partie tourne dans un autre
+  // mode (bug constaté : Folie sélectionné par défaut, 0 joueur, pendant que Vanilla en a 50).
   useEffect(() => {
-    if (modes.length > 0 && !modes.includes(selectedMode)) setSelectedMode(modes[0]!);
-  }, [modes, selectedMode]);
+    if (modes.length === 0 || modes.includes(selectedMode)) return;
+    const playersByMode = new Map<string, number>();
+    for (const room of rooms) {
+      playersByMode.set(room.modId, (playersByMode.get(room.modId) ?? 0) + room.playerCount);
+    }
+    const mostActive = [...modes].sort(
+      (a, b) => (playersByMode.get(b) ?? 0) - (playersByMode.get(a) ?? 0),
+    )[0];
+    setSelectedMode(mostActive ?? modes[0]!);
+  }, [modes, rooms, selectedMode]);
 
   // Lot 6.4 : statut Premium du compte connecté, inconnu (`false`) tant que le profil n'a pas
   // été chargé — évite d'afficher le formulaire "Créer un salon" à quelqu'un qui n'a pas le
@@ -108,6 +114,7 @@ export default function App() {
     if (!authSession) {
       setIsPremium(false);
       setLevel(undefined);
+      setAvatarColor(undefined);
       return;
     }
     setNickname((current) => current || authSession.pseudo);
@@ -118,11 +125,13 @@ export default function App() {
         if (!cancelled) {
           setIsPremium(profile.premium);
           setLevel(profile.level);
+          setAvatarColor(profile.avatarColor);
         }
       } catch {
         if (!cancelled) {
           setIsPremium(false);
           setLevel(undefined);
+          setAvatarColor(undefined);
         }
       }
     })();
@@ -134,8 +143,7 @@ export default function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape') return;
-      setProfileOpen(false);
-      setOpenPanel(null);
+      navigate('/');
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -143,7 +151,6 @@ export default function App() {
 
   const enterGame = useCallback(
     (roomIdOrInviteCode: string, inviteCodeToShow?: string) => {
-      setOpenPanel(null);
       setLeaving(true);
       const nicknameToUse = nickname.trim() || 'Joueur';
       // Laisse jouer la transition CSS (zoom out de l'UI, zoom in du fond spectateur, voir
@@ -189,17 +196,7 @@ export default function App() {
     [refreshLobby],
   );
 
-
-
-  const handleOpenPanel = useCallback((panel: PanelName) => {
-    if (panel === 'modes') {
-      window.open('/wiki', '_blank');
-      return;
-    }
-    setOpenPanel(panel);
-  }, []);
-
-  const isWikiRoute = window.location.pathname === '/wiki' || window.location.pathname === '/wiki/';
+  const isWikiRoute = path === '/wiki' || path === '/wiki/';
 
   if (isWikiRoute) {
     return (
@@ -221,6 +218,34 @@ export default function App() {
     );
   }
 
+  const knownSubPaths = [
+    '/compte',
+    '/profil',
+    '/parametres',
+    '/classement',
+    '/soutenir',
+    '/a-propos',
+  ];
+  if (knownSubPaths.includes(path)) {
+    return (
+      <Suspense fallback={null}>
+        {path === '/compte' && (
+          <AccountPage authSession={authSession} onAuthChange={setAuthSession} />
+        )}
+        {path === '/profil' &&
+          (authSession ? (
+            <ProfilePage authToken={authSession.token} onAvatarColorChange={setAvatarColor} />
+          ) : (
+            <AccountPage authSession={authSession} onAuthChange={setAuthSession} />
+          ))}
+        {path === '/parametres' && <SettingsPage />}
+        {path === '/classement' && <LeaderboardPage />}
+        {path === '/soutenir' && <SupportPage />}
+        {path === '/a-propos' && <AboutPage />}
+      </Suspense>
+    );
+  }
+
   return (
     <>
       <Home
@@ -229,11 +254,10 @@ export default function App() {
         onPlay={handlePlay}
         leaving={leaving}
         homeError={homeError}
-        onOpenPanel={handleOpenPanel}
-        onOpenSupport={() => setOpenPanel('support')}
         accountActive={authSession !== undefined}
         pseudo={authSession?.pseudo ?? ''}
         level={level}
+        avatarColor={avatarColor}
         modes={modes}
         rooms={rooms}
         selectedMode={selectedMode}
@@ -246,29 +270,6 @@ export default function App() {
         defaultRoomId={defaultRoomId}
       />
       {lobbyError && <p className="lobby-error-toast">{lobbyError}</p>}
-      <div
-        className={`panel-backdrop${openPanel ? ' visible' : ''}`}
-        onClick={() => setOpenPanel(null)}
-      />
-      <Suspense fallback={null}>
-        {openPanel === 'account' && (
-          <AccountPanel
-            onClose={() => setOpenPanel(null)}
-            authSession={authSession}
-            onAuthChange={setAuthSession}
-            onOpenProfile={() => setProfileOpen(true)}
-            onOpenSettings={() => setOpenPanel('settings')}
-          />
-        )}
-        {openPanel === 'leaderboard' && <LeaderboardPanel onClose={() => setOpenPanel(null)} />}
-        {openPanel === 'support' && <SupportPanel onClose={() => setOpenPanel(null)} />}
-        {openPanel === 'settings' && <SettingsPanel onClose={() => setOpenPanel(null)} />}
-        {openPanel === 'about' && <AboutPanel onClose={() => setOpenPanel(null)} />}
-        {profileOpen && authSession && (
-          <ProfileModal authToken={authSession.token} onClose={() => setProfileOpen(false)} />
-        )}
-      </Suspense>
     </>
   );
 }
-

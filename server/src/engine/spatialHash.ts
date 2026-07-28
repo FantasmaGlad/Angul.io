@@ -56,7 +56,6 @@ export class SpatialHash {
     return result;
   }
 
-
   private cellKey(position: Vector2): string {
     const cx = Math.floor(position.x / this.cellSize);
     const cy = Math.floor(position.y / this.cellSize);

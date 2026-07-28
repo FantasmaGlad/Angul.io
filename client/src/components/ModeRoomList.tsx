@@ -53,9 +53,7 @@ export default function ModeRoomList({
         <span className="section-subtitle">SALONS DISPONIBLES</span>
         <ol className="rank-list">
           {filtered.length === 0 ? (
-            <li className="rank-list-empty">
-              Aucun salon public actif pour ce mode.
-            </li>
+            <li className="rank-list-empty">Aucun salon public actif pour ce mode.</li>
           ) : (
             filtered.map((room, index) => (
               <li key={room.id}>

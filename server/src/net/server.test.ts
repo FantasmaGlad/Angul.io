@@ -71,7 +71,7 @@ describe('startGameServer', () => {
   it('répond à un join par un welcome contenant un id de joueur et la taille de la carte', async () => {
     const manager = makeManager(testResolver(1234));
     const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
-    handle = startGameServer(manager, { port: 0 });
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
     const port = await handle.whenReady;
 
     const socket = await connectedClient(port, summary.id);
@@ -89,7 +89,7 @@ describe('startGameServer', () => {
 
   it('ferme la connexion si le salon demandé n’existe pas', async () => {
     const manager = makeManager(testResolver());
-    handle = startGameServer(manager, { port: 0 });
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
     const port = await handle.whenReady;
 
     const socket = new WebSocket(`ws://localhost:${port}/?roomId=inexistant`);
@@ -102,7 +102,7 @@ describe('startGameServer', () => {
 
   it('ferme la connexion si aucun roomId n’est fourni', async () => {
     const manager = makeManager(testResolver());
-    handle = startGameServer(manager, { port: 0 });
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
     const port = await handle.whenReady;
 
     const socket = new WebSocket(`ws://localhost:${port}`);
@@ -122,7 +122,7 @@ describe('startGameServer', () => {
     };
     const manager = makeManager(() => ({ mod, mapSize: 1000 }));
     const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
-    handle = startGameServer(manager, { port: 0 });
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
     const port = await handle.whenReady;
 
     const socket = await connectedClient(port, summary.id);
@@ -152,7 +152,7 @@ describe('startGameServer', () => {
   it('envoie les pseudos déjà connus à un nouvel arrivant (backfill)', async () => {
     const manager = makeManager(testResolver());
     const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
-    handle = startGameServer(manager, { port: 0 });
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
     const port = await handle.whenReady;
 
     const first = await connectedClient(port, summary.id);
@@ -195,7 +195,7 @@ describe('startGameServer', () => {
     };
     const manager = makeManager(() => ({ mod, mapSize: 1000 }));
     const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
-    handle = startGameServer(manager, { port: 0 });
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
     const port = await handle.whenReady;
 
     const socket = await connectedClient(port, summary.id);
@@ -216,7 +216,7 @@ describe('startGameServer', () => {
   it('ignore un message malformé sans planter le serveur', async () => {
     const manager = makeManager(testResolver());
     const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
-    handle = startGameServer(manager, { port: 0 });
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
     const port = await handle.whenReady;
 
     const socket = await connectedClient(port, summary.id);
@@ -242,7 +242,7 @@ describe('startGameServer', () => {
     };
     const manager = makeManager(() => ({ mod, mapSize: 1000 }));
     const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
-    handle = startGameServer(manager, { port: 0 });
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
     const port = await handle.whenReady;
 
     const socket = await connectedClient(port, summary.id);
@@ -266,7 +266,7 @@ describe('startGameServer', () => {
     };
     const manager = makeManager(() => ({ mod, mapSize: 1000 }));
     const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
-    handle = startGameServer(manager, { port: 0 });
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
     const port = await handle.whenReady;
 
     const socket = await connectedClient(port, summary.id);
@@ -297,7 +297,7 @@ describe('startGameServer', () => {
     };
     const manager = makeManager(() => ({ mod, mapSize: 1000 }));
     const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
-    handle = startGameServer(manager, { port: 0 });
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
     const port = await handle.whenReady;
 
     const socket = await connectedClient(port, summary.id);
@@ -325,7 +325,7 @@ describe('startGameServer', () => {
     };
     const manager = makeManager(() => ({ mod, mapSize: 1000 }));
     const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
-    handle = startGameServer(manager, { port: 0 });
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
     const port = await handle.whenReady;
 
     const socket = await connectedClient(port, summary.id);
@@ -351,7 +351,7 @@ describe('startGameServer', () => {
     };
     const manager = makeManager(() => ({ mod, mapSize: 1000 }));
     const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
-    handle = startGameServer(manager, { port: 0 });
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
     const port = await handle.whenReady;
 
     const socket = await connectedClient(port, summary.id);
@@ -386,7 +386,7 @@ describe('startGameServer', () => {
   it('répond à un `ping` par un `pong` renvoyant le même horodatage', async () => {
     const manager = makeManager(testResolver());
     const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
-    handle = startGameServer(manager, { port: 0 });
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
     const port = await handle.whenReady;
 
     const socket = await connectedClient(port, summary.id);
@@ -412,7 +412,7 @@ describe('startGameServer', () => {
     };
     const manager = makeManager(() => ({ mod, mapSize: 100_000 }));
     const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
-    handle = startGameServer(manager, { port: 0, interestRadiusPx: 500 });
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0, interestRadiusPx: 500 });
     const port = await handle.whenReady;
     const room = manager.getManagedRoom(summary.id)!.room;
 
@@ -448,7 +448,7 @@ describe('startGameServer', () => {
     const manager = makeManager(() => ({ mod, mapSize: 1000 }));
     const roomA = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
     const roomB = manager.createRoom({ name: 'B', modId: 'test', visibility: 'public' });
-    handle = startGameServer(manager, { port: 0 });
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
     const port = await handle.whenReady;
 
     const socketA = await connectedClient(port, roomA.id);
@@ -478,7 +478,7 @@ describe('startGameServer', () => {
     it('refuse un second join avec un pseudo déjà utilisé dans le même salon (insensible à la casse)', async () => {
       const manager = makeManager(testResolver());
       const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
-      handle = startGameServer(manager, { port: 0 });
+      handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
       const port = await handle.whenReady;
 
       const first = await connectedClient(port, summary.id);
@@ -497,7 +497,7 @@ describe('startGameServer', () => {
     it('accepte un pseudo repris après le départ du premier joueur qui l’utilisait', async () => {
       const manager = makeManager(testResolver());
       const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
-      handle = startGameServer(manager, { port: 0 });
+      handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
       const port = await handle.whenReady;
 
       const first = await connectedClient(port, summary.id);
@@ -525,7 +525,7 @@ describe('startGameServer', () => {
         visibility: 'public',
         maxPlayers: 1,
       });
-      handle = startGameServer(manager, { port: 0 });
+      handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
       const port = await handle.whenReady;
 
       const first = await connectedClient(port, summary.id);
@@ -544,7 +544,7 @@ describe('startGameServer', () => {
     it('un spectateur (?spectate=1) reçoit un welcome sans envoyer de join, et n’est jamais compté dans playerCount', async () => {
       const manager = makeManager(testResolver(4242));
       const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
-      handle = startGameServer(manager, { port: 0 });
+      handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
       const port = await handle.whenReady;
 
       const spectator = new WebSocket(`ws://localhost:${port}/?roomId=${summary.id}&spectate=1`);
@@ -562,7 +562,7 @@ describe('startGameServer', () => {
       const manager = makeManager(testResolver());
       const roomA = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
       const roomB = manager.createRoom({ name: 'B', modId: 'test', visibility: 'private' });
-      handle = startGameServer(manager, { port: 0 });
+      handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
       const port = await handle.whenReady;
 
       const socketA = await connectedClient(port, roomA.id);
@@ -590,7 +590,7 @@ describe('startGameServer', () => {
       // suite, pour tester le comportement réseau de façon déterministe plutôt qu'en dépendant
       // d'un vrai minuteur.
       const summary = manager.createRoom({ name: 'Éphémère', modId: 'test', visibility: 'public' });
-      handle = startGameServer(manager, { port: 0 });
+      handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
       const port = await handle.whenReady;
 
       const socket = await connectedClient(port, summary.id);
@@ -611,7 +611,7 @@ describe('startGameServer', () => {
     const manager = makeManager(testResolver());
     manager.createRoom({ name: 'Public', modId: 'test', visibility: 'public' });
     manager.createRoom({ name: 'Privé', modId: 'test', visibility: 'private' });
-    handle = startGameServer(manager, { port: 0 });
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
     const port = await handle.whenReady;
 
     const response = await fetch(`http://localhost:${port}/api/rooms`);
@@ -632,7 +632,7 @@ describe('startGameServer', () => {
 
   it('POST /api/rooms crée un salon joignable immédiatement', async () => {
     const manager = makeManager(() => ({ mod: { id: 'test' }, mapSize: 4242 }));
-    handle = startGameServer(manager, { port: 0 });
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
     const port = await handle.whenReady;
 
     const response = await fetch(`http://localhost:${port}/api/rooms`, {
@@ -656,7 +656,7 @@ describe('startGameServer', () => {
 
   it('POST /api/rooms rejette un nom manquant', async () => {
     const manager = makeManager(testResolver());
-    handle = startGameServer(manager, { port: 0 });
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
     const port = await handle.whenReady;
 
     const response = await fetch(`http://localhost:${port}/api/rooms`, {
@@ -670,7 +670,11 @@ describe('startGameServer', () => {
 
   it('GET /api/modes renvoie les modes fournis au démarrage du serveur', async () => {
     const manager = makeManager(testResolver());
-    handle = startGameServer(manager, { port: 0, availableModIds: ['vanilla', 'folie'] });
+    handle = startGameServer(manager, {
+      port: 0,
+      rateLimitMaxAttempts: 0,
+      availableModIds: ['vanilla', 'folie'],
+    });
     const port = await handle.whenReady;
 
     const response = await fetch(`http://localhost:${port}/api/modes`);
@@ -679,7 +683,7 @@ describe('startGameServer', () => {
 
   it('POST /api/rooms { visibility: "private" } renvoie un code d’invitation, absent en public', async () => {
     const manager = makeManager(testResolver());
-    handle = startGameServer(manager, { port: 0 });
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
     const port = await handle.whenReady;
 
     const response = await fetch(`http://localhost:${port}/api/rooms`, {
@@ -700,7 +704,7 @@ describe('startGameServer', () => {
 
   it('refuse de rejoindre un salon privé par son id brut, l’accepte par son code d’invitation', async () => {
     const manager = makeManager(testResolver());
-    handle = startGameServer(manager, { port: 0 });
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
     const port = await handle.whenReady;
 
     const response = await fetch(`http://localhost:${port}/api/rooms`, {
@@ -738,7 +742,7 @@ describe('startGameServer', () => {
       visibility: 'public',
       resetSchedule: { type: 'interval', intervalMs: 30 },
     });
-    handle = startGameServer(manager, { port: 0 });
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
     const port = await handle.whenReady;
 
     const socket = await connectedClient(port, summary.id);
@@ -800,7 +804,7 @@ describe.skipIf(!DATABASE_URL)('startGameServer (avec comptes joueurs)', () => {
     const accounts = new AccountsService(pool);
     const admin = withAdmin ? new AdminAuth(await hashPassword('adminpass123')) : undefined;
     const manager = makeManager();
-    handle = startGameServer(manager, { port: 0, accounts, admin });
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0, accounts, admin });
     const port = await handle.whenReady;
     return { port, accounts, manager };
   }
@@ -977,5 +981,114 @@ describe.skipIf(!DATABASE_URL)('startGameServer (avec comptes joueurs)', () => {
       body: JSON.stringify({ pseudo, password: 'motdepasse123' }),
     });
     expect(loginAfterBan.status).toBe(401);
+  });
+
+  describe('Sécurité, Rate Limiting & Validation Input', () => {
+    it('applique un rate limiting de 3 tentatives max par minute sur le login joueur', async () => {
+      await startServer();
+      // On redémarre un serveur avec rateLimitMaxAttempts: 3 explicitement pour ce test
+      const manager = makeManager();
+      const accounts = new AccountsService(pool);
+      const customHandle = startGameServer(manager, { port: 0, accounts, rateLimitMaxAttempts: 3 });
+      const customPort = await customHandle.whenReady;
+
+      try {
+        for (let i = 0; i < 3; i++) {
+          const res = await fetch(`http://localhost:${customPort}/api/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pseudo: 'inconnu', password: 'bad' }),
+          });
+          expect(res.status).toBe(401);
+        }
+
+        // La 4ème tentative doit renvoyer HTTP 429
+        const rateLimited = await fetch(`http://localhost:${customPort}/api/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pseudo: 'inconnu', password: 'bad' }),
+        });
+        expect(rateLimited.status).toBe(429);
+      } finally {
+        customHandle.close();
+      }
+    });
+
+    it('déconnecte le joueur avec POST /api/auth/logout', async () => {
+      const { port, accounts } = await startServer();
+      const pseudo = uniquePseudo('logouttest');
+      const { token } = await accounts.register(pseudo, 'motdepasse123');
+
+      const meBefore = await fetch(`http://localhost:${port}/api/account/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(meBefore.status).toBe(200);
+
+      const logoutRes = await fetch(`http://localhost:${port}/api/auth/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(logoutRes.status).toBe(200);
+
+      const meAfter = await fetch(`http://localhost:${port}/api/account/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(meAfter.status).toBe(401);
+    });
+
+    it('déconnecte l’admin avec POST /api/admin/logout', async () => {
+      const { port } = await startServer();
+      const loginResponse = await fetch(`http://localhost:${port}/api/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: 'adminpass123' }),
+      });
+      const { token } = (await loginResponse.json()) as { token: string };
+
+      const logoutRes = await fetch(`http://localhost:${port}/api/admin/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(logoutRes.status).toBe(200);
+
+      const searchAfter = await fetch(`http://localhost:${port}/api/admin/players?q=x`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(searchAfter.status).toBe(401);
+    });
+
+    it('ignore/rejette les messages input WebSocket contenant des NaN ou des coordonnées invalides', async () => {
+      const manager = makeManager(testResolver());
+      const summary = manager.createRoom({
+        name: 'SecurityRoom',
+        modId: 'test',
+        visibility: 'public',
+      });
+      const customHandle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
+      const customPort = await customHandle.whenReady;
+
+      try {
+        const socket = await connectedClient(customPort, summary.id);
+        socket.send(JSON.stringify({ type: 'join', nickname: 'SecPlayer' }));
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        // Envoi d'un message input corrompu avec NaN / Infinity
+        socket.send(
+          JSON.stringify({
+            type: 'input',
+            target: { x: NaN, y: Infinity },
+            intensity: 999,
+            split: 'not-a-bool',
+          }),
+        );
+
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        // Le serveur ne plante pas et la room continue de fonctionner
+        expect(socket.readyState).toBe(WebSocket.OPEN);
+        socket.close();
+      } finally {
+        customHandle.close();
+      }
+    });
   });
 });

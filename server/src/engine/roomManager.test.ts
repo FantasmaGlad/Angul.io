@@ -339,7 +339,7 @@ describe('RoomManager', () => {
         updateFrequencyHz: 2,
         proportions: { fuis: 25, neutre: 30, agressif: 30, fou: 15 },
       };
-      const manager = makeManager((modId) => ({ mod: testMod, mapSize: 1000, bots: botsConfig }));
+      const manager = makeManager(() => ({ mod: testMod, mapSize: 1000, bots: botsConfig }));
 
       const summary = manager.createRoom({
         name: 'Salon Sans Bots',
@@ -354,8 +354,5 @@ describe('RoomManager', () => {
       expect(managed.room.botManager?.activeBotCount ?? 0).toBe(0);
       expect(managed.room.world.allPlayers()).toHaveLength(0);
     });
-
-
   });
 });
-

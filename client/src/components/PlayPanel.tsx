@@ -39,7 +39,9 @@ export default function PlayPanel({
           <input
             className="clean-input"
             value={nickname}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => onNicknameChange(event.target.value)}
+            onChange={(event: ChangeEvent<HTMLInputElement>) =>
+              onNicknameChange(event.target.value)
+            }
             placeholder="Entrez votre pseudo..."
             maxLength={20}
           />

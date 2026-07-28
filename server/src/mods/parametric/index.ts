@@ -175,10 +175,9 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
       spawnPlayerPiece(world, playerId);
     },
 
-    onPlayerDeath(world, playerId) {
+    onPlayerDeath() {
       // Attendre que le joueur réclame son respawn via le menu / bouton Rejouer
     },
-
 
     onPlayerInput(world: World, playerId: PlayerId, input: PlayerInput) {
       const pieces = world.getPiecesByOwner(playerId);
@@ -266,7 +265,6 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
       if (!eaten && !hasMassAdvantage(a, b) && !hasMassAdvantage(b, a)) {
         applyRepulsion(a, b);
       }
-
     },
   };
 }

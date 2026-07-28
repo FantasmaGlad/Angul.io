@@ -1,26 +1,18 @@
 import { useState } from 'react';
 import { clearSession, login, register, saveSession, type AuthResult } from '../auth.js';
-import Panel from './Panel.js';
+import { navigate } from '../router.js';
+import PageLayout from './PageLayout.js';
 
-interface AccountPanelProps {
-  onClose: () => void;
+interface AccountPageProps {
   authSession: AuthResult | undefined;
   onAuthChange: (session: AuthResult | undefined) => void;
-  onOpenProfile: () => void;
-  onOpenSettings: () => void;
 }
 
 /** Compte joueur (Lot 3.2/3.3/3.6) — entièrement optionnel, le pseudo de l'accueil reste
- * utilisable seul pour une partie en invité. Le lien "Paramètres" (plafond FPS) vit ici depuis la
- * refonte UI/UX : la nouvelle nav supérieure (TopNav.tsx) n'a plus de place dédiée pour lui, le
- * mockup fourni ne le montrant pas explicitement. */
-export default function AccountPanel({
-  onClose,
-  authSession,
-  onAuthChange,
-  onOpenProfile,
-  onOpenSettings,
-}: AccountPanelProps) {
+ * utilisable seul pour une partie en invité. Profil et Paramètres sont désormais des sous-pages
+ * séparées, accessibles depuis la nav (TopNav.tsx) — cette page ne gère plus que
+ * connexion/inscription/déconnexion. */
+export default function AccountPage({ authSession, onAuthChange }: AccountPageProps) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [pseudo, setPseudo] = useState('');
   const [password, setPassword] = useState('');
@@ -47,15 +39,15 @@ export default function AccountPanel({
   };
 
   return (
-    <Panel title="Compte" onClose={onClose}>
+    <PageLayout title="Compte">
       {authSession ? (
         <div>
           <p className="account-status">
             Connecté(e) : <strong>{authSession.pseudo}</strong>
           </p>
           <div className="field-row">
-            <button className="btn-ghost" type="button" onClick={onOpenProfile}>
-              Profil
+            <button className="btn-ghost" type="button" onClick={() => navigate('/profil')}>
+              Voir mon profil
             </button>
             <button className="btn-ghost" type="button" onClick={handleLogout}>
               Déconnexion
@@ -101,14 +93,7 @@ export default function AccountPanel({
           </div>
         </div>
       )}
-      <div className="field-row" style={{ marginTop: 14, marginBottom: 0 }}>
-        {/* Réglage local à l'appareil (plafond FPS), pas au compte — accessible qu'on soit
-            connecté ou en invité (voir SettingsPanel.tsx). */}
-        <button className="btn-ghost" type="button" onClick={onOpenSettings}>
-          Paramètres
-        </button>
-      </div>
       <p className="error-text">{error}</p>
-    </Panel>
+    </PageLayout>
   );
 }

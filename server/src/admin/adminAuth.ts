@@ -36,4 +36,8 @@ export class AdminAuth {
     if (!token) return false;
     return this.sessions.resolveSession(token) === ADMIN_SESSION_ID;
   }
+
+  logout(token: string | undefined): void {
+    if (token) this.sessions.revokeSession(token);
+  }
 }

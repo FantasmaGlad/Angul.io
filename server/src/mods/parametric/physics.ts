@@ -16,18 +16,18 @@ export function accelerationForMass(mass: number, config: ParametricModConfig): 
 }
 
 function decayLambda(mass: number, config: ParametricModConfig): number {
-  const {
-    threshold,
-    rateAboveThreshold,
-    intervalAboveThresholdSec,
-    rateBelowThreshold,
-    intervalBelowThresholdSec,
-    floor,
-  } = config.decay;
+  const floor = config.decay.floor ?? 2;
   if (mass <= floor) return 0;
-  return mass > threshold
-    ? -Math.log(1 - rateAboveThreshold) / intervalAboveThresholdSec
-    : -Math.log(1 - rateBelowThreshold) / intervalBelowThresholdSec;
+
+  let rate = 0.005; // 0.5% par 10s pour masse <= 200
+  if (mass > 500) {
+    rate = 0.02; // 2% par 10s pour masse > 500
+  } else if (mass > 200) {
+    rate = 0.01; // 1% par 10s pour 200 < masse <= 500
+  }
+
+  const intervalSec = 10;
+  return -Math.log(1 - rate) / intervalSec;
 }
 
 export function applyPassiveDecay(mass: number, dt: number, config: ParametricModConfig): number {

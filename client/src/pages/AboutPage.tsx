@@ -1,13 +1,8 @@
-import Panel from './Panel.js';
+import PageLayout from './PageLayout.js';
 
-interface AboutPanelProps {
-  onClose: () => void;
-}
-
-/** À Propos (nouveau, refonte UI/UX — lien de la nouvelle barre de navigation supérieure). */
-export default function AboutPanel({ onClose }: AboutPanelProps) {
+export default function AboutPage() {
   return (
-    <Panel title="À Propos" onClose={onClose}>
+    <PageLayout title="À Propos">
       <p className="account-status">
         <strong>Angul.io</strong> — plateforme de jeu multijoueur temps réel inspirée d'Agar.io,
         avec un système de salons et de modes de jeu scriptables.
@@ -24,6 +19,6 @@ export default function AboutPanel({ onClose }: AboutPanelProps) {
         Code source ouvert : toute réutilisation doit rester open source et citer le projet
         d'origine.
       </p>
-    </Panel>
+    </PageLayout>
   );
 }

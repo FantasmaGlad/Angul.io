@@ -40,7 +40,6 @@ const resolveMod: ModResolver = (modId) => {
   };
 };
 
-
 const roomManager = new RoomManager(resolveMod, TICK_RATE_HZ);
 
 // Salon par défaut créé au démarrage (compatibilité avec le comportement du Lot 1, avant le

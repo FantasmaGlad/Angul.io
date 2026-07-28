@@ -11,19 +11,59 @@ export class GameConnection {
    * l'ouverture plutôt que silencieusement perdus. */
   private readonly pendingMessages: ClientMessage[] = [];
 
+  private lastRateCheckAt = performance.now();
+  private bytesRecvWindow = 0;
+  private bytesSentWindow = 0;
+  private pktsRecvWindow = 0;
+
+  public netInKbps = 0;
+  public netOutKbps = 0;
+  public netInPktSec = 0;
+
   constructor(url: string) {
     this.socket = new WebSocket(url);
     this.socket.addEventListener('open', () => {
-      for (const message of this.pendingMessages) this.socket.send(JSON.stringify(message));
+      for (const message of this.pendingMessages) {
+        const payload = JSON.stringify(message);
+        this.recordOutgoing(payload);
+        this.socket.send(payload);
+      }
       this.pendingMessages.length = 0;
     });
     this.socket.addEventListener('message', (event: MessageEvent<string>) => {
+      this.recordIncoming(event.data);
       const message = JSON.parse(event.data) as ServerMessage;
       for (const listener of this.listeners) listener(message);
     });
     this.socket.addEventListener('close', (event: CloseEvent) => {
       for (const listener of this.closeListeners) listener(event);
     });
+  }
+
+  private recordIncoming(data: string) {
+    this.bytesRecvWindow += typeof data === 'string' ? data.length : 0;
+    this.pktsRecvWindow += 1;
+    this.updateRates();
+  }
+
+  private recordOutgoing(data: string) {
+    this.bytesSentWindow += data.length;
+    this.updateRates();
+  }
+
+  private updateRates() {
+    const now = performance.now();
+    const elapsedSec = (now - this.lastRateCheckAt) / 1000;
+    if (elapsedSec >= 1) {
+      this.netInKbps = this.bytesRecvWindow / 1024 / elapsedSec;
+      this.netOutKbps = this.bytesSentWindow / 1024 / elapsedSec;
+      this.netInPktSec = Math.round(this.pktsRecvWindow / elapsedSec);
+
+      this.bytesRecvWindow = 0;
+      this.bytesSentWindow = 0;
+      this.pktsRecvWindow = 0;
+      this.lastRateCheckAt = now;
+    }
   }
 
   onMessage(listener: (message: ServerMessage) => void): void {
@@ -39,8 +79,10 @@ export class GameConnection {
   }
 
   send(message: ClientMessage): void {
+    const payload = JSON.stringify(message);
+    this.recordOutgoing(payload);
     if (this.socket.readyState === WebSocket.OPEN) {
-      this.socket.send(JSON.stringify(message));
+      this.socket.send(payload);
     } else if (this.socket.readyState === WebSocket.CONNECTING) {
       this.pendingMessages.push(message);
     }

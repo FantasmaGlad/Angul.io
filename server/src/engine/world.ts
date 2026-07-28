@@ -92,6 +92,14 @@ export class World {
       .filter((entity): entity is Entity => entity !== undefined);
   }
 
+  /** Requête spatiale publique (broad-phase) pour un rayon arbitraire autour d'un point — utilisée
+   * par les consommateurs externes au moteur (ex. l'IA des bots, `engine/bots/botEvaluator.ts`) qui
+   * n'ont pas de raison d'accéder à `spatialHash` lui-même (grille interne dimensionnée pour la
+   * narrow-phase des collisions, voir `rebuildSpatialHash`/`findOverlappingPairs`). */
+  queryNearby(position: Vector2, radius: number): EntityId[] {
+    return this.spatialHash.queryRadius(position, radius);
+  }
+
   /** Fusionne deux entités : masse additive, position barycentrique (metriques.md §10). */
   mergeEntities(a: Entity, b: Entity): Entity {
     const mergedMass = a.mass + b.mass;

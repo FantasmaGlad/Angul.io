@@ -1,4 +1,4 @@
-import { clamp, type EntitySnapshot } from '@angulio/shared';
+import { BOT_COLORS, clamp, type EntitySnapshot } from '@angulio/shared';
 import { ownAggregate } from './stats.js';
 
 /** Échelle à la masse de référence : délibérément > 1 (zoomé par rapport à la taille "réelle"
@@ -71,27 +71,32 @@ export function computeCamera(
   return { x: own.x, y: own.y, scale };
 }
 
+export interface RenderFrameResult {
+  drawCalls: number;
+  batches: number;
+}
+
 /** `nicknames` : pseudo par id de joueur, appris via les messages `player` (envoyés une fois
- * par joueur plutôt que répétés sur chaque entité à chaque tick — voir plan Lot 1.8). */
+ * par joueur plutôt que répétés sur chaque entité à chaque tick — voir plan Lot 1.8). `colors` :
+ * couleur d'avatar par id de joueur (refonte UI/UX), appris de la même façon — absent pour un
+ * appelant qui ne s'en sert pas (SpectatorBackground.tsx, fond décoratif anonyme). */
 export function renderFrame(
   ctx: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
   entities: EntitySnapshot[],
   camera: Camera,
   nicknames: ReadonlyMap<string, string>,
-): void {
+  colors?: ReadonlyMap<string, string>,
+): RenderFrameResult {
+  let drawCalls = 0;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   const toScreenX = (x: number) => (x - camera.x) * camera.scale + canvas.width / 2;
   const toScreenY = (y: number) => (y - camera.y) * camera.scale + canvas.height / 2;
 
   drawGrid(ctx, canvas, camera, toScreenX, toScreenY);
+  drawCalls++;
 
-  // Nourriture groupée par couleur (dérivée de la masse — voir FOOD_COLORS_BY_MASS) : un seul
-  // chemin/appel `fill` par couleur plutôt qu'un par particule — sur une carte dense (jusqu'à
-  // plusieurs centaines de particules visibles même après l'interest management du Lot 1.8),
-  // ça évite l'essentiel du coût CPU par frame qui limitait le framerate perçu. Le pellet
-  // Multicolor (rare) est dessiné à part, individuellement (voir plus bas).
   const foodPathsByColor = new Map<string, Path2D>();
 
   for (const entity of entities) {
@@ -105,6 +110,7 @@ export function renderFrame(
     if (entity.k === 'f') {
       if (entity.m === MULTICOLOR_FOOD_MASS) {
         drawMulticolorFood(ctx, screenX, screenY, Math.max(1, screenRadius));
+        drawCalls++;
         continue;
       }
       const color = foodColorForMass(entity.m);
@@ -120,28 +126,34 @@ export function renderFrame(
 
     ctx.beginPath();
     ctx.arc(screenX, screenY, Math.max(1, screenRadius), 0, Math.PI * 2);
-    ctx.fillStyle = colorFor(entity);
+    ctx.fillStyle = colorFor(entity, nicknames, colors);
     ctx.fill();
+    drawCalls++;
 
     const nickname = entity.p && nicknames.get(entity.p);
     if (nickname) {
       ctx.font = `${Math.max(10, screenRadius * 0.3)}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      // Contour blanc + remplissage sombre : lisible sur fond blanc *et* sur les couleurs
-      // vives des morceaux, sans avoir à connaître la couleur exacte du morceau au-dessous.
       ctx.lineWidth = 3;
       ctx.strokeStyle = '#ffffff';
       ctx.strokeText(nickname, screenX, screenY);
       ctx.fillStyle = '#1a1a1a';
       ctx.fillText(nickname, screenX, screenY);
+      drawCalls += 2;
     }
   }
 
   for (const [color, path] of foodPathsByColor) {
     ctx.fillStyle = color;
     ctx.fill(path);
+    drawCalls++;
   }
+
+  return {
+    drawCalls,
+    batches: foodPathsByColor.size + 1,
+  };
 }
 
 /** Dégradé radial arc-en-ciel pour le pellet "Multicolor" (masse 12, le plus rare et le plus
@@ -232,14 +244,31 @@ function drawGrid(
   ctx.stroke();
 }
 
-/** Couleur de blob "pour l'instant" (demande utilisateur, refonte UI/UX) — placeholder unique en
- * attendant un vrai système de personnalisation (choix/déblocage de couleur par cosmétique) :
- * tous les morceaux de tous les joueurs partagent cette même couleur, y compris dans le fond
- * spectateur de l'accueil (SpectatorBackground.tsx, qui réutilise cette même fonction). */
+/** Couleur de repli si ni `colors` (avatar procédural, refonte UI/UX) ni `nicknames` (bot connu)
+ * ne donnent de réponse — ne devrait plus arriver en pratique pour un joueur humain (le serveur
+ * assigne toujours une couleur explicite à la connexion, voir connectionHandler.ts), gardé comme
+ * filet de sécurité plutôt que de dessiner du noir invisible. Toujours utilisée telle quelle dans
+ * le fond spectateur de l'accueil (SpectatorBackground.tsx), qui n'a jamais d'identité de joueur
+ * par choix (fond décoratif anonyme, voir commentaire de ce composant). */
 export const DEFAULT_BLOB_COLOR = '#253D2C';
 
 /** Jamais appelée pour de la nourriture : `renderFrame` la dessine à part (voir `FOOD_COLOR`),
- * en un seul appel `fill` groupé plutôt qu'un par particule. */
-function colorFor(entity: EntitySnapshot): string {
-  return entity.p ? DEFAULT_BLOB_COLOR : '#888888';
+ * en un seul appel `fill` groupé plutôt qu'un par particule. Priorité : couleur d'avatar
+ * explicite (compte ou pseudo, `colors`) > couleur de bot connue (`nicknames` + `BOT_COLORS`) >
+ * repli fixe. */
+export function colorFor(
+  entity: EntitySnapshot,
+  nicknames?: ReadonlyMap<string, string>,
+  colors?: ReadonlyMap<string, string>,
+): string {
+  if (!entity.p) return '#888888';
+  const explicitColor = colors?.get(entity.p);
+  if (explicitColor) return explicitColor;
+  const name = nicknames?.get(entity.p);
+  if (name) {
+    if (BOT_COLORS[name]) return BOT_COLORS[name];
+    const baseName = name.split('_')[0];
+    if (baseName && BOT_COLORS[baseName]) return BOT_COLORS[baseName];
+  }
+  return DEFAULT_BLOB_COLOR;
 }

@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { isValidAvatarColor } from '@angulio/shared';
 import {
   AccountsRepository,
   PseudoTakenError,
@@ -31,6 +32,9 @@ export interface AccountProfile {
   premium: boolean;
   cosmetics: string[];
   bestScores: BestScore[];
+  /** Couleur d'avatar choisie (refonte UI/UX) — `undefined` tant que le joueur n'a rien choisi
+   * explicitement, voir `AVATAR_PALETTE`/`colorForNickname`. */
+  avatarColor?: string;
 }
 
 /** Vue d'un compte destinée à l'interface admin (Lot 5.2-5.4) — inclut `id` (nécessaire pour
@@ -104,6 +108,10 @@ export class AccountsService {
     return token ? this.sessions.resolveSession(token) : undefined;
   }
 
+  logout(token: string | undefined): void {
+    if (token) this.sessions.revokeSession(token);
+  }
+
   async getProfile(accountId: number): Promise<AccountProfile | undefined> {
     const account = await this.repository.findById(accountId);
     if (!account) return undefined;
@@ -115,7 +123,28 @@ export class AccountsService {
       premium: account.premium,
       cosmetics: account.cosmetics,
       bestScores,
+      avatarColor: account.avatarColor ?? undefined,
     };
+  }
+
+  /** Couleur de blob à diffuser aux autres joueurs à la connexion (voir connectionHandler.ts) —
+   * lecture dédiée, plus légère que `getProfile` (pas de requête `bestScores`) puisqu'elle est
+   * appelée à chaque `join`/reconnexion, pas seulement à l'ouverture de la page Profil. */
+  async getAvatarColor(accountId: number): Promise<string | undefined> {
+    const account = await this.repository.findById(accountId);
+    return account?.avatarColor ?? undefined;
+  }
+
+  /** Choix d'avatar (refonte UI/UX) — `color` doit appartenir à `AVATAR_PALETTE` (validation
+   * stricte côté serveur, même esprit que `validateAdminPatch` : jamais faire confiance à une
+   * valeur arbitraire envoyée par le client pour un champ affiché à tous les autres joueurs). */
+  async updateAvatarColor(accountId: number, color: string): Promise<AccountProfile | undefined> {
+    if (!isValidAvatarColor(color)) {
+      throw new AccountError("Couleur d'avatar invalide.");
+    }
+    const updated = await this.repository.updateAvatarColor(accountId, color);
+    if (!updated) return undefined;
+    return this.getProfile(accountId);
   }
 
   /** Lot 3.5 — appelé à la mort/déconnexion d'un joueur authentifié : `score` est la masse
