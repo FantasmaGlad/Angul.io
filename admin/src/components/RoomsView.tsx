@@ -21,6 +21,12 @@ export default function RoomsView({ token, onAuthError }: RoomsViewProps) {
   const [pov, setPov] = useState<{ roomId: string; playerId: string; nickname: string } | null>(
     null,
   );
+  const [transferTarget, setTransferTarget] = useState<{
+    roomId: string;
+    playerId: string;
+    nickname: string;
+  } | null>(null);
+  const [selectedTargetRoomId, setSelectedTargetRoomId] = useState('');
 
   const refresh = (): void => {
     void (async () => {
@@ -54,13 +60,14 @@ export default function RoomsView({ token, onAuthError }: RoomsViewProps) {
     })();
   };
 
-  const handleTransfer = (roomId: string, playerId: string): void => {
-    const targetRoomId = window.prompt('Id du salon cible ?');
-    if (!targetRoomId) return;
+  const handleConfirmTransfer = (): void => {
+    if (!transferTarget || !selectedTargetRoomId) return;
     void (async () => {
       try {
-        await transferPlayer(token, roomId, playerId, targetRoomId);
-        setStatus('Joueur transféré.');
+        await transferPlayer(token, transferTarget.roomId, transferTarget.playerId, selectedTargetRoomId);
+        setStatus(`${transferTarget.nickname} transféré(e).`);
+        setTransferTarget(null);
+        setSelectedTargetRoomId('');
         refresh();
       } catch (err) {
         setError((err as Error).message);
@@ -74,10 +81,11 @@ export default function RoomsView({ token, onAuthError }: RoomsViewProps) {
         <div>
           <h2>Salons &amp; Écrans</h2>
           <p className="view-subtitle">
-            Salons actifs, joueurs connectés, expulsion, transfert, mode Suivi "POV".
+            Salons actifs, supervision globale, joueurs connectés, expulsion, transfert.
           </p>
         </div>
         <button className="btn-ghost" type="button" onClick={refresh}>
+          <span className="material-symbols-outlined" style={{ fontSize: 16, verticalAlign: 'middle', marginRight: 4 }}>refresh</span>
           Rafraîchir
         </button>
       </div>
@@ -87,7 +95,7 @@ export default function RoomsView({ token, onAuthError }: RoomsViewProps) {
 
       {rooms.map((room) => (
         <section className="panel" key={room.id}>
-          <div className="room-header">
+          <div className="room-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <h2 style={{ fontSize: 16 }}>
                 {room.name} <span className="badge">{room.modId}</span>{' '}
@@ -95,11 +103,20 @@ export default function RoomsView({ token, onAuthError }: RoomsViewProps) {
               </h2>
               <p className="view-subtitle">
                 {room.stats.playerCount}/{room.maxPlayers} joueurs · tick {room.tickRateHz}Hz ·
-                avg {room.stats.tickAvgMs.toFixed(1)}ms · p95 {room.stats.tickP95Ms.toFixed(1)}ms ·
-                {' '}
-                {room.stats.tickOverruns} dépassement(s)
+                avg {room.stats.tickAvgMs.toFixed(1)}ms · p95 {room.stats.tickP95Ms.toFixed(1)}ms
               </p>
             </div>
+            <button
+              className="btn-ghost"
+              type="button"
+              onClick={() => setPov({ roomId: room.id, playerId: '', nickname: `Spectateur Salon : ${room.name}` })}
+              title="Voir l'arène globale en direct"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 18, verticalAlign: 'middle', marginRight: 4 }}>
+                visibility
+              </span>
+              Regarder le salon
+            </button>
           </div>
 
           <table className="data-table">
@@ -137,21 +154,31 @@ export default function RoomsView({ token, onAuthError }: RoomsViewProps) {
                             onClick={() =>
                               setPov({ roomId: room.id, playerId: player.playerId, nickname: player.nickname })
                             }
+                            title="Suivre la vue joueur"
                           >
+                            <span className="material-symbols-outlined" style={{ fontSize: 16, verticalAlign: 'middle', marginRight: 2 }}>visibility</span>
                             POV
                           </button>
                           <button
                             className="btn-ghost"
                             type="button"
-                            onClick={() => handleTransfer(room.id, player.playerId)}
+                            onClick={() => {
+                              setTransferTarget({ roomId: room.id, playerId: player.playerId, nickname: player.nickname });
+                              const otherRooms = rooms.filter((r) => r.id !== room.id);
+                              if (otherRooms.length > 0) setSelectedTargetRoomId(otherRooms[0]!.id);
+                            }}
+                            title="Transférer vers un autre salon"
                           >
+                            <span className="material-symbols-outlined" style={{ fontSize: 16, verticalAlign: 'middle', marginRight: 2 }}>swap_horiz</span>
                             Transférer
                           </button>
                           <button
                             className="btn-ghost btn-danger"
                             type="button"
                             onClick={() => handleKick(room.id, player.playerId, player.nickname)}
+                            title="Expulser du salon"
                           >
+                            <span className="material-symbols-outlined" style={{ fontSize: 16, verticalAlign: 'middle', marginRight: 2 }}>person_remove</span>
                             Expulser
                           </button>
                         </>
@@ -164,6 +191,60 @@ export default function RoomsView({ token, onAuthError }: RoomsViewProps) {
           </table>
         </section>
       ))}
+
+      {transferTarget && (
+        <div className="context-menu-backdrop" style={{ zIndex: 150 }} onClick={() => setTransferTarget(null)}>
+          <div
+            className="panel"
+            style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              zIndex: 151,
+              width: 380,
+              maxWidth: '90vw',
+              padding: 24,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3>Transférer {transferTarget.nickname}</h3>
+            <p className="view-subtitle" style={{ marginBottom: 14 }}>
+              Choisissez le salon de destination :
+            </p>
+            {rooms.filter((r) => r.id !== transferTarget.roomId).length === 0 ? (
+              <p className="error-text">Aucun autre salon actif disponible.</p>
+            ) : (
+              <select
+                value={selectedTargetRoomId}
+                onChange={(e) => setSelectedTargetRoomId(e.target.value)}
+                style={{ width: '100%', marginBottom: 16, padding: 8 }}
+              >
+                {rooms
+                  .filter((r) => r.id !== transferTarget.roomId)
+                  .map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name} ({r.stats.playerCount}/{r.maxPlayers})
+                    </option>
+                  ))}
+              </select>
+            )}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button className="btn-ghost" type="button" onClick={() => setTransferTarget(null)}>
+                Annuler
+              </button>
+              <button
+                className="btn-primary"
+                type="button"
+                disabled={rooms.filter((r) => r.id !== transferTarget.roomId).length === 0}
+                onClick={handleConfirmTransfer}
+              >
+                Transférer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {pov && (
         <PovOverlay
@@ -186,10 +267,6 @@ interface PovOverlayProps {
   onClose: () => void;
 }
 
-/** Caméra verrouillée sur le barycentre des morceaux du joueur ciblé (§3.3, "Suivi POV") —
- * réutilise le canal WebSocket admin comme un spectateur (toutes les entités, voir
- * adminSocket.ts), le zoom/centrage est purement calculé côté client à partir des entités
- * reçues (aucun mode de vue serveur dédié nécessaire). */
 function PovOverlay({ token, roomId, playerId, nickname, onClose }: PovOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [disconnected, setDisconnected] = useState('');
@@ -221,16 +298,29 @@ function PovOverlay({ token, roomId, playerId, nickname, onClose }: PovOverlayPr
     });
 
     function frame(): void {
-      const ownPieces = latestEntities.filter((e) => e.p === playerId);
-      const camera: Camera =
-        ownPieces.length > 0
-          ? {
-              x: ownPieces.reduce((s, e) => s + e.x, 0) / ownPieces.length,
-              y: ownPieces.reduce((s, e) => s + e.y, 0) / ownPieces.length,
-              scale: POV_ZOOM,
-            }
-          : { x: 0, y: 0, scale: POV_ZOOM * 0.1 };
-      drawEntities(ctx!, latestEntities, camera, nicknames, colors, playerId);
+      let camera: Camera;
+      if (playerId) {
+        const ownPieces = latestEntities.filter((e) => e.p === playerId);
+        camera =
+          ownPieces.length > 0
+            ? {
+                x: ownPieces.reduce((s, e) => s + e.x, 0) / ownPieces.length,
+                y: ownPieces.reduce((s, e) => s + e.y, 0) / ownPieces.length,
+                scale: POV_ZOOM,
+              }
+            : { x: 7500, y: 7500, scale: 0.05 };
+      } else {
+        const allPlayerPieces = latestEntities.filter((e) => e.p !== undefined);
+        camera =
+          allPlayerPieces.length > 0
+            ? {
+                x: allPlayerPieces.reduce((s, e) => s + e.x, 0) / allPlayerPieces.length,
+                y: allPlayerPieces.reduce((s, e) => s + e.y, 0) / allPlayerPieces.length,
+                scale: 0.06,
+              }
+            : { x: 7500, y: 7500, scale: 0.05 };
+      }
+      drawEntities(ctx!, latestEntities, camera, nicknames, colors, playerId || undefined);
       raf = requestAnimationFrame(frame);
     }
     raf = requestAnimationFrame(frame);
@@ -245,9 +335,9 @@ function PovOverlay({ token, roomId, playerId, nickname, onClose }: PovOverlayPr
   return (
     <div className="pov-overlay">
       <div className="pov-header">
-        <span>POV — {nickname}</span>
+        <span>{nickname}</span>
         <button className="btn-ghost" type="button" onClick={onClose}>
-          Détacher
+          Fermer
         </button>
       </div>
       {disconnected && <p className="error-text">{disconnected}</p>}

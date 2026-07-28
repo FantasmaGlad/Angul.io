@@ -1,15 +1,59 @@
-import type { ClientMessage, ServerMessage } from '@angulio/shared';
+import {
+  WS_CLOSE_NICKNAME_TAKEN,
+  WS_CLOSE_ROOM_EXPIRED,
+  WS_CLOSE_ROOM_FULL,
+  WS_CLOSE_ROOM_NOT_FOUND,
+  type ClientMessage,
+  type ServerMessage,
+} from '@angulio/shared';
 
-/** Connexion WebSocket au serveur de jeu. Pas de reconnexion automatique pour le MVP
- * (plan Lot 1.3 : côté client, à ajouter avec le reste du polish réseau). */
+/** Codes de fermeture qu'il ne sert à rien de retenter (voir `GameConnection`, plan
+ * plan_performance_reseau.md §4.3/Phase 4.3) : soit un rejet applicatif délibéré du serveur
+ * (salon introuvable/complet/pseudo pris/expiré — retenter obtiendrait exactement le même refus),
+ * soit une fermeture normale (1000, celle que `close()` déclenche nous-mêmes). Tout le reste
+ * (1006 abnormal closure, 1001 going away, 1013 surcharge temporaire, coupure Wi-Fi...) est
+ * considéré transitoire et déclenche une reconnexion automatique. */
+const NON_RETRYABLE_CLOSE_CODES = new Set<number>([
+  1000,
+  WS_CLOSE_ROOM_NOT_FOUND,
+  WS_CLOSE_NICKNAME_TAKEN,
+  WS_CLOSE_ROOM_FULL,
+  WS_CLOSE_ROOM_EXPIRED,
+]);
+
+/** Délais (ms) entre tentatives successives, backoff court et plafonné — une micro-coupure
+ * Wi-Fi/4G ou un redémarrage serveur bref doit se rattraper en quelques secondes tout au plus,
+ * pas en boucle indéfinie qui masquerait un vrai problème. Au-delà, `onClose` est notifié comme
+ * avant (retour au lobby avec un message d'erreur, voir GameView.tsx). */
+const RECONNECT_DELAYS_MS = [300, 600, 1200, 2400, 4800];
+
+/** Connexion WebSocket au serveur de jeu, avec reconnexion automatique transparente sur coupure
+ * transitoire (voir `NON_RETRYABLE_CLOSE_CODES`/`RECONNECT_DELAYS_MS` ci-dessus). Ne restaure PAS
+ * l'état de jeu exact d'avant la coupure (aucune session ne survit côté serveur pour le socket de
+ * jeu lui-même, seulement pour le compte, voir `AccountsService`/`sessionStore.ts`) — une
+ * reconnexion réussie renvoie automatiquement le dernier message `join` envoyé (nouveau spawn),
+ * ce qui évite au joueur de se retrouver éjecté au lobby pour un simple aller-retour réseau raté,
+ * sans prétendre reprendre exactement là où la partie s'était arrêtée. */
 export class GameConnection {
-  private readonly socket: WebSocket;
+  private readonly url: string;
+  private socket: WebSocket;
   private readonly listeners: Array<(message: ServerMessage) => void> = [];
   private readonly closeListeners: Array<(event: CloseEvent) => void> = [];
+  /** Notifiés à chaque tentative de reconnexion programmée (pas à chaque succès) — purement
+   * informatif pour l'UI (voir GameView.tsx, statut "reconnexion en cours"). */
+  private readonly reconnectingListeners: Array<(attempt: number) => void> = [];
   /** Messages envoyés avant l'ouverture effective du socket (ex. le `join` initial, envoyé dès
    * la création de la connexion depuis le lobby, Lot 2.2) — mis en attente puis vidés à
    * l'ouverture plutôt que silencieusement perdus. */
   private readonly pendingMessages: ClientMessage[] = [];
+  /** Dernier `join` envoyé — rejoué automatiquement après une reconnexion réussie (voir
+   * `createSocket`), puisque le serveur ne conserve aucune session pour le socket de jeu
+   * lui-même : sans ce rejeu, une reconnexion transparente laisserait le joueur connecté mais
+   * jamais réellement dans la partie. */
+  private lastJoinMessage: ClientMessage | undefined;
+  private closedByUs = false;
+  private reconnectAttempt = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
   private lastRateCheckAt = performance.now();
   private bytesRecvWindow = 0;
@@ -21,23 +65,52 @@ export class GameConnection {
   public netInPktSec = 0;
 
   constructor(url: string) {
-    this.socket = new WebSocket(url);
-    this.socket.addEventListener('open', () => {
+    this.url = url;
+    this.socket = this.createSocket(false);
+  }
+
+  private createSocket(isReconnect: boolean): WebSocket {
+    const socket = new WebSocket(this.url);
+    socket.addEventListener('open', () => {
+      this.reconnectAttempt = 0;
       for (const message of this.pendingMessages) {
         const payload = JSON.stringify(message);
         this.recordOutgoing(payload);
-        this.socket.send(payload);
+        socket.send(payload);
       }
       this.pendingMessages.length = 0;
+
+      if (isReconnect && this.lastJoinMessage) {
+        const payload = JSON.stringify(this.lastJoinMessage);
+        this.recordOutgoing(payload);
+        socket.send(payload);
+      }
     });
-    this.socket.addEventListener('message', (event: MessageEvent<string>) => {
+    socket.addEventListener('message', (event: MessageEvent<string>) => {
       this.recordIncoming(event.data);
       const message = JSON.parse(event.data) as ServerMessage;
       for (const listener of this.listeners) listener(message);
     });
-    this.socket.addEventListener('close', (event: CloseEvent) => {
-      for (const listener of this.closeListeners) listener(event);
+    socket.addEventListener('close', (event: CloseEvent) => {
+      this.handleClose(event);
     });
+    return socket;
+  }
+
+  private handleClose(event: CloseEvent): void {
+    if (this.closedByUs) return;
+
+    if (!NON_RETRYABLE_CLOSE_CODES.has(event.code) && this.reconnectAttempt < RECONNECT_DELAYS_MS.length) {
+      const delay = RECONNECT_DELAYS_MS[this.reconnectAttempt]!;
+      this.reconnectAttempt += 1;
+      for (const listener of this.reconnectingListeners) listener(this.reconnectAttempt);
+      this.reconnectTimer = setTimeout(() => {
+        this.socket = this.createSocket(true);
+      }, delay);
+      return;
+    }
+
+    for (const listener of this.closeListeners) listener(event);
   }
 
   private recordIncoming(data: string) {
@@ -70,15 +143,25 @@ export class GameConnection {
     this.listeners.push(listener);
   }
 
-  /** Notifié à la fermeture de la connexion — utile pour détecter un salon introuvable ou un
-   * code d'invitation invalide (le serveur ferme alors immédiatement avec le code `4004`,
-   * voir net/server.ts) et ramener le joueur au lobby plutôt que de le laisser bloqué sur un
-   * écran de jeu qui ne recevra jamais rien. */
+  /** Notifié uniquement quand la connexion est définitivement perdue (rejet applicatif, ou
+   * reconnexion transitoire épuisée après `RECONNECT_DELAYS_MS` — voir `handleClose`) — jamais
+   * pour une coupure que la reconnexion automatique a fini par rattraper. Utile pour détecter un
+   * salon introuvable ou un code d'invitation invalide (le serveur ferme alors immédiatement avec
+   * le code `4004`, voir net/server.ts) et ramener le joueur au lobby plutôt que de le laisser
+   * bloqué sur un écran de jeu qui ne recevra jamais rien. */
   onClose(listener: (event: CloseEvent) => void): void {
     this.closeListeners.push(listener);
   }
 
+  /** Notifié à chaque tentative de reconnexion programmée après une coupure transitoire — sert
+   * uniquement à afficher un statut ("reconnexion en cours…", voir GameView.tsx), jamais consommé
+   * pour une décision de logique de jeu. */
+  onReconnecting(listener: (attempt: number) => void): void {
+    this.reconnectingListeners.push(listener);
+  }
+
   send(message: ClientMessage): void {
+    if (message.type === 'join') this.lastJoinMessage = message;
     const payload = JSON.stringify(message);
     this.recordOutgoing(payload);
     if (this.socket.readyState === WebSocket.OPEN) {
@@ -86,13 +169,19 @@ export class GameConnection {
     } else if (this.socket.readyState === WebSocket.CONNECTING) {
       this.pendingMessages.push(message);
     }
+    // CLOSING/CLOSED (fenêtre de backoff entre deux tentatives) : message perdu, comme avant ce
+    // module pour tout état hors CONNECTING/OPEN — sans conséquence pour `input`/`ping`, envoyés
+    // à nouveau au prochain tick/intervalle une fois reconnecté.
   }
 
   /** Ferme la connexion côté client — à appeler quand le composant qui la possède est démonté
    * (GameView.tsx) pour ne pas laisser un socket ouvert en arrière-plan (notamment le double
    * montage volontaire de React.StrictMode en développement, qui appellerait sinon deux fois la
-   * connexion sans jamais fermer la première). */
+   * connexion sans jamais fermer la première). Désactive aussi la reconnexion automatique : un
+   * démontage explicite n'est jamais une coupure transitoire à rattraper. */
   close(): void {
+    this.closedByUs = true;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.socket.close();
   }
 }

@@ -1,4 +1,4 @@
-import type { ServerMessage } from '@angulio/shared';
+import { DEFAULT_MOVEMENT_CONFIG, type MovementConfig, type ServerMessage } from '@angulio/shared';
 import { Room } from '../room.js';
 import type { ModResolver } from '../roomManager.js';
 import { SpatialHash } from '../spatialHash.js';
@@ -32,6 +32,10 @@ import type {
 export class RoomInstance {
   readonly id: string;
   readonly room: Room;
+  /** Voir `RoomHandle.movement` (roomHost.ts) — repli sur `DEFAULT_MOVEMENT_CONFIG` uniquement
+   * pour un `ModResolver` de test qui ne renseigne pas ce champ (jamais en production, voir
+   * `engine/modRegistry.ts`). */
+  readonly movement: MovementConfig;
   private readonly maxPlayers: number;
   private readonly interestRadiusPx: number;
   private readonly interestHash: SpatialHash;
@@ -57,7 +61,8 @@ export class RoomInstance {
     this.interestRadiusPx = interestRadiusPx;
     this.interestHash = new SpatialHash(interestRadiusPx);
 
-    const { mod, mapSize, kArea, bots } = resolveMod(spec.modId);
+    const { mod, mapSize, kArea, bots, movement } = resolveMod(spec.modId);
+    this.movement = movement ?? DEFAULT_MOVEMENT_CONFIG;
     const botConfig = bots ? { ...bots, enabled: spec.botsEnabled ?? bots.enabled } : undefined;
     this.room = new Room(mod, {
       mapSize,

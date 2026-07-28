@@ -19,6 +19,17 @@ import { RateLimiter } from '../rateLimiter.js';
 import { recordAccountStatsOnLeave, send, type RoomRuntime } from './broadcast.js';
 
 const MAX_NICKNAME_LENGTH = 20;
+/** Plafond de connexions `?spectate=1` par salon (fond animé de l'accueil,
+ * SpectatorBackground.tsx) — filet de sécurité pendant que la régulation de cadence/densité
+ * (SPECTATOR_TICK_DIVISOR/SPECTATOR_FOOD_SAMPLE_EVERY, voir snapshotBuilder.ts) absorbe la charge
+ * normale : au-delà, un visiteur d'accueil supplémentaire n'apporte rien (personne ne joue) et ne
+ * doit plus pouvoir dégrader la bande passante des salons réellement joués. Voir
+ * plan_performance_reseau.md §4.1/Phase 0.4. */
+const MAX_SPECTATORS_PER_ROOM = 60;
+/** Code de fermeture WebSocket applicatif "trop de spectateurs" — RFC 6455 1013 ("Try Again
+ * Later") : le client (fond décoratif, pas une session de jeu) n'a rien de spécifique à faire de
+ * ce code, contrairement aux codes 4xxx dédiés au joueur (voir WS_CLOSE_* de `@angulio/shared`). */
+const WS_CLOSE_TOO_MANY_SPECTATORS = 1013;
 /** Code de fermeture WebSocket applicatif pour un token admin absent/invalide sur `?admin=1` —
  * plage privée 4000-4999 (RFC 6455), comme les codes joueur de `@angulio/shared`, mais réservé au
  * canal admin (jamais transmis à un client joueur, pas de constante partagée nécessaire). */
@@ -78,6 +89,7 @@ export function handleWsConnection(
       playerId: adminViewerId,
       mapSize: managed.handle.mapSize,
       tickRateHz: roomManager.tickRateHz,
+      movement: managed.handle.movement,
     });
 
     socket.on('message', (raw: Buffer): void => {
@@ -114,6 +126,11 @@ export function handleWsConnection(
 
   // Mode spectateur (`?spectate=1`)
   if (requestUrl.searchParams.get('spectate') === '1') {
+    if (runtime.spectatorIds.size >= MAX_SPECTATORS_PER_ROOM) {
+      logEvent('spectator_rejected', { roomId: managed.id, reason: 'too_many_spectators' });
+      socket.close(WS_CLOSE_TOO_MANY_SPECTATORS, 'Trop de spectateurs sur ce salon.');
+      return;
+    }
     const spectatorId = `spec-${runtime.nextPlayerId++}`;
     runtime.sockets.set(spectatorId, socket);
     runtime.spectatorIds.add(spectatorId);
@@ -124,6 +141,7 @@ export function handleWsConnection(
       playerId: spectatorId,
       mapSize: managed.handle.mapSize,
       tickRateHz: roomManager.tickRateHz,
+      movement: managed.handle.movement,
     });
     socket.on('close', () => {
       runtime.sockets.delete(spectatorId);
@@ -202,6 +220,7 @@ export function handleWsConnection(
           playerId,
           mapSize: managed.handle.mapSize,
           tickRateHz: roomManager.tickRateHz,
+          movement: managed.handle.movement,
         });
 
         for (const existingPlayer of result.existingPlayers) {
@@ -233,6 +252,7 @@ export function handleWsConnection(
             playerId,
             mapSize: managed.handle.mapSize,
             tickRateHz: roomManager.tickRateHz,
+            movement: managed.handle.movement,
           });
         }
       }
@@ -285,6 +305,7 @@ export function handleWsConnection(
     runtime.joinedAtByPlayer.delete(leavingPlayerId);
     runtime.latencyByPlayer.delete(leavingPlayerId);
     runtime.nicknameByPlayer.delete(leavingPlayerId);
+    runtime.stateSkipStreakByPlayer.delete(leavingPlayerId);
 
     void (async () => {
       const result = await managed.handle.leave(leavingPlayerId);

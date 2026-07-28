@@ -1,3 +1,4 @@
+import type { MovementConfig } from './movement.js';
 import type { Vector2 } from './vector.js';
 
 /** 'f' = particule de nourriture, 'c' = morceau de joueur ("creature"). Codes courts : ce champ
@@ -75,6 +76,12 @@ export interface WelcomeMessage {
   /** Cadence réelle de la boucle de simulation (Hz) — pour l'écran de diagnostic F3, plutôt
    * qu'une valeur supposée côté client (voir server/src/index.ts `TICK_RATE_HZ`). */
   tickRateHz: number;
+  /** Modèle de mouvement du mode actif (vitesse/accélération en fonction de la masse, voir
+   * shared/src/movement.ts) — permet au client de prédire localement le déplacement de son
+   * propre blob avec exactement les mêmes formules que le serveur, sans attendre l'aller-retour
+   * réseau (client/src/prediction.ts, plan_performance_reseau.md Phase 1). Envoyé une fois par
+   * connexion (join/respawn), pas à chaque tick. */
+  movement: MovementConfig;
 }
 
 export interface LeaderboardEntry {

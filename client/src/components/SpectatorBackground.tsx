@@ -115,7 +115,7 @@ export default function SpectatorBackground({ roomId, zooming }: SpectatorBackgr
           if (canvas) stateRef.current.camera = computeFitCamera(message.mapSize, canvas);
           setIsSwitching(false);
         } else if (message.type === 'state') {
-          stateRef.current.renderEngine.pushSnapshot(message.entities, tickRateHz);
+          stateRef.current.renderEngine.pushSnapshot(message.entities, message.tick, tickRateHz);
         }
       });
     }, ROOM_SWITCH_DEBOUNCE_MS);

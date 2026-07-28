@@ -11,7 +11,7 @@ export default function BottomBar() {
       <button
         type="button"
         className="btn-ghost bottom-bar-support"
-        onClick={() => window.open('/soutenir', '_blank')}
+        onClick={() => navigate('/soutenir')}
       >
         Soutenir le Projet
       </button>

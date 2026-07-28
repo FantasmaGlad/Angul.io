@@ -12,7 +12,6 @@ import {
   updateDeathScreen,
   type AccountProfile,
 } from '../auth.js';
-import FpsModeSelector from '../components/FpsModeSelector.js';
 import { modeMeta } from '../modes.js';
 import { navigate } from '../router.js';
 import PageLayout from './PageLayout.js';
@@ -21,6 +20,19 @@ interface ProfilePageProps {
   authToken: string | undefined;
   onAvatarColorChange: (color: string) => void;
   currentSkin?: string;
+}
+
+function calculateXpProgress(totalXp: number) {
+  let level = 1;
+  let remaining = Math.max(0, totalXp);
+  let cost = 1000;
+  while (remaining >= cost && level < 1000) {
+    remaining -= cost;
+    level += 1;
+    cost = Math.round(cost * 1.2 - 150);
+  }
+  const pct = Math.min(100, Math.max(0, Math.floor((remaining / cost) * 100)));
+  return { level, currentXpInLevel: remaining, costForNextLevel: cost, pct };
 }
 
 export default function ProfilePage({ authToken, onAvatarColorChange, currentSkin }: ProfilePageProps) {
@@ -101,6 +113,7 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
   };
 
   const previewBanner = deathBannerById(deathBannerDraft || 'default_skull');
+  const xpProg = profile ? calculateXpProgress(profile.xp) : null;
 
   return (
     <PageLayout title="Profil">
@@ -124,8 +137,6 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
           ))}
         </div>
       </section>
-
-      <FpsModeSelector />
 
       {!authToken && (
         <section className="lobby-section">
@@ -158,12 +169,27 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
             </div>
           </section>
 
+          {xpProg && (
+            <div className="xp-progress-card">
+              <div className="xp-progress-header">
+                <span>Niveau {xpProg.level}</span>
+                <span>{xpProg.pct}%</span>
+              </div>
+              <div className="xp-progress-track">
+                <div className="xp-progress-fill" style={{ width: `${xpProg.pct}%` }} />
+              </div>
+              <span className="xp-progress-text">
+                {xpProg.currentXpInLevel} / {xpProg.costForNextLevel} XP ({profile.xp} XP total)
+              </span>
+            </div>
+          )}
+
           <div className="stat-row">
             <span className="stat-label">Niveau</span>
             <span className="stat-value">{profile.level}</span>
           </div>
           <div className="stat-row">
-            <span className="stat-label">XP</span>
+            <span className="stat-label">XP Total</span>
             <span className="stat-value">{profile.xp}</span>
           </div>
           <div className="stat-row">
@@ -213,6 +239,9 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
                     disabled={locked}
                     onClick={() => setDeathBannerDraft(banner.id)}
                   >
+                    <span className="material-symbols-outlined" style={{ fontSize: '24px', marginRight: '6px', verticalAlign: 'middle' }}>
+                      {banner.icon}
+                    </span>
                     <span className="death-banner-label">{banner.label}</span>
                     {locked && (
                       <span className="death-banner-lock-badge">Niveau {banner.unlockLevel}</span>
@@ -232,6 +261,9 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
                   background: `linear-gradient(135deg, ${previewBanner.gradient[0]}, ${previewBanner.gradient[1]})`,
                 }}
               >
+                <span className="material-symbols-outlined" style={{ fontSize: '28px', display: 'block', marginBottom: '6px' }}>
+                  {previewBanner.icon}
+                </span>
                 <span>VOUS ÊTES MORT !</span>
               </div>
               <p className="death-preview-message">

@@ -7,20 +7,39 @@ export interface SnapshotItem {
   entities: EntitySnapshot[];
 }
 
+/** Fenêtre maximale (ms) d'extrapolation par vélocité déduite au-delà du dernier snapshot connu
+ * (voir `getInterpolatedEntities`) — au-delà, le décrochage réseau est trop long pour qu'une
+ * vélocité déduite de deux points déjà anciens reste représentative ; mieux vaut alors rester
+ * proche du dernier point connu que de continuer à extrapoler à l'aveugle. Voir
+ * plan_performance_reseau.md §4.3/Phase 4.2. */
+const MAX_EXTRAPOLATION_MS = 250;
+
 export class RenderEngine {
   public snapshotQueue: SnapshotItem[] = [];
   public clientRenderTime = 0;
   public serverTickRateHz = 30;
+  /** Nombre cumulé de ticks serveur jamais reçus (message `state` manquant entre deux `tick`
+   * consécutifs) depuis le dernier `reset()` — pur diagnostic (écran F3), incrémenté par
+   * `pushSnapshot`. Un décrochage réseau (drop de bufferedAmount côté serveur, coupure Wi-Fi...)
+   * s'y reflète directement. */
+  public missedTickCount = 0;
+  private lastKnownTick: number | undefined;
 
   public reset(): void {
     this.snapshotQueue = [];
     this.clientRenderTime = 0;
+    this.missedTickCount = 0;
+    this.lastKnownTick = undefined;
   }
 
-  public pushSnapshot(entities: EntitySnapshot[], serverTickRateHz?: number): void {
+  public pushSnapshot(entities: EntitySnapshot[], tick: number, serverTickRateHz?: number): void {
     if (serverTickRateHz && serverTickRateHz > 0) {
       this.serverTickRateHz = serverTickRateHz;
     }
+    if (this.lastKnownTick !== undefined && tick > this.lastKnownTick + 1) {
+      this.missedTickCount += tick - this.lastKnownTick - 1;
+    }
+    this.lastKnownTick = tick;
     const now = performance.now();
     this.snapshotQueue.push({ time: now, entities });
     if (this.snapshotQueue.length > 20) {
@@ -71,7 +90,15 @@ export class RenderEngine {
 
     let t = 0;
     if (snapA && snapB && snapB.time > snapA.time) {
-      t = clamp((renderTime - snapA.time) / (snapB.time - snapA.time), 0, 1.0);
+      const intervalMs = snapB.time - snapA.time;
+      // Au-delà de t=1 (buffer à sec, aucun nouveau snapshot depuis `snapB`) : extrapoler
+      // linéairement au-delà du dernier point connu (déduit de son propre delta avec le
+      // précédent) plutôt que geler net puis sauter d'un coup au prochain snapshot reçu — c'est
+      // exactement le "arrêt puis saut" ressenti comme un petit lag/avant-arrière. Plafonné à
+      // MAX_EXTRAPOLATION_MS d'extrapolation pour ne pas dériver indéfiniment sur une coupure
+      // longue (voir son commentaire).
+      const maxT = 1 + MAX_EXTRAPOLATION_MS / intervalMs;
+      t = clamp((renderTime - snapA.time) / intervalMs, 0, maxT);
     }
 
     const fromEntities = snapA ? snapA.entities : (this.snapshotQueue[0]?.entities ?? []);

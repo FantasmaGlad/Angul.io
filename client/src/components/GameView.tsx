@@ -127,6 +127,7 @@ export default function GameView({
   const [playerPos, setPlayerPos] = useState<{ x: number; y: number } | undefined>(undefined);
   const [playerMass, setPlayerMass] = useState<number | undefined>(undefined);
   const [mapSizeState, setMapSizeState] = useState<number>(15000);
+  const [showQuitConfirm, setShowQuitConfirm] = useState(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -224,7 +225,7 @@ export default function GameView({
         previousSnapshot = latestSnapshot;
         latestSnapshot = message.entities;
         latestSnapshotAt = performance.now();
-        renderEngine.pushSnapshot(message.entities, serverTickRateHz);
+        renderEngine.pushSnapshot(message.entities, serverTickRateHz ?? 20);
         serverTpsCurrent = tickRateTracker.record(latestSnapshotAt);
         if (message.leaderboard) {
           setLeaderboard(message.leaderboard);
@@ -318,6 +319,11 @@ export default function GameView({
       if (event.key === ' ' && isDeadNow) {
         event.preventDefault();
         respawn();
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setShowQuitConfirm((prev) => !prev);
         return;
       }
       if (event.key !== 'F3') return;
@@ -511,11 +517,28 @@ export default function GameView({
             </span>
           </div>
         </div>
-        <button type="button" className="hud-quit-button" onClick={() => onExit()}>
+        <button type="button" className="hud-quit-button" onClick={() => setShowQuitConfirm(true)}>
           Quitter
         </button>
         <div className="hud-status" ref={hudRef} />
       </div>
+
+      {showQuitConfirm && (
+        <div className="death-overlay" style={{ zIndex: 200 }}>
+          <div className="death-modal">
+            <h2>Quitter la partie ?</h2>
+            <p className="death-killer">Voulez-vous vraiment abandonner la partie en cours ?</p>
+            <div className="death-actions" style={{ flexDirection: 'row', justifyContent: 'center' }}>
+              <button className="btn-secondary-action" type="button" onClick={() => setShowQuitConfirm(false)}>
+                Annuler
+              </button>
+              <button className="btn-primary-action" type="button" onClick={() => onExit()}>
+                Quitter
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Top 10 Live Leaderboard */}
       <div className="leaderboard-overlay">
@@ -555,7 +578,7 @@ export default function GameView({
                 background: `linear-gradient(135deg, ${deathBannerById(deathState.customCard.bannerId).gradient[0]}, ${deathBannerById(deathState.customCard.bannerId).gradient[1]})`,
               }}
             >
-              <span className="death-banner-icon">
+              <span className="material-symbols-outlined" style={{ fontSize: '28px', display: 'block', marginBottom: '6px' }}>
                 {deathBannerById(deathState.customCard.bannerId).icon}
               </span>
               <p className="death-banner-message">"{deathState.customCard.message}"</p>

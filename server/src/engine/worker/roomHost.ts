@@ -1,3 +1,4 @@
+import type { MovementConfig } from '@angulio/shared';
 import { resolveMod as defaultResolveMod } from '../modRegistry.js';
 import type { Room } from '../room.js';
 import type { ModResolver } from '../roomManager.js';
@@ -32,6 +33,11 @@ export interface RoomHandle {
    * besoin immédiatement pour le message `welcome` (connectionHandler.ts), avant même qu'un
    * salon hébergé par un worker n'ait eu le temps de démarrer sa simulation. */
   readonly mapSize: number;
+  /** Sous-ensemble du modèle de mouvement du mod actif, transmis au client dans `welcome.movement`
+   * pour la prédiction locale (client/src/prediction.ts, plan_performance_reseau.md Phase 1) —
+   * connue synchroniquement dès la création comme `mapSize`, pour la même raison (message
+   * `welcome`, avant même qu'un salon hébergé par un worker n'ait démarré sa simulation). */
+  readonly movement: MovementConfig;
   /** Uniquement peuplé par `LocalRoomHost` (même process) — permet aux tests existants de
    * continuer à manipuler `Room` directement (tick manuel, lecture de `.world`) sans changement
    * tant que `ROOM_WORKERS` reste à 0 (comportement par défaut, voir index.ts). Toujours
@@ -66,6 +72,7 @@ export interface RoomHost {
 class LocalRoomHandle implements RoomHandle {
   readonly id: string;
   readonly mapSize: number;
+  readonly movement: MovementConfig;
   readonly localRoom: Room;
   private readonly instance: RoomInstance;
 
@@ -74,6 +81,7 @@ class LocalRoomHandle implements RoomHandle {
     this.id = instance.id;
     this.localRoom = instance.room;
     this.mapSize = instance.room.world.mapSize;
+    this.movement = instance.movement;
   }
 
   join(nickname: string, skin?: string): Promise<JoinResult> {

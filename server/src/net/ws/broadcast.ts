@@ -39,6 +39,10 @@ export interface RoomRuntime {
   /** Pseudo courant par joueur — nécessaire à la vue admin "Salons & Écrans" (§3.3), qui n'a pas
    * accès à `Room`/`World` pour un salon hébergé par un worker (voir `WorkerRoomHost`). */
   nicknameByPlayer: Map<PlayerId, string>;
+  /** Compteur de ticks consécutifs passés en dégradation douce par joueur (voir
+   * `admitStateFrame`) — sert uniquement à alterner "envoie/saute" un tick sur deux tant que la
+   * socket reste encombrée ; absent d'un joueur = pas actuellement dégradé. */
+  stateSkipStreakByPlayer: Map<PlayerId, number>;
 }
 
 /** Relaie les événements d'un salon (`RoomHandle`, voir engine/worker/roomHost.ts) vers les
@@ -60,6 +64,7 @@ export function wireRoom(
     joinedAtByPlayer: new Map(),
     latencyByPlayer: new Map(),
     nicknameByPlayer: new Map(),
+    stateSkipStreakByPlayer: new Map(),
   };
   runtimes.set(managed.id, runtime);
 
@@ -76,15 +81,16 @@ export function wireRoom(
     let cachedSpectatorJson: string | undefined;
     for (const { playerId, message } of payloads) {
       const socket = runtime.sockets.get(playerId);
-      if (socket) {
-        if (runtime.spectatorIds.has(playerId)) {
-          if (cachedSpectatorJson === undefined) {
-            cachedSpectatorJson = JSON.stringify(message);
-          }
-          sendRaw(socket, cachedSpectatorJson);
-        } else {
-          send(socket, message);
+      if (!socket) continue;
+      if (!admitStateFrame(playerId, socket, runtime.stateSkipStreakByPlayer)) continue;
+
+      if (runtime.spectatorIds.has(playerId)) {
+        if (cachedSpectatorJson === undefined) {
+          cachedSpectatorJson = JSON.stringify(message);
         }
+        sendRaw(socket, cachedSpectatorJson);
+      } else {
+        send(socket, message);
       }
     }
   });
@@ -165,8 +171,43 @@ export function recordAccountStatsOnLeave(
     });
 }
 
-/** Seuil maximal de données accumulées dans le buffer de la socket avant de sauter un envoi (64 Ko). */
+/** Seuil maximal de données accumulées dans le buffer de la socket avant de sauter un envoi (64 Ko)
+ * — au-delà, le client n'absorbe déjà pas ce qu'il a reçu, inutile de continuer à lui envoyer des
+ * ticks qu'il ne pourra pas afficher à temps. */
 const MAX_BUFFERED_AMOUNT = 65536;
+/** Seuil "encombrement naissant" (16 Ko, un quart du seuil dur ci-dessus) à partir duquel un
+ * client précis voit sa cadence réduite de moitié PLUTÔT que de basculer d'un coup de "tout
+ * reçoit" à "plus rien ne passe" en franchissant `MAX_BUFFERED_AMOUNT` — dégradation progressive
+ * au lieu d'un drop silencieux brutal (voir plan_performance_reseau.md §4.3/Phase 4.1 : cause
+ * probable des "petits sauts/avant-arrières" sur une connexion imparfaite, le client se
+ * retrouvant à interpoler entre deux snapshots séparés par un grand trou de temps serveur). Ne
+ * s'applique qu'au flux `state` (voir `admitStateFrame`, seul appelant) — jamais aux messages
+ * rares et importants (`died`, `player`, `announcement`...), qui continuent de passer par `send`
+ * directement sans dégradation. */
+const SOFT_BUFFERED_AMOUNT = 16384;
+
+/** Décide si le `state` de ce tick doit être envoyé à `playerId` — `true` en dessous du seuil
+ * doux, un tick sur deux entre les deux seuils (dégradation progressive), jamais au-dessus du
+ * seuil dur (comportement historique, voir `MAX_BUFFERED_AMOUNT`). `streaks` vit sur le
+ * `RoomRuntime` de l'appelant, une entrée par joueur actuellement en dégradation. */
+export function admitStateFrame(
+  playerId: PlayerId,
+  socket: WebSocket,
+  streaks: Map<PlayerId, number>,
+): boolean {
+  if (socket.readyState !== socket.OPEN) return false;
+  const buffered = socket.bufferedAmount;
+  if (buffered > MAX_BUFFERED_AMOUNT) return false;
+
+  if (buffered <= SOFT_BUFFERED_AMOUNT) {
+    if (streaks.has(playerId)) streaks.delete(playerId);
+    return true;
+  }
+
+  const streak = (streaks.get(playerId) ?? 0) + 1;
+  streaks.set(playerId, streak);
+  return streak % 2 === 0;
+}
 
 export function sendRaw(socket: WebSocket, jsonString: string): void {
   if (socket.readyState === socket.OPEN && socket.bufferedAmount <= MAX_BUFFERED_AMOUNT) {

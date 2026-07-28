@@ -1,18 +1,29 @@
+import {
+  accelerationForMass as sharedAccelerationForMass,
+  velocityForMass as sharedVelocityForMass,
+  type MovementConfig,
+} from '@angulio/shared';
 import type { ParametricModConfig } from './config.js';
 
-/** v(m) = MAX(Vfloor, V0·kv·(M0/m)^gamma) — feuille Excel, dictionnaire des variables. */
+/** Traduit la config paramétrique complète vers le sous-ensemble minimal transmis au client
+ * (voir `WelcomeMessage.movement`, protocol.ts) — un seul point de vérité pour ce mapping,
+ * réutilisé par `connectionHandler.ts` au moment du `welcome`. */
+export function toMovementConfig(config: ParametricModConfig): MovementConfig {
+  return { ...config.physics, startMass: config.player.startMass };
+}
+
+/** v(m) = MAX(Vfloor, V0·kv·(M0/m)^gamma) — feuille Excel, dictionnaire des variables. Délègue à
+ * `@angulio/shared` (voir shared/src/movement.ts) : la même formule pure doit rester identique
+ * côté client (prédiction locale, client/src/prediction.ts) et côté serveur (autorité). */
 export function velocityForMass(mass: number, config: ParametricModConfig): number {
-  const { v0, speedMultiplier, speedMassExponent, velocityFloor } = config.physics;
-  const raw = v0 * speedMultiplier * Math.pow(config.player.startMass / mass, speedMassExponent);
-  return Math.max(velocityFloor, raw);
+  return sharedVelocityForMass(mass, toMovementConfig(config));
 }
 
 /** a(m) = A0·(M0/m)^alpha — taux de rapprochement (px/s²) vers la vitesse cible, pas une
  * vitesse instantanée : remplace l'ancien mécanisme de "boost" de split ad hoc (metriques.md
  * v0.1 §4) par un seul modèle générique valable pour tout le mouvement. */
 export function accelerationForMass(mass: number, config: ParametricModConfig): number {
-  const { accelerationBase, accelerationMassExponent } = config.physics;
-  return accelerationBase * Math.pow(config.player.startMass / mass, accelerationMassExponent);
+  return sharedAccelerationForMass(mass, toMovementConfig(config));
 }
 
 function decayLambda(mass: number, config: ParametricModConfig, timeSinceLastEatenS = 10): number {

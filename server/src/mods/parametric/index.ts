@@ -70,9 +70,33 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     return candidate;
   }
 
+  function isNearBigPlayerPiece(world: World, pos: Vector2, safeDistance: number = 150): boolean {
+    for (const entity of world.allEntities()) {
+      if (entity.kind === 'piece') {
+        const dist = distance(pos, entity.position);
+        if (dist < entity.radius + safeDistance) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function randomSafePlayerPosition(world: World, margin: number): Vector2 {
+    const MAX_ATTEMPTS = 25;
+    let candidate = randomPositionInMap(margin);
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      if (!isNearBigPlayerPiece(world, candidate, 150)) {
+        return candidate;
+      }
+      candidate = randomPositionInMap(margin);
+    }
+    return candidate;
+  }
+
   function spawnPlayerPiece(world: World, playerId: PlayerId): void {
     const margin = Math.sqrt((config.areaConstant * config.player.startMass) / 3);
-    world.spawnPiece(playerId, randomPositionInMap(margin), config.player.startMass);
+    world.spawnPiece(playerId, randomSafePlayerPosition(world, margin), config.player.startMass);
   }
 
   /**

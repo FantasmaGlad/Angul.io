@@ -1,4 +1,5 @@
 import { Worker } from 'node:worker_threads';
+import { DEFAULT_MOVEMENT_CONFIG, type MovementConfig } from '@angulio/shared';
 import { resolveMod } from '../modRegistry.js';
 import type { PlayerId, PlayerInput } from '../types.js';
 import { logEvent } from '../../log.js';
@@ -33,6 +34,7 @@ interface WorkerEntry {
 class WorkerRoomHandle implements RoomHandle {
   readonly id: string;
   readonly mapSize: number;
+  readonly movement: MovementConfig;
   readonly localRoom = undefined;
 
   private readonly tickListeners: Array<
@@ -45,6 +47,7 @@ class WorkerRoomHandle implements RoomHandle {
   constructor(
     id: string,
     mapSize: number,
+    movement: MovementConfig,
     private readonly worker: Worker,
     private readonly nextReqId: () => number,
     private readonly pending: Map<number, PendingRequest>,
@@ -52,6 +55,7 @@ class WorkerRoomHandle implements RoomHandle {
   ) {
     this.id = id;
     this.mapSize = mapSize;
+    this.movement = movement;
   }
 
   private post(command: RoomCommand): void {
@@ -233,15 +237,17 @@ export function createWorkerRoomHost(
       const entry = workers[workerIndex]!;
       entry.roomCount += 1;
 
-      // Résolution redondante mais volontaire (voir RoomHandle.mapSize) : seulement pour
-      // connaître `mapSize` synchroniquement sur le thread principal (nécessaire au message
-      // `welcome`, voir connectionHandler.ts) sans attendre un aller-retour avec le worker, qui
-      // résout le mod une seconde fois de son côté pour la simulation elle-même (roomWorker.ts).
-      const { mapSize } = resolveMod(spec.modId);
+      // Résolution redondante mais volontaire (voir RoomHandle.mapSize/movement) : seulement pour
+      // connaître `mapSize`/`movement` synchroniquement sur le thread principal (nécessaire au
+      // message `welcome`, voir connectionHandler.ts) sans attendre un aller-retour avec le
+      // worker, qui résout le mod une seconde fois de son côté pour la simulation elle-même
+      // (roomWorker.ts).
+      const { mapSize, movement } = resolveMod(spec.modId);
 
       const handle = new WorkerRoomHandle(
         spec.id,
         mapSize,
+        movement ?? DEFAULT_MOVEMENT_CONFIG,
         entry.worker,
         nextReqId,
         pending,

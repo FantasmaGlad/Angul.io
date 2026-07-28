@@ -29,19 +29,19 @@ export default function TopNav({ accountActive, pseudo, level, avatarColor }: To
       </button>
 
       <nav className="top-nav-links">
-        <button type="button" onClick={() => window.open('/classement', '_blank')}>
+        <button type="button" onClick={() => navigate('/classement')}>
           <span className="material-symbols-outlined nav-icon" style={{ fontSize: '18px', verticalAlign: 'middle', marginRight: '4px' }}>leaderboard</span>
           Classement
         </button>
-        <button type="button" onClick={() => window.open('/wiki', '_blank')}>
+        <button type="button" onClick={() => navigate('/wiki')}>
           <span className="material-symbols-outlined nav-icon" style={{ fontSize: '18px', verticalAlign: 'middle', marginRight: '4px' }}>help_outline</span>
           Wiki
         </button>
-        <button type="button" onClick={() => window.open('/a-propos', '_blank')}>
+        <button type="button" onClick={() => navigate('/a-propos')}>
           <span className="material-symbols-outlined nav-icon" style={{ fontSize: '18px', verticalAlign: 'middle', marginRight: '4px' }}>info</span>
           À Propos
         </button>
-        <button type="button" onClick={() => window.open('/parametres', '_blank')}>
+        <button type="button" onClick={() => navigate('/parametres')}>
           <span className="material-symbols-outlined nav-icon" style={{ fontSize: '18px', verticalAlign: 'middle', marginRight: '4px' }}>settings</span>
           Réglages
         </button>
@@ -50,8 +50,8 @@ export default function TopNav({ accountActive, pseudo, level, avatarColor }: To
       <button
         type="button"
         className="account-cluster"
-        onClick={() => window.open('/profil', '_blank')}
-        aria-label={accountActive ? `Profil : ${pseudo}` : 'Profil et skins'}
+        onClick={() => navigate(accountActive ? '/profil' : '/compte')}
+        aria-label={accountActive ? `Profil : ${pseudo}` : 'Connexion / Créer un compte'}
       >
         <span className="account-avatar-badge" aria-hidden="true">
           {skinUrl ? (

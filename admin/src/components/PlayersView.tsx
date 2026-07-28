@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { DEATH_BANNERS, SKIN_IMAGE_MAP, SKINS } from '@angulio/shared';
 import {
   getAccount,
   resetBestScore,
@@ -16,8 +17,15 @@ interface PlayersViewProps {
 
 const PAGE_SIZE = 20;
 
-/** Onglet "Joueurs" (§3.1-3.2 cahier_des_charges_admin.md) — recherche/filtres/tri paginés,
- * édition complète d'un compte (droit de lecture/écriture total). */
+function generateRandomPassword(): string {
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%';
+  let res = '';
+  for (let i = 0; i < 12; i++) {
+    res += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return res;
+}
+
 export default function PlayersView({ token, onAuthError }: PlayersViewProps) {
   const [q, setQ] = useState('');
   const [ip, setIp] = useState('');
@@ -42,6 +50,7 @@ export default function PlayersView({ token, onAuthError }: PlayersViewProps) {
   const [deathBannerId, setDeathBannerId] = useState('');
   const [cosmetics, setCosmetics] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [detailError, setDetailError] = useState('');
   const [detailStatus, setDetailStatus] = useState('');
 
@@ -70,8 +79,6 @@ export default function PlayersView({ token, onAuthError }: PlayersViewProps) {
     })();
   };
 
-  // Liste chargée dès l'ouverture de l'onglet (§3.1 : "pratique pour parcourir la base") —
-  // plutôt que d'attendre un premier clic sur "Rechercher".
   useEffect(() => {
     runSearch(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -243,9 +250,17 @@ export default function PlayersView({ token, onAuthError }: PlayersViewProps) {
                   <td>{account.xp}</td>
                   <td>{account.bestScore ?? '—'}</td>
                   <td>
-                    {[account.premium ? 'Premium' : '', account.banned ? 'Banni' : '']
-                      .filter(Boolean)
-                      .join(' · ') || '—'}
+                    {account.banned && (
+                      <span className="badge" style={{ background: '#ef4444', color: '#fff', marginRight: 4 }}>
+                        Banni
+                      </span>
+                    )}
+                    {account.premium && (
+                      <span className="badge" style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: '#fff' }}>
+                        Premium
+                      </span>
+                    )}
+                    {!account.banned && !account.premium && <span className="badge">Standard</span>}
                   </td>
                   <td>
                     {account.lastLoginAt ? new Date(account.lastLoginAt).toLocaleString() : 'Jamais'}
@@ -282,8 +297,10 @@ export default function PlayersView({ token, onAuthError }: PlayersViewProps) {
 
       {detail && (
         <section className="panel">
-          <h2 style={{ fontSize: 16 }}>
+          <h2 style={{ fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
             {detail.pseudo} (#{detail.id})
+            {detail.banned && <span className="badge" style={{ background: '#ef4444', color: '#fff' }}>Banni</span>}
+            {detail.premium && <span className="badge" style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: '#fff' }}>Premium</span>}
           </h2>
 
           <div className="field-grid">
@@ -293,13 +310,37 @@ export default function PlayersView({ token, onAuthError }: PlayersViewProps) {
             </div>
             <div>
               <label htmlFor="detail-newpass">Nouveau mot de passe</label>
-              <input
-                id="detail-newpass"
-                type="text"
-                placeholder="Laisser vide pour ne pas changer"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-              />
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  id="detail-newpass"
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="Laisser vide pour conserver"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  style={{ flex: 1 }}
+                />
+                <button
+                  className="btn-ghost"
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  title={showPassword ? 'Masquer' : 'Afficher'}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+                    {showPassword ? 'visibility_off' : 'visibility'}
+                  </span>
+                </button>
+                <button
+                  className="btn-ghost"
+                  type="button"
+                  onClick={() => {
+                    setNewPassword(generateRandomPassword());
+                    setShowPassword(true);
+                  }}
+                  title="Générer un mot de passe aléatoire"
+                >
+                  Générer
+                </button>
+              </div>
             </div>
             <div>
               <label htmlFor="detail-level">Niveau</label>
@@ -324,21 +365,44 @@ export default function PlayersView({ token, onAuthError }: PlayersViewProps) {
               />
             </div>
             <div>
-              <label htmlFor="detail-avatar">Couleur d'avatar</label>
-              <input
-                id="detail-avatar"
-                placeholder="#rrggbb"
-                value={avatarColor}
-                onChange={(e) => setAvatarColor(e.target.value)}
-              />
+              <label htmlFor="detail-avatar">Skin / Avatar</label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {SKIN_IMAGE_MAP[avatarColor] && (
+                  <img
+                    src={SKIN_IMAGE_MAP[avatarColor]}
+                    alt={avatarColor}
+                    style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', background: '#333' }}
+                  />
+                )}
+                <select
+                  id="detail-avatar"
+                  value={avatarColor}
+                  onChange={(e) => setAvatarColor(e.target.value)}
+                  style={{ flex: 1, padding: 6 }}
+                >
+                  <option value="">Par défaut</option>
+                  {SKINS.map((skin) => (
+                    <option key={skin} value={skin}>
+                      {skin}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div>
               <label htmlFor="detail-banner">Bannière de mort</label>
-              <input
+              <select
                 id="detail-banner"
                 value={deathBannerId}
                 onChange={(e) => setDeathBannerId(e.target.value)}
-              />
+                style={{ width: '100%', padding: 6 }}
+              >
+                {DEATH_BANNERS.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.label} (Niveau {b.unlockLevel})
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 

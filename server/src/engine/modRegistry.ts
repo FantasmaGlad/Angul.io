@@ -3,6 +3,7 @@ import { createHardcoreMod } from '../mods/hardcore/index.js';
 import { createParametricMod } from '../mods/parametric/index.js';
 import type { ParametricModConfig } from '../mods/parametric/config.js';
 import { listAvailableModIds, loadModConfig } from '../mods/parametric/loadConfig.js';
+import { toMovementConfig } from '../mods/parametric/physics.js';
 import type { ModResolver } from './roomManager.js';
 
 /** Modes aux mécaniques structurellement nouvelles (Lot 4) — leur fichier de config reste au
@@ -28,6 +29,11 @@ export const resolveMod: ModResolver = (modId) => {
     mapSize: config.arena.width,
     kArea: config.areaConstant,
     bots: config.bots,
+    // Sous-ensemble minimal du modèle de mouvement, transmis au client via `welcome.movement`
+    // pour la prédiction locale (voir client/src/prediction.ts) — valable pour tout mod construit
+    // sur `ParametricModConfig` (parametric ET hardcore, qui hérite du mouvement du mod
+    // paramétrique sous-jacent sans le modifier, voir mods/hardcore/index.ts).
+    movement: toMovementConfig(config),
   };
 };
 

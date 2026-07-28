@@ -1,4 +1,5 @@
 import { randomInt } from 'node:crypto';
+import type { MovementConfig } from '@angulio/shared';
 import { logEvent } from '../log.js';
 import type { GameMod } from './mod.js';
 import type { Room } from './room.js';
@@ -19,6 +20,12 @@ export type ModResolver = (modId: string) => {
   mapSize: number;
   kArea?: number;
   bots?: BotConfig;
+  /** Sous-ensemble minimal du modèle de mouvement du mod (voir shared/src/movement.ts) — transmis
+   * au client dans `welcome.movement` pour la prédiction locale (client/src/prediction.ts).
+   * Optionnel ici (contrairement à `RoomHandle.movement`, toujours renseigné) pour ne pas casser
+   * les résolveurs factices des tests existants (roomManager.test.ts/server.test.ts) qui ne s'en
+   * servent pas — `DEFAULT_MOVEMENT_CONFIG` comble l'absence, voir roomHost.ts/workerRoomHost.ts. */
+  movement?: MovementConfig;
 };
 
 export interface CreateRoomOptions {

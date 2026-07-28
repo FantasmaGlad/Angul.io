@@ -3,9 +3,8 @@
  *
  * Règle de ce fichier (corrige un bug où l'écran affichait des valeurs inventées en repli) :
  * chaque métrique affichée doit être une mesure réelle. Une métrique non mesurable dans cette
- * architecture (ex. pas de Web Workers, pas de pipeline WebGL pour le rendu, pas de prédiction
- * client à réconcilier, pas de masse éjectée dans la simulation) est omise plutôt que remplacée
- * par un nombre plausible. */
+ * architecture (ex. pas de Web Workers, pas de pipeline WebGL pour le rendu, pas de masse éjectée
+ * dans la simulation) est omise plutôt que remplacée par un nombre plausible. */
 
 export interface FrameStats {
   fps: number;
@@ -208,6 +207,10 @@ export interface NetworkSyncInfo {
   netOutKbps?: number;
   interpBufferMs?: number;
   interpSnapshots?: number;
+  /** Ticks serveur jamais reçus depuis la connexion (voir RenderEngine.missedTickCount) — signale
+   * un décrochage réseau (drop de bufferedAmount côté serveur, Wi-Fi instable...) même quand
+   * l'extrapolation locale masque le trou visuellement. */
+  missedTicks?: number;
 }
 
 export interface HardwareInfo {
@@ -327,6 +330,9 @@ export function formatDebugText(snapshot: DebugSnapshot): string {
       `Interp Buffer: ${snapshot.networkSync.interpBufferMs} ms ` +
         `(${snapshot.networkSync.interpSnapshots ?? 1} snapshots)`,
     );
+  }
+  if (snapshot.networkSync?.missedTicks !== undefined) {
+    lines.push(`Missed Ticks: ${snapshot.networkSync.missedTicks}`);
   }
   lines.push('');
 

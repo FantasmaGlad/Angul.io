@@ -34,6 +34,7 @@ export default function CreativeView({ token, onAuthError }: CreativeViewProps) 
   const [broadcastText, setBroadcastText] = useState('');
   const [broadcastColor, setBroadcastColor] = useState('#ffffff');
   const [broadcastGlobal, setBroadcastGlobal] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   const socketRef = useRef<AdminSocketHandle | null>(null);
   const godPlayerIdRef = useRef<string | undefined>(undefined);
@@ -328,7 +329,7 @@ export default function CreativeView({ token, onAuthError }: CreativeViewProps) 
         <button
           className="btn-ghost btn-danger"
           type="button"
-          onClick={() => runAction({ kind: 'reset' })}
+          onClick={() => setShowResetConfirm(true)}
         >
           Reset salon
         </button>
@@ -417,6 +418,44 @@ export default function CreativeView({ token, onAuthError }: CreativeViewProps) 
             </button>
           </div>
         </>
+      )}
+      {showResetConfirm && (
+        <div className="context-menu-backdrop" style={{ zIndex: 150 }} onClick={() => setShowResetConfirm(false)}>
+          <div
+            className="panel"
+            style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              zIndex: 151,
+              width: 360,
+              maxWidth: '90vw',
+              padding: 24,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ fontSize: 16, marginBottom: 8 }}>Réinitialiser le salon ?</h3>
+            <p className="view-subtitle" style={{ marginBottom: 16 }}>
+              Attention : toutes les entités et morceaux de ce salon seront réinitialisés.
+            </p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button className="btn-ghost" type="button" onClick={() => setShowResetConfirm(false)}>
+                Annuler
+              </button>
+              <button
+                className="btn-primary btn-danger"
+                type="button"
+                onClick={() => {
+                  runAction({ kind: 'reset' });
+                  setShowResetConfirm(false);
+                }}
+              >
+                Réinitialiser
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

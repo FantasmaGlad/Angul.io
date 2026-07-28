@@ -22,6 +22,12 @@ class FakeWebSocket {
     this.sent.push(data);
   }
 
+  close(): void {
+    // Rien à simuler ici : les tests déclenchent `triggerClose` explicitement pour reproduire
+    // l'événement `close` du navigateur (voir GameConnection.close(), qui appelle ceci puis
+    // reçoit l'événement `close` en retour dans un vrai navigateur).
+  }
+
   triggerOpen(): void {
     this.readyState = FakeWebSocket.OPEN;
     for (const listener of this.listeners.get('open') ?? []) listener(undefined);
@@ -92,5 +98,74 @@ describe('GameConnection', () => {
     fakeSocket.triggerClose(4004);
 
     expect(closeCodes).toEqual([4004]);
+  });
+
+  it('reconnecte automatiquement sur une coupure transitoire au lieu de notifier onClose', () => {
+    vi.useFakeTimers();
+    try {
+      const connection = new GameConnection('ws://example.test');
+      const firstSocket = socketOf(connection);
+      firstSocket.triggerOpen();
+
+      const closeCodes: number[] = [];
+      const reconnectAttempts: number[] = [];
+      connection.onClose((event) => closeCodes.push(event.code));
+      connection.onReconnecting((attempt) => reconnectAttempts.push(attempt));
+
+      firstSocket.triggerClose(1006); // fermeture anormale, pas un rejet applicatif
+      expect(closeCodes).toEqual([]); // pas encore définitif : une reconnexion est programmée
+      expect(reconnectAttempts).toEqual([1]);
+
+      vi.advanceTimersByTime(300); // premier délai de backoff
+      const secondSocket = socketOf(connection);
+      expect(secondSocket).not.toBe(firstSocket);
+      expect(closeCodes).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('rejoue automatiquement le dernier `join` après une reconnexion réussie', () => {
+    vi.useFakeTimers();
+    try {
+      const connection = new GameConnection('ws://example.test');
+      const firstSocket = socketOf(connection);
+      firstSocket.triggerOpen();
+
+      const join: ClientMessage = { type: 'join', nickname: 'Alice' };
+      connection.send(join);
+      expect(firstSocket.sent).toEqual([JSON.stringify(join)]);
+
+      firstSocket.triggerClose(1006);
+      vi.advanceTimersByTime(300);
+      const secondSocket = socketOf(connection);
+      expect(secondSocket.sent).toEqual([]); // pas encore rejoué : le nouveau socket n'est pas ouvert
+
+      secondSocket.triggerOpen();
+      expect(secondSocket.sent).toEqual([JSON.stringify(join)]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('ne reconnecte jamais après un close() explicite (démontage du composant)', () => {
+    vi.useFakeTimers();
+    try {
+      const connection = new GameConnection('ws://example.test');
+      const firstSocket = socketOf(connection);
+      firstSocket.triggerOpen();
+
+      const reconnectAttempts: number[] = [];
+      connection.onReconnecting((attempt) => reconnectAttempts.push(attempt));
+
+      connection.close();
+      firstSocket.triggerClose(1006);
+      vi.advanceTimersByTime(5000);
+
+      expect(reconnectAttempts).toEqual([]);
+      expect(socketOf(connection)).toBe(firstSocket); // aucun nouveau socket créé
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
