@@ -364,8 +364,8 @@ export default function GameView({
         ? clamp(BASE_SCALE / Math.sqrt(ownForScale.mass / 50), 0.1, 1.76)
         : BASE_SCALE;
 
-      // Suivi de caméra direct et réactif (+ brute)
-      const cameraLerp = 0.35;
+      // Suivi de caméra lissé et indépendant du framerate
+      const cameraLerp = 1 - Math.exp(-15 * (frameDt / 1000));
       latestCamera = {
         x: latestCamera.x + (targetCamera.x - latestCamera.x) * cameraLerp,
         y: latestCamera.y + (targetCamera.y - latestCamera.y) * cameraLerp,

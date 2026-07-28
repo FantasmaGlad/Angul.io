@@ -7,8 +7,8 @@
   },
   "physics": {
     "v0": 245,
-    "speedMultiplier": 1.2,
-    "speedMassExponent": 0.10,
+    "speedMultiplier": 1.5,
+    "speedMassExponent": 0.0333,
     "velocityFloor": 20,
     "accelerationBase": 4500,
     "accelerationMassExponent": 0.7

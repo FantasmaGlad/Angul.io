@@ -21,15 +21,9 @@ export class RenderEngine {
     if (serverTickRateHz && serverTickRateHz > 0) {
       this.serverTickRateHz = serverTickRateHz;
     }
-    const nominalInterval = 1000 / (this.serverTickRateHz || 30);
     const now = performance.now();
-    let targetTime = now;
-    const lastSnap = this.snapshotQueue[this.snapshotQueue.length - 1];
-    if (lastSnap) {
-      targetTime = Math.max(now, lastSnap.time + nominalInterval);
-    }
-    this.snapshotQueue.push({ time: targetTime, entities });
-    if (this.snapshotQueue.length > 15) {
+    this.snapshotQueue.push({ time: now, entities });
+    if (this.snapshotQueue.length > 20) {
       this.snapshotQueue.shift();
     }
   }
@@ -43,21 +37,9 @@ export class RenderEngine {
     isSpectator = false,
   ): EntitySnapshot[] {
     const stateIntervalMs = 1000 / (this.serverTickRateHz || 30);
-    const interpDelayMs = Math.max(60, stateIntervalMs * 1.75);
-
-    const lastSnapInQueue = this.snapshotQueue[this.snapshotQueue.length - 1];
-    if (lastSnapInQueue) {
-      const targetRenderTime = lastSnapInQueue.time - interpDelayMs;
-      if (this.clientRenderTime === 0 || Math.abs(targetRenderTime - this.clientRenderTime) > 80) {
-        // Resync instantané
-        this.clientRenderTime = targetRenderTime;
-      } else {
-        this.clientRenderTime += frameDt;
-        this.clientRenderTime += (targetRenderTime - this.clientRenderTime) * 0.10;
-      }
-    } else {
-      this.clientRenderTime += frameDt;
-    }
+    const interpDelayMs = Math.max(50, stateIntervalMs * 1.75);
+    const now = performance.now();
+    const renderTime = now - interpDelayMs;
 
     let snapA: SnapshotItem | undefined;
     let snapB: SnapshotItem | undefined;
@@ -66,7 +48,7 @@ export class RenderEngine {
       for (let i = 0; i < this.snapshotQueue.length - 1; i++) {
         const itemA = this.snapshotQueue[i];
         const itemB = this.snapshotQueue[i + 1];
-        if (itemA && itemB && itemA.time <= this.clientRenderTime && this.clientRenderTime <= itemB.time) {
+        if (itemA && itemB && itemA.time <= renderTime && renderTime <= itemB.time) {
           snapA = itemA;
           snapB = itemB;
           break;
@@ -77,7 +59,7 @@ export class RenderEngine {
         const second = this.snapshotQueue[1];
         const lastPrev = this.snapshotQueue[this.snapshotQueue.length - 2];
         const lastCurr = this.snapshotQueue[this.snapshotQueue.length - 1];
-        if (first && second && this.clientRenderTime < first.time) {
+        if (first && second && renderTime < first.time) {
           snapA = first;
           snapB = second;
         } else if (lastPrev && lastCurr) {
@@ -89,7 +71,7 @@ export class RenderEngine {
 
     let t = 0;
     if (snapA && snapB && snapB.time > snapA.time) {
-      t = clamp((this.clientRenderTime - snapA.time) / (snapB.time - snapA.time), 0, 1.0);
+      t = clamp((renderTime - snapA.time) / (snapB.time - snapA.time), 0, 1.0);
     }
 
     const fromEntities = snapA ? snapA.entities : (this.snapshotQueue[0]?.entities ?? []);

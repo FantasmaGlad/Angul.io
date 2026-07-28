@@ -7,7 +7,7 @@ describe('loadModConfig', () => {
     expect(config.id).toBe('vanilla');
     expect(config.player.startMass).toBe(50);
     expect(config.player.maxSplits).toBe(16);
-    expect(config.physics.speedMultiplier).toBe(1.2);
+    expect(config.physics.speedMultiplier).toBe(1.5);
     expect(config.arena.borderType).toBe('STRICT_WALL');
   });
 
