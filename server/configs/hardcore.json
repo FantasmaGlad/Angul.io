@@ -15,7 +15,7 @@
   },
   "split": {
     "ejectEfficiency": 1.0,
-    "ejectSpeedFactor": 2.0
+    "ejectSpeedFactor": 4.5
   },
   "merge": {
     "baseTimeSec": 30,

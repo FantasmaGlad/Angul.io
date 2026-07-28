@@ -65,7 +65,11 @@ describe('isVisibleToSpectator', () => {
       expect(isVisibleToSpectator(entity)).toBe(Number(entity.id) % SPECTATOR_FOOD_SAMPLE_EVERY === 0);
     }
     expect(particles.some((entity) => isVisibleToSpectator(entity))).toBe(true);
-    expect(particles.some((entity) => !isVisibleToSpectator(entity))).toBe(true);
+    if (SPECTATOR_FOOD_SAMPLE_EVERY > 1) {
+      expect(particles.some((entity) => !isVisibleToSpectator(entity))).toBe(true);
+    } else {
+      expect(particles.every((entity) => isVisibleToSpectator(entity))).toBe(true);
+    }
   });
 });
 

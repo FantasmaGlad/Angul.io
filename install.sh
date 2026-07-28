@@ -161,7 +161,13 @@ if [[ ! -f "$ENV_FILE" ]]; then
     # Mot de passe admin haché via le même script que le développement local
     # (server/scripts/hashPassword.mjs) — exécuté depuis server/ pour résoudre `argon2` installé
     # par `npm ci` juste au-dessus, jamais le mot de passe en clair écrit sur le disque.
-    ADMIN_PASSWORD_HASH="$(sudo -u "$APP_USER" bash -c "cd '${APP_DIR}/server' && node scripts/hashPassword.mjs '${ADMIN_PASSWORD}'")"
+    #
+    # Appel direct (pas de `bash -c "...'${ADMIN_PASSWORD}'..."` intermédiaire) : ce mot de passe
+    # transite ici comme un seul argument (expansion unique par CE shell), jamais réinterprété par
+    # une seconde couche de shell — un ancien enrobage à deux niveaux mutilait silencieusement tout
+    # mot de passe contenant $, `, " ou ' (un `$` suivi d'une lettre était pris pour une variable et
+    # remplacé par du vide avant même le hachage, par exemple).
+    ADMIN_PASSWORD_HASH="$(sudo -u "$APP_USER" --chdir="${APP_DIR}/server" node scripts/hashPassword.mjs "$ADMIN_PASSWORD")"
   fi
 
   cat > "$ENV_FILE" <<EOF
