@@ -1,6 +1,7 @@
 import type { IncomingMessage } from 'node:http';
 import {
   colorForNickname,
+  getRandomSkin,
   WS_CLOSE_NICKNAME_TAKEN,
   WS_CLOSE_ROOM_FULL,
   WS_CLOSE_ROOM_NOT_FOUND,
@@ -13,7 +14,7 @@ import type { PlayerId } from '../../engine/types.js';
 import { logEvent } from '../../log.js';
 import { getClientIp } from '../http/httpUtils.js';
 import { RateLimiter } from '../rateLimiter.js';
-import { recordAccountStats, send, type RoomRuntime } from './broadcast.js';
+import { recordAccountStatsOnLeave, send, type RoomRuntime } from './broadcast.js';
 
 const MAX_NICKNAME_LENGTH = 20;
 
@@ -48,15 +49,18 @@ export function handleWsConnection(
     const spectatorId = `spec-${runtime.nextPlayerId++}`;
     runtime.sockets.set(spectatorId, socket);
     runtime.spectatorIds.add(spectatorId);
+    managed.handle.connectViewer(spectatorId, true);
     logEvent('spectator_join', { roomId: managed.id, spectatorId });
     send(socket, {
       type: 'welcome',
       playerId: spectatorId,
-      mapSize: managed.room.world.mapSize,
+      mapSize: managed.handle.mapSize,
+      tickRateHz: roomManager.tickRateHz,
     });
     socket.on('close', () => {
       runtime.sockets.delete(spectatorId);
       runtime.spectatorIds.delete(spectatorId);
+      managed.handle.disconnectViewer(spectatorId);
     });
     return;
   }
@@ -84,73 +88,82 @@ export function handleWsConnection(
       const nickname = message.nickname.trim().slice(0, MAX_NICKNAME_LENGTH) || 'Joueur';
 
       if (!playerId) {
-        // Premier Join sur cette connexion
-        const humanCount = Array.from(managed.room.world.allPlayers()).filter(
-          (p) => !managed.room.botManager?.isBot(p.id),
-        ).length;
+        // Premier Join sur cette connexion — décisions (plafond de joueurs humains, éviction de
+        // bot, pseudo déjà pris) désormais prises atomiquement par `RoomHandle.join` (voir
+        // RoomInstance.join, engine/worker/) plutôt qu'ici : pour un salon hébergé par un worker,
+        // deux joins concurrents traités par ce même thread ne doivent jamais tous les deux
+        // passer la vérification "salon plein" avant qu'aucun des deux n'ait encore ajouté son
+        // joueur (TOCTOU) — un seul appel atomique élimine ce risque par construction.
+        //
+        // Avatar procédural (refonte UI/UX) : couleur choisie par le compte, sinon dérivée du
+        // pseudo pour un invité — résolue avant le join (coût d'une requête DB inutile en cas de
+        // refus, accepté : rare, et la résolution doit de toute façon précéder l'ajout au monde).
+        const avatarColor =
+          (accountId !== undefined ? await accounts?.getAvatarColor(accountId) : undefined) ??
+          getRandomSkin();
 
-        if (humanCount >= managed.maxPlayers) {
-          logEvent('join_rejected', { roomId: managed.id, reason: 'room_full' });
-          socket.close(WS_CLOSE_ROOM_FULL, 'Salon complet.');
-          return;
-        }
-
-        // Libérer la place d'un bot si le salon est plein
-        while (managed.room.world.allPlayers().length >= managed.maxPlayers) {
-          if (managed.room.botManager && managed.room.botManager.activeBotCount > 0) {
-            managed.room.botManager.removeSmallestBot();
+        const result = await managed.handle.join(nickname, avatarColor);
+        if (!result.ok) {
+          if (result.reason === 'room_full') {
+            logEvent('join_rejected', { roomId: managed.id, reason: 'room_full' });
+            socket.close(WS_CLOSE_ROOM_FULL, 'Salon complet.');
           } else {
-            break;
+            logEvent('join_rejected', { roomId: managed.id, reason: 'nickname_taken', nickname });
+            socket.close(WS_CLOSE_NICKNAME_TAKEN, 'Pseudo déjà utilisé sur ce salon.');
           }
-        }
-
-        const nicknameTaken = managed.room.world
-          .allPlayers()
-          .some((player) => player.nickname.toLowerCase() === nickname.toLowerCase());
-        if (nicknameTaken) {
-          logEvent('join_rejected', { roomId: managed.id, reason: 'nickname_taken', nickname });
-          socket.close(WS_CLOSE_NICKNAME_TAKEN, 'Pseudo déjà utilisé sur ce salon.');
           return;
         }
 
-        playerId = String(runtime.nextPlayerId++);
+        playerId = result.playerId;
         runtime.sockets.set(playerId, socket);
+        managed.handle.connectViewer(playerId, false);
         if (accountId !== undefined) {
           runtime.accountIdByPlayer.set(playerId, accountId);
         }
-        // Masse max de la vie en cours (écran de mort personnalisé, `finalScore`) — suivie pour
-        // tout le monde, invités compris, contrairement à `accountIdByPlayer` (réservé aux
-        // écritures en base, voir `recordAccountStats`).
-        runtime.maxMassByPlayer.set(playerId, 0);
-        // Avatar procédural (refonte UI/UX) : couleur choisie par le compte, sinon dérivée du
-        // pseudo pour un invité — résolue une fois ici et mémorisée (`colorByPlayer`) pour
-        // pouvoir la rediffuser aux prochains arrivants.
-        const avatarColor =
-          (accountId !== undefined ? await accounts?.getAvatarColor(accountId) : undefined) ??
-          colorForNickname(nickname);
+        // Mémorisée ici en plus de `RoomHandle.onPlayerJoin` (broadcast.ts) : ce dernier ne fait
+        // que rediffuser aux AUTRES sockets déjà connectées, jamais au nouvel arrivant
+        // lui-même — le backfill ci-dessous (couleur des joueurs déjà présents) a besoin de la
+        // sienne propre disponible immédiatement, sans dépendre de l'ordre d'arrivée de
+        // l'événement `onPlayerJoin` correspondant.
         runtime.colorByPlayer.set(playerId, avatarColor);
-        managed.room.addPlayer(playerId, nickname);
         logEvent('player_join', { roomId: managed.id, playerId, nickname });
-        send(socket, { type: 'welcome', playerId, mapSize: managed.room.world.mapSize });
+        send(socket, {
+          type: 'welcome',
+          playerId,
+          mapSize: managed.handle.mapSize,
+          tickRateHz: roomManager.tickRateHz,
+        });
 
-        for (const existingPlayer of managed.room.world.allPlayers()) {
-          if (existingPlayer.id === playerId) continue;
+        for (const existingPlayer of result.existingPlayers) {
+          let existingColor = runtime.colorByPlayer.get(existingPlayer.id);
+          if (!existingColor) {
+            existingColor = getRandomSkin();
+            runtime.colorByPlayer.set(existingPlayer.id, existingColor);
+          }
           send(socket, {
             type: 'player',
             playerId: existingPlayer.id,
             nickname: existingPlayer.nickname,
-            color: runtime.colorByPlayer.get(existingPlayer.id),
+            color: existingColor,
           });
         }
-        const playerInfo = { type: 'player' as const, playerId, nickname, color: avatarColor };
-        for (const s of runtime.sockets.values()) send(s, playerInfo);
+        // Le nouvel arrivant lui-même : `RoomHandle.onPlayerJoin` (broadcast.ts) a déjà diffusé
+        // cette info à toutes les AUTRES sockets déjà connectées au moment où `join()` a muté le
+        // salon — mais la sienne propre n'était pas encore dans `runtime.sockets` à cet instant
+        // (voir `runtime.sockets.set` ci-dessus, après la résolution du join), donc jamais
+        // atteinte par cette diffusion. Envoyé explicitement ici pour couvrir ce cas.
+        send(socket, { type: 'player', playerId, nickname, color: avatarColor });
       } else {
         // Re-Join (Respawn)
-        const existingPlayer = managed.room.world.getPlayer(playerId);
-        if (!existingPlayer || existingPlayer.pieceIds.length === 0) {
-          managed.room.addPlayer(playerId, nickname);
+        const result = await managed.handle.respawn(playerId, nickname);
+        if (result.respawned) {
           logEvent('player_respawn', { roomId: managed.id, playerId, nickname });
-          send(socket, { type: 'welcome', playerId, mapSize: managed.room.world.mapSize });
+          send(socket, {
+            type: 'welcome',
+            playerId,
+            mapSize: managed.handle.mapSize,
+            tickRateHz: roomManager.tickRateHz,
+          });
         }
       }
       return;
@@ -165,7 +178,7 @@ export function handleWsConnection(
 
       if (validatedInput.split)
         logEvent('player_split_requested', { roomId: managed.id, playerId });
-      managed.room.handleInput(playerId, validatedInput);
+      managed.handle.input(playerId, validatedInput);
       return;
     }
 
@@ -176,13 +189,24 @@ export function handleWsConnection(
 
   socket.on('close', () => {
     if (!playerId) return;
-    logEvent('player_leave', { roomId: managed.id, playerId });
-    recordAccountStats(accounts, managed, runtime, playerId);
-    managed.room.removePlayer(playerId);
-    runtime.sockets.delete(playerId);
-    runtime.accountIdByPlayer.delete(playerId);
-    runtime.maxMassByPlayer.delete(playerId);
-    runtime.colorByPlayer.delete(playerId);
+    const leavingPlayerId = playerId;
+    logEvent('player_leave', { roomId: managed.id, playerId: leavingPlayerId });
+
+    // Capturé avant nettoyage de `runtime` ci-dessous : `leave()` est asynchrone (round-trip
+    // possible vers un worker, voir WorkerRoomHost), la callback qui écrit en base ne doit pas
+    // lire `accountIdByPlayer` après sa suppression, sans quoi le compte ne serait jamais
+    // crédité (l'id de compte serait déjà introuvable au moment de l'écriture).
+    const accountId = runtime.accountIdByPlayer.get(leavingPlayerId);
+
+    managed.handle.disconnectViewer(leavingPlayerId);
+    runtime.sockets.delete(leavingPlayerId);
+    runtime.accountIdByPlayer.delete(leavingPlayerId);
+    runtime.colorByPlayer.delete(leavingPlayerId);
+
+    void (async () => {
+      const result = await managed.handle.leave(leavingPlayerId);
+      recordAccountStatsOnLeave(accounts, managed, accountId, leavingPlayerId, result);
+    })();
   });
 }
 

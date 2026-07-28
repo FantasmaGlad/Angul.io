@@ -1,3 +1,4 @@
+import { SKINS } from '@angulio/shared';
 import { describe, expect, it } from 'vitest';
 import { testConfig } from '../../mods/parametric/testConfig.js';
 import { createParametricMod } from '../../mods/parametric/index.js';
@@ -26,6 +27,36 @@ describe('BotManager', () => {
 
     expect(room.botManager).toBeDefined();
     expect(room.botManager?.activeBotCount).toBe(15);
+  });
+
+  it('assigne un skin valide parmi SKINS lors du spawn d’un bot', () => {
+    const config = testConfig({
+      bots: {
+        enabled: true,
+        targetRatio: 0.5,
+        updateFrequencyHz: 2,
+        proportions: { fuis: 25, neutre: 30, agressif: 30, fou: 15 },
+      },
+    });
+    const mod = createParametricMod(config);
+    const room = new Room(mod, {
+      mapSize: 1000,
+      tickRateHz: 20,
+      maxPlayers: 10,
+      bots: config.bots,
+    });
+
+    const joinedSkins: string[] = [];
+    room.onPlayerJoin((_id, _name, skin) => {
+      if (skin) joinedSkins.push(skin);
+    });
+
+    room.tick();
+
+    expect(joinedSkins.length).toBeGreaterThan(0);
+    for (const skin of joinedSkins) {
+      expect(SKINS).toContain(skin);
+    }
   });
 
   it('supprime le plus petit bot normal quand un joueur humain rejoint', () => {

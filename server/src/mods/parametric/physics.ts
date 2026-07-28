@@ -17,7 +17,7 @@ export function accelerationForMass(mass: number, config: ParametricModConfig): 
 
 function decayLambda(mass: number, config: ParametricModConfig, timeSinceLastEatenS = 10): number {
   const floor = config.decay.floor ?? 2;
-  if (mass <= floor || timeSinceLastEatenS < 10) return 0;
+  if (mass <= floor || timeSinceLastEatenS < 2) return 0;
 
   let rate = 0.002; // 0.2% par 10s en dessous de 500
   if (mass >= 2000) {

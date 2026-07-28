@@ -113,7 +113,7 @@ describe('createParametricMod — split', () => {
     expect(ejected && ejected.velocity.x).toBeGreaterThan(0); // boost initial dans la direction du split
   });
 
-  it('crée de la masse quand ejectEfficiency > 1 (comportement "Folie")', () => {
+  it('crée de la masse quand ejectEfficiency > 1', () => {
     const config = testConfig({ split: { ejectEfficiency: 1.2, ejectSpeedFactor: 2 } });
     const mod = createParametricMod(config);
     const world = freshWorld();

@@ -1,7 +1,8 @@
 import {
-  AVATAR_PALETTE,
   DEATH_BANNERS,
   MAX_DEATH_MESSAGE_LENGTH,
+  SKIN_IMAGE_MAP,
+  SKINS,
   deathBannerById,
 } from '@angulio/shared';
 import { useEffect, useState } from 'react';
@@ -11,11 +12,17 @@ import {
   updateDeathScreen,
   type AccountProfile,
 } from '../auth.js';
+import FpsModeSelector from '../components/FpsModeSelector.js';
 import { modeMeta } from '../modes.js';
+import { navigate } from '../router.js';
 import PageLayout from './PageLayout.js';
 
 interface ProfilePageProps {
-  authToken: string;
+  /** Absent pour un visiteur sans compte : la page reste accessible (réglages FPS, demande
+   * utilisateur) mais les sections liées au compte (niveau/XP/avatar/écran de mort/scores) sont
+   * remplacées par une invitation à se connecter plutôt que de rediriger toute la page vers
+   * `/compte` comme avant. */
+  authToken: string | undefined;
   /** Notifie App.tsx du changement (refonte UI/UX, avatar procédural) pour que le badge de
    * TopNav.tsx reflète la nouvelle couleur sans attendre un rechargement de page. */
   onAvatarColorChange: (color: string) => void;
@@ -35,6 +42,10 @@ export default function ProfilePage({ authToken, onAvatarColorChange }: ProfileP
   const [deathScreenSaved, setDeathScreenSaved] = useState(false);
 
   useEffect(() => {
+    if (!authToken) {
+      setProfile(null);
+      return;
+    }
     let cancelled = false;
     void (async () => {
       try {
@@ -58,7 +69,7 @@ export default function ProfilePage({ authToken, onAvatarColorChange }: ProfileP
   }, [profile]);
 
   const handlePickColor = (color: string): void => {
-    if (color === profile?.avatarColor) return;
+    if (!authToken || color === profile?.avatarColor) return;
     setSavingColor(color);
     void (async () => {
       try {
@@ -75,6 +86,7 @@ export default function ProfilePage({ authToken, onAvatarColorChange }: ProfileP
   };
 
   const handleSaveDeathScreen = (): void => {
+    if (!authToken) return;
     setSavingDeathScreen(true);
     setDeathScreenSaved(false);
     void (async () => {
@@ -96,23 +108,47 @@ export default function ProfilePage({ authToken, onAvatarColorChange }: ProfileP
   return (
     <PageLayout title="Profil">
       {error && <p className="error-text">{error}</p>}
+
+      {/* Toujours visible, avec ou sans compte (demande utilisateur) : un réglage local à
+          l'appareil, pas une donnée de compte — voir aussi SettingsPage.tsx, même composant. */}
+      <FpsModeSelector />
+
+      {!authToken && (
+        <section className="lobby-section">
+          <span className="section-title">Compte</span>
+          <p className="account-status">
+            Connecte-toi pour voir ton niveau, personnaliser ton avatar et ton écran de mort, et
+            suivre tes meilleurs scores.
+          </p>
+          <button
+            className="btn-primary-action"
+            type="button"
+            onClick={() => navigate('/compte')}
+          >
+            Se connecter
+          </button>
+        </section>
+      )}
+
       {profile && (
         <>
           <p className="account-status">{profile.pseudo}</p>
 
           <section className="lobby-section">
-            <span className="section-title">Couleur d'avatar (blob en jeu)</span>
+            <span className="section-title">Skin d'avatar (blob en jeu)</span>
             <div className="avatar-swatch-grid">
-              {AVATAR_PALETTE.map((color) => (
+              {SKINS.map((skin) => (
                 <button
-                  key={color}
+                  key={skin}
                   type="button"
-                  className={`avatar-swatch${profile.avatarColor === color ? ' selected' : ''}`}
-                  style={{ background: color }}
+                  className={`avatar-swatch${profile.avatarColor === skin ? ' selected' : ''}`}
                   disabled={savingColor !== null}
-                  aria-label={`Choisir la couleur ${color}`}
-                  onClick={() => handlePickColor(color)}
-                />
+                  aria-label={`Choisir le skin ${skin}`}
+                  onClick={() => handlePickColor(skin)}
+                >
+                  <img src={SKIN_IMAGE_MAP[skin]} alt={skin} className="avatar-skin-img" />
+                  <span className="avatar-skin-name">{skin}</span>
+                </button>
               ))}
             </div>
           </section>
@@ -135,6 +171,7 @@ export default function ProfilePage({ authToken, onAvatarColorChange }: ProfileP
               {profile.cosmetics.length > 0 ? profile.cosmetics.join(', ') : 'Aucun'}
             </span>
           </div>
+
           <section className="lobby-section">
             <span className="section-title">Écran de mort personnalisé</span>
 
@@ -171,7 +208,6 @@ export default function ProfilePage({ authToken, onAvatarColorChange }: ProfileP
                     disabled={locked}
                     onClick={() => setDeathBannerDraft(banner.id)}
                   >
-                    <span className="death-banner-icon">{banner.icon}</span>
                     <span className="death-banner-label">{banner.label}</span>
                     {locked && (
                       <span className="death-banner-lock-badge">Niveau {banner.unlockLevel}</span>
@@ -191,7 +227,6 @@ export default function ProfilePage({ authToken, onAvatarColorChange }: ProfileP
                   background: `linear-gradient(135deg, ${previewBanner.gradient[0]}, ${previewBanner.gradient[1]})`,
                 }}
               >
-                <span>{previewBanner.icon}</span>
                 <span>VOUS ÊTES MORT !</span>
               </div>
               <p className="death-preview-message">

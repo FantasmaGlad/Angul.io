@@ -10,6 +10,7 @@ import {
   handleAdminSearchPlayers,
   handleAdminUpdatePlayer,
 } from './routes/admin.js';
+import { handleAdminHealth } from './routes/health.js';
 import {
   handleGetProfile,
   handleLogout,
@@ -104,6 +105,11 @@ export async function handleHttpRequest(
 
   if (url.pathname === '/api/admin/players' && req.method === 'GET') {
     await handleAdminSearchPlayers(accounts, admin, url, req, res);
+    return;
+  }
+
+  if (url.pathname === '/api/admin/health' && req.method === 'GET') {
+    handleAdminHealth(roomManager, admin, req, res);
     return;
   }
 

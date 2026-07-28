@@ -11,15 +11,11 @@ describe('loadModConfig', () => {
     expect(config.arena.borderType).toBe('STRICT_WALL');
   });
 
-  it('charge server/configs/folie.json avec les valeurs attendues (bug de date corrigé)', () => {
-    const config = loadModConfig('folie');
-    expect(config.id).toBe('folie');
-    expect(config.player.startMass).toBe(200);
-    // Régression : cette valeur était corrompue en date (02/05/2026) dans le fichier Excel
-    // source ("Angul.io - Master Sheet Engine...") avant correction — doit rester un nombre.
-    expect(config.physics.speedMultiplier).toBe(2.5);
-    expect(config.arena.borderType).toBe('ELASTIC_BOUNCE');
-    expect(config.arena.bounceRestitution).toBe(0.8);
+  it('charge server/configs/hardcore.json avec les valeurs attendues', () => {
+    const config = loadModConfig('hardcore');
+    expect(config.id).toBe('hardcore');
+    expect(config.player.startMass).toBe(50);
+    expect(config.arena.borderType).toBe('STRICT_WALL');
   });
 
   it('lève une erreur explicite pour un mod inconnu', () => {
@@ -28,7 +24,7 @@ describe('loadModConfig', () => {
 });
 
 describe('listAvailableModIds', () => {
-  it('liste vanilla, folie et hardcore (triés par ordre alphabétique)', () => {
-    expect(listAvailableModIds()).toEqual(['folie', 'hardcore', 'vanilla']);
+  it('liste hardcore et vanilla (triés par ordre alphabétique)', () => {
+    expect(listAvailableModIds()).toEqual(['hardcore', 'vanilla']);
   });
 });

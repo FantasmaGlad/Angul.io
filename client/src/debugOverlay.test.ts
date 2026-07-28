@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateGridSector, createFpsTracker, formatDebugText } from './debugOverlay.js';
+import { calculateGridSector, createFpsTracker, createTickRateTracker, formatDebugText } from './debugOverlay.js';
 
 describe('createFpsTracker', () => {
   it('renvoie 0 sur le tout premier tick (pas encore de delta mesurable)', () => {
@@ -27,6 +27,24 @@ describe('createFpsTracker', () => {
   });
 });
 
+describe('createTickRateTracker', () => {
+  it('compte les messages reçus sur la fenêtre glissante d’1 seconde', () => {
+    const tracker = createTickRateTracker();
+    // 20 messages espacés de 50ms (20 Hz), sur 1 seconde.
+    let count = 0;
+    for (let i = 0; i < 20; i++) count = tracker.record(i * 50);
+    expect(count).toBe(20);
+  });
+
+  it('oublie les messages sortis de la fenêtre glissante', () => {
+    const tracker = createTickRateTracker();
+    tracker.record(0);
+    tracker.record(100);
+    const count = tracker.record(2000); // loin après la fenêtre de 1000ms : les 2 précédents sortent
+    expect(count).toBe(1);
+  });
+});
+
 describe('calculateGridSector', () => {
   it('calcule correctement les secteurs de carte', () => {
     expect(calculateGridSector(0, 0, 15000)).toBe('A1');
@@ -36,7 +54,7 @@ describe('calculateGridSector', () => {
 });
 
 describe('formatDebugText', () => {
-  it('inclut toutes les sections et métriques F3', () => {
+  it('affiche uniquement des métriques réelles quand tout est fourni', () => {
     const text = formatDebugText({
       fps: { fps: 60.0, frameTimeMs: 16.6, p99Ms: 18.2 },
       pingMs: 18,
@@ -53,17 +71,8 @@ describe('formatDebugText', () => {
         screenHeight: 1080,
         devicePixelRatio: 1.25,
       },
-      threading: {
-        mainThreadLagMs: 0.4,
-        longTasksLast10s: 0,
-        activeWorkers: 4,
-        workerRttMs: 0.8,
-        transferRateKbps: 450,
-        sharedArrayBuffers: true,
-      },
       render: {
         drawTimeMs: 1.2,
-        gpuTimeMs: 2.1,
         drawCalls: 12,
         batches: 3,
         visibleEntities: 715,
@@ -72,78 +81,83 @@ describe('formatDebugText', () => {
         viewportHeight: 1080,
         cameraScale: 1.8,
         dpiRatio: 1.25,
+        targetHz: 144,
       },
       simulation: {
         logicStepMs: 0.8,
-        spatialChecks: 184,
         playersCount: 12,
         foodCount: 690,
-        ejectedCount: 13,
         localX: 4821.5,
         localY: -1204.2,
         gridSector: 'B3',
       },
       networkSync: {
         rttMs: 18,
-        serverTpsCurrent: 60,
-        serverTpsTarget: 60,
+        serverTpsCurrent: 20,
+        serverTpsTarget: 20,
         netInKbps: 24.5,
-        netInPktSec: 60,
+        netInPktSec: 20,
         netOutKbps: 2.1,
-        interpBufferMs: 32,
+        interpBufferMs: 50,
         interpSnapshots: 2,
-        reconciliationsPerSec: 0,
-      },
-      memoryResources: {
-        usedMb: 11,
-        totalMb: 43,
-        allocRateKbps: 120,
-        foodPoolUsed: 690,
-        foodPoolMax: 1000,
-        particlesPoolUsed: 45,
-        particlesPoolMax: 500,
-        vramApproxMb: 14.2,
-        texturesCount: 4,
-        buffersCount: 8,
       },
       hardware: {
-        state: 'Active',
-        powerSaver: false,
-        batteryStatusText: '98% (Charching)',
         cpuCores: 16,
+        batteryPercent: 98,
+        batteryCharging: false,
       },
     });
 
-    expect(text).toContain('-- THREADING & WORKERS --');
-    expect(text).toContain('Main Thread Lag: 0.4 ms | Long Tasks (last 10s): 0');
-    expect(text).toContain('Active Workers: 4 / 16 Cores | Worker RTT: 0.8 ms');
-    expect(text).toContain('Transfer Rate: 450 KB/s (SharedArrayBuffers)');
-
     expect(text).toContain('-- ENGINE & RENDER --');
     expect(text).toContain('FPS: 60.0 (16.6ms) | p99: 18.2ms | Target: 144Hz');
-    expect(text).toContain('Draw Time: 1.2ms | GPU Time: 2.1ms');
+    expect(text).toContain('Draw Time: 1.2ms');
     expect(text).toContain(
       'Draw Calls: 12 | Batches: 3 | Visibles: 715 / Total: 15,000 (Culled: 95.2%)',
     );
     expect(text).toContain('Viewport: 1920x1080 (Zoom: 1.80x) | DPI Ratio: 1.25');
 
     expect(text).toContain('-- SIMULATION & LOGIC --');
-    expect(text).toContain('Logic Step: 0.8ms | Spatial Checks: 184/frame');
-    expect(text).toContain('Entities: 715 (Players: 12, Food: 690, Ejected: 13)');
+    expect(text).toContain('Logic Step: 0.8ms');
+    expect(text).toContain('Entities: 715 (Players: 12, Food: 690)');
     expect(text).toContain('Local Pos: X: 4821.5, Y: -1204.2 | Grid Sector: B3');
 
-    expect(text).toContain('-- NETWORK & SYNC (WebRTC/WS) --');
-    expect(text).toContain('RTT (Ping): 18 ms | Server TPS: 60/60');
-    expect(text).toContain('Net In: 24.5 KB/s (60 pkt/s) | Net Out: 2.1 KB/s');
-    expect(text).toContain('Interp Buffer: 32 ms (2 snapshots) | Reconciliations: 0/s');
+    expect(text).toContain('-- NETWORK & SYNC --');
+    expect(text).toContain('RTT (Ping): 18 ms | Server TPS: 20/20');
+    expect(text).toContain('Net In: 24.5 KB/s (20 pkt/s) | Net Out: 2.1 KB/s | Connexion: 4g');
+    expect(text).toContain('Interp Buffer: 50 ms (2 snapshots)');
 
-    expect(text).toContain('-- MEMORY & RESOURCES --');
-    expect(text).toContain('JS Heap: 11 / 43 MB (Alloc Rate: ~120 KB/s)');
-    expect(text).toContain('Object Pools: Food (690/1000), Particles (45/500)');
-    expect(text).toContain('VRAM Approx: 14.2 MB (Textures: 4, Buffers: 8)');
+    expect(text).toContain('-- MEMORY --');
+    expect(text).toContain('JS Heap: 11 / 43 MB');
 
     expect(text).toContain('-- HARDWARE & SYSTEM --');
-    expect(text).toContain('State: Active | Power Saver: Off | Battery: 98% (Charching)');
+    expect(text).toContain('State: Active | Battery: 98% (Discharging)');
     expect(text).toContain('CPU Cores: 16 | GPU: AMD Radeon 780M (ANGLE WebGL2)');
+
+    // Aucune trace des anciennes sections/valeurs inventées.
+    expect(text).not.toContain('THREADING');
+    expect(text).not.toContain('Ejected');
+    expect(text).not.toContain('Spatial Checks');
+    expect(text).not.toContain('Reconciliations');
+    expect(text).not.toContain('Object Pools');
+    expect(text).not.toContain('VRAM');
+    expect(text).not.toContain('Power Saver');
+  });
+
+  it('omet les lignes non mesurables plutôt que d’inventer une valeur, quand les données manquent', () => {
+    const text = formatDebugText({
+      fps: { fps: 0, frameTimeMs: 0, p99Ms: 0 },
+    });
+
+    // Pas de plafond FPS choisi (Vsync) : cible textuelle, pas un chiffre inventé.
+    expect(text).toContain('Target: Illimité (Vsync)');
+    // Pas de ping reçu, pas de TPS serveur connu : tirets plutôt que 0 ou une valeur plausible.
+    expect(text).toContain('RTT (Ping): — | Server TPS: —');
+    // Pas de `performance.memory` (ex. Firefox/Safari) : section entière omise.
+    expect(text).not.toContain('-- MEMORY --');
+    // Pas de GPU lisible (protection navigateur) : message explicite, pas un nom de carte inventé.
+    expect(text).toContain('GPU: Non disponible (protection du navigateur)');
+    // Pas de batterie détectée : pas de segment "Battery" du tout.
+    expect(text).toContain('State: Active');
+    expect(text).not.toContain('Battery');
   });
 });

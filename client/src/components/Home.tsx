@@ -59,12 +59,21 @@ export default function Home({
   isLoggedIn,
   defaultRoomId,
 }: HomeProps) {
+  // Suit le mode actuellement sélectionné (colonne `ModeRoomList`, demande utilisateur : "switch
+  // de serveur" → bascule du fond immédiatement) plutôt qu'un salon fixe — le salon le plus
+  // peuplé de ce mode, avec repli sur le salon permanent tant qu'aucun salon public n'existe
+  // encore pour ce mode (ou pendant le tout premier chargement, avant que `rooms` soit peuplé).
+  const spectatorRoomId =
+    [...rooms]
+      .filter((room) => room.modId === selectedMode)
+      .sort((a, b) => b.playerCount - a.playerCount)[0]?.id ?? defaultRoomId;
+
   return (
     <div className="home-shell">
       {/* Fond spectateur : élément séparé de `.home-ui` ci-dessous pour pouvoir zoomer l'un
           "en avant" pendant que l'autre zoome "en arrière" (transition d'entrée en jeu, voir
           styles.css `.spectator-background.zooming`/`.home-ui.leaving`). */}
-      <SpectatorBackground roomId={defaultRoomId} zooming={leaving} />
+      <SpectatorBackground roomId={spectatorRoomId} zooming={leaving} />
       <div className={`home-ui${leaving ? ' leaving' : ''}`}>
         <TopNav
           accountActive={accountActive}

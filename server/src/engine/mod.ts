@@ -46,7 +46,7 @@ export interface GameMod {
    * la mort ou à la déconnexion) avec la masse maximale atteinte pendant cette vie (`rawScore`,
    * crédité à `player_best_scores`) et l'XP accumulée pendant cette même vie (`rawXp`, voir
    * `engine/xp.ts` — combo déjà appliqué) ; les valeurs renvoyées sont ce qui est effectivement
-   * crédité au compte. Optionnel : un mod qui ne l'implémente pas (Vanilla, Folie) laisse les
+   * crédité au compte. Optionnel : un mod qui ne l'implémente pas (Vanilla) laisse les
    * deux valeurs brutes inchangées (identité). */
   transformScoreForAccount?(rawScore: number, rawXp: number): { score: number; xp: number };
 }

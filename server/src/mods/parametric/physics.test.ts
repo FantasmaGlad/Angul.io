@@ -44,8 +44,8 @@ describe('accelerationForMass — a(m) = A0·(M0/m)^alpha', () => {
 });
 
 describe('applyPassiveDecay — paliers de perte de masse par 10s', () => {
-  it('ne perd rien si la masse a été ingurgitée il y a moins de 10 secondes', () => {
-    expect(applyPassiveDecay(1000, 10, testConfig(), 5)).toBe(1000);
+  it('ne perd rien si la masse a été ingurgitée il y a moins de 2 secondes', () => {
+    expect(applyPassiveDecay(1000, 10, testConfig(), 1)).toBe(1000);
   });
 
   it('perd 0.2% en 10s pour masse < 500', () => {
@@ -91,7 +91,7 @@ describe('randomFoodMass', () => {
     }
   });
 
-  it('ne renvoie jamais une masse absente de `pelletTypes` (plusieurs types, Folie-like)', () => {
+  it('ne renvoie jamais une masse absente de `pelletTypes` (plusieurs types)', () => {
     const config = testConfig({
       food: {
         density: 60,

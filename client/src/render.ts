@@ -1,5 +1,71 @@
-import { BOT_COLORS, clamp, type EntitySnapshot } from '@angulio/shared';
+import { BOT_COLORS, clamp, SKIN_IMAGE_MAP, skinForNickname, type EntitySnapshot } from '@angulio/shared';
 import { ownAggregate } from './stats.js';
+
+const skinImageCache = new Map<string, HTMLImageElement>();
+
+export function getSkinImage(skinId: string): HTMLImageElement | null {
+  const url =
+    SKIN_IMAGE_MAP[skinId] ??
+    (skinId.startsWith('/') ? skinId : `/assets/${skinId}.png`);
+  let img = skinImageCache.get(url);
+  if (!img && typeof Image !== 'undefined') {
+    img = new Image();
+    img.src = url;
+    skinImageCache.set(url, img);
+  }
+  return img && img.complete && img.naturalWidth !== 0 ? img : null;
+}
+
+/** Résolution du sprite pré-détouré (voir `getCircularSkinImage`) — fixe, indépendante du rayon
+ * réellement affiché à l'écran (`drawImage` la redimensionne ensuite) : assez grande pour rester
+ * nette même sur un très gros morceau plein écran, sans reconstruire le sprite à chaque
+ * changement de zoom. */
+const CIRCULAR_SPRITE_SIZE_PX = 160;
+const circularSkinCache = new Map<string, HTMLCanvasElement>();
+
+/** Version pré-détourée en cercle (canvas hors-écran, calculée une seule fois par skin puis mise
+ * en cache) d'une image de skin — évite un `ctx.save()`/`ctx.clip()`/`ctx.restore()` par morceau
+ * et par frame dans `renderFrame` : le clipping est l'une des opérations Canvas2D les plus
+ * coûteuses, et avec ~50 joueurs + bots skinnés simultanément visibles, ce coût par-entité par
+ * frame était la cause principale des saccades FPS observées en jeu (contrairement à l'accueil,
+ * qui affiche surtout de la nourriture sans image). Le cercle occupe tout le carré du sprite
+ * (bord à bord) : `drawImage` peut ensuite l'étirer à n'importe quel rayon écran sans reclipper,
+ * le résultat reste visuellement un cercle plein. */
+function getCircularSkinImage(skinId: string): HTMLCanvasElement | null {
+  const cached = circularSkinCache.get(skinId);
+  if (cached) return cached;
+
+  const source = getSkinImage(skinId);
+  if (!source) return null;
+
+  const sprite = document.createElement('canvas');
+  sprite.width = CIRCULAR_SPRITE_SIZE_PX;
+  sprite.height = CIRCULAR_SPRITE_SIZE_PX;
+  const spriteCtx = sprite.getContext('2d');
+  if (!spriteCtx) return null;
+
+  const radius = CIRCULAR_SPRITE_SIZE_PX / 2;
+  spriteCtx.beginPath();
+  spriteCtx.arc(radius, radius, radius, 0, Math.PI * 2);
+  spriteCtx.clip();
+  spriteCtx.drawImage(source, 0, 0, CIRCULAR_SPRITE_SIZE_PX, CIRCULAR_SPRITE_SIZE_PX);
+
+  circularSkinCache.set(skinId, sprite);
+  return sprite;
+}
+
+export function colorForSkinFallback(skinId: string): string {
+  if (skinId.startsWith('#')) return skinId;
+  const map: Record<string, string> = {
+    Banane: '#FFE135',
+    BmxPor: '#E05A47',
+    Calamard: '#40A9FF',
+    Champi: '#FF4D4F',
+    KK: '#73D13D',
+    Radiateur: '#9254DE',
+  };
+  return map[skinId] ?? '#3a6b35';
+}
 
 /** Échelle à la masse de référence : délibérément > 1 (zoomé par rapport à la taille "réelle"
  * du morceau) plutôt qu'un cadrage 1:1 — meilleur contrôle en début de partie (viser devient
@@ -76,6 +142,49 @@ export interface RenderFrameResult {
   batches: number;
 }
 
+/** Marge (en pixels *monde*) ajoutée autour du viewport pour le culling — évite qu'une entité en
+ * bordure d'écran apparaisse/disparaisse brutalement (sans interpolation) au moindre mouvement de
+ * caméra ; suffisant pour rester invisible au joueur sans annuler le gain de performance. */
+const CULL_MARGIN_WORLD_PX = 300;
+
+/**
+ * Filtre les entités à celles réellement utiles à cette frame (les morceaux du joueur, toujours
+ * gardés pour `computeCamera`/les stats, + tout ce qui retombe dans le viewport élargi d'une
+ * marge) — appelé *avant* `interpolateEntities`, qui alloue un nouvel objet par entité à chaque
+ * frame (jusqu'à ~60-240 fois/seconde selon le plafond FPS). Le serveur peut envoyer des milliers
+ * d'entités dans le rayon d'intérêt réseau (bien plus large que ce qu'un écran zoomé affiche
+ * réellement) ; sans ce filtre, tout ce volume est interpolé et parcouru à chaque frame de rendu
+ * alors que `renderFrame` culle de toute façon avant de dessiner — un gaspillage de CPU/GC qui
+ * contribue aux pics de lag observés (plus le nombre d'entités visibles par le serveur grossit,
+ * ex. joueur de grosse masse ou zone dense en nourriture, plus le coût par frame grossit avec lui,
+ * indépendamment de ce que l'écran peut effectivement montrer).
+ */
+export function cullEntitiesForViewport(
+  entities: EntitySnapshot[],
+  camera: Camera,
+  viewportWidth: number,
+  viewportHeight: number,
+  selfPlayerId: string | undefined,
+  marginWorldPx: number = CULL_MARGIN_WORLD_PX,
+): EntitySnapshot[] {
+  const halfWidthWorld = viewportWidth / 2 / camera.scale + marginWorldPx;
+  const halfHeightWorld = viewportHeight / 2 / camera.scale + marginWorldPx;
+  const left = camera.x - halfWidthWorld;
+  const right = camera.x + halfWidthWorld;
+  const top = camera.y - halfHeightWorld;
+  const bottom = camera.y + halfHeightWorld;
+
+  return entities.filter((entity) => {
+    if (selfPlayerId !== undefined && entity.p === selfPlayerId) return true;
+    return (
+      entity.x + entity.r >= left &&
+      entity.x - entity.r <= right &&
+      entity.y + entity.r >= top &&
+      entity.y - entity.r <= bottom
+    );
+  });
+}
+
 /** `nicknames` : pseudo par id de joueur, appris via les messages `player` (envoyés une fois
  * par joueur plutôt que répétés sur chaque entité à chaque tick — voir plan Lot 1.8). `colors` :
  * couleur d'avatar par id de joueur (refonte UI/UX), appris de la même façon — absent pour un
@@ -124,23 +233,42 @@ export function renderFrame(
       continue;
     }
 
+    const skinId = colorFor(entity, nicknames, colors);
+    const radius = Math.max(1, screenRadius);
+    // Sprite déjà détouré en cercle (voir getCircularSkinImage) : un simple `drawImage`, sans
+    // `save()`/`clip()`/`restore()` par entité — clipper à chaque frame pour chaque joueur/bot
+    // visible était l'opération Canvas2D la plus coûteuse de cette boucle (voir son commentaire).
+    const circularImg = getCircularSkinImage(skinId);
+
+    if (circularImg) {
+      ctx.drawImage(circularImg, screenX - radius, screenY - radius, radius * 2, radius * 2);
+    } else {
+      ctx.beginPath();
+      ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+      ctx.fillStyle = colorForSkinFallback(skinId);
+      ctx.fill();
+    }
+
     ctx.beginPath();
-    ctx.arc(screenX, screenY, Math.max(1, screenRadius), 0, Math.PI * 2);
-    ctx.fillStyle = colorFor(entity, nicknames, colors);
-    ctx.fill();
+    ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+    ctx.lineWidth = Math.max(1, radius * 0.04);
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+    ctx.stroke();
     drawCalls++;
 
     const nickname = entity.p && nicknames.get(entity.p);
     if (nickname) {
-      ctx.font = `${Math.max(10, screenRadius * 0.3)}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = '#ffffff';
-      ctx.strokeText(nickname, screenX, screenY);
-      ctx.fillStyle = '#1a1a1a';
+      const fontSize = entity.p!.startsWith('bot-')
+        ? botNicknameFontSizePx(ctx, nickname, screenRadius)
+        : Math.max(10, screenRadius * 0.3);
+      ctx.font = `normal ${fontSize}px sans-serif`;
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
       ctx.fillText(nickname, screenX, screenY);
-      drawCalls += 2;
+      drawCalls++;
     }
   }
 
@@ -154,6 +282,33 @@ export function renderFrame(
     drawCalls,
     batches: foodPathsByColor.size + 1,
   };
+}
+
+/** Taille de police plancher pour un pseudo de bot — en-deçà, le texte devient illisible ; sur un
+ * tout petit morceau on accepte alors un léger débordement plutôt qu'un texte invisible. */
+const BOT_NICKNAME_MIN_FONT_PX = 6;
+/** Point de départ avant ajustement à la largeur réelle du pseudo (`ctx.measureText`) — un
+ * multiplicateur fixe du rayon ne suffit pas : les pseudos de robots vont de 2 à ~12 caractères
+ * (voir BOT_IDENTITIES, ex. "Or" contre "Lapis-Lazuli"), un pseudo long déborderait du cercle à
+ * taille fixe. */
+const BOT_NICKNAME_START_FONT_RATIO = 0.32;
+
+/** Calcule la taille de police (px) qui fait tenir `nickname` dans le cercle du bot (diamètre
+ * `screenRadius * 2`, avec une marge pour ne pas toucher le bord) — mesuré via `ctx.measureText`
+ * plutôt qu'un ratio fixe, pour rester correct quelle que soit la longueur du pseudo. */
+function botNicknameFontSizePx(
+  ctx: CanvasRenderingContext2D,
+  nickname: string,
+  screenRadius: number,
+): number {
+  const availableWidth = screenRadius * 1.7;
+  let fontSize = Math.max(BOT_NICKNAME_MIN_FONT_PX, screenRadius * BOT_NICKNAME_START_FONT_RATIO);
+  ctx.font = `${fontSize}px sans-serif`;
+  const textWidth = ctx.measureText(nickname).width;
+  if (textWidth > availableWidth && textWidth > 0) {
+    fontSize = Math.max(BOT_NICKNAME_MIN_FONT_PX, fontSize * (availableWidth / textWidth));
+  }
+  return fontSize;
 }
 
 /** Dégradé radial arc-en-ciel pour le pellet "Multicolor" (masse 12, le plus rare et le plus
@@ -261,14 +416,12 @@ export function colorFor(
   nicknames?: ReadonlyMap<string, string>,
   colors?: ReadonlyMap<string, string>,
 ): string {
-  if (!entity.p) return '#888888';
+  if (!entity.p) return 'Banane';
   const explicitColor = colors?.get(entity.p);
   if (explicitColor) return explicitColor;
   const name = nicknames?.get(entity.p);
   if (name) {
-    if (BOT_COLORS[name]) return BOT_COLORS[name];
-    const baseName = name.split('_')[0];
-    if (baseName && BOT_COLORS[baseName]) return BOT_COLORS[baseName];
+    return skinForNickname(name);
   }
-  return DEFAULT_BLOB_COLOR;
+  return 'Banane';
 }

@@ -1,18 +1,15 @@
 import {
+  colorForNickname,
   DEFAULT_DEATH_BANNER_ID,
   DEFAULT_DEATH_MESSAGE,
-  distance,
+  getRandomSkin,
   type DeathCustomCard,
-  type EntitySnapshot,
-  type LeaderboardEntry,
   type ServerMessage,
 } from '@angulio/shared';
 import type { WebSocket } from 'ws';
 import type { AccountsService } from '../../accounts/service.js';
 import type { ManagedRoom } from '../../engine/roomManager.js';
-import { SpatialHash } from '../../engine/spatialHash.js';
-import type { Entity, PlayerId } from '../../engine/types.js';
-import { activeComboLevel } from '../../engine/xp.js';
+import type { PlayerId } from '../../engine/types.js';
 import { logEvent } from '../../log.js';
 
 const DEFAULT_CUSTOM_CARD: DeathCustomCard = {
@@ -22,141 +19,84 @@ const DEFAULT_CUSTOM_CARD: DeathCustomCard = {
 
 export interface RoomRuntime {
   sockets: Map<PlayerId, WebSocket>;
-  interestHash: SpatialHash;
   nextPlayerId: number;
   accountIdByPlayer: Map<PlayerId, number>;
-  maxMassByPlayer: Map<PlayerId, number>;
   spectatorIds: Set<PlayerId>;
   /** Couleur de blob par joueur (refonte UI/UX, avatar procédural) — résolue une fois au join
-   * (compte ou repli déterministe sur le pseudo, voir connectionHandler.ts) et mémorisée ici
-   * pour pouvoir la rediffuser aux nouveaux arrivants (backfill `player`, comme `nickname`). */
+   * (compte ou repli déterministe sur le pseudo, voir connectionHandler.ts/RoomHandle.onPlayerJoin)
+   * et mémorisée ici pour pouvoir la rediffuser aux nouveaux arrivants (backfill `player`, comme
+   * `nickname`). */
   colorByPlayer: Map<PlayerId, string>;
 }
 
+/** Relaie les événements d'un salon (`RoomHandle`, voir engine/worker/roomHost.ts) vers les
+ * sockets réseau — la simulation elle-même (tick, join/mort/reset, construction des messages
+ * `state`) vit entièrement derrière `RoomHandle` (même process pour `LocalRoomHost`, thread
+ * séparé pour `WorkerRoomHost`) : ce module ne connaît plus `Room`/`World` du tout, uniquement
+ * les sockets et les données liées au compte (DB), qui doivent rester sur ce thread. */
 export function wireRoom(
   managed: ManagedRoom,
-  interestRadiusPx: number,
   accountsService: AccountsService | undefined,
   runtimes: Map<string, RoomRuntime>,
 ): RoomRuntime {
   const runtime: RoomRuntime = {
     sockets: new Map(),
-    interestHash: new SpatialHash(interestRadiusPx),
     nextPlayerId: 1,
     accountIdByPlayer: new Map(),
-    maxMassByPlayer: new Map(),
     spectatorIds: new Set(),
     colorByPlayer: new Map(),
   };
   runtimes.set(managed.id, runtime);
 
-  managed.room.onState((tick) => {
-    if (runtime.sockets.size === 0) return;
+  managed.handle.onPlayerJoin(({ playerId, nickname, skin }) => {
+    const assignedSkin =
+      skin ?? (playerId.startsWith('bot-') ? getRandomSkin() : colorForNickname(nickname));
+    runtime.colorByPlayer.set(playerId, assignedSkin);
+    const playerInfo = { type: 'player' as const, playerId, nickname, color: assignedSkin };
+    for (const socket of runtime.sockets.values()) send(socket, playerInfo);
+  });
 
-    runtime.interestHash.clear();
-    for (const entity of managed.room.world.allEntities()) runtime.interestHash.insert(entity);
-
-    for (const [playerId, socket] of runtime.sockets) {
-      const ownPieces = managed.room.world.getPiecesByOwner(playerId);
-      const center = centroidOf(ownPieces) ?? {
-        x: managed.room.world.mapSize / 2,
-        y: managed.room.world.mapSize / 2,
-      };
-
-      const visible = new Map<string, Entity>();
-      for (const piece of ownPieces) visible.set(piece.id, piece);
-
-      const ownMass = ownPieces.reduce((sum, p) => sum + p.mass, 0);
-      const effectiveRadius = ownMass > 0 
-        ? Math.round(interestRadiusPx + Math.sqrt(ownMass) * 15) 
-        : interestRadiusPx;
-
-      if (runtime.spectatorIds.has(playerId)) {
-        for (const entity of managed.room.world.allEntities()) {
-          visible.set(entity.id, entity);
-        }
-      } else {
-        for (const id of runtime.interestHash.queryNearby(center)) {
-          const entity = managed.room.world.getEntity(id);
-          if (entity && distance(entity.position, center) <= effectiveRadius) {
-            visible.set(entity.id, entity);
-          }
-        }
-      }
-
-      const entities: EntitySnapshot[] = [...visible.values()].map(toSnapshot);
-
-      const totalMass = ownPieces.reduce((sum, piece) => sum + piece.mass, 0);
-      const accelerationPerSec2 =
-        totalMass > 0 ? managed.room.getAccelerationForMass(totalMass) : undefined;
-
-      const player = managed.room.world.getPlayer(playerId);
-      const comboLevel = player
-        ? activeComboLevel(player.lifeStats.combo, performance.now())
-        : undefined;
-
-      const selfFields: { accelerationPerSec2?: number; combo?: { level: number } } = {};
-      if (accelerationPerSec2 !== undefined) selfFields.accelerationPerSec2 = accelerationPerSec2;
-      if (comboLevel !== undefined) selfFields.combo = { level: comboLevel };
-      const self = Object.keys(selfFields).length > 0 ? selfFields : undefined;
-
-      const allPlayersList = Array.from(managed.room.world.allPlayers());
-      const playerScores = allPlayersList
-        .map((p) => {
-          let score = 0;
-          for (const pieceId of p.pieceIds) {
-            const piece = managed.room.world.getEntity(pieceId);
-            if (piece) score += piece.mass;
-          }
-          return { id: p.id, nickname: p.nickname, score: Math.floor(score) };
-        })
-        .filter((p) => p.score > 0)
-        .sort((a, b) => b.score - a.score);
-
-      const leaderboard: LeaderboardEntry[] = playerScores.slice(0, 10).map((entry, idx) => ({
-        rank: idx + 1,
-        nickname: entry.nickname,
-        score: entry.score,
-        isSelf: entry.id === playerId,
-      }));
-
-      send(socket, { type: 'state', tick, entities, leaderboard, self });
-
-      const previousMax = runtime.maxMassByPlayer.get(playerId) ?? 0;
-      if (totalMass > previousMax) runtime.maxMassByPlayer.set(playerId, totalMass);
+  managed.handle.onTick((_tick, payloads) => {
+    for (const { playerId, message } of payloads) {
+      const socket = runtime.sockets.get(playerId);
+      if (socket) send(socket, message);
     }
   });
 
-  managed.room.onPlayerDeath((playerId, info) => {
+  managed.handle.onPlayerDeath((playerId, info) => {
     logEvent('player_died', { roomId: managed.id, playerId });
-    // Lus avant `recordAccountStats`/la remise à zéro juste en dessous : ce sont la masse max et
-    // l'XP de la vie qui vient de se terminer (écran de mort personnalisé, `finalScore`/
-    // `xpEarned`), pas celles de la prochaine — `recordAccountStats` réinitialise `lifeStats`
-    // pour un compte (jamais pour un invité, voir World.addPlayer/resetLifeStats).
-    const finalScore = Math.round(runtime.maxMassByPlayer.get(playerId) ?? 0);
-    const xpEarned = Math.round(managed.room.world.getPlayer(playerId)?.lifeStats.xpEarned ?? 0);
-    recordAccountStats(accountsService, managed, runtime, playerId);
-    runtime.maxMassByPlayer.set(playerId, 0);
+
+    const accountId = runtime.accountIdByPlayer.get(playerId);
+    if (accountsService && accountId !== undefined && (info.transformedScore > 0 || info.transformedXp > 0)) {
+      accountsService
+        .recordGameResult(accountId, managed.modId, info.transformedScore, info.transformedXp)
+        .catch((error: unknown) => {
+          logEvent('account_stats_write_failed', {
+            roomId: managed.id,
+            playerId,
+            reason: (error as Error).message,
+          });
+        });
+    }
 
     const socket = runtime.sockets.get(playerId);
     if (!socket) return;
 
-    const accountId = runtime.accountIdByPlayer.get(playerId);
     void (async () => {
       const card =
         accountId !== undefined ? await accountsService?.getDeathScreenCard(accountId) : undefined;
       send(socket, {
         type: 'died',
         killerNickname: info.killerNickname,
-        finalScore,
-        survivalTimeSec: Math.round(info.survivalTimeSec),
-        xpEarned,
+        finalScore: info.finalScore,
+        survivalTimeSec: info.survivalTimeSec,
+        xpEarned: info.xpEarned,
         customCard: card ? { message: card.message, bannerId: card.bannerId } : DEFAULT_CUSTOM_CARD,
       });
     })();
   });
 
-  managed.room.onReset(() => {
+  managed.handle.onReset(() => {
     logEvent('room_reset', { roomId: managed.id });
     for (const socket of runtime.sockets.values()) {
       send(socket, {
@@ -172,68 +112,33 @@ export function wireRoom(
   return runtime;
 }
 
-export function recordAccountStats(
+/** Crédite un compte à la déconnexion d'un joueur encore en vie (voir connectionHandler.ts) —
+ * pendant de `RoomHandle.onPlayerDeath` ci-dessus pour le cas "part avant de mourir" plutôt que
+ * "meurt en jeu". `result` vient de `RoomHandle.leave`, déjà transformé par le mod
+ * (`transformScoreForAccount`, voir RoomInstance.leave) — ce module n'a plus jamais besoin de
+ * `Room` pour ça. */
+export function recordAccountStatsOnLeave(
   accounts: AccountsService | undefined,
   managed: ManagedRoom,
-  runtime: RoomRuntime,
+  accountId: number | undefined,
   playerId: PlayerId,
+  result: { transformedScore: number; transformedXp: number } | undefined,
 ): void {
-  if (!accounts) return;
-  const accountId = runtime.accountIdByPlayer.get(playerId);
+  if (!accounts || !result) return;
   if (accountId === undefined) return;
+  if (result.transformedScore <= 0 && result.transformedXp <= 0) return;
 
-  const rawScore = runtime.maxMassByPlayer.get(playerId) ?? 0;
-  const player = managed.room.world.getPlayer(playerId);
-  const rawXp = player?.lifeStats.xpEarned ?? 0;
-
-  if (player) managed.room.world.resetLifeStats(playerId);
-
-  const { score, xp } = managed.room.transformScoreForAccount(rawScore, rawXp);
-  if (score <= 0 && xp <= 0) return;
-
-  accounts.recordGameResult(accountId, managed.modId, score, xp).catch((error: unknown) => {
-    logEvent('account_stats_write_failed', {
-      roomId: managed.id,
-      playerId,
-      reason: (error as Error).message,
+  accounts
+    .recordGameResult(accountId, managed.modId, result.transformedScore, result.transformedXp)
+    .catch((error: unknown) => {
+      logEvent('account_stats_write_failed', {
+        roomId: managed.id,
+        playerId,
+        reason: (error as Error).message,
+      });
     });
-  });
 }
 
 export function send(socket: WebSocket, message: ServerMessage): void {
   if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message));
-}
-
-function centroidOf(pieces: Entity[]): { x: number; y: number } | undefined {
-  if (pieces.length === 0) return undefined;
-
-  let totalMass = 0;
-  let x = 0;
-  let y = 0;
-  for (const piece of pieces) {
-    totalMass += piece.mass;
-    x += piece.position.x * piece.mass;
-    y += piece.position.y * piece.mass;
-  }
-  return { x: x / totalMass, y: y / totalMass };
-}
-
-function round1(value: number): number {
-  return Math.round(value * 10) / 10;
-}
-
-function roundMass(value: number): number {
-  return Math.round(value);
-}
-
-function toSnapshot(entity: Entity): EntitySnapshot {
-  return {
-    i: entity.id,
-    k: entity.kind === 'particle' ? 'f' : 'c',
-    x: round1(entity.position.x),
-    y: round1(entity.position.y),
-    r: round1(entity.radius),
-    m: roundMass(entity.mass),
-    p: entity.ownerId,
-  };
 }

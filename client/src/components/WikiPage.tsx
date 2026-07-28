@@ -1,4 +1,4 @@
-import { BOT_IDENTITIES } from '@angulio/shared';
+import { BOT_IDENTITIES, SKIN_IMAGE_MAP, skinForNickname } from '@angulio/shared';
 import { useEffect, useState } from 'react';
 import { fetchAvailableModes } from '../lobby.js';
 import { modeMeta } from '../modes.js';
@@ -13,7 +13,6 @@ type WikiSection = 'modes' | 'world' | 'foes' | 'events';
 /** Étiquette d'ambiance par mode (wiki joueur — pas un statut d'ingénierie). Modes inconnus
  * (mod futur) : libellé neutre plutôt que de ne rien afficher. */
 function modeVibe(modeId: string): string {
-  if (modeId === 'folie') return 'IMPRÉVISIBLE';
   if (modeId === 'hardcore') return 'RISQUE MAXIMUM';
   if (modeId === 'vanilla') return 'CLASSIQUE';
   return 'À DÉCOUVRIR';
@@ -33,7 +32,7 @@ export default function WikiPage({ onClose, modes }: WikiPageProps) {
         const fetched = await fetchAvailableModes();
         setModesList(fetched);
       } catch {
-        setModesList(['vanilla', 'folie', 'hardcore']);
+        setModesList(['vanilla', 'hardcore']);
       }
     })();
   }, [modes]);
@@ -112,7 +111,7 @@ export default function WikiPage({ onClose, modes }: WikiPageProps) {
             <section className="wiki-doc-section">
               <h1 className="wiki-doc-h1">Modes de jeu</h1>
               <p className="wiki-doc-intro">
-                Trois façons de jouer à Angul.io, du plus classique au plus radical — choisis
+                Deux façons de jouer à Angul.io, du plus classique au plus radical — choisis
                 l'ambiance que tu cherches depuis l'accueil.
               </p>
 
@@ -123,10 +122,7 @@ export default function WikiPage({ onClose, modes }: WikiPageProps) {
                   let startMass = '50 UC';
                   let xpPace = 'Normale';
 
-                  if (modeId === 'folie') {
-                    startMass = '75 UC';
-                    xpPace = '1.5x plus rapide';
-                  } else if (modeId === 'hardcore') {
+                  if (modeId === 'hardcore') {
                     startMass = '100 UC';
                     xpPace = '10x plus rapide';
                   }
@@ -349,16 +345,21 @@ export default function WikiPage({ onClose, modes }: WikiPageProps) {
                   assez souvent et tu commenceras à reconnaître les habitués.
                 </p>
                 <div className="wiki-bestiary-grid">
-                  {BOT_IDENTITIES.map((bot) => (
-                    <div key={bot.name} className="wiki-bestiary-chip">
-                      <span
-                        className="wiki-bestiary-dot"
-                        style={{ background: bot.color }}
-                        aria-hidden="true"
-                      />
-                      {bot.name}
-                    </div>
-                  ))}
+                  {BOT_IDENTITIES.map((bot) => {
+                    const skin = skinForNickname(bot.name);
+                    const skinUrl = SKIN_IMAGE_MAP[skin];
+                    return (
+                      <div key={bot.name} className="wiki-bestiary-chip">
+                        <img
+                          src={skinUrl}
+                          alt=""
+                          className="wiki-bestiary-dot"
+                          style={{ objectFit: 'cover', borderRadius: '50%' }}
+                        />
+                        {bot.name}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </section>

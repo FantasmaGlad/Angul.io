@@ -7,7 +7,12 @@
  */
 export type RoomResetSchedule =
   | { type: 'dailyAt'; hour: number; minute: number; timeZone: string }
-  | { type: 'interval'; intervalMs: number };
+  | { type: 'interval'; intervalMs: number }
+  /** Reset à intervalle régulier mais calé sur l'horloge murale d'un fuseau donné (ex. toutes les
+   * 120 minutes à 00h/02h/04h.../22h heure de Paris) plutôt qu'un simple délai fixe depuis le
+   * dernier démarrage du serveur — deux salons redémarrés à des instants différents restent
+   * ainsi synchronisés sur les mêmes horaires de reset, prévisibles pour les joueurs. */
+  | { type: 'everyNMinutes'; minutes: number; timeZone: string };
 
 export const DEFAULT_RESET_SCHEDULE: RoomResetSchedule = {
   type: 'dailyAt',
@@ -16,9 +21,19 @@ export const DEFAULT_RESET_SCHEDULE: RoomResetSchedule = {
   timeZone: 'Europe/Paris',
 };
 
+/** Salons publics de base (server/src/index.ts) : reset toutes les 2h, calé sur l'heure de Paris. */
+export const TWO_HOUR_RESET_SCHEDULE: RoomResetSchedule = {
+  type: 'everyNMinutes',
+  minutes: 120,
+  timeZone: 'Europe/Paris',
+};
+
 /** Délai (ms, jamais négatif) avant le prochain déclenchement du reset, à partir de `now`. */
 export function delayUntilNextReset(schedule: RoomResetSchedule, now: number = Date.now()): number {
   if (schedule.type === 'interval') return schedule.intervalMs;
+  if (schedule.type === 'everyNMinutes') {
+    return Math.max(0, nextAlignedOccurrenceUtc(schedule.minutes, schedule.timeZone, now) - now);
+  }
   return Math.max(
     0,
     nextDailyOccurrenceUtc(schedule.hour, schedule.minute, schedule.timeZone, now) - now,
@@ -45,6 +60,25 @@ function nextDailyOccurrenceUtc(
   const todayAtTarget = zonedWallClockToUtc(today, hour, minute, timeZone);
   if (todayAtTarget >= now) return todayAtTarget;
   return zonedWallClockToUtc(addDays(today, 1), hour, minute, timeZone);
+}
+
+/** Premier créneau (`00h`, `00h+minutesInterval`, `00h+2*minutesInterval`, …) strictement après
+ * `now`, heure murale de `timeZone` — pas `>=` : appelée juste après le déclenchement d'un reset,
+ * elle doit trouver le *prochain* créneau, jamais celui qui vient de se produire (qui bouclerait
+ * en reset immédiat). Repasse au premier créneau du lendemain si tous ceux d'aujourd'hui sont
+ * déjà passés (n'arrive que si `minutesInterval` ne divise pas 1440 exactement). */
+function nextAlignedOccurrenceUtc(minutesInterval: number, timeZone: string, now: number): number {
+  const today = civilDateInZone(now, timeZone);
+  const slotsPerDay = Math.ceil((24 * 60) / minutesInterval);
+
+  for (let slot = 0; slot < slotsPerDay; slot++) {
+    const minutesOfDay = slot * minutesInterval;
+    const hour = Math.floor(minutesOfDay / 60) % 24;
+    const minute = minutesOfDay % 60;
+    const candidate = zonedWallClockToUtc(today, hour, minute, timeZone);
+    if (candidate > now) return candidate;
+  }
+  return zonedWallClockToUtc(addDays(today, 1), 0, 0, timeZone);
 }
 
 function civilDateInZone(ms: number, timeZone: string): CivilDate {

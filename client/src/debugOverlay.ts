@@ -1,5 +1,11 @@
 /** Écran de diagnostic façon F3 (Minecraft) : FPS, informations GPU/système/réseau du
- * navigateur. Purement client — aucune de ces informations ne transite vers le serveur. */
+ * navigateur. Purement client — aucune de ces informations ne transite vers le serveur.
+ *
+ * Règle de ce fichier (corrige un bug où l'écran affichait des valeurs inventées en repli) :
+ * chaque métrique affichée doit être une mesure réelle. Une métrique non mesurable dans cette
+ * architecture (ex. pas de Web Workers, pas de pipeline WebGL pour le rendu, pas de prédiction
+ * client à réconcilier, pas de masse éjectée dans la simulation) est omise plutôt que remplacée
+ * par un nombre plausible. */
 
 export interface FrameStats {
   fps: number;
@@ -34,6 +40,23 @@ export function createFpsTracker(): { tick(now: number): FrameStats } {
         frameTimeMs: avg,
         p99Ms,
       };
+    },
+  };
+}
+
+/** Cadence réelle d'arrivée des messages `state` du serveur, mesurée côté client sur une fenêtre
+ * glissante d'1 seconde — sert de "Server TPS (current)" honnête (mesuré, pas juste la constante
+ * annoncée par le serveur) : une vraie baisse de cadence (salon surchargé, réseau qui traîne) s'y
+ * reflète, contrairement à une valeur fixe recopiée du `welcome`. */
+export function createTickRateTracker(): { record(now: number): number } {
+  const WINDOW_MS = 1000;
+  const timestamps: number[] = [];
+
+  return {
+    record(now: number): number {
+      timestamps.push(now);
+      while (timestamps.length > 0 && now - timestamps[0]! > WINDOW_MS) timestamps.shift();
+      return timestamps.length;
     },
   };
 }
@@ -126,18 +149,32 @@ export function detectSystemInfo(): SystemInfo {
   };
 }
 
-export interface ThreadingInfo {
-  mainThreadLagMs?: number;
-  longTasksLast10s?: number;
-  activeWorkers?: number;
-  workerRttMs?: number;
-  transferRateKbps?: number;
-  sharedArrayBuffers?: boolean;
+export interface BatteryInfo {
+  percent: number;
+  charging: boolean;
+}
+
+/** API Battery Status (Chromium uniquement, dépréciée hors de ce moteur mais toujours
+ * fonctionnelle) — `undefined` sur les navigateurs qui ne l'exposent pas (Firefox, Safari) :
+ * l'appelant doit alors omettre la ligne plutôt qu'afficher une batterie inventée. */
+export async function detectBatteryInfo(): Promise<BatteryInfo | undefined> {
+  if (typeof navigator === 'undefined') return undefined;
+  const getBattery = (
+    navigator as unknown as {
+      getBattery?: () => Promise<{ level: number; charging: boolean }>;
+    }
+  ).getBattery;
+  if (!getBattery) return undefined;
+  try {
+    const battery = await getBattery();
+    return { percent: Math.round(battery.level * 100), charging: battery.charging };
+  } catch {
+    return undefined;
+  }
 }
 
 export interface RenderStats {
   drawTimeMs?: number;
-  gpuTimeMs?: number;
   drawCalls?: number;
   batches?: number;
   visibleEntities?: number;
@@ -147,15 +184,16 @@ export interface RenderStats {
   cameraScale?: number;
   dpiRatio?: number;
   p99Ms?: number;
+  /** `undefined` = pas de plafond logiciel (Vsync ou palier "Illimité", voir settings.ts) : le
+   * rendu suit alors le taux de rafraîchissement réel de l'écran, illisible depuis le JS — on
+   * l'indique comme tel plutôt que d'inventer un chiffre (ex. 144Hz par défaut). */
   targetHz?: number;
 }
 
 export interface SimulationInfo {
   logicStepMs?: number;
-  spatialChecks?: number;
   playersCount?: number;
   foodCount?: number;
-  ejectedCount?: number;
   localX?: number;
   localY?: number;
   gridSector?: string;
@@ -170,36 +208,18 @@ export interface NetworkSyncInfo {
   netOutKbps?: number;
   interpBufferMs?: number;
   interpSnapshots?: number;
-  reconciliationsPerSec?: number;
-}
-
-export interface MemoryResourcesInfo {
-  usedMb?: number;
-  totalMb?: number;
-  limitMb?: number;
-  allocRateKbps?: number;
-  foodPoolUsed?: number;
-  foodPoolMax?: number;
-  particlesPoolUsed?: number;
-  particlesPoolMax?: number;
-  vramApproxMb?: number;
-  texturesCount?: number;
-  buffersCount?: number;
 }
 
 export interface HardwareInfo {
   state?: string;
-  powerSaver?: boolean;
   batteryPercent?: number;
   batteryCharging?: boolean;
-  batteryStatusText?: string;
   cpuCores?: number;
 }
 
 export interface DebugSnapshot {
   fps: FrameStats;
   pingMs?: number;
-  tick?: number;
   visibleEntities?: number;
   totalEntities?: number;
   roomId?: string;
@@ -209,11 +229,9 @@ export interface DebugSnapshot {
   memory?: MemoryInfo;
   system?: SystemInfo;
 
-  threading?: ThreadingInfo;
   render?: RenderStats;
   simulation?: SimulationInfo;
   networkSync?: NetworkSyncInfo;
-  memoryResources?: MemoryResourcesInfo;
   hardware?: HardwareInfo;
 }
 
@@ -234,140 +252,106 @@ export function calculateGridSector(x: number, y: number, mapSize: number = 1500
   return `${cols[colIndex] ?? 'A'}${rowIndex}`;
 }
 
-/** Formate le texte complet du diagnostic F3 selon l'affichage structuré demandé. */
+/** Formate le texte complet du diagnostic F3 — uniquement à partir de mesures réelles (voir
+ * commentaire d'en-tête du fichier). Une valeur absente (non mesurable, ou pas encore reçue)
+ * n'est jamais remplacée par un chiffre plausible : elle est omise (ligne entière) ou affichée
+ * comme "—"/"Non disponible" selon le cas. */
 export function formatDebugText(snapshot: DebugSnapshot): string {
   const lines: string[] = [];
 
-  // 1. THREADING & WORKERS
-  const cores = snapshot.hardware?.cpuCores ?? snapshot.system?.hardwareConcurrency ?? 16;
-  const activeWorkers = snapshot.threading?.activeWorkers ?? Math.min(4, cores);
-  const mainThreadLagMs = snapshot.threading?.mainThreadLagMs ?? 0.4;
-  const longTasks = snapshot.threading?.longTasksLast10s ?? 0;
-  const workerRttMs = snapshot.threading?.workerRttMs ?? 0.8;
-  const transferRateKbps = snapshot.threading?.transferRateKbps ?? 450;
-  const sabSupported = snapshot.threading?.sharedArrayBuffers !== false;
-
-  lines.push('-- THREADING & WORKERS --');
-  lines.push(
-    `Main Thread Lag: ${mainThreadLagMs.toFixed(1)} ms | Long Tasks (last 10s): ${longTasks}`,
-  );
-  lines.push(
-    `Active Workers: ${activeWorkers} / ${cores} Cores | Worker RTT: ${workerRttMs.toFixed(1)} ms`,
-  );
-  lines.push(
-    `Transfer Rate: ${transferRateKbps} KB/s (${sabSupported ? 'SharedArrayBuffers' : 'ArrayBuffers'})`,
-  );
-  lines.push('');
-
-  // 2. ENGINE & RENDER
-  const fpsVal = snapshot.fps?.fps ?? 60.0;
-  const frameTimeMs = snapshot.fps?.frameTimeMs ?? 16.6;
-  const p99Ms = snapshot.render?.p99Ms ?? snapshot.fps?.p99Ms ?? (frameTimeMs > 0 ? 18.2 : 0.0);
-  const targetHz = snapshot.render?.targetHz ?? 144;
-  const drawTimeMs = snapshot.render?.drawTimeMs ?? 1.2;
-  const gpuTimeMs = snapshot.render?.gpuTimeMs ?? 2.1;
-  const drawCalls = snapshot.render?.drawCalls ?? 12;
-  const batches = snapshot.render?.batches ?? 3;
-  const visibles = snapshot.render?.visibleEntities ?? snapshot.visibleEntities ?? 715;
-  const total = snapshot.render?.totalEntities ?? snapshot.totalEntities ?? 15000;
-  const culledPct = total > 0 ? Math.max(0, ((total - visibles) / total) * 100) : 95.2;
-  const vw = snapshot.render?.viewportWidth ?? snapshot.system?.screenWidth ?? 1920;
-  const vh = snapshot.render?.viewportHeight ?? snapshot.system?.screenHeight ?? 1080;
-  const zoom = snapshot.render?.cameraScale ?? snapshot.cameraScale ?? 1.8;
-  const dpi = snapshot.render?.dpiRatio ?? snapshot.system?.devicePixelRatio ?? 1.25;
+  // 1. ENGINE & RENDER
+  const fpsVal = snapshot.fps.fps;
+  const frameTimeMs = snapshot.fps.frameTimeMs;
+  const p99Ms = snapshot.render?.p99Ms ?? snapshot.fps.p99Ms ?? 0;
+  const targetHz = snapshot.render?.targetHz;
+  const drawTimeMs = snapshot.render?.drawTimeMs ?? 0;
+  const drawCalls = snapshot.render?.drawCalls ?? 0;
+  const batches = snapshot.render?.batches ?? 0;
+  const visibles = snapshot.render?.visibleEntities ?? snapshot.visibleEntities ?? 0;
+  const total = snapshot.render?.totalEntities ?? snapshot.totalEntities ?? 0;
+  const culledPct = total > 0 ? Math.max(0, ((total - visibles) / total) * 100) : 0;
+  const vw = snapshot.render?.viewportWidth ?? snapshot.system?.screenWidth ?? 0;
+  const vh = snapshot.render?.viewportHeight ?? snapshot.system?.screenHeight ?? 0;
+  const zoom = snapshot.render?.cameraScale ?? snapshot.cameraScale ?? 0;
+  const dpi = snapshot.render?.dpiRatio ?? snapshot.system?.devicePixelRatio ?? 1;
 
   lines.push('-- ENGINE & RENDER --');
   lines.push(
-    `FPS: ${fpsVal.toFixed(1)} (${frameTimeMs.toFixed(1)}ms) | p99: ${p99Ms.toFixed(1)}ms | Target: ${targetHz}Hz`,
+    `FPS: ${fpsVal.toFixed(1)} (${frameTimeMs.toFixed(1)}ms) | p99: ${p99Ms.toFixed(1)}ms | ` +
+      `Target: ${targetHz !== undefined ? `${targetHz}Hz` : 'Illimité (Vsync)'}`,
   );
-  lines.push(`Draw Time: ${drawTimeMs.toFixed(1)}ms | GPU Time: ${gpuTimeMs.toFixed(1)}ms`);
+  lines.push(`Draw Time: ${drawTimeMs.toFixed(1)}ms`);
   lines.push(
-    `Draw Calls: ${drawCalls} | Batches: ${batches} | Visibles: ${visibles.toLocaleString('en-US')} / Total: ${total.toLocaleString('en-US')} (Culled: ${culledPct.toFixed(1)}%)`,
+    `Draw Calls: ${drawCalls} | Batches: ${batches} | ` +
+      `Visibles: ${visibles.toLocaleString('en-US')} / Total: ${total.toLocaleString('en-US')} ` +
+      `(Culled: ${culledPct.toFixed(1)}%)`,
   );
   lines.push(`Viewport: ${vw}x${vh} (Zoom: ${zoom.toFixed(2)}x) | DPI Ratio: ${dpi.toFixed(2)}`);
   lines.push('');
 
-  // 3. SIMULATION & LOGIC
-  const logicStepMs = snapshot.simulation?.logicStepMs ?? 0.8;
-  const spatialChecks = snapshot.simulation?.spatialChecks ?? 184;
-  const playersCount = snapshot.simulation?.playersCount ?? 12;
-  const foodCount = snapshot.simulation?.foodCount ?? 690;
-  const ejectedCount = snapshot.simulation?.ejectedCount ?? 13;
-  const posX = snapshot.simulation?.localX ?? 4821.5;
-  const posY = snapshot.simulation?.localY ?? -1204.2;
+  // 2. SIMULATION & LOGIC
+  const logicStepMs = snapshot.simulation?.logicStepMs ?? 0;
+  const playersCount = snapshot.simulation?.playersCount ?? 0;
+  const foodCount = snapshot.simulation?.foodCount ?? 0;
+  const posX = snapshot.simulation?.localX ?? 0;
+  const posY = snapshot.simulation?.localY ?? 0;
   const gridSector = snapshot.simulation?.gridSector ?? calculateGridSector(posX, posY);
 
   lines.push('-- SIMULATION & LOGIC --');
-  lines.push(`Logic Step: ${logicStepMs.toFixed(1)}ms | Spatial Checks: ${spatialChecks}/frame`);
-  lines.push(
-    `Entities: ${visibles} (Players: ${playersCount}, Food: ${foodCount}, Ejected: ${ejectedCount})`,
-  );
+  lines.push(`Logic Step: ${logicStepMs.toFixed(1)}ms`);
+  lines.push(`Entities: ${visibles} (Players: ${playersCount}, Food: ${foodCount})`);
   lines.push(
     `Local Pos: X: ${posX.toFixed(1)}, Y: ${posY.toFixed(1)} | Grid Sector: ${gridSector}`,
   );
   lines.push('');
 
-  // 4. NETWORK & SYNC (WebRTC/WS)
-  const rttVal = snapshot.networkSync?.rttMs ?? snapshot.pingMs ?? snapshot.network?.rttMs ?? 18;
-  const rttStr = rttVal !== undefined ? `${Math.round(rttVal)} ms` : '—';
-  const tpsCur = snapshot.networkSync?.serverTpsCurrent ?? 60;
-  const tpsTgt = snapshot.networkSync?.serverTpsTarget ?? 60;
-  const netInKbps =
-    snapshot.networkSync?.netInKbps ??
-    (snapshot.network?.downlinkMbps ? snapshot.network.downlinkMbps * 100 : 24.5);
-  const netInPktSec = snapshot.networkSync?.netInPktSec ?? 60;
-  const netOutKbps = snapshot.networkSync?.netOutKbps ?? 2.1;
-  const interpBufferMs = snapshot.networkSync?.interpBufferMs ?? 32;
-  const interpSnapshots = snapshot.networkSync?.interpSnapshots ?? 2;
-  const reconciliations = snapshot.networkSync?.reconciliationsPerSec ?? 0;
+  // 3. NETWORK & SYNC
+  const rttMs = snapshot.networkSync?.rttMs ?? snapshot.pingMs;
+  const rttStr = rttMs !== undefined ? `${Math.round(rttMs)} ms` : '—';
+  const tpsCur = snapshot.networkSync?.serverTpsCurrent;
+  const tpsTgt = snapshot.networkSync?.serverTpsTarget;
+  const tpsStr = tpsCur !== undefined && tpsTgt !== undefined ? `${tpsCur}/${tpsTgt}` : '—';
+  const netInKbps = snapshot.networkSync?.netInKbps ?? 0;
+  const netInPktSec = snapshot.networkSync?.netInPktSec ?? 0;
+  const netOutKbps = snapshot.networkSync?.netOutKbps ?? 0;
+  const connectionType = snapshot.network?.effectiveType;
 
-  lines.push('-- NETWORK & SYNC (WebRTC/WS) --');
-  lines.push(`RTT (Ping): ${rttStr} | Server TPS: ${tpsCur}/${tpsTgt}`);
+  lines.push('-- NETWORK & SYNC --');
+  lines.push(`RTT (Ping): ${rttStr} | Server TPS: ${tpsStr}`);
   lines.push(
-    `Net In: ${netInKbps.toFixed(1)} KB/s (${netInPktSec} pkt/s) | Net Out: ${netOutKbps.toFixed(1)} KB/s`,
+    `Net In: ${netInKbps.toFixed(1)} KB/s (${netInPktSec} pkt/s) | Net Out: ${netOutKbps.toFixed(1)} KB/s` +
+      (connectionType ? ` | Connexion: ${connectionType}` : ''),
   );
-  lines.push(
-    `Interp Buffer: ${interpBufferMs} ms (${interpSnapshots} snapshots) | Reconciliations: ${reconciliations}/s`,
-  );
+  if (snapshot.networkSync?.interpBufferMs !== undefined) {
+    lines.push(
+      `Interp Buffer: ${snapshot.networkSync.interpBufferMs} ms ` +
+        `(${snapshot.networkSync.interpSnapshots ?? 1} snapshots)`,
+    );
+  }
   lines.push('');
 
-  // 5. MEMORY & RESOURCES
-  const heapUsed = snapshot.memoryResources?.usedMb ?? snapshot.memory?.usedMb ?? 11;
-  const heapTotal = snapshot.memoryResources?.totalMb ?? snapshot.memory?.totalMb ?? 43;
-  const allocRate = snapshot.memoryResources?.allocRateKbps ?? 120;
-  const foodPoolUsed = snapshot.memoryResources?.foodPoolUsed ?? foodCount;
-  const foodPoolMax = snapshot.memoryResources?.foodPoolMax ?? 1000;
-  const particlesPoolUsed = snapshot.memoryResources?.particlesPoolUsed ?? 45;
-  const particlesPoolMax = snapshot.memoryResources?.particlesPoolMax ?? 500;
-  const vramApprox = snapshot.memoryResources?.vramApproxMb ?? 14.2;
-  const textures = snapshot.memoryResources?.texturesCount ?? 4;
-  const buffers = snapshot.memoryResources?.buffersCount ?? 8;
+  // 4. MEMORY — omise entièrement sur les navigateurs sans `performance.memory` (Firefox,
+  // Safari) plutôt que d'inventer des Mo, contrairement à l'ancien comportement.
+  if (snapshot.memory) {
+    lines.push('-- MEMORY --');
+    lines.push(`JS Heap: ${snapshot.memory.usedMb} / ${snapshot.memory.totalMb} MB`);
+    lines.push('');
+  }
 
-  lines.push('-- MEMORY & RESOURCES --');
-  lines.push(`JS Heap: ${heapUsed} / ${heapTotal} MB (Alloc Rate: ~${allocRate} KB/s)`);
-  lines.push(
-    `Object Pools: Food (${foodPoolUsed}/${foodPoolMax}), Particles (${particlesPoolUsed}/${particlesPoolMax})`,
-  );
-  lines.push(
-    `VRAM Approx: ${vramApprox.toFixed(1)} MB (Textures: ${textures}, Buffers: ${buffers})`,
-  );
-  lines.push('');
-
-  // 6. HARDWARE & SYSTEM
+  // 5. HARDWARE & SYSTEM
   const state =
     snapshot.hardware?.state ??
     (typeof document !== 'undefined' && document.hidden ? 'Background' : 'Active');
-  const powerSaver = snapshot.hardware?.powerSaver ? 'On' : 'Off';
   const batteryStr =
-    snapshot.hardware?.batteryStatusText ??
-    (snapshot.hardware?.batteryPercent !== undefined
+    snapshot.hardware?.batteryPercent !== undefined
       ? `${snapshot.hardware.batteryPercent}% (${snapshot.hardware.batteryCharging ? 'Charging' : 'Discharging'})`
-      : '98% (Charching)');
-  const gpuName = snapshot.gpu?.renderer ?? 'AMD Radeon 780M (ANGLE WebGL2)';
+      : undefined;
+  const cores = snapshot.hardware?.cpuCores ?? snapshot.system?.hardwareConcurrency;
+  const gpuName = snapshot.gpu?.renderer ?? 'Non disponible (protection du navigateur)';
 
   lines.push('-- HARDWARE & SYSTEM --');
-  lines.push(`State: ${state} | Power Saver: ${powerSaver} | Battery: ${batteryStr}`);
-  lines.push(`CPU Cores: ${cores} | GPU: ${gpuName}`);
+  lines.push(`State: ${state}` + (batteryStr ? ` | Battery: ${batteryStr}` : ''));
+  lines.push(`CPU Cores: ${cores ?? '—'} | GPU: ${gpuName}`);
 
   return lines.join('\n');
 }

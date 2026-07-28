@@ -2,6 +2,7 @@ import { randomInt } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GameMod } from './mod.js';
 import { RoomManager, type ModResolver, type RoomManagerOptions } from './roomManager.js';
+import { createLocalRoomHost } from './worker/roomHost.js';
 
 vi.mock('node:crypto', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:crypto')>();
@@ -25,7 +26,8 @@ describe('RoomManager', () => {
     // Nettoyage désactivé par défaut dans les tests (délai très long) : chaque comportement de
     // nettoyage est testé explicitement via `pruneEmptyRooms()`, appelé manuellement plutôt que
     // d'attendre un vrai délai d'horloge.
-    const manager = new RoomManager(resolver, tickRateHz, {
+    const host = createLocalRoomHost(resolver);
+    const manager = new RoomManager(host, tickRateHz, {
       emptyRoomGraceMs: 10_000_000,
       ...options,
     });
@@ -129,12 +131,12 @@ describe('RoomManager', () => {
     const requestedIds: string[] = [];
     const manager = makeManager((modId) => {
       requestedIds.push(modId);
-      return { mod: testMod, mapSize: modId === 'folie' ? 20_000 : 4000 };
+      return { mod: testMod, mapSize: modId === 'hardcore' ? 20_000 : 4000 };
     });
 
-    manager.createRoom({ name: 'A', modId: 'folie', visibility: 'public' });
+    manager.createRoom({ name: 'A', modId: 'hardcore', visibility: 'public' });
 
-    expect(requestedIds).toEqual(['folie']);
+    expect(requestedIds).toEqual(['hardcore']);
     expect(manager.getManagedRoom('1')!.room.world.mapSize).toBe(20_000);
   });
 

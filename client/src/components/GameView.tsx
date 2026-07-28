@@ -17,11 +17,14 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   calculateGridSector,
   createFpsTracker,
+  createTickRateTracker,
+  detectBatteryInfo,
   detectGpuInfo,
   detectMemoryInfo,
   detectNetworkInfo,
   detectSystemInfo,
   formatDebugText,
+  type BatteryInfo,
   type GpuInfo,
   type NetworkInfo,
 } from '../debugOverlay.js';
@@ -30,11 +33,16 @@ import { GameConnection } from '../net.js';
 import {
   BASE_SCALE,
   computeCamera,
+  cullEntitiesForViewport,
   interpolateEntities,
   renderFrame,
   type Camera,
 } from '../render.js';
-import { loadFpsCap } from '../settings.js';
+import {
+  loadFpsSliderIndex,
+  loadVsyncEnabled,
+  minFrameIntervalMs as computeMinFrameIntervalMs,
+} from '../settings.js';
 import { ownAggregate, speedBetween } from '../stats.js';
 import Minimap from './Minimap.js';
 
@@ -123,6 +131,7 @@ export default function GameView({
 
     let selfPlayerId: string | undefined;
     let mapSize = 15000;
+    let serverTickRateHz: number | undefined;
     let latestSnapshot: EntitySnapshot[] = [];
     let previousSnapshot: EntitySnapshot[] | undefined;
     let latestSnapshotAt = performance.now();
@@ -132,7 +141,9 @@ export default function GameView({
     // `colorFor` (render.ts) à la place de l'ancien `DEFAULT_BLOB_COLOR` unique.
     const colors = new Map<string, string>();
     let latestCamera: Camera = { x: 7500, y: 7500, scale: BASE_SCALE };
-    let lastPingMs = 0;
+    // `undefined` tant qu'aucun `pong` n'est encore arrivé (écran F3, RTT) — distinct de `0`, qui
+    // afficherait une latence mesurée alors qu'aucune mesure n'a encore eu lieu.
+    let lastPingMs: number | undefined;
     let lastComboLevel: number | undefined;
     let comboHideTimer: ReturnType<typeof setTimeout> | undefined;
     let justDied = false;
@@ -170,6 +181,7 @@ export default function GameView({
       if (message.type === 'welcome') {
         selfPlayerId = message.playerId;
         mapSize = message.mapSize;
+        serverTickRateHz = message.tickRateHz;
         setMapSizeState(message.mapSize);
         isDeadNow = false;
         setDeathState(DEFAULT_DEATH_STATE);
@@ -181,6 +193,7 @@ export default function GameView({
         previousSnapshot = latestSnapshot;
         latestSnapshot = message.entities;
         latestSnapshotAt = performance.now();
+        serverTpsCurrent = tickRateTracker.record(latestSnapshotAt);
         if (message.leaderboard) {
           setLeaderboard(message.leaderboard);
         }
@@ -243,12 +256,20 @@ export default function GameView({
     }, PING_INTERVAL_MS);
 
     const fpsTracker = createFpsTracker();
+    const tickRateTracker = createTickRateTracker();
+    let serverTpsCurrent = 0;
     const systemInfo = detectSystemInfo();
     let gpuInfo: GpuInfo | undefined;
     let networkInfo: NetworkInfo | undefined;
+    let batteryInfo: BatteryInfo | undefined;
     let debugVisible = false;
 
-    const minFrameIntervalMs = 1000 / loadFpsCap();
+    const minFrameIntervalMs = computeMinFrameIntervalMs(loadVsyncEnabled(), loadFpsSliderIndex());
+    // `undefined` = pas de plafond logiciel (Vsync ou palier "Illimité") : impossible de connaître
+    // le taux de rafraîchissement réel de l'écran depuis le JS, donc rien à afficher comme cible
+    // chiffrée dans ce cas (voir debugOverlay.ts, RenderStats.targetHz).
+    const targetHz =
+      minFrameIntervalMs > 0 ? Math.round(1000 / minFrameIntervalMs) : undefined;
     let lastFrameAt = 0;
 
     function onKeyDown(event: KeyboardEvent): void {
@@ -267,6 +288,7 @@ export default function GameView({
       if (debugVisible) {
         gpuInfo ??= detectGpuInfo();
         networkInfo = detectNetworkInfo();
+        if (!batteryInfo) void detectBatteryInfo().then((info) => (batteryInfo = info));
       }
     }
     window.addEventListener('keydown', onKeyDown);
@@ -287,7 +309,30 @@ export default function GameView({
 
       const logicStart = performance.now();
       const t = clamp((now - latestSnapshotAt) / SERVER_STATE_INTERVAL_MS, 0, 1);
-      const entities = interpolateEntities(previousSnapshot, latestSnapshot, t);
+      // Culle AVANT d'interpoler (voir cullEntitiesForViewport, render.ts) : le rayon d'intérêt
+      // réseau envoyé par le serveur est bien plus large que le viewport réellement affiché à
+      // l'écran une fois zoomé — sans ce filtre, `interpolateEntities` alloue un objet par entité
+      // du rayon d'intérêt entier à chaque frame de rendu (jusqu'à 240/s), pas seulement par
+      // entité visible à l'écran. Basé sur `latestCamera` (frame précédente) plutôt que la
+      // caméra recalculée ci-dessous : elle ne bouge pas assez d'une frame à l'autre pour que ça
+      // se voie, et la marge de `cullEntitiesForViewport` couvre l'écart.
+      const culledLatest = cullEntitiesForViewport(
+        latestSnapshot,
+        latestCamera,
+        canvas!.width,
+        canvas!.height,
+        selfPlayerId,
+      );
+      const culledPrevious = previousSnapshot
+        ? cullEntitiesForViewport(
+            previousSnapshot,
+            latestCamera,
+            canvas!.width,
+            canvas!.height,
+            selfPlayerId,
+          )
+        : undefined;
+      const entities = interpolateEntities(culledPrevious, culledLatest, t);
 
       const camera = computeCamera(entities, selfPlayerId, { x: mapSize / 2, y: mapSize / 2 });
       latestCamera = camera;
@@ -330,7 +375,6 @@ export default function GameView({
 
       let playersCount = 0;
       let foodCount = 0;
-      const ejectedCount = 0;
       for (const entity of latestSnapshot) {
         if (entity.k === 'c' || entity.p !== undefined) playersCount++;
         else foodCount++;
@@ -341,7 +385,6 @@ export default function GameView({
         debugOverlayRef.current.textContent = formatDebugText({
           fps,
           pingMs: lastPingMs,
-          tick: undefined,
           visibleEntities: entities.length,
           totalEntities: latestSnapshot.length,
           roomId: roomIdOrInviteCode,
@@ -355,32 +398,35 @@ export default function GameView({
             drawCalls: renderInfo.drawCalls,
             batches: renderInfo.batches,
             visibleEntities: entities.length,
-            totalEntities: Math.max(latestSnapshot.length, 15000),
+            totalEntities: latestSnapshot.length,
             viewportWidth: canvas!.width,
             viewportHeight: canvas!.height,
             cameraScale: camera.scale,
             dpiRatio: window.devicePixelRatio,
+            targetHz,
           },
           simulation: {
             logicStepMs,
-            spatialChecks: entities.length,
             playersCount,
             foodCount,
-            ejectedCount,
             localX: currentPos.x,
             localY: currentPos.y,
             gridSector: calculateGridSector(currentPos.x, currentPos.y, mapSize),
           },
           networkSync: {
             rttMs: lastPingMs,
-            serverTpsCurrent: 60,
-            serverTpsTarget: 60,
+            serverTpsCurrent,
+            serverTpsTarget: serverTickRateHz,
             netInKbps: connection.netInKbps,
             netInPktSec: connection.netInPktSec,
             netOutKbps: connection.netOutKbps,
             interpBufferMs: SERVER_STATE_INTERVAL_MS,
             interpSnapshots: previousSnapshot ? 2 : 1,
-            reconciliationsPerSec: 0,
+          },
+          hardware: {
+            cpuCores: systemInfo.hardwareConcurrency,
+            batteryPercent: batteryInfo?.percent,
+            batteryCharging: batteryInfo?.charging,
           },
         });
       }

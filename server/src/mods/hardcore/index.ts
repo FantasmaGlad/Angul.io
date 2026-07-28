@@ -16,9 +16,8 @@ export interface HardcoreModConfig {
 const DEFAULT_HARDCORE_CONFIG: HardcoreModConfig = { massGainMultiplier: 10 };
 
 /**
- * Lot 4 — second mode aux mécaniques structurellement nouvelles (contrairement à Folie, qui
- * n'est qu'un jeu de valeurs différentes sur le même schéma paramétrique, voir
- * mods/parametric/config.ts). Valide que l'API de hooks (Lot 1.5) suffit à exprimer un mode qui
+ * Lot 4 — second mode aux mécaniques structurellement nouvelles (contrairement à Vanilla, qui
+ * n'est qu'un jeu de valeurs sur le même schéma paramétrique, voir mods/parametric/config.ts). Valide que l'API de hooks (Lot 1.5) suffit à exprimer un mode qui
  * n'est PAS réductible à un fichier de config : un mod peut être écrit en **composant** un mod
  * existant plutôt qu'en dupliquant tout son mouvement/split/fusion/bords/decay (identiques ici
  * à Vanilla, cf. cahier des charges §3.4 #2 — rien à y changer) — ne réécrit que ce qui diffère

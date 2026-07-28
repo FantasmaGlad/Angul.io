@@ -7,6 +7,7 @@ import { AccountsService } from '../accounts/service.js';
 import { AdminAuth } from '../admin/adminAuth.js';
 import type { GameMod } from '../engine/mod.js';
 import { RoomManager, type ModResolver } from '../engine/roomManager.js';
+import { createLocalRoomHost, DEFAULT_INTEREST_RADIUS_PX } from '../engine/worker/roomHost.js';
 import { startGameServer, type GameServerHandle } from './server.js';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -52,8 +53,13 @@ describe('startGameServer', () => {
   // Chaque RoomManager démarre désormais aussi un timer de nettoyage des salons vides (voir
   // roomManager.ts) — grâce très longue ici pour ne jamais interférer avec ces tests, qui ne
   // testent pas ce comportement (couvert par roomManager.test.ts).
-  function makeManager(resolver: ModResolver, tickRateHz = 20): RoomManager {
-    const manager = new RoomManager(resolver, tickRateHz, { emptyRoomGraceMs: 10_000_000 });
+  function makeManager(
+    resolver: ModResolver,
+    tickRateHz = 20,
+    interestRadiusPx = DEFAULT_INTEREST_RADIUS_PX,
+  ): RoomManager {
+    const host = createLocalRoomHost(resolver, interestRadiusPx);
+    const manager = new RoomManager(host, tickRateHz, { emptyRoomGraceMs: 10_000_000 });
     managers.push(manager);
     return manager;
   }
@@ -410,11 +416,11 @@ describe('startGameServer', () => {
         world.spawnPiece(playerId, { x: 0, y: 0 }, 50);
       },
     };
-    const manager = makeManager(() => ({ mod, mapSize: 100_000 }));
+    const manager = makeManager(() => ({ mod, mapSize: 100_000 }), 20, 500);
     const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
-    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0, interestRadiusPx: 500 });
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
     const port = await handle.whenReady;
-    const room = manager.getManagedRoom(summary.id)!.room;
+    const room = manager.getManagedRoom(summary.id)!.room!;
 
     const socket = await connectedClient(port, summary.id);
     const messages = collectMessages(socket);
@@ -673,12 +679,12 @@ describe('startGameServer', () => {
     handle = startGameServer(manager, {
       port: 0,
       rateLimitMaxAttempts: 0,
-      availableModIds: ['vanilla', 'folie'],
+      availableModIds: ['vanilla', 'hardcore'],
     });
     const port = await handle.whenReady;
 
     const response = await fetch(`http://localhost:${port}/api/modes`);
-    expect(await response.json()).toEqual(['vanilla', 'folie']);
+    expect(await response.json()).toEqual(['vanilla', 'hardcore']);
   });
 
   it('POST /api/rooms { visibility: "private" } renvoie un code d’invitation, absent en public', async () => {
@@ -785,9 +791,8 @@ describe.skipIf(!DATABASE_URL)('startGameServer (avec comptes joueurs)', () => {
   });
 
   function makeManager(): RoomManager {
-    const manager = new RoomManager(() => ({ mod: { id: 'test' }, mapSize: 1000 }), 20, {
-      emptyRoomGraceMs: 10_000_000,
-    });
+    const host = createLocalRoomHost(() => ({ mod: { id: 'test' }, mapSize: 1000 }));
+    const manager = new RoomManager(host, 20, { emptyRoomGraceMs: 10_000_000 });
     managers.push(manager);
     return manager;
   }

@@ -1,3 +1,4 @@
+import { getRandomSkin } from '@angulio/shared';
 import type { BotConfig } from '../../mods/parametric/config.js';
 import type { Room } from '../room.js';
 import type { PlayerId } from '../types.js';
@@ -142,8 +143,9 @@ export class BotManager {
       accumulatorMs: offsetMs,
     };
 
+    const randomSkin = getRandomSkin();
     this.activeBots.set(botId, bot);
-    this.room.addPlayer(botId, nickname);
+    this.room.addPlayer(botId, nickname, randomSkin);
 
     if (profile === 'challenger' && rank !== undefined) {
       const multiplier = getChallengerMassMultiplier(rank);

@@ -24,3 +24,5 @@ coverage/
 # Markdown files (except README.md)
 *.md
 !README.md
+Claude.md
+cahier_des_charges*.md

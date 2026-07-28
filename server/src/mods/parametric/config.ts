@@ -1,8 +1,8 @@
 /**
  * Schéma de configuration d'un mod "paramétrique" : un mode de jeu défini uniquement par des
  * valeurs numériques (pas de nouvelle logique de jeu), lisible depuis un fichier JSON externe
- * (voir server/configs/*.json). Vanilla et Folie sont deux instances de ce même schéma —
- * ajouter un troisième mode de ce type ne demande qu'un nouveau fichier JSON, aucun code.
+ * (voir server/configs/*.json). Vanilla est une instance de ce schéma — ajouter un autre
+ * mode de ce type ne demande qu'un nouveau fichier JSON, aucun code.
  *
  * Un mode aux mécaniques structurellement différentes (ex. un mode "zombie" avec une IA
  * d'entité non-joueur) reste un `GameMod` écrit à la main (voir l'API de hooks, engine/mod.ts)
@@ -55,7 +55,7 @@ export interface ParametricModConfig {
 
   split: {
     /** eta_W — ratio masse gagnée par le morceau éjecté / masse perdue par le joueur.
-     * 1.0 = conservation stricte (Vanilla) ; > 1 crée de la masse (Folie). */
+     * 1.0 = conservation stricte (Vanilla) ; > 1 crée de la masse. */
     ejectEfficiency: number;
     /** Facteur (× v(m) du morceau éjecté) de la vitesse initiale d'éjection — absent de la
      * feuille Excel, nécessaire à l'implémentation ; décroît ensuite via le modèle

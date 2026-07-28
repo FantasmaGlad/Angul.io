@@ -80,10 +80,10 @@ describe.skipIf(!DATABASE_URL)('AccountsService (Postgres)', () => {
     const accountId = service.resolveToken(token)!;
 
     // Score (masse max atteinte) et XP (engine/xp.ts) sont désormais deux valeurs distinctes.
-    await service.recordGameResult(accountId, 'folie', 200, 850);
+    await service.recordGameResult(accountId, 'hardcore', 200, 850);
     const profile = await service.getProfile(accountId);
     expect(profile?.xp).toBe(850);
-    expect(profile?.bestScores).toEqual([{ modeId: 'folie', bestScore: 200 }]);
+    expect(profile?.bestScores).toEqual([{ modeId: 'hardcore', bestScore: 200 }]);
   });
 
   it('isPremium : false pour invité/compte inconnu/standard, true après activation admin (Lot 6.4)', async () => {

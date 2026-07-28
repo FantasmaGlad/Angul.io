@@ -1,6 +1,12 @@
 import type { EntitySnapshot } from '@angulio/shared';
 import { describe, expect, it } from 'vitest';
-import { BASE_SCALE, computeCamera, foodColorForMass, interpolateEntities } from './render.js';
+import {
+  BASE_SCALE,
+  computeCamera,
+  cullEntitiesForViewport,
+  foodColorForMass,
+  interpolateEntities,
+} from './render.js';
 
 function piece(overrides: Partial<EntitySnapshot>): EntitySnapshot {
   return {
@@ -93,6 +99,37 @@ describe('interpolateEntities', () => {
     const result = interpolateEntities(previous, latest, 0.5);
 
     expect(result.map((e) => e.i)).toEqual(['a']);
+  });
+});
+
+describe('cullEntitiesForViewport', () => {
+  const camera = { x: 0, y: 0, scale: 1 };
+
+  it('garde une entité dans le viewport et rejette une entité loin en dehors', () => {
+    const inView = piece({ i: 'in', x: 10, y: 10, p: undefined });
+    const outOfView = piece({ i: 'out', x: 10_000, y: 10_000, p: undefined });
+
+    const result = cullEntitiesForViewport([inView, outOfView], camera, 800, 600, undefined);
+
+    expect(result.map((e) => e.i)).toEqual(['in']);
+  });
+
+  it('garde toujours les morceaux du joueur lui-même, même hors du viewport', () => {
+    const ownFarAway = piece({ i: 'mine', x: 10_000, y: 10_000, p: 'p1' });
+
+    const result = cullEntitiesForViewport([ownFarAway], camera, 800, 600, 'p1');
+
+    expect(result.map((e) => e.i)).toEqual(['mine']);
+  });
+
+  it('garde une entité juste en dehors du viewport strict grâce à la marge', () => {
+    // Demi-largeur viewport = 400 (800/2/scale) ; avec une marge de 50, une entité à x=420
+    // (rayon 7) doit rester incluse alors qu'elle dépasserait un viewport sans marge.
+    const nearEdge = piece({ i: 'edge', x: 420, y: 0, r: 7, p: undefined });
+
+    const result = cullEntitiesForViewport([nearEdge], camera, 800, 600, undefined, 50);
+
+    expect(result.map((e) => e.i)).toEqual(['edge']);
   });
 });
 

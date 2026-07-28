@@ -40,7 +40,7 @@
     "borderType": "STRICT_WALL"
   },
   "food": {
-    "density": 100,
+    "density": 50,
     "respawnRatePerSecond": 300,
     "pelletTypes": [
       { "color": "vert", "mass": 1, "weight": 28 },

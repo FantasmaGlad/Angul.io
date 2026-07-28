@@ -23,12 +23,6 @@ const MODE_METADATA: Record<string, ModeMeta> = {
       'Manger un autre joueur rapporte 10x plus de masse — mais mourir efface toute la progression de la partie.',
     color: 'var(--c-hardcore)',
   },
-  folie: {
-    label: 'Folie',
-    description:
-      'Un mode aux règles changeantes, pour des parties qui ne se ressemblent jamais deux fois.',
-    color: 'var(--c-folie)',
-  },
 };
 
 export function modeMeta(modeId: string): ModeMeta {

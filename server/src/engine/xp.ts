@@ -7,31 +7,19 @@ import type { World } from './world.js';
  *  - "1 joueur mangé = 400xp" (bonus fixe, en plus — pas à la place — de la masse gagnée sur ce
  *    même événement).
  *  - Combo : manger 2 joueurs en moins de 5s déclenche un multiplicateur x1,2 sur l'XP gagné
- *    pendant les 20 secondes suivantes ("2 joueurs mangé en -5 secondes = *1,2 ... multiplication
- *    des points d'xp gagnés pendant les 20 prochaines secondes"). Manger un joueur de plus dans
- *    les 10 secondes qui suivent prolonge le combo — la chaîne s'allonge, le multiplicateur
- *    grimpe, la fenêtre de 20s reprend à zéro — jusqu'à un plafond x10 ("Boost Max"). Le premier
- *    déclenchement (fenêtre stricte de 5s) est volontairement plus dur que la prolongation
- *    (fenêtre plus large de 10s) : "le plus dur est de lancer le premier combo" (demande
- *    utilisateur).
- *
- * Attaché à `PlayerState.lifeStats` (engine/types.ts), mis à jour directement par les mods au
- * moment de l'absorption (`mods/parametric/index.ts`, `mods/hardcore/index.ts`) — remis à zéro
- * uniquement par net/server.ts (`World.resetLifeStats`), juste après avoir lu/crédité la valeur
- * au compte joueur : le respawn immédiat du MVP recrée un morceau (donc une "nouvelle vie") AVANT
- * que le réseau ait eu la main pour lire le cumul de la vie qui vient de se terminer (voir
- * `Room.tick`, l'ordre `mod.onPlayerDeath` puis `deathListeners`) — remettre à zéro ici plutôt que
- * dans le mod éviterait sinon de perdre l'XP de cette vie avant même de l'avoir créditée.
+ *    pendant les 10 secondes suivantes. Manger un joueur de plus dans les 5 secondes qui suivent
+ *    prolonge le combo jusqu'à un plafond x2 ("Boost Max"). Le premier déclenchement (fenêtre de 5s)
+ *    est le plus dur à lancer : "le plus dur est de lancer le premier combo".
  */
 
 export const XP_PER_MASS_EATEN = 1;
 export const XP_PER_PLAYER_EATEN = 400;
 
 const COMBO_TRIGGER_WINDOW_MS = 5_000;
-const COMBO_CONTINUE_WINDOW_MS = 10_000;
-const COMBO_DURATION_MS = 20_000;
+const COMBO_CONTINUE_WINDOW_MS = 5_000;
+const COMBO_DURATION_MS = 10_000;
 const COMBO_STEP_FACTOR = 1.2;
-const COMBO_MAX_MULTIPLIER = 10;
+const COMBO_MAX_MULTIPLIER = 2.0;
 
 export interface ComboState {
   /** Nombre de joueurs mangés dans la tentative/chaîne en cours — 0 = aucune tentative, 1 = un

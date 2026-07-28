@@ -103,6 +103,6 @@ export function handleGetModes(availableModIds: string[], res: ServerResponse): 
 export function handleGetStats(roomManager: RoomManager, res: ServerResponse): void {
   const playersOnline = roomManager
     .allManagedRooms()
-    .reduce((sum, managed) => sum + managed.room.world.allPlayers().length, 0);
+    .reduce((sum, managed) => sum + roomManager.playerCountOf(managed), 0);
   respondJson(res, 200, { playersOnline });
 }

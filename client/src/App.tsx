@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import { getRandomSkin } from '@angulio/shared';
 import { fetchProfile, loadSession, type AuthResult } from './auth.js';
 import Home from './components/Home.js';
 import GameView from './components/GameView.js';
@@ -94,7 +95,7 @@ export default function App() {
   // Sélectionne par défaut le mode réellement actif (le plus de joueurs en ce moment), pas le
   // premier de la liste (ordre alphabétique des fichiers de config côté serveur) — évite qu'un
   // nouvel arrivant tombe sur "aucun salon disponible" alors qu'une partie tourne dans un autre
-  // mode (bug constaté : Folie sélectionné par défaut, 0 joueur, pendant que Vanilla en a 50).
+  // mode.
   useEffect(() => {
     if (modes.length === 0 || modes.includes(selectedMode)) return;
     const playersByMode = new Map<string, number>();
@@ -232,12 +233,9 @@ export default function App() {
         {path === '/compte' && (
           <AccountPage authSession={authSession} onAuthChange={setAuthSession} />
         )}
-        {path === '/profil' &&
-          (authSession ? (
-            <ProfilePage authToken={authSession.token} onAvatarColorChange={setAvatarColor} />
-          ) : (
-            <AccountPage authSession={authSession} onAuthChange={setAuthSession} />
-          ))}
+        {path === '/profil' && (
+          <ProfilePage authToken={authSession?.token} onAvatarColorChange={setAvatarColor} />
+        )}
         {path === '/parametres' && <SettingsPage />}
         {path === '/classement' && <LeaderboardPage />}
         {path === '/soutenir' && <SupportPage />}
@@ -245,6 +243,9 @@ export default function App() {
       </Suspense>
     );
   }
+
+  const [guestSkin] = useState<string>(() => getRandomSkin());
+  const effectiveAvatarColor = avatarColor ?? guestSkin;
 
   return (
     <>
@@ -257,7 +258,7 @@ export default function App() {
         accountActive={authSession !== undefined}
         pseudo={authSession?.pseudo ?? ''}
         level={level}
-        avatarColor={avatarColor}
+        avatarColor={effectiveAvatarColor}
         modes={modes}
         rooms={rooms}
         selectedMode={selectedMode}

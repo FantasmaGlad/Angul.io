@@ -32,7 +32,7 @@ const FALLBACK_DIRECTION: Vector2 = { x: 1, y: 0 };
  * Construit un mode de jeu entièrement défini par `config` (voir config.ts). Aucune règle de
  * jeu n'est codée en dur ici — seule la mécanique générique (vitesse/accélération, split,
  * fusion, alimentation, bords de carte) est implémentée, paramétrée par les valeurs du mod.
- * Vanilla et Folie sont deux instances de cette même fonction (server/configs/*.json).
+ * Vanilla est une instance de cette même fonction (server/configs/*.json).
  */
 export function createParametricMod(config: ParametricModConfig): GameMod {
   function randomPositionInMap(margin: number): Vector2 {
@@ -106,7 +106,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
   }
 
   /** Cooldown de fusion mass-dépendant : T(m) = Tbase + gamma_rec*m (par morceau, feuille
-   * Excel — gamma_rec est 0 pour Vanilla et Folie à ce jour, donc un cooldown fixe en pratique).
+   * Excel — gamma_rec est 0 pour Vanilla à ce jour, donc un cooldown fixe en pratique).
    * Renvoie `true` si la fusion a eu lieu — l'appelant (`onCollision`) s'en sert pour savoir s'il
    * doit à la place repousser les deux morceaux (voir le correctif "chevauchement post-split"). */
   function tryMerge(world: World, a: Entity, b: Entity): boolean {

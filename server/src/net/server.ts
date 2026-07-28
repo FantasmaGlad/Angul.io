@@ -5,6 +5,7 @@ import type { AccountsService } from '../accounts/service.js';
 import type { AdminAuth } from '../admin/adminAuth.js';
 import type { ManagedRoom, RoomManager } from '../engine/roomManager.js';
 import { handleHttpRequest } from './http/router.js';
+import { startMetrics } from './metrics.js';
 import { RateLimiter } from './rateLimiter.js';
 import { wireRoom as wireRoomBroadcast, type RoomRuntime } from './ws/broadcast.js';
 import { handleWsConnection } from './ws/connectionHandler.js';
@@ -12,7 +13,6 @@ import { handleWsConnection } from './ws/connectionHandler.js';
 export interface GameServerOptions {
   port: number;
   staticDir?: string;
-  interestRadiusPx?: number;
   availableModIds?: string[];
   accounts?: AccountsService;
   admin?: AdminAuth;
@@ -20,8 +20,6 @@ export interface GameServerOptions {
   /** Limite de tentatives par minute (Défaut : 3). Définir à 0 pour désactiver (ex : tests). */
   rateLimitMaxAttempts?: number;
 }
-
-const INTEREST_RADIUS_PX_DEFAULT = 2500;
 
 export interface GameServerHandle {
   whenReady: Promise<number>;
@@ -32,7 +30,8 @@ export function startGameServer(
   roomManager: RoomManager,
   options: GameServerOptions,
 ): GameServerHandle {
-  const interestRadiusPx = options.interestRadiusPx ?? INTEREST_RADIUS_PX_DEFAULT;
+  startMetrics();
+
   const runtimes = new Map<string, RoomRuntime>();
 
   const maxAttempts = options.rateLimitMaxAttempts ?? 3;
@@ -46,7 +45,7 @@ export function startGameServer(
   const deathScreenRateLimiter = new RateLimiter(10, 60_000);
 
   function wireRoom(managed: ManagedRoom): void {
-    wireRoomBroadcast(managed, interestRadiusPx, options.accounts, runtimes);
+    wireRoomBroadcast(managed, options.accounts, runtimes);
   }
 
   for (const managed of roomManager.allManagedRooms()) wireRoom(managed);

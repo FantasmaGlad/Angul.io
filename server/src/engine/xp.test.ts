@@ -78,76 +78,76 @@ describe('combo — déclenchement (fenêtre de 5s)', () => {
   });
 });
 
-describe('combo — prolongation (fenêtre de 10s) et plafond x10', () => {
-  it('prolonge le combo (niveau 2) si un troisième mangé arrive en moins de 10s du précédent', () => {
+describe('combo — prolongation (fenêtre de 5s) et plafond x2', () => {
+  it('prolonge le combo (niveau 2) si un troisième mangé arrive en moins de 5s du précédent', () => {
     const stats = createLifeStats();
     recordPlayerEaten(stats, 0);
     recordPlayerEaten(stats, 3_000); // déclenche (niveau 1)
-    recordPlayerEaten(stats, 3_000 + 9_000); // prolonge (niveau 2)
-    expect(activeComboLevel(stats.combo, 12_000)).toBe(2);
+    recordPlayerEaten(stats, 3_000 + 4_000); // prolonge sous 5s (niveau 2)
+    expect(activeComboLevel(stats.combo, 7_000)).toBe(2);
     expect(stats.combo.multiplier).toBeCloseTo(1.2 * 1.2, 6);
   });
 
-  it('la prolongation tolère jusqu’à 10s (plus large que le déclenchement initial à 5s)', () => {
+  it('la prolongation tolère jusqu’à 5s', () => {
     const stats = createLifeStats();
     recordPlayerEaten(stats, 0);
     recordPlayerEaten(stats, 4_000); // déclenche
-    recordPlayerEaten(stats, 4_000 + 9_999); // toujours dans les 10s : prolonge
+    recordPlayerEaten(stats, 4_000 + 4_999); // toujours dans les 5s : prolonge
     expect(stats.combo.chain).toBe(3);
   });
 
-  it('le combo retombe si la prolongation arrive après 10s (recommence à zéro)', () => {
+  it('le combo retombe si la prolongation arrive après 5s (recommence à zéro)', () => {
     const stats = createLifeStats();
     recordPlayerEaten(stats, 0);
     recordPlayerEaten(stats, 3_000); // déclenche
-    recordPlayerEaten(stats, 3_000 + 10_001); // trop tard : la chaîne recommence
+    recordPlayerEaten(stats, 3_000 + 5_001); // trop tard (> 5s) : la chaîne recommence
     expect(stats.combo.chain).toBe(1);
-    expect(activeComboLevel(stats.combo, 3_000 + 10_001)).toBeUndefined();
+    expect(activeComboLevel(stats.combo, 3_000 + 5_001)).toBeUndefined();
   });
 
-  it('plafonne le multiplicateur à x10 ("Boost Max") malgré une chaîne très longue', () => {
+  it('plafonne le multiplicateur à x2 ("Boost Max") malgré une chaîne très longue', () => {
     const stats = createLifeStats();
     let now = 0;
     recordPlayerEaten(stats, now);
     now += 3_000;
-    recordPlayerEaten(stats, now); // déclenche
+    recordPlayerEaten(stats, now); // déclenche x1.2
     for (let i = 0; i < 20; i++) {
-      now += 5_000; // toujours dans la fenêtre de prolongation de 10s
+      now += 4_000; // toujours dans la fenêtre de prolongation de 5s
       recordPlayerEaten(stats, now);
     }
-    expect(stats.combo.multiplier).toBeLessThanOrEqual(10);
-    expect(stats.combo.multiplier).toBeCloseTo(10, 6);
+    expect(stats.combo.multiplier).toBeLessThanOrEqual(2.0);
+    expect(stats.combo.multiplier).toBeCloseTo(2.0, 6);
   });
 
-  it('chaque prolongation repousse l’expiration de 20s (le combo "continue")', () => {
+  it('chaque prolongation repousse l’expiration de 10s (le combo "continue")', () => {
     const stats = createLifeStats();
     recordPlayerEaten(stats, 0);
-    recordPlayerEaten(stats, 3_000); // déclenche, expire à 3000+20000=23000
-    expect(activeComboLevel(stats.combo, 22_999)).toBe(1);
-    recordPlayerEaten(stats, 3_000 + 9_000); // prolonge à 12000, nouvelle expiration 32000
-    expect(activeComboLevel(stats.combo, 31_999)).toBe(2);
-    expect(activeComboLevel(stats.combo, 32_001)).toBeUndefined();
+    recordPlayerEaten(stats, 3_000); // déclenche, expire à 3000+10000=13000
+    expect(activeComboLevel(stats.combo, 12_999)).toBe(1);
+    recordPlayerEaten(stats, 3_000 + 4_000); // prolonge à 7000, nouvelle expiration 17000
+    expect(activeComboLevel(stats.combo, 16_999)).toBe(2);
+    expect(activeComboLevel(stats.combo, 17_001)).toBeUndefined();
   });
 });
 
-describe('combo — multiplie l’XP gagné pendant les 20 secondes suivantes', () => {
+describe('combo — multiplie l’XP gagné pendant les 10 secondes suivantes', () => {
   it('un gain de masse pendant un combo actif est multiplié', () => {
     const stats = createLifeStats();
     recordPlayerEaten(stats, 0);
     recordPlayerEaten(stats, 3_000); // déclenche x1,2, xp jusque là : 400 + 400*1,2 = 880
     expect(stats.xpEarned).toBeCloseTo(400 + 400 * 1.2, 6);
 
-    recordMassEaten(stats, 100, 3_500); // toujours dans la fenêtre des 20s
+    recordMassEaten(stats, 100, 3_500); // toujours dans la fenêtre des 10s
     expect(stats.xpEarned).toBeCloseTo(400 + 400 * 1.2 + 100 * 1.2, 6);
   });
 
   it('un gain de masse après expiration du combo n’est plus multiplié', () => {
     const stats = createLifeStats();
     recordPlayerEaten(stats, 0);
-    recordPlayerEaten(stats, 3_000); // déclenche, expire à 23000
+    recordPlayerEaten(stats, 3_000); // déclenche, expire à 13000
     const xpAfterCombo = stats.xpEarned;
 
-    recordMassEaten(stats, 50, 23_001); // combo expiré : multiplicateur redevenu x1
+    recordMassEaten(stats, 50, 13_001); // combo expiré : multiplicateur redevenu x1
     expect(stats.xpEarned).toBeCloseTo(xpAfterCombo + 50, 6);
   });
 });

@@ -59,6 +59,9 @@ export interface WelcomeMessage {
   type: 'welcome';
   playerId: string;
   mapSize: number;
+  /** Cadence réelle de la boucle de simulation (Hz) — pour l'écran de diagnostic F3, plutôt
+   * qu'une valeur supposée côté client (voir server/src/index.ts `TICK_RATE_HZ`). */
+  tickRateHz: number;
 }
 
 export interface LeaderboardEntry {

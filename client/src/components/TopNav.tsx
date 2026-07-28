@@ -1,3 +1,4 @@
+import { SKIN_IMAGE_MAP } from '@angulio/shared';
 import { navigate } from '../router.js';
 
 interface TopNavProps {
@@ -11,6 +12,9 @@ interface TopNavProps {
 
 export default function TopNav({ accountActive, pseudo, level, avatarColor }: TopNavProps) {
   const initial = accountActive && pseudo ? pseudo.charAt(0).toUpperCase() : '?';
+  const skinUrl = avatarColor
+    ? SKIN_IMAGE_MAP[avatarColor] ?? (avatarColor.startsWith('/') ? avatarColor : `/assets/${avatarColor}.png`)
+    : undefined;
 
   return (
     <header className="top-nav">
@@ -20,6 +24,7 @@ export default function TopNav({ accountActive, pseudo, level, avatarColor }: To
         aria-label="Angul.io Accueil"
         onClick={() => navigate('/')}
       >
+        <img src="/icons/icon-192.png" alt="" className="brand-logo-icon" />
         <span className="brand-logo-text">ANGUL.IO</span>
       </button>
 
@@ -33,6 +38,9 @@ export default function TopNav({ accountActive, pseudo, level, avatarColor }: To
         <button type="button" onClick={() => navigate('/a-propos')}>
           À Propos
         </button>
+        <button type="button" onClick={() => navigate('/parametres')}>
+          Réglages
+        </button>
       </nav>
 
       <button
@@ -41,12 +49,12 @@ export default function TopNav({ accountActive, pseudo, level, avatarColor }: To
         onClick={() => navigate(accountActive ? '/profil' : '/compte')}
         aria-label={accountActive ? `Compte : ${pseudo}` : 'Se connecter'}
       >
-        <span
-          className="account-avatar-badge"
-          style={accountActive && avatarColor ? { background: avatarColor } : undefined}
-          aria-hidden="true"
-        >
-          {initial}
+        <span className="account-avatar-badge" aria-hidden="true">
+          {skinUrl ? (
+            <img src={skinUrl} alt="" className="account-avatar-img" />
+          ) : (
+            initial
+          )}
         </span>
         {accountActive ? (
           <span className="account-info">

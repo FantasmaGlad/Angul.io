@@ -38,9 +38,22 @@ export interface RoomOptions {
  * (cahier des charges §4.3) ; plusieurs rooms peuvent tourner en parallèle dans le même
  * process pour le MVP.
  */
+/** Nombre de durées de tick conservées pour `tickMetrics()` (~3s d'historique à 20Hz) — assez
+ * pour un p95 représentatif sans faire grossir la mémoire par salon indéfiniment. */
+const TICK_DURATION_SAMPLE_SIZE = 60;
+
+/** Un tick est compté comme "en retard" (`tickMetrics().overruns`) si son intervalle réel dépasse
+ * 1.5x l'intervalle nominal attendu (`tickIntervalMs`) — signe que l'event loop était occupé
+ * ailleurs (autre salon, sérialisation réseau) au moment où ce tick aurait dû démarrer. Voir
+ * server/src/net/metrics.ts, qui expose ce compteur via `/api/admin/health`. */
+const TICK_OVERRUN_FACTOR = 1.5;
+
 export class Room {
   readonly world: World;
   readonly botManager?: BotManager;
+  /** Exposée (pas seulement `tickIntervalMs`) pour que le réseau puisse l'annoncer au client dans
+   * `welcome` (écran de diagnostic F3, `Server TPS`) sans dupliquer la constante. */
+  readonly tickRateHz: number;
   private readonly mod: GameMod;
   private readonly tickIntervalMs: number;
   private timer: ReturnType<typeof setInterval> | undefined;
@@ -51,10 +64,15 @@ export class Room {
   private readonly stateListeners: Array<(tick: number) => void> = [];
   private readonly deathListeners: Array<(playerId: PlayerId, info: PlayerDeathInfo) => void> = [];
   private readonly resetListeners: Array<() => void> = [];
+  /** Durée (ms) du travail de tick le plus récent (hors attente du timer), la plus ancienne en
+   * premier — voir `tickMetrics()`. */
+  private readonly recentTickDurationsMs: number[] = [];
+  private tickOverruns = 0;
 
   constructor(mod: GameMod, options: RoomOptions) {
     this.world = new World({ mapSize: options.mapSize, kArea: options.kArea });
     this.mod = mod;
+    this.tickRateHz = options.tickRateHz;
     this.tickIntervalMs = 1000 / options.tickRateHz;
     this.resetSchedule =
       options.resetSchedule === null
@@ -117,6 +135,10 @@ export class Room {
     this.lastTickAt = now;
     this.tickCount += 1;
 
+    if (this.tickCount > 1 && dt > (this.tickIntervalMs / 1000) * TICK_OVERRUN_FACTOR) {
+      this.tickOverruns += 1;
+    }
+
     this.mod.onTick?.(this.world, dt);
     this.botManager?.update(dt);
 
@@ -152,14 +174,49 @@ export class Room {
     }
 
     for (const listener of this.stateListeners) listener(this.tickCount);
+
+    this.recordTickDuration(performance.now() - now);
   }
 
-  addPlayer(id: PlayerId, nickname: string): void {
+  private recordTickDuration(durationMs: number): void {
+    this.recentTickDurationsMs.push(durationMs);
+    if (this.recentTickDurationsMs.length > TICK_DURATION_SAMPLE_SIZE) {
+      this.recentTickDurationsMs.shift();
+    }
+  }
+
+  /** Métriques de charge de ce salon (voir server/src/net/metrics.ts, `/api/admin/health`) —
+   * calculées à la demande plutôt que maintenues en continu, un salon n'étant interrogé qu'au
+   * rythme des requêtes admin (pas à chaque tick). */
+  tickMetrics(): { avgMs: number; p95Ms: number; overruns: number } {
+    const samples = this.recentTickDurationsMs;
+    if (samples.length === 0) return { avgMs: 0, p95Ms: 0, overruns: this.tickOverruns };
+
+    const sorted = [...samples].sort((a, b) => a - b);
+    const avgMs = sorted.reduce((sum, value) => sum + value, 0) / sorted.length;
+    const p95Index = Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1);
+    return { avgMs, p95Ms: sorted[p95Index]!, overruns: this.tickOverruns };
+  }
+
+  private readonly playerJoinListeners: Array<
+    (id: PlayerId, nickname: string, skin?: string) => void
+  > = [];
+
+  addPlayer(id: PlayerId, nickname: string, skin?: string): void {
     this.world.addPlayer(id, nickname);
     this.mod.onPlayerJoin?.(this.world, id);
+    for (const listener of this.playerJoinListeners) {
+      listener(id, nickname, skin);
+    }
     if (!this.botManager?.isBot(id)) {
       this.botManager?.adjustPopulation();
     }
+  }
+
+  onPlayerJoin(
+    listener: (id: PlayerId, nickname: string, skin?: string) => void,
+  ): void {
+    this.playerJoinListeners.push(listener);
   }
 
   removePlayer(id: PlayerId): void {

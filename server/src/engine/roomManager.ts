@@ -1,8 +1,10 @@
 import { randomInt } from 'node:crypto';
 import { logEvent } from '../log.js';
 import type { GameMod } from './mod.js';
-import { Room } from './room.js';
-import type { RoomResetSchedule } from './resetSchedule.js';
+import type { Room } from './room.js';
+import { DEFAULT_RESET_SCHEDULE, type RoomResetSchedule } from './resetSchedule.js';
+import type { RoomHandle, RoomHost } from './worker/roomHost.js';
+import type { RoomSpec, RoomStats } from './worker/protocol.js';
 
 import type { BotConfig } from '../mods/parametric/config.js';
 
@@ -54,7 +56,15 @@ export interface ManagedRoom {
   readonly modId: string;
   readonly visibility: RoomVisibility;
   readonly inviteCode?: string;
-  readonly room: Room;
+  /** Point d'entrée réseau normal (join/respawn/leave/input, écoute tick/mort/reset) — voir
+   * broadcast.ts/connectionHandler.ts, qui ne connaissent plus `Room` directement (voir
+   * plan_implementation, "worker_threads"). */
+  readonly handle: RoomHandle;
+  /** Alias vers `handle.localRoom` — non-`undefined` uniquement avec `LocalRoomHost` (défaut,
+   * voir index.ts `ROOM_WORKERS`). Conservé pour ne pas casser les tests existants qui
+   * manipulent `Room` directement (tick manuel, lecture de `.world`) ; jamais utilisé par le code
+   * de production, qui passe toujours par `handle` pour rester valable avec `WorkerRoomHost`. */
+  readonly room: Room | undefined;
   readonly maxPlayers: number;
 }
 
@@ -84,13 +94,27 @@ export class RoomManager {
   private readonly maxRooms: number;
   private readonly emptyRoomGraceMs: number;
   private readonly pruneTimer: ReturnType<typeof setInterval>;
+  /** Dernier `RoomStats` connu par salon (voir `RoomHandle.onTick`, `worker/protocol.ts`) — seule
+   * source d'information sur le nombre de joueurs/la charge d'un salon hébergé par
+   * `WorkerRoomHost` (pas d'accès synchrone à `Room`/`World` depuis ce thread dans ce cas). Pour
+   * un salon `LocalRoomHost` (défaut), `playerCountOf` préfère la lecture synchrone directe
+   * (`entry.room.world.allPlayers()`), strictement équivalente mais sans dépendre du délai d'un
+   * premier tick — voir son commentaire. */
+  private readonly roomStats = new Map<string, RoomStats>();
   private nextRoomId = 1;
 
+  /** Cadence de tick, identique pour tous les salons de ce déploiement — exposée (pas seulement
+   * passée une fois au constructeur) pour que le réseau (connectionHandler.ts, message
+   * `welcome`) puisse l'annoncer au client sans dépendre de `Room` directement (qui peut vivre
+   * dans un autre thread, voir `WorkerRoomHost`). */
+  readonly tickRateHz: number;
+
   constructor(
-    private readonly resolveMod: ModResolver,
-    private readonly tickRateHz: number,
+    private readonly host: RoomHost,
+    tickRateHz: number,
     options: RoomManagerOptions = {},
   ) {
+    this.tickRateHz = tickRateHz;
     this.maxRooms = options.maxRooms ?? DEFAULT_MAX_ROOMS;
     this.emptyRoomGraceMs = options.emptyRoomGraceMs ?? DEFAULT_EMPTY_ROOM_GRACE_MS;
     this.pruneTimer = setInterval(
@@ -104,25 +128,30 @@ export class RoomManager {
       throw new Error(`Nombre maximal de salons atteint (${this.maxRooms}).`);
     }
 
-    const { mod, mapSize, kArea, bots } = this.resolveMod(options.modId);
-    const botConfig = bots ? { ...bots, enabled: options.botsEnabled ?? bots.enabled } : undefined;
-
-    const room = new Room(mod, {
-      mapSize,
-      tickRateHz: this.tickRateHz,
-      kArea,
-      maxPlayers: options.maxPlayers ?? DEFAULT_MAX_PLAYERS_PER_ROOM,
-      bots: botConfig,
-      resetSchedule: options.resetSchedule,
-    });
-    room.start();
-
     // Id court incrémental plutôt qu'un UUID, pour rester cohérent avec les identifiants
     // d'entités/joueurs (Lot 1.8, économie de bande passante) — même si l'id de salon ne
     // transite pas à chaque tick, mieux vaut une seule convention dans tout le projet. En
     // revanche, cet id est prévisible et énumérable (1, 2, 3…) : un salon privé ne doit
     // jamais être rejoignable par son seul id (voir `inviteCode`, Lot 2.3).
     const id = String(this.nextRoomId++);
+    const maxPlayers = options.maxPlayers ?? DEFAULT_MAX_PLAYERS_PER_ROOM;
+    // Résolu ici plutôt que passé tel quel (`undefined` possible) : le spec envoyé au host
+    // (potentiellement un worker, voir WorkerRoomHost) ne doit jamais transporter qu'une valeur
+    // sans ambiguïté, `null` signifiant explicitement "pas de reset auto" (voir RoomSpec).
+    const resetSchedule =
+      options.resetSchedule === undefined ? DEFAULT_RESET_SCHEDULE : options.resetSchedule;
+
+    const spec: RoomSpec = {
+      id,
+      modId: options.modId,
+      tickRateHz: this.tickRateHz,
+      maxPlayers,
+      botsEnabled: options.botsEnabled,
+      resetSchedule,
+    };
+    const handle = this.host.createRoom(spec);
+    handle.onTick((_tick, _payloads, stats) => this.roomStats.set(id, stats));
+
     const inviteCode =
       options.visibility === 'private'
         ? options.inviteCode &&
@@ -137,8 +166,9 @@ export class RoomManager {
       modId: options.modId,
       visibility: options.visibility,
       inviteCode,
-      room,
-      maxPlayers: options.maxPlayers ?? DEFAULT_MAX_PLAYERS_PER_ROOM,
+      handle,
+      room: handle.localRoom,
+      maxPlayers,
       permanent: options.permanent ?? false,
       lastNonEmptyAt: Date.now(),
     };
@@ -209,7 +239,7 @@ export class RoomManager {
     for (const entry of [...this.rooms.values()]) {
       if (entry.permanent) continue;
 
-      if (entry.room.world.allPlayers().length > 0) {
+      if (this.playerCountOf(entry) > 0) {
         entry.lastNonEmptyAt = now;
         continue;
       }
@@ -237,9 +267,10 @@ export class RoomManager {
    * l'entrée et notifie les auditeurs (voir `onRoomRemoved`, utilisé par net/server.ts pour
    * nettoyer/fermer les sockets de ce salon). */
   private removeEntry(entry: RoomEntry, reason: string): void {
-    entry.room.stop();
+    entry.handle.destroy();
     if (entry.expireTimer) clearTimeout(entry.expireTimer);
     this.rooms.delete(entry.id);
+    this.roomStats.delete(entry.id);
     for (const listener of this.removeListeners) listener(entry.id);
     logEvent('room_removed', { roomId: entry.id, reason });
   }
@@ -280,9 +311,40 @@ export class RoomManager {
       name: entry.name,
       modId: entry.modId,
       visibility: entry.visibility,
-      playerCount: entry.room.world.allPlayers().length,
+      playerCount: this.playerCountOf(entry),
       maxPlayers: entry.maxPlayers,
       permanent: entry.permanent,
     };
+  }
+
+  /** Lecture synchrone directe pour un salon `LocalRoomHost` (défaut, voir index.ts
+   * `ROOM_WORKERS`) — strictement équivalente au comportement d'avant ce refactor, y compris sa
+   * fraîcheur immédiate (un test peut ajouter un joueur puis vérifier `playerCount` sans attendre
+   * qu'un tick ait eu lieu). Pour un salon hébergé par `WorkerRoomHost`, aucune `Room` n'existe
+   * dans ce thread : on retombe sur le dernier `RoomStats` reçu (voir `roomStats`, mis à jour à
+   * chaque tick par `RoomHandle.onTick` dans `createRoom` ci-dessus), à `0` avant le tout premier
+   * tick d'un salon fraîchement créé. Public : réutilisé par `/api/stats` (lobby.ts), qui n'a pas
+   * de raison d'accéder à `Room` directement. */
+  playerCountOf(entry: ManagedRoom): number {
+    if (entry.room) return entry.room.world.allPlayers().length;
+    return this.roomStats.get(entry.id)?.playerCount ?? 0;
+  }
+
+  /** Version complète de `playerCountOf`, pour `/api/admin/health` (server/src/net/metrics.ts) —
+   * même préférence "lecture directe si disponible" (voir `playerCountOf`), mais avec la charge
+   * de tick en plus. */
+  roomStatsOf(entry: ManagedRoom): RoomStats {
+    if (entry.room) {
+      const metrics = entry.room.tickMetrics();
+      return {
+        playerCount: entry.room.world.allPlayers().length,
+        tickAvgMs: metrics.avgMs,
+        tickP95Ms: metrics.p95Ms,
+        tickOverruns: metrics.overruns,
+      };
+    }
+    return (
+      this.roomStats.get(entry.id) ?? { playerCount: 0, tickAvgMs: 0, tickP95Ms: 0, tickOverruns: 0 }
+    );
   }
 }
