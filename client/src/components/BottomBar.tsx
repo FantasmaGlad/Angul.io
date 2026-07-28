@@ -8,7 +8,11 @@ export default function BottomBar() {
     <footer className="bottom-bar">
       <span>Version 1.1</span>
       <span>Angul.io 2026</span>
-      <button type="button" className="btn-ghost" onClick={() => navigate('/soutenir')}>
+      <button
+        type="button"
+        className="btn-ghost bottom-bar-support"
+        onClick={() => navigate('/soutenir')}
+      >
         Soutenir le Projet
       </button>
     </footer>
