@@ -78,13 +78,32 @@ export default function App() {
     );
   }
 
+  const [selectedCreativeRoomId, setSelectedCreativeRoomId] = useState<string | undefined>(undefined);
+
+  const handleSelectCreativeRoom = useCallback((roomId: string) => {
+    setSelectedCreativeRoomId(roomId);
+    setView('creatif');
+  }, []);
+
   return (
     <div className="app-shell">
       <Sidebar view={view} onChangeView={setView} onLogout={handleLogout} />
       <main className="main-content">
         {view === 'joueurs' && <PlayersView token={token} onAuthError={handleAuthError} />}
-        {view === 'salons' && <RoomsView token={token} onAuthError={handleAuthError} />}
-        {view === 'creatif' && <CreativeView token={token} onAuthError={handleAuthError} />}
+        {view === 'salons' && (
+          <RoomsView
+            token={token}
+            onAuthError={handleAuthError}
+            onSelectCreativeRoom={handleSelectCreativeRoom}
+          />
+        )}
+        {view === 'creatif' && (
+          <CreativeView
+            token={token}
+            onAuthError={handleAuthError}
+            initialRoomId={selectedCreativeRoomId}
+          />
+        )}
       </main>
     </div>
   );

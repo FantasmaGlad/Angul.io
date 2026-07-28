@@ -2,6 +2,7 @@ import type {
   DeathCustomCard,
   EntitySnapshot,
   LeaderboardEntry,
+  MovementConfig,
   ServerMessage,
 } from '@angulio/shared';
 import {
@@ -30,6 +31,7 @@ import {
 } from '../debugOverlay.js';
 import { attachInput } from '../input.js';
 import { GameConnection } from '../net.js';
+import { LocalPrediction } from '../prediction.js';
 import {
   BASE_SCALE,
   computeCamera,
@@ -47,7 +49,10 @@ import {
 import { ownAggregate, speedBetween } from '../stats.js';
 import Minimap from './Minimap.js';
 
-const INPUT_SEND_INTERVAL_MS = 50; // aligné sur le tick serveur par défaut (20 Hz)
+/** Repli avant que `welcome` (et donc `serverTickRateHz`) ne soit connu — l'envoi des inputs se
+ * cale ensuite dynamiquement sur la cadence réelle du salon (voir `scheduleInput` plus bas) au
+ * lieu d'un intervalle fixe indépendant du tick serveur, qui battait auparavant avec lui. */
+const DEFAULT_INPUT_INTERVAL_MS = 1000 / 30;
 const SERVER_STATE_INTERVAL_MS = 50;
 const PING_INTERVAL_MS = 1000;
 const MAP_UNITS_TO_METERS = 0.01;
@@ -145,6 +150,10 @@ export default function GameView({
     let selfPlayerId: string | undefined;
     let mapSize = 15000;
     let serverTickRateHz: number | undefined;
+    /** Modèle de mouvement du mode actif, reçu dans `welcome` — nécessaire à la prédiction locale
+     * (voir prediction.ts) ; `undefined` tant que `welcome` n'est pas encore arrivé, auquel cas la
+     * prédiction reste simplement inactive (le blob suit le pipeline serveur habituel). */
+    let movementConfig: MovementConfig | undefined;
     let latestSnapshot: EntitySnapshot[] = [];
     let previousSnapshot: EntitySnapshot[] | undefined;
     let latestSnapshotAt = performance.now();
@@ -162,6 +171,10 @@ export default function GameView({
     let announcementHideTimer: ReturnType<typeof setTimeout> | undefined;
     let justDied = false;
     let isDeadNow = false;
+    /** `true` entre une coupure réseau transitoire détectée par `GameConnection` et le `welcome`
+     * qui confirme la reconnexion (voir net.ts) — purement pour informer le joueur (statut HUD)
+     * que la partie n'est pas figée, juste en train de se rattacher. */
+    let isReconnecting = false;
 
     function respawn(): void {
       isDeadNow = false;
@@ -205,6 +218,7 @@ export default function GameView({
     connectionRef.current = connection;
 
     const renderEngine = new RenderEngine();
+    const prediction = new LocalPrediction();
 
     let lastMinimapUpdateAt = 0;
 
@@ -213,7 +227,10 @@ export default function GameView({
         selfPlayerId = message.playerId;
         mapSize = message.mapSize;
         serverTickRateHz = message.tickRateHz;
+        movementConfig = message.movement;
+        isReconnecting = false;
         renderEngine.reset();
+        prediction.reset();
         setMapSizeState(message.mapSize);
         isDeadNow = false;
         setDeathState(DEFAULT_DEATH_STATE);
@@ -225,7 +242,8 @@ export default function GameView({
         previousSnapshot = latestSnapshot;
         latestSnapshot = message.entities;
         latestSnapshotAt = performance.now();
-        renderEngine.pushSnapshot(message.entities, serverTickRateHz ?? 20);
+        if (selfPlayerId) prediction.reconcile(message.entities, selfPlayerId);
+        renderEngine.pushSnapshot(message.entities, message.tick, serverTickRateHz);
         serverTpsCurrent = tickRateTracker.record(latestSnapshotAt);
         if (message.leaderboard) {
           setLeaderboard(message.leaderboard);
@@ -261,6 +279,10 @@ export default function GameView({
       }
     });
 
+    connection.onReconnecting(() => {
+      isReconnecting = true;
+    });
+
     let closedByUs = false;
     connection.onClose((event) => {
       if (closedByUs) return;
@@ -285,11 +307,21 @@ export default function GameView({
     });
 
     connection.send({ type: 'join', nickname });
-    const inputInterval = setInterval(() => {
-      if (!selfPlayerId) return;
-      const { target, intensity } = input.getTarget(latestCamera);
-      connection.send({ type: 'input', target, intensity, split: input.consumeSplit() });
-    }, INPUT_SEND_INTERVAL_MS);
+    // Cadence dynamique (au lieu d'un intervalle fixe indépendant du tick serveur) : se recale
+    // sur `serverTickRateHz` dès que `welcome` est connu, pour ne pas battre avec le vrai tick du
+    // salon.
+    let inputTimer: ReturnType<typeof setTimeout> | undefined;
+    function scheduleInput(): void {
+      const intervalMs = serverTickRateHz ? 1000 / serverTickRateHz : DEFAULT_INPUT_INTERVAL_MS;
+      inputTimer = setTimeout(() => {
+        if (selfPlayerId) {
+          const { target, intensity } = input.getTarget(latestCamera);
+          connection.send({ type: 'input', target, intensity, split: input.consumeSplit() });
+        }
+        scheduleInput();
+      }, intervalMs);
+    }
+    scheduleInput();
 
     const pingInterval = setInterval(() => {
       connection.send({ type: 'ping', t: performance.now() });
@@ -355,7 +387,18 @@ export default function GameView({
       lastFrameAt = now;
 
       const logicStart = performance.now();
-      const entities = renderEngine.getInterpolatedEntities(
+
+      // Prédiction locale : avance le(s) morceau(x) du joueur avec la même formule que le
+      // serveur, à partir de l'input LIVE de cette frame — réagit donc au curseur sans attendre
+      // l'aller-retour réseau. Inactif tant que `welcome` n'est pas encore arrivé (`movementConfig`
+      // inconnu) ou hors partie (`selfPlayerId` inconnu) : le blob suit alors simplement le
+      // pipeline serveur habituel.
+      if (movementConfig && selfPlayerId) {
+        const { target, intensity } = input.getTarget(latestCamera);
+        prediction.step(frameDt / 1000, target, intensity, movementConfig);
+      }
+
+      let entities = renderEngine.getInterpolatedEntities(
         frameDt,
         latestCamera,
         canvas!.width,
@@ -363,6 +406,7 @@ export default function GameView({
         selfPlayerId,
         false,
       );
+      if (selfPlayerId) entities = prediction.applyTo(entities, selfPlayerId);
 
       const targetCamera = computeCamera(entities, selfPlayerId, { x: mapSize / 2, y: mapSize / 2 });
       const ownForScale = ownAggregate(entities, selfPlayerId);
@@ -385,7 +429,11 @@ export default function GameView({
       const drawTimeMs = performance.now() - drawStart;
 
       if (hudRef.current) {
-        const status = justDied ? 'Vous êtes mort — respawn en cours…' : '';
+        const status = isReconnecting
+          ? 'Connexion interrompue — reconnexion en cours…'
+          : justDied
+            ? 'Vous êtes mort — respawn en cours…'
+            : '';
         hudRef.current.textContent = [
           status,
           inviteCodeToShow && `Code d'invitation : ${inviteCodeToShow}`,
@@ -406,10 +454,9 @@ export default function GameView({
         statMassRef.current.textContent = own ? Math.round(own.mass).toString() : '—';
       }
       const previousOwn = ownAggregate(previousSnapshot ?? [], selfPlayerId);
+      const stateIntervalSec = serverTickRateHz ? 1 / serverTickRateHz : SERVER_STATE_INTERVAL_MS / 1000;
       const speed =
-        own && previousOwn
-          ? speedBetween(previousOwn, own, SERVER_STATE_INTERVAL_MS / 1000)
-          : undefined;
+        own && previousOwn ? speedBetween(previousOwn, own, stateIntervalSec) : undefined;
       if (statSpeedRef.current) {
         statSpeedRef.current.textContent =
           speed !== undefined ? `${(speed * MAP_UNITS_TO_METERS).toFixed(1)} m/s` : '—';
@@ -464,6 +511,7 @@ export default function GameView({
             netOutKbps: connection.netOutKbps,
             interpBufferMs: SERVER_STATE_INTERVAL_MS,
             interpSnapshots: previousSnapshot ? 2 : 1,
+            missedTicks: renderEngine.missedTickCount,
           },
           hardware: {
             cpuCores: systemInfo.hardwareConcurrency,
@@ -482,7 +530,7 @@ export default function GameView({
       window.removeEventListener('resize', resizeCanvas);
       window.removeEventListener('keydown', onKeyDown);
       input.detach();
-      clearInterval(inputInterval);
+      if (inputTimer) clearTimeout(inputTimer);
       clearInterval(pingInterval);
       if (comboHideTimer) clearTimeout(comboHideTimer);
       cancelAnimationFrame(rafId);

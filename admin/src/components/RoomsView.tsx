@@ -7,6 +7,7 @@ import { drawEntities, type Camera } from '../entityCanvas.js';
 interface RoomsViewProps {
   token: string;
   onAuthError: (message: string) => void;
+  onSelectCreativeRoom?: (roomId: string) => void;
 }
 
 const REFRESH_INTERVAL_MS = 3000;
@@ -14,7 +15,7 @@ const POV_ZOOM = 0.6;
 
 /** Onglet "Salons & Écrans" (§3.3 cahier_des_charges_admin.md) — supervision des salons/joueurs
  * en ligne, expulsion, transfert, mode Suivi "POV". */
-export default function RoomsView({ token, onAuthError }: RoomsViewProps) {
+export default function RoomsView({ token, onAuthError, onSelectCreativeRoom }: RoomsViewProps) {
   const [rooms, setRooms] = useState<AdminRoomView[]>([]);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
@@ -106,17 +107,32 @@ export default function RoomsView({ token, onAuthError }: RoomsViewProps) {
                 avg {room.stats.tickAvgMs.toFixed(1)}ms · p95 {room.stats.tickP95Ms.toFixed(1)}ms
               </p>
             </div>
-            <button
-              className="btn-ghost"
-              type="button"
-              onClick={() => setPov({ roomId: room.id, playerId: '', nickname: `Spectateur Salon : ${room.name}` })}
-              title="Voir l'arène globale en direct"
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: 18, verticalAlign: 'middle', marginRight: 4 }}>
-                visibility
-              </span>
-              Regarder le salon
-            </button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {onSelectCreativeRoom && (
+                <button
+                  className="btn-primary"
+                  type="button"
+                  onClick={() => onSelectCreativeRoom(room.id)}
+                  title="Ouvrir l'Espace Créatif pour ce salon"
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 18, verticalAlign: 'middle', marginRight: 4 }}>
+                    tune
+                  </span>
+                  Gérer en direct
+                </button>
+              )}
+              <button
+                className="btn-ghost"
+                type="button"
+                onClick={() => setPov({ roomId: room.id, playerId: '', nickname: `Spectateur Salon : ${room.name}` })}
+                title="Voir l'arène globale en direct"
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 18, verticalAlign: 'middle', marginRight: 4 }}>
+                  visibility
+                </span>
+                Spectateur
+              </button>
+            </div>
           </div>
 
           <table className="data-table">

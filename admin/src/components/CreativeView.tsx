@@ -7,6 +7,7 @@ import { drawEntities, pieceAtScreenPoint, screenToWorld, type Camera } from '..
 interface CreativeViewProps {
   token: string;
   onAuthError: (message: string) => void;
+  initialRoomId?: string;
 }
 
 const KEY_PAN_SPEED = 800; // px monde/s, x3 avec Shift (§4.1)
@@ -18,13 +19,21 @@ interface ContextMenuState {
   playerId: string;
 }
 
-/** Onglet "Espace Créatif" (§4 cahier_des_charges_admin.md) — vue Canvas haut débit : navigation
- * libre, actions directes sur les joueurs, spawn/nettoyage, gestion du salon à chaud, mode Blob
- * Dieu, diffusion de messages. */
-export default function CreativeView({ token, onAuthError }: CreativeViewProps) {
+interface PlayerInspectInfo {
+  playerId: string;
+  nickname: string;
+  mass: number;
+  isBot: boolean;
+  isFrozen: boolean;
+}
+
+/** Onglet "Espace Créatif" (§4 cahier_des_charges_admin.md) — Studio de Contrôle & Commandement :
+ * vue Canvas haut débit, panneau latéral d'inspection en direct, manipulation physique des joueurs,
+ * mode Blob Dieu, diffusion de messages. */
+export default function CreativeView({ token, onAuthError, initialRoomId }: CreativeViewProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [rooms, setRooms] = useState<AdminRoomView[]>([]);
-  const [roomId, setRoomId] = useState('');
+  const [roomId, setRoomId] = useState(initialRoomId || '');
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | undefined>(undefined);
@@ -35,6 +44,7 @@ export default function CreativeView({ token, onAuthError }: CreativeViewProps) 
   const [broadcastColor, setBroadcastColor] = useState('#ffffff');
   const [broadcastGlobal, setBroadcastGlobal] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [livePlayerList, setLivePlayerList] = useState<PlayerInspectInfo[]>([]);
 
   const socketRef = useRef<AdminSocketHandle | null>(null);
   const godPlayerIdRef = useRef<string | undefined>(undefined);
@@ -44,7 +54,11 @@ export default function CreativeView({ token, onAuthError }: CreativeViewProps) 
       try {
         const list = await listRooms(token);
         setRooms(list);
-        if (!roomId && list.length > 0) setRoomId(list[0]!.id);
+        if (initialRoomId && list.some((r) => r.id === initialRoomId)) {
+          setRoomId(initialRoomId);
+        } else if (!roomId && list.length > 0) {
+          setRoomId(list[0]!.id);
+        }
       } catch (err) {
         const message = (err as Error).message;
         setError(message);
@@ -52,7 +66,7 @@ export default function CreativeView({ token, onAuthError }: CreativeViewProps) 
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [token, initialRoomId]);
 
   const runAction = (action: AdminRoomAction): void => {
     void socketRef.current?.sendAction(action).then((result) => {
@@ -86,9 +100,32 @@ export default function CreativeView({ token, onAuthError }: CreativeViewProps) 
     let lastPanScreen = { x: 0, y: 0 };
     let lastMouseWorld = { x: 0, y: 0 };
 
+    let lastPlayerListUpdateAt = 0;
     const handle = connectAdminSocket(token, roomId, {
       onState: (received) => {
         entities = received;
+        const now = performance.now();
+        if (now - lastPlayerListUpdateAt > 250) {
+          lastPlayerListUpdateAt = now;
+          const playerMap = new Map<string, { mass: number; isFrozen: boolean }>();
+          for (const e of received) {
+            if (!e.p) continue;
+            const existing = playerMap.get(e.p);
+            playerMap.set(e.p, {
+              mass: (existing?.mass || 0) + e.m,
+              isFrozen: false,
+            });
+          }
+          const list: PlayerInspectInfo[] = Array.from(playerMap.entries()).map(([pId, info]) => ({
+            playerId: pId,
+            nickname: nicknames.get(pId) || (pId.startsWith('bot-') ? pId : `Joueur #${pId.slice(0, 6)}`),
+            mass: info.mass,
+            isBot: pId.startsWith('bot-'),
+            isFrozen: info.isFrozen,
+          }));
+          list.sort((a, b) => b.mass - a.mass);
+          setLivePlayerList(list);
+        }
       },
       onPlayerInfo: (id, nick) => nicknames.set(id, nick),
       onClose: (reason) => setError(reason),
@@ -278,60 +315,68 @@ export default function CreativeView({ token, onAuthError }: CreativeViewProps) 
     setContextMenu(null);
   };
 
+  const activeRoom = rooms.find((r) => r.id === roomId);
+
   return (
-    <div className="view view-wide creative-view">
-      <div className="top-bar">
+    <div className="view view-wide creative-view" style={{ maxWidth: '100%', height: 'calc(100vh - 56px)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="top-bar" style={{ flexShrink: 0 }}>
         <div>
-          <h2>Espace Créatif</h2>
+          <h2>Espace Créatif &amp; Studio de Contrôle</h2>
           <p className="view-subtitle">
-            Survol invisible du salon, actions directes, spawn, Blob Dieu (§4).
+            Surveillance en direct, manipulation physique des joueurs et gestion d'arène.
           </p>
         </div>
-        <select value={roomId} onChange={(event) => setRoomId(event.target.value)}>
-          {rooms.map((room) => (
-            <option key={room.id} value={room.id}>
-              {room.name} ({room.modId})
-            </option>
-          ))}
-        </select>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {activeRoom && (
+            <span className="badge" style={{ padding: '6px 12px', borderRadius: 'var(--radius-pill)', background: 'var(--surface-hover)' }}>
+              {activeRoom.name} · {activeRoom.stats.playerCount}/{activeRoom.maxPlayers} joueurs
+            </span>
+          )}
+          <select
+            value={roomId}
+            onChange={(event) => setRoomId(event.target.value)}
+            style={{ padding: '8px 14px', fontSize: 13.5, fontWeight: 600, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-pill)' }}
+          >
+            {rooms.map((room) => (
+              <option key={room.id} value={room.id}>
+                Salon : {room.name} ({room.modId})
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
-      <p className="error-text">{error}</p>
-      <p className="status-text">{status}</p>
+      {error && <p className="error-text" style={{ flexShrink: 0, margin: 0 }}>{error}</p>}
+      {status && <p className="status-text" style={{ flexShrink: 0, margin: 0 }}>{status}</p>}
 
-      <div className="creative-toolbar">
+      <div className="creative-toolbar" style={{ flexShrink: 0 }}>
         <button
           className={spawnMode === 'food' ? 'btn-primary' : 'btn-ghost'}
           type="button"
           onClick={() => setSpawnMode(spawnMode === 'food' ? 'none' : 'food')}
         >
-          <span className="material-symbols-outlined" aria-hidden="true">
-            grain
-          </span>{' '}
-          Spawn nourriture
+          <span className="material-symbols-outlined" aria-hidden="true">grain</span> Spawn nourriture
         </button>
         <button
           className={spawnMode === 'bot' ? 'btn-primary' : 'btn-ghost'}
           type="button"
           onClick={() => setSpawnMode(spawnMode === 'bot' ? 'none' : 'bot')}
         >
-          <span className="material-symbols-outlined" aria-hidden="true">
-            smart_toy
-          </span>{' '}
-          Spawn bot
+          <span className="material-symbols-outlined" aria-hidden="true">smart_toy</span> Spawn bot
         </button>
         <button className="btn-ghost" type="button" onClick={() => runAction({ kind: 'clearFood' })}>
-          Vider les pastilles
+          <span className="material-symbols-outlined" aria-hidden="true">cleaning_services</span> Vider pastilles
         </button>
         <button className="btn-ghost" type="button" onClick={() => runAction({ kind: 'clearBots' })}>
-          Supprimer les bots
+          <span className="material-symbols-outlined" aria-hidden="true">no_accounts</span> Supprimer bots
         </button>
         <button
-          className="btn-ghost btn-danger"
+          className="btn-ghost"
+          style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
           type="button"
           onClick={() => setShowResetConfirm(true)}
         >
-          Reset salon
+          <span className="material-symbols-outlined" aria-hidden="true">restart_alt</span> Reset salon
         </button>
         <select
           onChange={(event) => {
@@ -339,56 +384,167 @@ export default function CreativeView({ token, onAuthError }: CreativeViewProps) 
             event.target.value = '';
           }}
           defaultValue=""
+          style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-pill)', padding: '8px 12px' }}
         >
-          <option value="" disabled>
-            Changer de mode…
-          </option>
+          <option value="" disabled>Changer de mode…</option>
           <option value="vanilla">Vanilla</option>
           <option value="hardcore">Hardcore</option>
         </select>
         <button className={godActive ? 'btn-primary' : 'btn-ghost'} type="button" onClick={toggleGodmode}>
-          <span className="material-symbols-outlined" aria-hidden="true">
-            workspace_premium
-          </span>{' '}
-          Blob Dieu {godActive ? '(actif)' : ''}
+          <span className="material-symbols-outlined" aria-hidden="true">workspace_premium</span> Blob Dieu {godActive ? '(actif)' : ''}
         </button>
         {godActive && (
           <button className="btn-ghost" type="button" onClick={boostGodMass}>
-            <span className="material-symbols-outlined" aria-hidden="true">
-              bolt
-            </span>{' '}
-            +10 000 masse
+            <span className="material-symbols-outlined" aria-hidden="true">bolt</span> +10 000 masse
           </button>
         )}
       </div>
 
-      <div className="creative-broadcast">
+      <div className="creative-broadcast" style={{ flexShrink: 0 }}>
         <input
           value={broadcastText}
           onChange={(event) => setBroadcastText(event.target.value)}
-          placeholder="Message à diffuser…"
+          placeholder="Message à diffuser aux joueurs…"
           maxLength={200}
         />
         <input
           type="color"
           value={broadcastColor}
           onChange={(event) => setBroadcastColor(event.target.value)}
+          style={{ width: 36, height: 36, padding: 2, cursor: 'pointer' }}
         />
-        <label className="filter-checkbox">
+        <label className="filter-checkbox" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
           <input
             type="checkbox"
             checked={broadcastGlobal}
             onChange={(event) => setBroadcastGlobal(event.target.checked)}
           />
-          Global
+          Tous les salons
         </label>
         <button className="btn-primary" type="button" onClick={sendBroadcast}>
-          Diffuser
+          <span className="material-symbols-outlined" aria-hidden="true">campaign</span> Diffuser
         </button>
       </div>
 
-      <div className="creative-canvas-wrap">
-        <canvas ref={canvasRef} className="creative-canvas" />
+      {/* Main Studio Body (Split view Canvas + Live Inspector) */}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 16 }}>
+        {/* Canvas Wrap */}
+        <div className="creative-canvas-wrap" style={{ flex: 1, height: '100%', position: 'relative', margin: 0 }}>
+          <canvas ref={canvasRef} className="creative-canvas" />
+        </div>
+
+        {/* Live Room Inspector Panel */}
+        <div
+          className="panel"
+          style={{
+            width: 310,
+            flexShrink: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+            overflowY: 'auto',
+            height: '100%',
+            padding: 16,
+            boxSizing: 'border-box',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-soft)' }}>
+              Joueurs ({livePlayerList.length})
+            </span>
+            <span className="badge" style={{ fontSize: 10 }}>Live 20Hz</span>
+          </div>
+
+          {livePlayerList.length === 0 ? (
+            <p className="view-subtitle" style={{ fontStyle: 'italic', marginTop: 10 }}>
+              Aucun joueur actif dans ce salon. Spawnez des bots ou de la nourriture !
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {livePlayerList.map((p) => (
+                <div
+                  key={p.playerId}
+                  style={{
+                    background: selectedPlayerId === p.playerId ? 'var(--surface-hover)' : 'var(--bg)',
+                    border: `1px solid ${selectedPlayerId === p.playerId ? 'var(--accent)' : 'var(--border)'}`,
+                    borderRadius: 'var(--radius-md)',
+                    padding: '10px 12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 6,
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      {p.nickname}
+                      {p.isBot && <span className="badge" style={{ fontSize: 9, padding: '2px 5px' }}>Bot</span>}
+                      {p.isFrozen && <span className="badge" style={{ fontSize: 9, padding: '2px 5px', background: '#e0f2fe', color: '#0369a1' }}>Gelé</span>}
+                    </span>
+                    <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--accent)' }}>
+                      {Math.round(p.mass)} m
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
+                    <button
+                      className="btn-ghost"
+                      type="button"
+                      style={{ padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
+                      onClick={() => setSelectedPlayerId(selectedPlayerId === p.playerId ? undefined : p.playerId)}
+                      title="Centrer la caméra sur ce joueur"
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: 14 }}>visibility</span>
+                      {selectedPlayerId === p.playerId ? 'Détacher' : 'Suivre'}
+                    </button>
+                    <button
+                      className="btn-ghost"
+                      type="button"
+                      style={{ padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
+                      onClick={() => runAction({ kind: p.isFrozen ? 'unfreeze' : 'freeze', playerId: p.playerId })}
+                      title={p.isFrozen ? 'Dégeler' : 'Geler'}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: 14 }}>ac_unit</span>
+                      {p.isFrozen ? 'Dégeler' : 'Geler'}
+                    </button>
+                    <button
+                      className="btn-ghost"
+                      type="button"
+                      style={{ padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
+                      onClick={() => {
+                        const val = window.prompt(`Nouvelle masse pour ${p.nickname} ?`, String(Math.round(p.mass)));
+                        if (val && Number.isFinite(Number(val))) runAction({ kind: 'setMass', playerId: p.playerId, mass: Number(val) });
+                      }}
+                      title="Modifier la masse"
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: 14 }}>fitness_center</span>
+                      Masse
+                    </button>
+                    <button
+                      className="btn-ghost"
+                      type="button"
+                      style={{ padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
+                      onClick={() => runAction({ kind: 'split', playerId: p.playerId })}
+                      title="Split forcé"
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: 14 }}>call_split</span>
+                      Split
+                    </button>
+                    <button
+                      className="btn-ghost"
+                      style={{ color: 'var(--danger)', borderColor: 'var(--danger)', padding: '4px 8px', fontSize: 11, borderRadius: 'var(--radius-md)' }}
+                      type="button"
+                      onClick={() => runAction({ kind: 'kill', playerId: p.playerId })}
+                      title="Éliminer le joueur"
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: 14 }}>skull</span>
+                      Kill
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {contextMenu && (

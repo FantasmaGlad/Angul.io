@@ -97,7 +97,20 @@ export class RenderEngine {
       // exactement le "arrêt puis saut" ressenti comme un petit lag/avant-arrière. Plafonné à
       // MAX_EXTRAPOLATION_MS d'extrapolation pour ne pas dériver indéfiniment sur une coupure
       // longue (voir son commentaire).
-      const maxT = 1 + MAX_EXTRAPOLATION_MS / intervalMs;
+      //
+      // Ne s'active QUE si `intervalMs` ressemble à un vrai intervalle de tick (au moins la
+      // moitié de l'intervalle nominal `stateIntervalMs`) — sur Internet (contrairement au LAN de
+      // vérification initiale), deux messages consécutifs arrivent souvent en rafale après un
+      // micro-décrochage (Nagle, compression WS, réception groupée par le navigateur, throttle
+      // serveur sous backpressure, voir broadcast.ts `admitStateFrame`) : `snapA`/`snapB` peuvent
+      // alors être écartés de seulement 1-2ms en temps d'ARRIVÉE client tout en représentant
+      // plusieurs ticks de déplacement serveur réel. Diviser ce déplacement par un intervalle
+      // aussi artificiellement petit produirait une "vélocité" délirante — avec `maxT` inversement
+      // proportionnel à `intervalMs`, l'extrapolation aurait alors pu projeter l'entité à des
+      // dizaines de fois sa distance réelle (cause du "toutes les entités se téléportent" observé
+      // en production). Repli : geler à t=1 (comportement historique, sûr dans tous les cas).
+      const looksLikeARealTick = intervalMs >= stateIntervalMs * 0.5;
+      const maxT = looksLikeARealTick ? 1 + MAX_EXTRAPOLATION_MS / intervalMs : 1;
       t = clamp((renderTime - snapA.time) / intervalMs, 0, maxT);
     }
 
