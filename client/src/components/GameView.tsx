@@ -1,6 +1,14 @@
-import type { EntitySnapshot, LeaderboardEntry, ServerMessage } from '@angulio/shared';
+import type {
+  DeathCustomCard,
+  EntitySnapshot,
+  LeaderboardEntry,
+  ServerMessage,
+} from '@angulio/shared';
 import {
   clamp,
+  deathBannerById,
+  DEFAULT_DEATH_BANNER_ID,
+  DEFAULT_DEATH_MESSAGE,
   WS_CLOSE_NICKNAME_TAKEN,
   WS_CLOSE_ROOM_EXPIRED,
   WS_CLOSE_ROOM_FULL,
@@ -34,6 +42,35 @@ const INPUT_SEND_INTERVAL_MS = 50; // aligné sur le tick serveur par défaut (2
 const SERVER_STATE_INTERVAL_MS = 50;
 const PING_INTERVAL_MS = 1000;
 const MAP_UNITS_TO_METERS = 0.01;
+/** Écran de mort personnalisé (cahier des charges fourni) : "aucun recalcul canvas/WebGL lourd
+ * pendant l'écran de mort" — 10 FPS suffit à garder le fond du jeu visible (pas figé) sans
+ * consommer de ressources pour une scène que le joueur ne pilote plus. */
+const DEAD_FRAME_INTERVAL_MS = 100;
+
+interface DeathState {
+  isDead: boolean;
+  finalScore: number;
+  survivalTimeSec: number;
+  xpEarned: number;
+  killerNickname?: string;
+  customCard: DeathCustomCard;
+}
+
+const DEFAULT_DEATH_STATE: DeathState = {
+  isDead: false,
+  finalScore: 0,
+  survivalTimeSec: 0,
+  xpEarned: 0,
+  customCard: { message: DEFAULT_DEATH_MESSAGE, bannerId: DEFAULT_DEATH_BANNER_ID },
+};
+
+/** "04m 12s" (cahier des charges fourni, maquette de l'écran de mort) plutôt qu'un nombre brut
+ * de secondes — plus lisible pour une partie qui peut durer plusieurs minutes. */
+function formatSurvivalTime(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = Math.floor(totalSeconds % 60);
+  return `${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
+}
 
 interface GameViewProps {
   nickname: string;
@@ -66,10 +103,7 @@ export default function GameView({
 
   const connectionRef = useRef<GameConnection | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [deathState, setDeathState] = useState<{ isDead: boolean; finalScore: number }>({
-    isDead: false,
-    finalScore: 0,
-  });
+  const [deathState, setDeathState] = useState<DeathState>(DEFAULT_DEATH_STATE);
   const [playerPos, setPlayerPos] = useState<{ x: number; y: number } | undefined>(undefined);
   const [mapSizeState, setMapSizeState] = useState<number>(15000);
 
@@ -101,7 +135,13 @@ export default function GameView({
     let lastComboLevel: number | undefined;
     let comboHideTimer: ReturnType<typeof setTimeout> | undefined;
     let justDied = false;
-    let maxMassThisLife = 50;
+    let isDeadNow = false;
+
+    function respawn(): void {
+      isDeadNow = false;
+      setDeathState(DEFAULT_DEATH_STATE);
+      connection.send({ type: 'join', nickname });
+    }
 
     function showComboBanner(level: number): void {
       const banner = comboBannerRef.current;
@@ -130,8 +170,8 @@ export default function GameView({
         selfPlayerId = message.playerId;
         mapSize = message.mapSize;
         setMapSizeState(message.mapSize);
-        maxMassThisLife = 50;
-        setDeathState({ isDead: false, finalScore: 0 });
+        isDeadNow = false;
+        setDeathState(DEFAULT_DEATH_STATE);
         if (statNicknameRef.current) statNicknameRef.current.textContent = nickname;
       } else if (message.type === 'player') {
         nicknames.set(message.playerId, message.nickname);
@@ -143,10 +183,6 @@ export default function GameView({
         if (message.leaderboard) {
           setLeaderboard(message.leaderboard);
         }
-        const own = ownAggregate(latestSnapshot, selfPlayerId);
-        if (own) {
-          maxMassThisLife = Math.max(maxMassThisLife, own.mass);
-        }
         const comboLevel = message.self?.combo?.level;
         if (comboLevel !== undefined && comboLevel !== lastComboLevel) {
           showComboBanner(comboLevel);
@@ -154,7 +190,15 @@ export default function GameView({
         lastComboLevel = comboLevel;
       } else if (message.type === 'died') {
         justDied = true;
-        setDeathState({ isDead: true, finalScore: Math.round(maxMassThisLife) });
+        isDeadNow = true;
+        setDeathState({
+          isDead: true,
+          finalScore: message.finalScore,
+          survivalTimeSec: message.survivalTimeSec,
+          xpEarned: message.xpEarned,
+          killerNickname: message.killerNickname,
+          customCard: message.customCard,
+        });
         setTimeout(() => {
           justDied = false;
         }, 1500);
@@ -207,6 +251,14 @@ export default function GameView({
     let lastFrameAt = 0;
 
     function onKeyDown(event: KeyboardEvent): void {
+      // Respawn rapide (cahier des charges fourni, écran de mort) : Espace ne fait rien tant
+      // qu'on est vivant (évite un split accidentel si le joueur a mappé une autre touche par
+      // habitude — de toute façon Espace ne déclenche aucune action en jeu aujourd'hui).
+      if (event.key === ' ' && isDeadNow) {
+        event.preventDefault();
+        respawn();
+        return;
+      }
       if (event.key !== 'F3') return;
       event.preventDefault();
       debugVisible = !debugVisible;
@@ -221,7 +273,12 @@ export default function GameView({
     let rafId = 0;
     function frame(): void {
       const now = performance.now();
-      if (now - lastFrameAt < minFrameIntervalMs) {
+      // Écran de mort personnalisé (cahier des charges fourni) : pas de recalcul canvas lourd
+      // tant que le joueur ne pilote plus rien — ralenti à 10 FPS plutôt que le plafond normal.
+      const targetIntervalMs = isDeadNow
+        ? Math.max(minFrameIntervalMs, DEAD_FRAME_INTERVAL_MS)
+        : minFrameIntervalMs;
+      if (now - lastFrameAt < targetIntervalMs) {
         rafId = requestAnimationFrame(frame);
         return;
       }
@@ -396,26 +453,56 @@ export default function GameView({
         </div>
       </div>
 
-      {/* Modal Éliminé / Respawn */}
+      {/* Écran de mort personnalisé (cahier des charges fourni) */}
       {deathState.isDead && (
         <div className="death-overlay">
           <div className="death-modal">
-            <h2>Éliminé</h2>
-            <p>Votre cellule a été absorbée.</p>
-            <div className="death-stats">
-              <span className="death-stat-label">Score Final (Masse Max)</span>
-              <span className="death-stat-value">{deathState.finalScore}</span>
+            <h2>Fin de partie</h2>
+            {deathState.killerNickname && (
+              <p className="death-killer">
+                Éliminé par : <strong>{deathState.killerNickname}</strong>
+              </p>
+            )}
+
+            <div
+              className="death-banner"
+              style={{
+                background: `linear-gradient(135deg, ${deathBannerById(deathState.customCard.bannerId).gradient[0]}, ${deathBannerById(deathState.customCard.bannerId).gradient[1]})`,
+              }}
+            >
+              <span className="death-banner-icon">
+                {deathBannerById(deathState.customCard.bannerId).icon}
+              </span>
+              <p className="death-banner-message">"{deathState.customCard.message}"</p>
             </div>
+
+            <div className="death-stats-grid">
+              <div className="death-stat-cell">
+                <span className="death-stat-label">Masse finale</span>
+                <span className="death-stat-value">{deathState.finalScore}</span>
+              </div>
+              <div className="death-stat-cell">
+                <span className="death-stat-label">Temps de survie</span>
+                <span className="death-stat-value">
+                  {formatSurvivalTime(deathState.survivalTimeSec)}
+                </span>
+              </div>
+              <div className="death-stat-cell">
+                <span className="death-stat-label">XP gagnée</span>
+                <span className="death-stat-value">+{Math.round(deathState.xpEarned)}</span>
+              </div>
+            </div>
+
             <div className="death-actions">
               <button
                 className="btn-primary-action"
                 type="button"
                 onClick={() => {
-                  setDeathState({ isDead: false, finalScore: 0 });
+                  setDeathState(DEFAULT_DEATH_STATE);
                   connectionRef.current?.send({ type: 'join', nickname });
                 }}
               >
-                Rejouer (Respawn)
+                Rejouer (Espace)
               </button>
               <button className="btn-secondary-action" type="button" onClick={() => onExit()}>
                 Menu Principal

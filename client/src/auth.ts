@@ -20,6 +20,10 @@ export interface AccountProfile {
   /** Couleur d'avatar choisie (refonte UI/UX, avatar procédural) — `undefined` tant que le
    * joueur n'a rien choisi explicitement (voir `AVATAR_PALETTE`, `updateAvatarColor`). */
   avatarColor?: string;
+  /** Écran de mort personnalisé (cahier des charges fourni) — toujours défini (valeurs par
+   * défaut de la migration tant que le joueur n'a rien changé). */
+  deathMessage: string;
+  deathBannerId: string;
 }
 
 async function postAuth(path: string, pseudo: string, password: string): Promise<AuthResult> {
@@ -67,6 +71,24 @@ export async function updateAvatarColor(
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? "Impossible d'enregistrer la couleur d'avatar.");
+  }
+  return (await response.json()) as AccountProfile;
+}
+
+/** Personnalisation de l'écran de mort (cahier des charges fourni) — renvoie le profil à jour. */
+export async function updateDeathScreen(
+  token: string,
+  deathMessage: string,
+  deathBannerId: string,
+): Promise<AccountProfile> {
+  const response = await fetch('/api/account/death-screen', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ deathMessage, deathBannerId }),
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? "Impossible d'enregistrer l'écran de mort.");
   }
   return (await response.json()) as AccountProfile;
 }

@@ -1,5 +1,8 @@
 import {
+  DEFAULT_DEATH_BANNER_ID,
+  DEFAULT_DEATH_MESSAGE,
   distance,
+  type DeathCustomCard,
   type EntitySnapshot,
   type LeaderboardEntry,
   type ServerMessage,
@@ -11,6 +14,11 @@ import { SpatialHash } from '../../engine/spatialHash.js';
 import type { Entity, PlayerId } from '../../engine/types.js';
 import { activeComboLevel } from '../../engine/xp.js';
 import { logEvent } from '../../log.js';
+
+const DEFAULT_CUSTOM_CARD: DeathCustomCard = {
+  message: DEFAULT_DEATH_MESSAGE,
+  bannerId: DEFAULT_DEATH_BANNER_ID,
+};
 
 export interface RoomRuntime {
   sockets: Map<PlayerId, WebSocket>;
@@ -109,24 +117,51 @@ export function wireRoom(
 
       send(socket, { type: 'state', tick, entities, leaderboard, self });
 
-      if (runtime.accountIdByPlayer.has(playerId)) {
-        const previousMax = runtime.maxMassByPlayer.get(playerId) ?? 0;
-        if (totalMass > previousMax) runtime.maxMassByPlayer.set(playerId, totalMass);
-      }
+      const previousMax = runtime.maxMassByPlayer.get(playerId) ?? 0;
+      if (totalMass > previousMax) runtime.maxMassByPlayer.set(playerId, totalMass);
     }
   });
 
-  managed.room.onPlayerDeath((playerId) => {
+  managed.room.onPlayerDeath((playerId, info) => {
     logEvent('player_died', { roomId: managed.id, playerId });
+    // Lus avant `recordAccountStats`/la remise à zéro juste en dessous : ce sont la masse max et
+    // l'XP de la vie qui vient de se terminer (écran de mort personnalisé, `finalScore`/
+    // `xpEarned`), pas celles de la prochaine — `recordAccountStats` réinitialise `lifeStats`
+    // pour un compte (jamais pour un invité, voir World.addPlayer/resetLifeStats).
+    const finalScore = Math.round(runtime.maxMassByPlayer.get(playerId) ?? 0);
+    const xpEarned = Math.round(managed.room.world.getPlayer(playerId)?.lifeStats.xpEarned ?? 0);
     recordAccountStats(accountsService, managed, runtime, playerId);
-    if (runtime.accountIdByPlayer.has(playerId)) runtime.maxMassByPlayer.set(playerId, 0);
+    runtime.maxMassByPlayer.set(playerId, 0);
+
     const socket = runtime.sockets.get(playerId);
-    if (socket) send(socket, { type: 'died' });
+    if (!socket) return;
+
+    const accountId = runtime.accountIdByPlayer.get(playerId);
+    void (async () => {
+      const card =
+        accountId !== undefined ? await accountsService?.getDeathScreenCard(accountId) : undefined;
+      send(socket, {
+        type: 'died',
+        killerNickname: info.killerNickname,
+        finalScore,
+        survivalTimeSec: Math.round(info.survivalTimeSec),
+        xpEarned,
+        customCard: card ? { message: card.message, bannerId: card.bannerId } : DEFAULT_CUSTOM_CARD,
+      });
+    })();
   });
 
   managed.room.onReset(() => {
     logEvent('room_reset', { roomId: managed.id });
-    for (const socket of runtime.sockets.values()) send(socket, { type: 'died' });
+    for (const socket of runtime.sockets.values()) {
+      send(socket, {
+        type: 'died',
+        finalScore: 0,
+        survivalTimeSec: 0,
+        xpEarned: 0,
+        customCard: DEFAULT_CUSTOM_CARD,
+      });
+    }
   });
 
   return runtime;

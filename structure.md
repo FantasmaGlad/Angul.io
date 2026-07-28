@@ -63,7 +63,8 @@ Angul.io/
 │       ├── geometry.ts / geometry.test.ts   Formules masse↔aire↔rayon (metriques.md §2)
 │       ├── protocol.ts                Types des messages WebSocket client↔serveur
 │       ├── botIdentities.ts           Dictionnaire officiel des 108 robots et leurs couleurs (#HEX)
-│       └── avatarPalette.ts           Palette de couleurs d'avatar choisissables + repli déterministe par pseudo
+│       ├── avatarPalette.ts           Palette de couleurs d'avatar choisissables + repli déterministe par pseudo
+│       └── deathBanners.ts            Catalogue des bannières de l'écran de mort (déblocage par niveau)
 │
 ├── server/                            Serveur de jeu
 │   ├── package.json
@@ -77,7 +78,8 @@ Angul.io/
 │   │   ├── ..._full-account-model.cjs       + level/xp/premium/cosmetics, player_best_scores
 │   │   ├── ..._add-banned-flag.cjs          + banned
 │   │   ├── ..._seed-fanta-premium.cjs       UPDATE de données : premium=TRUE pour "Fanta"
-│   │   └── ..._add-avatar-color.cjs         + avatar_color (avatar procédural, refonte UI/UX)
+│   │   ├── ..._add-avatar-color.cjs         + avatar_color (avatar procédural, refonte UI/UX)
+│   │   └── ..._add-death-screen-customization.cjs → + death_message/death_banner_id
 │   ├── configs/                       Configs des modes de jeu "paramétriques" (JSON)
 │   │   ├── vanilla.json
 │   │   ├── hardcore.json
@@ -208,7 +210,7 @@ lieu de modales superposées.
 | `SpectatorBackground.tsx` | Fond animé : connexion WebSocket en lecture seule (`?spectate=1`) au salon permanent, caméra fixe, réutilise `render.ts` |
 | `Minimap.tsx` | Mini-carte 3x3 (secteurs A1-C3) affichée en jeu, position du joueur sur `mapSize` |
 | `WikiPage.tsx` | Wiki joueur plein écran (route `/wiki`, nouvel onglet) — modes/monde/adversaires (dont un Bestiaire basé sur `BOT_IDENTITIES`)/à venir ; contenu pensé pour un joueur, pas une doc d'ingénierie |
-| `GameView.tsx` | **Le seul composant qui touche au canvas en partie** — monte `<canvas>`, ouvre la connexion WebSocket, lance la boucle de rendu, HUD (stats/leaderboard live/minimap/bouton Quitter/écran de mort) |
+| `GameView.tsx` | **Le seul composant qui touche au canvas en partie** — monte `<canvas>`, ouvre la connexion WebSocket, lance la boucle de rendu, HUD (stats/leaderboard live/minimap/bouton Quitter/écran de mort personnalisé — bannière/message du compte, tueur, temps de survie, XP, respawn par Espace, rendu ralenti à 10 FPS pendant l'écran de mort) |
 
 ### 4.2 Client — sous-pages (`client/src/pages/`)
 
@@ -220,7 +222,7 @@ commune `PageLayout.tsx`.
 |---|---|---|
 | `PageLayout.tsx` | — | Coquille commune (titre + bouton retour accueil), pas de backdrop/z-index empilés |
 | `AccountPage.tsx` | `/compte` | Connexion/inscription/déconnexion (Profil et Paramètres sont des pages séparées, plus des boutons internes) |
-| `ProfilePage.tsx` | `/profil` | Niveau/XP/Premium/cosmétiques/meilleurs scores **+ sélecteur de couleur d'avatar** (`AVATAR_PALETTE`, `PATCH /api/account/me`) |
+| `ProfilePage.tsx` | `/profil` | Niveau/XP/Premium/cosmétiques/meilleurs scores **+ sélecteur de couleur d'avatar** (`AVATAR_PALETTE`, `PATCH /api/account/me`) **+ personnalisation de l'écran de mort** (message/bannière déblocable par niveau, prévisualisation en direct, `PATCH /api/account/death-screen`) |
 | `SettingsPage.tsx` | `/parametres` | Plafond FPS (réglage local à l'appareil) |
 | `LeaderboardPage.tsx` | `/classement` | Placeholder "bientôt disponible" |
 | `SupportPage.tsx` | `/soutenir` | Explication du don libre + lien de don |
@@ -262,7 +264,8 @@ connues (§4.2), puis l'accueil par défaut.
 Voir [server/db/schema.sql](server/db/schema.sql) pour le détail des tables :
 - **`players`** : compte joueur (pseudo, hash de mot de passe, niveau/XP, Premium, cosmétiques,
   `avatar_color` — couleur d'avatar procédurale choisie par le joueur, nullable, voir
-  `shared/src/avatarPalette.ts` — banni).
+  `shared/src/avatarPalette.ts` — `death_message`/`death_banner_id` — écran de mort personnalisé,
+  voir `shared/src/deathBanners.ts` — banni).
 - **`player_best_scores`** : meilleur score par (joueur, mode de jeu).
 - **Pas de table de sessions** : les tokens de connexion vivent en mémoire (`sessionStore.ts`) avec expiration TTL 24h.
 

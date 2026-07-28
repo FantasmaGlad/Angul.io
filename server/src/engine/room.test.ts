@@ -122,7 +122,10 @@ describe('Room — cycle de vie des hooks', () => {
     vi.spyOn(performance, 'now').mockReturnValueOnce(200);
     room.tick();
 
-    expect(deathListener).toHaveBeenCalledWith('p1');
+    expect(deathListener).toHaveBeenCalledWith('p1', {
+      killerNickname: undefined,
+      survivalTimeSec: expect.any(Number),
+    });
   });
 });
 

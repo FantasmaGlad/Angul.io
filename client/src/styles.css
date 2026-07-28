@@ -321,14 +321,18 @@ select {
 .home-shell {
   position: relative;
   z-index: 0;
-  min-height: 100%;
+  /* `height` (pas `min-height`) : un pourcentage ne se résout que contre une hauteur *définie*
+     du parent (#root, déjà `height: 100%`) — `min-height` seul laisse la hauteur calculée à
+     `auto`, ce qui empêchait `.home-ui` ci-dessous de remplir tout le viewport et collait le
+     pied de page juste après le contenu au lieu du bas de l'écran. */
+  height: 100%;
 }
 
 /* `.home-ui` regroupe tout SAUF le fond spectateur (nav/colonnes/pied de page) — élément séparé
    du fond exprès : la transition d'entrée en jeu (demande utilisateur) doit pouvoir "zoomer en
    arrière"/estomper l'UI et "zoomer en avant" le fond indépendamment l'un de l'autre. */
 .home-ui {
-  min-height: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   transform-origin: center center;
@@ -468,9 +472,12 @@ select {
   flex: 1;
   display: grid;
   grid-template-columns: minmax(0, 280px) minmax(0, 360px) minmax(0, 320px);
-  justify-content: center;
+  /* `space-between` (demande utilisateur) plutôt que `center` : sur un écran large, "Sélection
+     du mode" et "Créer un salon privé" doivent se coller aux deux bords de l'écran plutôt que
+     de rester groupées avec les 3 colonnes au centre, entourées de vide. */
+  justify-content: space-between;
   gap: 24px;
-  padding: 36px 24px;
+  padding: 36px 48px;
   box-sizing: border-box;
 }
 
@@ -642,6 +649,85 @@ select {
 
 .rank-list-container {
   text-align: left;
+}
+
+/* Carte de salon (liste de classement des salons, colonnes 1 et 2 de l'accueil) — `list-style:
+   none` corrige le double numéro affiché avant cette refonte : le marqueur natif de `<ol>`
+   ("1.") s'ajoutait au badge `#1` déjà dessiné à la main dans chaque ligne. */
+.rank-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rank-list li {
+  margin: 0;
+}
+.rank-list-empty {
+  padding: 14px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-faint);
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+}
+.rank-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+.rank-row:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+.rank-index {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  font-size: 11px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  color: var(--text-soft);
+}
+.rank-list li:first-child .rank-index {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent-strong);
+}
+.rank-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.rank-count {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  color: var(--text-soft);
 }
 
 /* --- Create Room Panel (Colonne 3) --- */
@@ -973,6 +1059,113 @@ a.btn-primary {
   border-radius: var(--radius-md);
 }
 
+/* Écran de mort personnalisé (ProfilePage.tsx) — sélection de bannière + prévisualisation. */
+.field-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.char-counter {
+  font-size: 10.5px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.death-banner-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 10px;
+}
+.death-banner-option {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 84px;
+  border-radius: var(--radius-md);
+  border: 2px solid transparent;
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+.death-banner-option:hover:not(:disabled) {
+  transform: scale(1.03);
+}
+.death-banner-option.selected {
+  border-color: var(--text);
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--text);
+}
+.death-banner-option.locked {
+  cursor: default;
+  filter: grayscale(0.6);
+  opacity: 0.6;
+}
+.death-banner-icon {
+  font-size: 22px;
+}
+.death-banner-label {
+  font-size: 11px;
+  font-weight: 700;
+}
+.death-banner-lock-badge {
+  position: absolute;
+  bottom: 4px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.55);
+  color: #ffffff;
+}
+
+.death-preview-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--bg);
+}
+.death-preview-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 18px;
+  color: #ffffff;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.death-preview-banner span:first-child {
+  font-size: 22px;
+}
+.death-preview-message {
+  margin: 0;
+  padding: 12px 16px 0;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--text-soft);
+  text-align: center;
+}
+.death-preview-stats {
+  display: flex;
+  justify-content: space-around;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 12px 16px 16px;
+  font-size: 11.5px;
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     transition-duration: 0.001ms !important;
@@ -1074,7 +1267,7 @@ a.btn-primary {
   padding: 20px;
 }
 .death-modal {
-  width: 380px;
+  width: 420px;
   max-width: 100%;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1085,32 +1278,66 @@ a.btn-primary {
 }
 .death-modal h2 {
   margin: 0 0 8px 0;
-  font-size: 24px;
-  color: var(--danger);
+  font-size: 22px;
+  color: var(--text);
 }
-.death-modal p {
-  margin: 0 0 20px 0;
-  font-size: 14px;
+.death-killer {
+  margin: 0 0 16px 0;
+  font-size: 13.5px;
   color: var(--text-soft);
 }
-.death-stats {
+.death-killer strong {
+  color: var(--text);
+}
+
+/* Bannière de mort personnalisée (cahier des charges fourni) — dégradé + icône choisis en
+   Profil (voir ProfilePage.tsx, même catalogue shared/src/deathBanners.ts). */
+.death-banner {
+  border-radius: var(--radius-md);
+  padding: 18px;
+  margin-bottom: 20px;
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.death-banner-icon {
+  font-size: 28px;
+  display: block;
+  margin-bottom: 6px;
+}
+.death-banner-message {
+  margin: 0;
+  font-size: 14px;
+  font-style: italic;
+  font-weight: 600;
+}
+
+.death-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 16px;
+  padding: 14px 8px;
   margin-bottom: 24px;
 }
+.death-stat-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
 .death-stat-label {
-  display: block;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
+  letter-spacing: 0.02em;
   color: var(--text-soft);
-  margin-bottom: 4px;
+  text-align: center;
 }
 .death-stat-value {
   font-family: var(--font-mono);
-  font-size: 28px;
+  font-size: 17px;
   font-weight: 800;
   color: var(--accent);
 }

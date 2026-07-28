@@ -117,8 +117,11 @@ export function handleWsConnection(
         runtime.sockets.set(playerId, socket);
         if (accountId !== undefined) {
           runtime.accountIdByPlayer.set(playerId, accountId);
-          runtime.maxMassByPlayer.set(playerId, 0);
         }
+        // Masse max de la vie en cours (écran de mort personnalisé, `finalScore`) — suivie pour
+        // tout le monde, invités compris, contrairement à `accountIdByPlayer` (réservé aux
+        // écritures en base, voir `recordAccountStats`).
+        runtime.maxMassByPlayer.set(playerId, 0);
         // Avatar procédural (refonte UI/UX) : couleur choisie par le compte, sinon dérivée du
         // pseudo pour un invité — résolue une fois ici et mémorisée (`colorByPlayer`) pour
         // pouvoir la rediffuser aux prochains arrivants.

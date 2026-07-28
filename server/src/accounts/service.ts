@@ -1,10 +1,15 @@
 import type { Pool } from 'pg';
-import { isValidAvatarColor } from '@angulio/shared';
+import {
+  isValidAvatarColor,
+  isDeathBannerUnlocked,
+  MAX_DEATH_MESSAGE_LENGTH,
+} from '@angulio/shared';
 import {
   AccountsRepository,
   PseudoTakenError,
   type AccountRow,
   type AdminAccountPatch,
+  type DeathScreenPatch,
 } from './accountsRepository.js';
 import { hashPassword, verifyPassword } from './passwords.js';
 import { createSessionStore, type SessionStore } from './sessionStore.js';
@@ -35,6 +40,10 @@ export interface AccountProfile {
   /** Couleur d'avatar choisie (refonte UI/UX) — `undefined` tant que le joueur n'a rien choisi
    * explicitement, voir `AVATAR_PALETTE`/`colorForNickname`. */
   avatarColor?: string;
+  /** Écran de mort personnalisé (cahier des charges fourni) — toujours défini, initialisé aux
+   * valeurs par défaut de la migration (`death_message`/`death_banner_id`). */
+  deathMessage: string;
+  deathBannerId: string;
 }
 
 /** Vue d'un compte destinée à l'interface admin (Lot 5.2-5.4) — inclut `id` (nécessaire pour
@@ -124,6 +133,8 @@ export class AccountsService {
       cosmetics: account.cosmetics,
       bestScores,
       avatarColor: account.avatarColor ?? undefined,
+      deathMessage: account.deathMessage,
+      deathBannerId: account.deathBannerId,
     };
   }
 
@@ -143,6 +154,41 @@ export class AccountsService {
       throw new AccountError("Couleur d'avatar invalide.");
     }
     const updated = await this.repository.updateAvatarColor(accountId, color);
+    if (!updated) return undefined;
+    return this.getProfile(accountId);
+  }
+
+  /** Carte d'écran de mort à diffuser au moment où le joueur meurt (voir broadcast.ts) — lecture
+   * dédiée, plus légère que `getProfile` (pas de requête `bestScores`) puisqu'elle est appelée à
+   * chaque mort, pas seulement à l'ouverture de la page Profil. `undefined` pour un compte
+   * introuvable (déconnecté entre-temps) — l'appelant retombe alors sur les valeurs par défaut,
+   * comme pour un invité. */
+  async getDeathScreenCard(
+    accountId: number,
+  ): Promise<{ message: string; bannerId: string } | undefined> {
+    const account = await this.repository.findById(accountId);
+    if (!account) return undefined;
+    return { message: account.deathMessage, bannerId: account.deathBannerId };
+  }
+
+  /** Personnalisation de l'écran de mort (cahier des charges fourni) — sanitisation du message
+   * (balises HTML retirées, longueur bornée) et bannière vérifiée contre le catalogue ET le
+   * niveau du compte (jamais faire confiance à un id envoyé par le client, même s'il correspond
+   * à une bannière qui existe : encore faut-il qu'elle soit déverrouillée pour CE compte). */
+  async updateDeathScreen(
+    accountId: number,
+    patch: DeathScreenPatch,
+  ): Promise<AccountProfile | undefined> {
+    const message = sanitizeDeathMessage(patch.deathMessage);
+    const account = await this.repository.findById(accountId);
+    if (!account) return undefined;
+    if (!isDeathBannerUnlocked(patch.deathBannerId, account.level)) {
+      throw new AccountError("Cette bannière n'est pas déverrouillée à ton niveau actuel.");
+    }
+    const updated = await this.repository.updateDeathScreen(accountId, {
+      deathMessage: message,
+      deathBannerId: patch.deathBannerId,
+    });
     if (!updated) return undefined;
     return this.getProfile(accountId);
   }
@@ -244,6 +290,23 @@ function validateAdminPatch(patch: AdminAccountPatch): void {
       );
     }
   }
+}
+
+/** Retire toute balise HTML (anti-XSS, cahier des charges fourni) et borne la longueur — défense
+ * en profondeur : React échappe déjà le texte affiché (`{message}` en JSX, jamais
+ * `dangerouslySetInnerHTML`), mais ce champ est un texte libre écrit par un joueur et lu par
+ * d'autres, autant ne jamais faire confiance à ce qu'il contient une fois stocké. */
+function sanitizeDeathMessage(raw: string): string {
+  const stripped = raw.replace(/<[^>]*>/g, '').trim();
+  if (stripped.length === 0) {
+    throw new AccountError('Le message ne peut pas être vide.');
+  }
+  if (stripped.length > MAX_DEATH_MESSAGE_LENGTH) {
+    throw new AccountError(
+      `Le message doit faire au maximum ${MAX_DEATH_MESSAGE_LENGTH} caractères.`,
+    );
+  }
+  return stripped;
 }
 
 function validatePseudo(pseudo: string): void {

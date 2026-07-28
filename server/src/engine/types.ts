@@ -28,6 +28,13 @@ export interface PlayerState {
    * lui-même : le respawn immédiat après une mort recrée un morceau avant que le réseau ait eu
    * la main pour lire le cumul de la vie qui vient de se terminer. */
   lifeStats: LifeStats;
+  /** `performance.now()` du (re)spawn courant — sert à calculer `survivalTimeSec` à la mort
+   * (écran de mort personnalisé, voir Room.tick). Fixé par `World.addPlayer`. */
+  spawnedAtMs: number;
+  /** Dernier joueur à avoir mangé un morceau de celui-ci — utilisé pour "Éliminé par : X" côté
+   * écran de mort (voir `World.recordAttacker`, `Room.tick`). `undefined` si mort autrement
+   * (bords de carte, décor) ou si personne ne l'a jamais mangé cette vie. */
+  lastAttackerId?: PlayerId;
 }
 
 export interface PlayerInput {

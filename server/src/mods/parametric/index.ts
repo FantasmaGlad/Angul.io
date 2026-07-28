@@ -149,6 +149,8 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
             victimNickname: targetPlayer?.nickname ?? target.ownerId,
             mass: Math.floor(gainedMass),
           });
+          // Écran de mort personnalisé ("Éliminé par : X") — voir World.recordAttacker.
+          world.recordAttacker(target.ownerId, attacker.ownerId);
         }
 
         world.setMass(attacker, attacker.mass + gainedMass);

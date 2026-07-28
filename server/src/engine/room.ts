@@ -10,6 +10,17 @@ import {
 import type { PlayerId, PlayerInput } from './types.js';
 import { World } from './world.js';
 
+/** Passé aux auditeurs de mort (voir `onPlayerDeath`) — de quoi construire l'écran de mort
+ * personnalisé côté réseau (broadcast.ts) sans que celui-ci ait à recalculer quoi que ce soit
+ * lui-même. */
+export interface PlayerDeathInfo {
+  /** Pseudo du dernier joueur ayant mangé un morceau de la victime — résolu ici (pas seulement
+   * l'id) car l'attaquant peut lui-même s'être déconnecté entre-temps ; `undefined` si personne
+   * ne l'a mangée cette vie ou si l'attaquant n'est plus dans le monde. */
+  killerNickname?: string;
+  survivalTimeSec: number;
+}
+
 export interface RoomOptions {
   mapSize: number;
   tickRateHz: number;
@@ -38,7 +49,7 @@ export class Room {
   private tickCount = 0;
   private readonly resetSchedule: RoomResetSchedule | undefined;
   private readonly stateListeners: Array<(tick: number) => void> = [];
-  private readonly deathListeners: Array<(playerId: PlayerId) => void> = [];
+  private readonly deathListeners: Array<(playerId: PlayerId, info: PlayerDeathInfo) => void> = [];
   private readonly resetListeners: Array<() => void> = [];
 
   constructor(mod: GameMod, options: RoomOptions) {
@@ -128,7 +139,14 @@ export class Room {
       if (player.alive && !currentlyAlive) {
         this.mod.onPlayerDeath?.(this.world, player.id);
         this.botManager?.onPlayerDeath(player.id);
-        for (const listener of this.deathListeners) listener(player.id);
+        const killer = player.lastAttackerId
+          ? this.world.getPlayer(player.lastAttackerId)
+          : undefined;
+        const info: PlayerDeathInfo = {
+          killerNickname: killer?.nickname,
+          survivalTimeSec: (now - player.spawnedAtMs) / 1000,
+        };
+        for (const listener of this.deathListeners) listener(player.id, info);
       }
       player.alive = currentlyAlive;
     }
@@ -174,7 +192,7 @@ export class Room {
 
   /** Notifié quand un joueur passe de "a au moins un morceau" à "n'en a plus aucun" — utile au
    * réseau (net/server.ts) pour envoyer un message `died` sans avoir à décorer le mod. */
-  onPlayerDeath(listener: (playerId: PlayerId) => void): void {
+  onPlayerDeath(listener: (playerId: PlayerId, info: PlayerDeathInfo) => void): void {
     this.deathListeners.push(listener);
   }
 

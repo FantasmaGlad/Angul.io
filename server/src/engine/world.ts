@@ -131,9 +131,19 @@ export class World {
       pieceIds: [],
       alive: false,
       lifeStats: createLifeStats(),
+      spawnedAtMs: performance.now(),
     };
     this.players.set(id, player);
     return player;
+  }
+
+  /** Enregistre `attackerId` comme dernier joueur à avoir mangé un morceau de `targetId` (écran
+   * de mort personnalisé, "Éliminé par : X") — écrasé à chaque absorption, donc reflète
+   * naturellement le dernier attaquant au moment où le dernier morceau disparaît. Ne fait rien
+   * pour un joueur inconnu (déjà déconnecté). */
+  recordAttacker(targetId: PlayerId, attackerId: PlayerId): void {
+    const target = this.players.get(targetId);
+    if (target) target.lastAttackerId = attackerId;
   }
 
   /** Remet à zéro les stats XP/combo d'un joueur (voir engine/xp.ts) — appelé par net/server.ts

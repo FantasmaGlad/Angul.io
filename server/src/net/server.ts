@@ -39,6 +39,11 @@ export function startGameServer(
   const authRateLimiter = new RateLimiter(maxAttempts, 60_000);
   const adminRateLimiter = new RateLimiter(maxAttempts, 60_000);
   const wsRateLimiter = new RateLimiter(maxAttempts, 60_000);
+  // Écran de mort personnalisé (cahier des charges fourni) : 10 modifications/minute — un
+  // plafond bien plus généreux que l'auth (essayer plusieurs bannières d'affilée est un usage
+  // normal, pas une attaque), indépendant de `rateLimitMaxAttempts` pour ne pas se retrouver à 0
+  // (donc désactivé) dans les tests qui désactivent l'auth rate-limiting.
+  const deathScreenRateLimiter = new RateLimiter(10, 60_000);
 
   function wireRoom(managed: ManagedRoom): void {
     wireRoomBroadcast(managed, interestRadiusPx, options.accounts, runtimes);
@@ -67,6 +72,7 @@ export function startGameServer(
       options.adminStaticDir,
       authRateLimiter,
       adminRateLimiter,
+      deathScreenRateLimiter,
       req,
       res,
     );

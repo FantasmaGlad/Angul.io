@@ -146,3 +146,66 @@ export async function handleUpdateAvatarColor(
     respondJson(res, 500, { error: 'Erreur serveur.' });
   }
 }
+
+/** Personnalisation de l'écran de mort (cahier des charges fourni) — message + bannière,
+ * rate-limité séparément de l'auth (10 modifications/minute par IP, un joueur qui teste des
+ * bannières en repoussant "Enregistrer" ne doit pas se faire bloquer comme une attaque de
+ * force brute sur le login). */
+export async function handleUpdateDeathScreen(
+  accounts: AccountsService | undefined,
+  rateLimiter: RateLimiter,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  if (!accounts) {
+    respondJson(res, 503, {
+      error: 'Comptes joueurs indisponibles (base de données non configurée).',
+    });
+    return;
+  }
+
+  const clientIp = getClientIp(req);
+  if (!rateLimiter.consume(clientIp)) {
+    logEvent('death_screen_rate_limited', { ip: clientIp });
+    respondJson(res, 429, { error: 'Trop de modifications. Réessaie dans une minute.' });
+    return;
+  }
+
+  const accountId = accounts.resolveToken(getBearerToken(req));
+  if (accountId === undefined) {
+    respondJson(res, 401, { error: 'Non authentifié.' });
+    return;
+  }
+
+  let body: unknown;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    respondJson(res, 400, { error: (error as Error).message });
+    return;
+  }
+
+  const deathMessage =
+    isRecord(body) && typeof body.deathMessage === 'string' ? body.deathMessage : '';
+  const deathBannerId =
+    isRecord(body) && typeof body.deathBannerId === 'string' ? body.deathBannerId : '';
+
+  try {
+    const profile = await accounts.updateDeathScreen(accountId, { deathMessage, deathBannerId });
+    if (!profile) {
+      respondJson(res, 404, { error: 'Compte introuvable.' });
+      return;
+    }
+    respondJson(res, 200, profile);
+  } catch (error) {
+    if (error instanceof AccountError) {
+      respondJson(res, 400, { error: error.message });
+      return;
+    }
+    logEvent('account_error', {
+      action: 'update_death_screen',
+      reason: (error as Error).message,
+    });
+    respondJson(res, 500, { error: 'Erreur serveur.' });
+  }
+}

@@ -107,8 +107,29 @@ export interface PlayerInfoMessage {
   color?: string;
 }
 
+/** Carte d'écran de mort personnalisée par le compte (ou valeurs par défaut pour un invité) —
+ * voir `shared/src/deathBanners.ts`. `imageUrl` est réservé à une évolution future (upload
+ * Premium, cahier des charges §1) : toujours absent pour l'instant, aucune route ne permet de
+ * le renseigner. */
+export interface DeathCustomCard {
+  message: string;
+  bannerId: string;
+  imageUrl?: string;
+}
+
 export interface PlayerDiedMessage {
   type: 'died';
+  /** Pseudo du dernier joueur ayant mangé un morceau de la victime — absent si mort par un bot
+   * disparu entre-temps, par la nourriture/les bords, ou par déconnexion. */
+  killerNickname?: string;
+  /** Masse maximale atteinte pendant cette vie (identique au score déjà utilisé pour
+   * `player_best_scores`). */
+  finalScore: number;
+  survivalTimeSec: number;
+  /** XP gagnée pendant cette vie (voir engine/xp.ts) — 0 pour un invité (pas de compte à
+   * créditer, mais affiché quand même : la progression "aurait été" gagnée). */
+  xpEarned: number;
+  customCard: DeathCustomCard;
 }
 
 export type ServerMessage =

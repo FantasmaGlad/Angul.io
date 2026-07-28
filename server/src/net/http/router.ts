@@ -15,6 +15,7 @@ import {
   handleLogout,
   handleRegisterOrLogin,
   handleUpdateAvatarColor,
+  handleUpdateDeathScreen,
 } from './routes/auth.js';
 import {
   handleCreateRoom,
@@ -33,6 +34,7 @@ export async function handleHttpRequest(
   adminStaticDir: string | undefined,
   authRateLimiter: RateLimiter,
   adminRateLimiter: RateLimiter,
+  deathScreenRateLimiter: RateLimiter,
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
@@ -80,6 +82,11 @@ export async function handleHttpRequest(
 
   if (url.pathname === '/api/account/me' && req.method === 'PATCH') {
     await handleUpdateAvatarColor(accounts, req, res);
+    return;
+  }
+
+  if (url.pathname === '/api/account/death-screen' && req.method === 'PATCH') {
+    await handleUpdateDeathScreen(accounts, deathScreenRateLimiter, req, res);
     return;
   }
 

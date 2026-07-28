@@ -36,6 +36,10 @@ export function createHardcoreMod(
   function handleEatAttempt(world: World, attacker: Entity, target: Entity): boolean {
     if (attacker.mass >= target.mass * (1 + config.eating.massAdvantage)) {
       const gainedMass = target.mass * hardcoreConfig.massGainMultiplier;
+      if (attacker.ownerId && target.ownerId) {
+        // Écran de mort personnalisé ("Éliminé par : X") — voir World.recordAttacker.
+        world.recordAttacker(target.ownerId, attacker.ownerId);
+      }
       world.setMass(attacker, attacker.mass + gainedMass);
       world.removeEntity(target.id);
       // XP (engine/xp.ts) : la masse gagnée (déjà multipliée x10 par défaut) compte intégralement

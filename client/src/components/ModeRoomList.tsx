@@ -39,10 +39,8 @@ export default function ModeRoomList({
                 className={`mode-tab-item ${isSelected ? 'active' : ''}`}
                 onClick={() => onSelectMode(modeId)}
               >
-                <div className="mode-tab-info">
-                  <span className="mode-tab-label">{meta.label}</span>
-                  <span className="mode-tab-count">{count} joueurs</span>
-                </div>
+                <span className="mode-tab-label">{meta.label}</span>
+                <span className="mode-tab-count">{count} joueurs</span>
               </button>
             );
           })}

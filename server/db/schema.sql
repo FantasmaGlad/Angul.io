@@ -18,6 +18,8 @@
 --   1785135367447_add-banned-flag.cjs   → players.banned
 --   1785167636144_seed-fanta-premium.cjs→ UPDATE de données (pas de schéma) : premium=TRUE pour
 --                                          le compte "Fanta" (refonte UI/UX accueil)
+--   1785200000000_add-avatar-color.cjs  → players.avatar_color (avatar procédural)
+--   1785210000000_add-death-screen-customization.cjs → players.{death_message,death_banner_id}
 --
 -- Portée : uniquement les données persistantes (PostgreSQL). L'état de partie en cours (positions,
 -- masses, salons actifs) vit en mémoire côté serveur (server/src/engine/) et n'est jamais écrit
@@ -64,6 +66,16 @@ CREATE TABLE players (
     -- ni de durée, pas d'historique des sanctions pour le MVP (voir aussi §10 du cahier des
     -- charges UI/UX — un historique de modération est une évolution possible, pas encore faite).
     banned         BOOLEAN     NOT NULL DEFAULT FALSE,
+
+    -- Avatar procédural (refonte UI/UX) : couleur de blob choisie parmi shared/src/avatarPalette.ts
+    -- (NULL = pas de choix explicite, repli déterministe sur le pseudo, voir connectionHandler.ts).
+    avatar_color   TEXT,
+
+    -- Écran de mort personnalisé (cahier des charges fourni) : message libre + bannière parmi le
+    -- catalogue shared/src/deathBanners.ts (pas d'upload d'image, voir la migration dédiée).
+    death_message    VARCHAR(100) NOT NULL DEFAULT 'Bien joué ! À la prochaine.'
+                     CONSTRAINT chk_death_message_length CHECK (char_length(death_message) <= 100),
+    death_banner_id  VARCHAR(50)  NOT NULL DEFAULT 'default_skull',
 
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );

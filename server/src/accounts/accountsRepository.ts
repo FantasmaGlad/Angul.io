@@ -11,6 +11,16 @@ export interface AccountRow {
   cosmetics: string[];
   banned: boolean;
   avatarColor: string | null;
+  deathMessage: string;
+  deathBannerId: string;
+}
+
+/** Champs modifiables par le joueur lui-même pour personnaliser son écran de mort (cahier des
+ * charges fourni) — validés en amont en couche service (sanitisation du message, bannière
+ * déverrouillée par le niveau) avant d'arriver ici. */
+export interface DeathScreenPatch {
+  deathMessage: string;
+  deathBannerId: string;
 }
 
 /** Champs modifiables par l'admin (Lot 5.2-5.4) — tous optionnels, seuls les champs fournis sont
@@ -48,10 +58,13 @@ interface PlayerRow {
   cosmetics: string[];
   banned: boolean;
   avatar_color: string | null;
+  death_message: string;
+  death_banner_id: string;
 }
 
 const ACCOUNT_COLUMNS =
-  'id, pseudo, password_hash, level, xp, premium, cosmetics, banned, avatar_color';
+  'id, pseudo, password_hash, level, xp, premium, cosmetics, banned, avatar_color, ' +
+  'death_message, death_banner_id';
 
 function toAccountRow(row: PlayerRow): AccountRow {
   return {
@@ -64,6 +77,8 @@ function toAccountRow(row: PlayerRow): AccountRow {
     cosmetics: row.cosmetics,
     banned: row.banned,
     avatarColor: row.avatar_color,
+    deathMessage: row.death_message,
+    deathBannerId: row.death_banner_id,
   };
 }
 
@@ -145,6 +160,17 @@ export class AccountsRepository {
     const result = await this.pool.query<PlayerRow>(
       `UPDATE players SET avatar_color = $2 WHERE id = $1 RETURNING ${ACCOUNT_COLUMNS}`,
       [id, color],
+    );
+    return result.rows[0] ? toAccountRow(result.rows[0]) : undefined;
+  }
+
+  /** Écrit la personnalisation de l'écran de mort (message + bannière) — validation (longueur,
+   * anti-XSS, déblocage de la bannière) faite en amont par `AccountsService.updateDeathScreen`. */
+  async updateDeathScreen(id: number, patch: DeathScreenPatch): Promise<AccountRow | undefined> {
+    const result = await this.pool.query<PlayerRow>(
+      `UPDATE players SET death_message = $2, death_banner_id = $3 WHERE id = $1
+       RETURNING ${ACCOUNT_COLUMNS}`,
+      [id, patch.deathMessage, patch.deathBannerId],
     );
     return result.rows[0] ? toAccountRow(result.rows[0]) : undefined;
   }
