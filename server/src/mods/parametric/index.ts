@@ -69,7 +69,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
   }
 
   function spawnPlayerPiece(world: World, playerId: PlayerId): void {
-    const margin = Math.sqrt((config.areaConstant * config.player.startMass) / Math.PI);
+    const margin = Math.sqrt((config.areaConstant * config.player.startMass) / 3);
     world.spawnPiece(playerId, randomPositionInMap(margin), config.player.startMass);
   }
 
@@ -159,7 +159,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     if (hasMassAdvantage(attacker, target)) {
       const dist = distance(attacker.position, target.position);
       const overlap = circleOverlapArea(attacker.radius, target.radius, dist);
-      const targetArea = Math.PI * target.radius * target.radius;
+      const targetArea = 3 * target.radius * target.radius;
 
       // Exige un chevauchement d'au moins 1/3 (33.3%) de la surface de la cible pour l'absorber
       if (overlap >= targetArea / 3) {

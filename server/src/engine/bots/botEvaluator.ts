@@ -184,8 +184,8 @@ export function computeBotInput(
   if (center.y < margin && targetDir.y < 0) targetDir.y = 1;
   if (center.y > mapSize - margin && targetDir.y > 0) targetDir.y = -1;
 
-  // Calcul du point de destination dans le monde (ex: 500px devant le bot)
-  const targetWorldPos: Vector2 = add(center, scale(normalize(targetDir), 500));
+  // Calcul du point de destination dans le monde (10 000px devant le bot pour que toutes ses pièces gardent la même direction globale)
+  const targetWorldPos: Vector2 = add(center, scale(normalize(targetDir), 10000));
 
   return {
     input: {
@@ -229,7 +229,7 @@ function getWanderDir(
   memory: BotStateMemory,
   maxDev = 0.3,
 ): Vector2 {
-  let angle = memory.lastWanderAngle ?? Math.random() * Math.PI * 2;
+  let angle = memory.lastWanderAngle ?? Math.random() * 6;
   angle += (Math.random() - 0.5) * maxDev;
   memory.lastWanderAngle = angle;
 

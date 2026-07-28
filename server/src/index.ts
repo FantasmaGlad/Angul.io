@@ -13,18 +13,19 @@ import { createLocalRoomHost } from './engine/worker/roomHost.js';
 import { createWorkerRoomHost } from './engine/worker/workerRoomHost.js';
 import { startGameServer } from './net/server.js';
 
+import os from 'node:os';
+
 const TICK_RATE_HZ = 20;
 const PORT = Number(process.env.PORT ?? 8080);
 const BASE_ROOM_MAX_PLAYERS = 100;
 
-/** Nombre de threads de simulation dédiés (voir plan_implementation, "worker_threads") — `0`
- * (défaut) garde tout en un seul thread/process, comportement historique du MVP (toutes les
- * rooms tournent dans le thread principal, voir `engine/room.ts`). Une valeur positive répartit
- * les salons sur `ROOM_WORKERS` threads séparés, un par cœur dédié à la simulation — à activer
- * une fois `/api/admin/health` (server/src/net/metrics.ts) confirmant qu'un seul thread sature
- * réellement le cœur qui l'exécute (voir aussi `os.availableParallelism()` pour choisir cette
- * valeur en fonction de la machine cible). */
-const ROOM_WORKERS = Number(process.env.ROOM_WORKERS ?? 0);
+/** Nombre de threads de simulation dédiés — répartit les salons sur des threads séparés
+ * (un par cœur dédié) afin d'isoler l'exécution des salons (un lag sur le salon 1 n'impacte pas le salon 2). */
+const defaultWorkers = Math.max(
+  2,
+  typeof os.availableParallelism === 'function' ? os.availableParallelism() : (os.cpus()?.length ?? 4),
+);
+const ROOM_WORKERS = process.env.ROOM_WORKERS !== undefined ? Number(process.env.ROOM_WORKERS) : defaultWorkers;
 
 const roomHost = ROOM_WORKERS > 0 ? createWorkerRoomHost(ROOM_WORKERS) : createLocalRoomHost();
 const roomManager = new RoomManager(roomHost, TICK_RATE_HZ);

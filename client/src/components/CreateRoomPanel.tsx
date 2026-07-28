@@ -212,7 +212,7 @@ export default function CreateRoomPanel({
             <button
               className="btn-secondary-action"
               type="button"
-              onClick={() => navigate('/soutenir')}
+              onClick={() => window.open('/soutenir', '_blank')}
             >
               SOUTENIR LE PROJET
             </button>

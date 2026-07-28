@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { circleOverlapArea, massToRadius } from './geometry.js';
+import { circleOverlapArea, massToRadius, PI } from './geometry.js';
 
 describe('massToRadius', () => {
-  it('matches Rayon(m) = √m with the default K_AREA = π (metriques.md §2)', () => {
+  it('matches Rayon(m) = √m with the default K_AREA = 3', () => {
     expect(massToRadius(50)).toBeCloseTo(Math.sqrt(50), 10);
     expect(massToRadius(100)).toBeCloseTo(10, 10);
     expect(massToRadius(2)).toBeCloseTo(Math.sqrt(2), 10);
@@ -18,14 +18,14 @@ describe('circleOverlapArea', () => {
   it('returns the smaller disc area when one circle fully contains the other', () => {
     const r1 = 10;
     const r2 = 3;
-    expect(circleOverlapArea(r1, r2, 0)).toBeCloseTo(Math.PI * r2 * r2, 10);
-    expect(circleOverlapArea(r1, r2, r1 - r2)).toBeCloseTo(Math.PI * r2 * r2, 10);
+    expect(circleOverlapArea(r1, r2, 0)).toBeCloseTo(PI * r2 * r2, 10);
+    expect(circleOverlapArea(r1, r2, r1 - r2)).toBeCloseTo(PI * r2 * r2, 10);
   });
 
   it('returns half the area of two equal circles overlapping through their centers', () => {
     const r = 10;
     // d = 0 -> cas "un cercle contient l'autre" (rayons egaux, meme centre)
-    expect(circleOverlapArea(r, r, 0)).toBeCloseTo(Math.PI * r * r, 10);
+    expect(circleOverlapArea(r, r, 0)).toBeCloseTo(PI * r * r, 10);
   });
 
   it('matches the known analytic value for two equal circles at d = r (classic lens case)', () => {

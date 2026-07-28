@@ -45,6 +45,7 @@ class WorkerRoomHandle implements RoomHandle {
     private readonly worker: Worker,
     private readonly nextReqId: () => number,
     private readonly pending: Map<number, PendingRequest>,
+    private readonly onDestroy?: () => void,
   ) {
     this.id = id;
     this.mapSize = mapSize;
@@ -120,6 +121,7 @@ class WorkerRoomHandle implements RoomHandle {
   }
 
   destroy(): void {
+    this.onDestroy?.();
     this.post({ type: 'destroyRoom', roomId: this.id });
   }
 
@@ -215,7 +217,17 @@ export function createWorkerRoomHost(
       // résout le mod une seconde fois de son côté pour la simulation elle-même (roomWorker.ts).
       const { mapSize } = resolveMod(spec.modId);
 
-      const handle = new WorkerRoomHandle(spec.id, mapSize, entry.worker, nextReqId, pending);
+      const handle = new WorkerRoomHandle(
+        spec.id,
+        mapSize,
+        entry.worker,
+        nextReqId,
+        pending,
+        () => {
+          entry.roomCount = Math.max(0, entry.roomCount - 1);
+          handlesByRoomId.delete(spec.id);
+        },
+      );
       handlesByRoomId.set(spec.id, handle);
       entry.worker.postMessage({ type: 'createRoom', ...spec });
       return handle;

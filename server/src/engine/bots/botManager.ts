@@ -33,6 +33,9 @@ export class BotManager {
     challenger: 0,
   };
 
+  private currentTargetRatio = 0.7;
+  private ratioTimerMs = 0;
+  private nextRatioChangeMs = 0;
   private readonly updateIntervalMs: number;
 
   constructor(room: Room, config: BotConfig, maxRoomCapacity: number) {
@@ -42,13 +45,26 @@ export class BotManager {
     this.updateIntervalMs = 1000 / Math.max(0.1, config.updateFrequencyHz || 2);
   }
 
+  /** Recalcule périodiquement le ratio de bots entre 3/5 (60%) et 4/5 (80%) de la capacité du salon pour un nombre fluctuant et non fixe de joueurs. */
+  private updateFluctuatingRatio(dtMs: number): void {
+    this.ratioTimerMs += dtMs;
+    if (this.ratioTimerMs >= this.nextRatioChangeMs) {
+      this.ratioTimerMs = 0;
+      this.nextRatioChangeMs = 10_000 + Math.random() * 20_000;
+      const minRatio = 3 / 5; // 0.60 (3/5)
+      const maxRatio = 4 / 5; // 0.80 (4/5)
+      this.currentTargetRatio = minRatio + Math.random() * (maxRatio - minRatio);
+    }
+  }
+
   /** Exécuté à chaque tick de la room. Étale l'évaluation IA des bots sur plusieurs ticks. */
   update(dt: number): void {
-    if (!this.config.enabled) return;
-
-    this.adjustPopulation();
+    if (!this.config?.enabled) return;
 
     const dtMs = dt * 1000;
+    this.updateFluctuatingRatio(dtMs);
+    this.adjustPopulation();
+
     for (const bot of this.activeBots.values()) {
       bot.accumulatorMs += dtMs;
       if (bot.accumulatorMs >= this.updateIntervalMs) {
@@ -62,7 +78,7 @@ export class BotManager {
 
   /** Ajuste le nombre de bots actifs selon le nombre de joueurs humains et garantit qu'il reste toujours au moins 1 place disponible pour un humain. */
   adjustPopulation(maxSpawnPerTick = 20): void {
-    if (!this.config.enabled) return;
+    if (!this.config?.enabled) return;
 
     const allPlayers = Array.from(this.room.world.allPlayers());
     const humanCount = allPlayers.filter((p) => !this.activeBots.has(p.id)).length;
@@ -93,8 +109,9 @@ export class BotManager {
       }
     }
 
-    // 2. Ajuster le reste de la population de bots normaux
-    const targetBotCount = Math.floor(this.maxRoomCapacity * (this.config.targetRatio ?? 0.5));
+    // 2. Ajuster le reste de la population de bots normaux (fluctuant entre 3/5 et 4/5 de la capacité)
+    const effectiveRatio = this.config.targetRatio ?? this.currentTargetRatio;
+    const targetBotCount = Math.floor(this.maxRoomCapacity * effectiveRatio);
     const desiredBots = Math.min(
       maxBotsAllowed,
       Math.max(maxChallengers, targetBotCount - humanCount),

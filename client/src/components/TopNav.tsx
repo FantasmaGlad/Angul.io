@@ -29,16 +29,16 @@ export default function TopNav({ accountActive, pseudo, level, avatarColor }: To
       </button>
 
       <nav className="top-nav-links">
-        <button type="button" onClick={() => navigate('/classement')}>
+        <button type="button" onClick={() => window.open('/classement', '_blank')}>
           Classement
         </button>
         <button type="button" onClick={() => window.open('/wiki', '_blank')}>
           Wiki
         </button>
-        <button type="button" onClick={() => navigate('/a-propos')}>
+        <button type="button" onClick={() => window.open('/a-propos', '_blank')}>
           À Propos
         </button>
-        <button type="button" onClick={() => navigate('/parametres')}>
+        <button type="button" onClick={() => window.open('/parametres', '_blank')}>
           Réglages
         </button>
       </nav>
@@ -46,7 +46,7 @@ export default function TopNav({ accountActive, pseudo, level, avatarColor }: To
       <button
         type="button"
         className="account-cluster"
-        onClick={() => navigate('/profil')}
+        onClick={() => window.open('/profil', '_blank')}
         aria-label={accountActive ? `Profil : ${pseudo}` : 'Profil et skins'}
       >
         <span className="account-avatar-badge" aria-hidden="true">

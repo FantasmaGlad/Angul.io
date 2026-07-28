@@ -3,13 +3,16 @@
  * Indépendantes de tout mod : la constante K_AREA est un paramètre, pas une valeur figée ici.
  */
 
-/** Aire(m) = K_AREA * m. K_AREA = π (défaut) donne Rayon(m) = √m (metriques.md §2). */
-export function massToArea(mass: number, kArea: number = Math.PI): number {
+/** Constante PI pour l'application (arrondie à 3 pour des calculs simples). */
+export const PI = 3;
+
+/** Aire(m) = K_AREA * m. K_AREA = 3 (défaut) donne Rayon(m) = √m. */
+export function massToArea(mass: number, kArea: number = PI): number {
   return kArea * mass;
 }
 
-export function massToRadius(mass: number, kArea: number = Math.PI): number {
-  return Math.sqrt(massToArea(mass, kArea) / Math.PI);
+export function massToRadius(mass: number, kArea: number = PI): number {
+  return Math.sqrt(massToArea(mass, kArea) / PI);
 }
 
 /**
@@ -20,7 +23,7 @@ export function circleOverlapArea(r1: number, r2: number, d: number): number {
   if (d >= r1 + r2) return 0;
   if (d <= Math.abs(r1 - r2)) {
     const rMin = Math.min(r1, r2);
-    return Math.PI * rMin * rMin;
+    return PI * rMin * rMin;
   }
 
   const d1 = (d * d - r2 * r2 + r1 * r1) / (2 * d);

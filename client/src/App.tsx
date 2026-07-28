@@ -55,6 +55,13 @@ export default function App() {
   const [isPremium, setIsPremium] = useState(false);
   const [level, setLevel] = useState<number | undefined>(undefined);
   const [avatarColor, setAvatarColor] = useState<string | undefined>(undefined);
+  const [guestSkin] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('angulio.guestSkin');
+      if (saved) return saved;
+    } catch {}
+    return getRandomSkin();
+  });
 
   const [rooms, setRooms] = useState<RoomSummary[]>([]);
   const [modes, setModes] = useState<string[]>([]);
@@ -174,17 +181,22 @@ export default function App() {
       try {
         const freshRooms = await fetchPublicRooms();
         setRooms(freshRooms);
-        const defaultRoom = freshRooms.find((room) => room.permanent) ?? freshRooms[0];
-        if (!defaultRoom) {
+        const modeRooms = freshRooms.filter((room) => room.modId === selectedMode);
+        const targetRoom =
+          modeRooms.find((room) => room.permanent) ??
+          [...modeRooms].sort((a, b) => b.playerCount - a.playerCount)[0] ??
+          freshRooms.find((room) => room.permanent) ??
+          freshRooms[0];
+        if (!targetRoom) {
           setHomeError('Aucun salon public pour le moment — réessaie plus tard.');
           return;
         }
-        enterGame(defaultRoom.id);
+        enterGame(targetRoom.id);
       } catch {
         setHomeError('Impossible de contacter le serveur.');
       }
     })();
-  }, [enterGame]);
+  }, [enterGame, selectedMode]);
 
   const defaultRoomId = rooms.find((room) => room.permanent)?.id ?? rooms[0]?.id;
 
@@ -219,13 +231,6 @@ export default function App() {
     );
   }
 
-  const [guestSkin] = useState<string>(() => {
-    try {
-      const saved = localStorage.getItem('angulio.guestSkin');
-      if (saved) return saved;
-    } catch {}
-    return getRandomSkin();
-  });
   const effectiveAvatarColor = avatarColor ?? guestSkin;
 
   const knownSubPaths = [

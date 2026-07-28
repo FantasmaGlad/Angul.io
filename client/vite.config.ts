@@ -11,10 +11,15 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:3000',
-      '/?roomId=': {
-        target: 'ws://localhost:3000',
+      '/api': 'http://localhost:8080',
+      '/': {
+        target: 'ws://localhost:8080',
         ws: true,
+        bypass: (req) => {
+          if (!req.url?.includes('roomId=')) {
+            return req.url;
+          }
+        },
       },
     },
   },

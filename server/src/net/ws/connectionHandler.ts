@@ -26,14 +26,17 @@ export function handleWsConnection(
   accounts: AccountsService | undefined,
   wsRateLimiter: RateLimiter,
 ): void {
-  const clientIp = getClientIp(request);
-  if (!wsRateLimiter.consume(clientIp)) {
-    logEvent('ws_rate_limited', { ip: clientIp });
-    socket.close(1008, 'Trop de connexions WebSocket. Réessayez dans une minute.');
-    return;
-  }
-
   const requestUrl = new URL(request.url ?? '/', 'http://localhost');
+  const isSpectator = requestUrl.searchParams.get('spectate') === '1';
+
+  if (!isSpectator) {
+    const clientIp = getClientIp(request);
+    if (!wsRateLimiter.consume(clientIp)) {
+      logEvent('ws_rate_limited', { ip: clientIp });
+      socket.close(1008, 'Trop de connexions WebSocket. Réessayez dans une minute.');
+      return;
+    }
+  }
   const roomId = requestUrl.searchParams.get('roomId');
   const managed = roomId ? roomManager.getManagedRoom(roomId) : undefined;
   if (!managed) {

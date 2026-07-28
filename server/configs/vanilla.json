@@ -53,7 +53,7 @@
       { "color": "multicolor", "mass": 12, "weight": 1 }
     ]
   },
-  "areaConstant": 6.283185307179586,
+  "areaConstant": 6,
   "bots": {
     "enabled": true,
     "targetRatio": 0.5,

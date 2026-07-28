@@ -32,7 +32,7 @@ export function testConfig(overrides: Partial<ParametricModConfig> = {}): Parame
       respawnRatePerSecond: 100,
       pelletTypes: [{ color: 'vert', mass: 1, weight: 1 }],
     },
-    areaConstant: 2 * Math.PI,
+    areaConstant: 6,
     ...overrides,
   };
 }

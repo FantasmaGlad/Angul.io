@@ -21,7 +21,7 @@ const NO_NICKNAMES = new Map<string, string>();
 
 /** Délai avant d'ouvrir la nouvelle connexion spectateur après un changement de `roomId` — très
  * court (50ms) pour garantir une bascule ultra-réactive sur l'accueil. */
-const ROOM_SWITCH_DEBOUNCE_MS = 50;
+const ROOM_SWITCH_DEBOUNCE_MS = 10;
 
 interface SpectatorState {
   mapSize: number;

@@ -58,8 +58,8 @@ describe('applyPassiveDecay — paliers de perte de masse par 10s', () => {
     expect(applyPassiveDecay(1000, 10, testConfig(), 10)).toBeCloseTo(995.0, 1);
   });
 
-  it('perd 1.0% en 10s pour masse >= 2000', () => {
-    expect(applyPassiveDecay(2000, 10, testConfig(), 10)).toBeCloseTo(1980.0, 1);
+  it('perd 1.0% en 10s pour masse > 2000', () => {
+    expect(applyPassiveDecay(2000, 10, testConfig(), 10)).toBeCloseTo(1990.0, 1);
     expect(applyPassiveDecay(3000, 10, testConfig(), 10)).toBeCloseTo(2970.0, 1);
   });
 

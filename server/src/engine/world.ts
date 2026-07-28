@@ -29,7 +29,7 @@ export class World {
 
   constructor(options: WorldOptions) {
     this.mapSize = options.mapSize;
-    this.kArea = options.kArea ?? Math.PI;
+    this.kArea = options.kArea ?? 3;
     this.spatialHash = new SpatialHash(options.spatialCellSize ?? 50);
   }
 

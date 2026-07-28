@@ -17,16 +17,31 @@ export function accelerationForMass(mass: number, config: ParametricModConfig): 
 
 function decayLambda(mass: number, config: ParametricModConfig, timeSinceLastEatenS = 10): number {
   const floor = config.decay.floor ?? 2;
-  if (mass <= floor || timeSinceLastEatenS < 2) return 0;
+  // Aucune perte de masse pendant les 10 premières secondes sans masse ingurgitée
+  if (mass <= floor || timeSinceLastEatenS < 10) return 0;
 
-  let rate = 0.002; // 0.2% par 10s en dessous de 500
-  if (mass >= 2000) {
-    rate = 0.01; // 1% par 10s au dessus de 2000
+  let rate = 0.002;
+  let intervalSec = 10;
+
+  if (mass > 10000) {
+    // Incrémenter la perte de 1% par 5s pour chaque dizaine de milliers de masse (ex: 30 000 -> 3% en 5s)
+    const dizaines = Math.floor(mass / 10000);
+    rate = dizaines * 0.01;
+    intervalSec = 5;
+  } else if (mass > 2000) {
+    // 1% par 10s au dessus de 2000 jusqu'à 10 000
+    rate = 0.01;
+    intervalSec = 10;
   } else if (mass >= 500) {
-    rate = 0.005; // 0.5% par 10s entre 500 et 2000
+    // 0.5% par 10s entre 500 et 2000
+    rate = 0.005;
+    intervalSec = 10;
+  } else {
+    // 0.2% par 10s en dessous de 500
+    rate = 0.002;
+    intervalSec = 10;
   }
 
-  const intervalSec = 10;
   return -Math.log(1 - rate) / intervalSec;
 }
 

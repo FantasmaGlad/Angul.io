@@ -1,9 +1,12 @@
+import { add, scale, type Vector2 } from '@angulio/shared';
 import type { GameMod } from '../../engine/mod.js';
-import type { Entity } from '../../engine/types.js';
+import type { Entity, PlayerId } from '../../engine/types.js';
 import type { World } from '../../engine/world.js';
 import { creditMassEatenXp, creditPlayerEatenXp } from '../../engine/xp.js';
 import type { ParametricModConfig } from '../parametric/config.js';
 import { createParametricMod } from '../parametric/index.js';
+import { velocityForMass } from '../parametric/physics.js';
+import { pieceState } from '../parametric/pieceState.js';
 
 export interface HardcoreModConfig {
   /** Multiplicateur appliqué à la masse gagnée en mangeant un **autre joueur** (cahier des
@@ -13,7 +16,7 @@ export interface HardcoreModConfig {
   massGainMultiplier: number;
 }
 
-const DEFAULT_HARDCORE_CONFIG: HardcoreModConfig = { massGainMultiplier: 10 };
+const DEFAULT_HARDCORE_CONFIG: HardcoreModConfig = { massGainMultiplier: 2 };
 
 /**
  * Lot 4 — second mode aux mécaniques structurellement nouvelles (contrairement à Vanilla, qui
@@ -21,8 +24,8 @@ const DEFAULT_HARDCORE_CONFIG: HardcoreModConfig = { massGainMultiplier: 10 };
  * n'est PAS réductible à un fichier de config : un mod peut être écrit en **composant** un mod
  * existant plutôt qu'en dupliquant tout son mouvement/split/fusion/bords/decay (identiques ici
  * à Vanilla, cf. cahier des charges §3.4 #2 — rien à y changer) — ne réécrit que ce qui diffère
- * réellement : l'absorption entre joueurs (`onCollision`) et la conséquence d'une mort
- * (`transformScoreForAccount`, nouveau hook ajouté pour ce mode, voir engine/mod.ts §4.5).
+ * réellement : l'absorption entre joueurs (`onCollision`), la conséquence d'une mort
+ * (`transformScoreForAccount`), et le split punitif du leader > 10x le second (`onTick`).
  */
 export function createHardcoreMod(
   config: ParametricModConfig,
@@ -52,9 +55,88 @@ export function createHardcoreMod(
     return false;
   }
 
+  function splitPlayerMaxRadially(world: World, playerId: PlayerId): void {
+    let angleIndex = 0;
+    let iterationGuard = 0;
+    const MIN_PUNITIVE_SPLIT_MASS = 1;
+
+    while (
+      world.getPiecesByOwner(playerId).length < config.player.maxSplits &&
+      iterationGuard < 10
+    ) {
+      iterationGuard++;
+      const pieces = world.getPiecesByOwner(playerId);
+      const eligible = pieces.filter((p) => p.mass >= MIN_PUNITIVE_SPLIT_MASS);
+      if (eligible.length === 0) break;
+
+      let splitOccurred = false;
+      const count = eligible.length;
+      for (let i = 0; i < count; i++) {
+        if (world.getPiecesByOwner(playerId).length >= config.player.maxSplits) break;
+        const piece = eligible[i]!;
+        if (piece.mass < MIN_PUNITIVE_SPLIT_MASS) continue;
+
+        const angle = (angleIndex / 8) * 6;
+        angleIndex++;
+        const dir: Vector2 = { x: Math.cos(angle), y: Math.sin(angle) };
+
+        const half = piece.mass / 2;
+        world.setMass(piece, half);
+        const originState = pieceState(piece);
+        originState.splitElapsedS = 0;
+        originState.massAtSplit = half;
+
+        const ejectedMass = half * config.split.ejectEfficiency;
+        const ejectedPosition = add(piece.position, scale(dir, piece.radius * 2));
+        const ejected = world.spawnPiece(playerId, ejectedPosition, ejectedMass);
+        ejected.velocity = scale(
+          dir,
+          velocityForMass(ejectedMass, config) * config.split.ejectSpeedFactor,
+        );
+
+        const ejectedState = pieceState(ejected);
+        ejectedState.inputTarget = { ...originState.inputTarget };
+        ejectedState.inputIntensity = originState.inputIntensity;
+        ejectedState.splitElapsedS = 0;
+        ejectedState.massAtSplit = ejectedMass;
+
+        splitOccurred = true;
+      }
+
+      if (!splitOccurred) break;
+    }
+  }
+
   return {
     ...base,
     id: config.id,
+
+    onTick(world: World, dt: number) {
+      base.onTick?.(world, dt);
+
+      // Règle Hardcore : Si un joueur devient trop gros (> 10x la taille du deuxième),
+      // le diviser au maximum possible dans toutes les directions.
+      const playerTotals: Array<{ playerId: PlayerId; totalMass: number }> = [];
+      for (const player of world.allPlayers()) {
+        const pieces = world.getPiecesByOwner(player.id);
+        if (pieces.length === 0) continue;
+        const totalMass = pieces.reduce((sum, p) => sum + p.mass, 0);
+        if (totalMass > 0) {
+          playerTotals.push({ playerId: player.id, totalMass });
+        }
+      }
+
+      if (playerTotals.length >= 1) {
+        playerTotals.sort((a, b) => b.totalMass - a.totalMass);
+        const leader = playerTotals[0]!;
+        const runnerUp = playerTotals[1] ?? { playerId: '', totalMass: config.player.startMass };
+        // Règle Hardcore : Si le 1er joueur a au moins 200 de masse et qu'il fait plus de 2x la masse du N-1,
+        // déclencher l'explosion punitive radiale.
+        if (leader.totalMass >= 200 && leader.totalMass > runnerUp.totalMass * 2) {
+          splitPlayerMaxRadially(world, leader.playerId);
+        }
+      }
+    },
 
     onCollision(world: World, a: Entity, b: Entity) {
       if (a.kind === 'particle' && b.kind === 'particle') return;

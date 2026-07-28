@@ -14,11 +14,12 @@ export default function Minimap({ position, playerMass, mapSize }: MinimapProps)
   const pctX = (posX / effectiveSize) * 100;
   const pctY = (posY / effectiveSize) * 100;
 
-  // Calcul du diamètre du blob de repère (de 10px pour ~50 mass jusqu'à 36px pour les très gros blocs)
-  const dotDiameter = Math.min(
-    38,
-    Math.max(10, Math.round(10 + Math.sqrt(playerMass || 50) * 0.25)),
-  );
+  // Calcul du diamètre réel du morceau mis à l'échelle sur la grille de la minimap (250px)
+  const gridDimensionPx = 250;
+  const playerRadiusUnits = Math.sqrt(playerMass || 50);
+  const playerDiameterUnits = playerRadiusUnits * 2;
+  const scaledDiameterPx = (playerDiameterUnits / effectiveSize) * gridDimensionPx;
+  const dotDiameter = Math.max(6, Math.min(60, Math.round(scaledDiameterPx)));
 
   const colIdx = Math.min(2, Math.floor((posX / effectiveSize) * 3));
   const rowIdx = Math.min(2, Math.floor((posY / effectiveSize) * 3));

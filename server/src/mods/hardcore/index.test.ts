@@ -21,8 +21,8 @@ describe('createHardcoreMod — onCollision (absorption entre joueurs)', () => {
     mod.onCollision?.(world, attacker, target);
 
     expect(world.getEntity(target.id)).toBeUndefined();
-    // 105 + 100*10 = 1105, pas 205 (comportement Vanilla) — la seule différence de ce mode.
-    expect(attacker.mass).toBeCloseTo(1105, 6);
+    // 105 + 100*2 = 305, pas 205 (comportement Vanilla)
+    expect(attacker.mass).toBeCloseTo(305, 6);
   });
 
   it('respecte un multiplicateur personnalisé', () => {
@@ -39,7 +39,7 @@ describe('createHardcoreMod — onCollision (absorption entre joueurs)', () => {
     expect(attacker.mass).toBeCloseTo(105 + 100 * 3, 6);
   });
 
-  it("crédite l'XP sur la masse gagnée déjà multipliée (x10), pas la masse brute de la cible", () => {
+  it("crédite l'XP sur la masse gagnée déjà multipliée (x2), pas la masse brute de la cible", () => {
     const config = testConfig();
     const mod = createHardcoreMod(config);
     const world = freshWorld();
@@ -51,9 +51,9 @@ describe('createHardcoreMod — onCollision (absorption entre joueurs)', () => {
     mod.onCollision?.(world, attacker, target);
 
     const stats = world.getPlayer('p1')!.lifeStats;
-    expect(stats.massEaten).toBeCloseTo(1000, 6); // 100 * 10, pas 100
+    expect(stats.massEaten).toBeCloseTo(200, 6); // 100 * 2
     expect(stats.playersEaten).toBe(1);
-    expect(stats.xpEarned).toBeCloseTo(1000 + 400, 6);
+    expect(stats.xpEarned).toBeCloseTo(200 + 400, 6);
   });
 
   it("n'absorbe pas sans l'avantage de masse requis (répulsion déléguée, inchangée)", () => {
@@ -134,5 +134,58 @@ describe('createHardcoreMod — hooks délégués au mod paramétrique sous-jace
     const config = testConfig();
     const mod = createHardcoreMod(config);
     expect(mod.getAccelerationForMass?.(200)).toBeCloseTo(accelerationForMass(200, config), 6);
+  });
+});
+
+describe('createHardcoreMod — onTick (règle 2x leader split)', () => {
+  it('divise le leader au maximum possible s’il fait plus de 2x la masse du deuxième joueur', () => {
+    const config = testConfig();
+    const mod = createHardcoreMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'BigLeader');
+    world.addPlayer('p2', 'SmallRunnerUp');
+
+    world.spawnPiece('p1', { x: 500, y: 500 }, 5000);
+    world.spawnPiece('p2', { x: 2000, y: 2000 }, 100);
+
+    expect(world.getPiecesByOwner('p1')).toHaveLength(1);
+
+    mod.onTick?.(world, 0.05);
+
+    const leaderPieces = world.getPiecesByOwner('p1');
+    expect(leaderPieces.length).toBe(config.player.maxSplits);
+
+    const runnerUpPieces = world.getPiecesByOwner('p2');
+    expect(runnerUpPieces.length).toBe(1);
+  });
+
+  it('ne divise pas le leader si la masse est inférieure à 200 points (immunité tout début de partie)', () => {
+    const config = testConfig();
+    const mod = createHardcoreMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'SmallLeader');
+    world.addPlayer('p2', 'TinyRunnerUp');
+
+    world.spawnPiece('p1', { x: 500, y: 500 }, 150); // > 2x 50, mais < 200
+    world.spawnPiece('p2', { x: 2000, y: 2000 }, 50);
+
+    mod.onTick?.(world, 0.05);
+
+    expect(world.getPiecesByOwner('p1')).toHaveLength(1);
+  });
+
+  it('ne divise pas le leader si la masse est inférieure ou égale à 2x le deuxième', () => {
+    const config = testConfig();
+    const mod = createHardcoreMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Leader');
+    world.addPlayer('p2', 'RunnerUp');
+
+    world.spawnPiece('p1', { x: 500, y: 500 }, 600);
+    world.spawnPiece('p2', { x: 2000, y: 2000 }, 350);
+
+    mod.onTick?.(world, 0.05);
+
+    expect(world.getPiecesByOwner('p1')).toHaveLength(1);
   });
 });

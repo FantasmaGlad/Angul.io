@@ -4,8 +4,9 @@ set -euo pipefail
 # ==============================================================================
 # install.sh — Bootstrap complet d'un nœud Angul.io (plan_implementation.md, Lot 8)
 # ==============================================================================
-# Pensé pour le Wyse 5070 (§8.2 du cahier des charges) sur Ubuntu Server fraîchement
-# installé. Met en place :
+# Pensé pour le Wyse 5070 (§8.2 du cahier des charges) sur Ubuntu Server ou Debian
+# fraîchement installé (dépôts NodeSource/Caddy utilisés ici sont agnostiques de la
+# distro — testé aussi sur Debian 13/trixie). Met en place :
 #   - dépendances système + Node.js (§8.4)
 #   - PostgreSQL + rôle/base applicatifs, `server/.env` (`DATABASE_URL`/`ADMIN_PASSWORD_HASH`)
 #     et migrations (Lot 3, comptes joueurs — voir étape 6 ci-dessous)
@@ -198,7 +199,8 @@ log "Écriture du service systemd angulio.service"
 cat > /etc/systemd/system/angulio.service <<EOF
 [Unit]
 Description=Angul.io - serveur de jeu
-After=network.target
+After=network.target postgresql.service
+Wants=postgresql.service
 StartLimitIntervalSec=60
 StartLimitBurst=5
 ${ONFAILURE_LINE}
@@ -220,31 +222,10 @@ systemctl daemon-reload
 systemctl enable angulio
 systemctl restart angulio
 
-# --- 8. Reverse proxy Caddy (HTTPS automatique sur le domaine DuckDNS) -------------
-log "Écriture du Caddyfile pour $DOMAIN"
-cat > /etc/caddy/Caddyfile <<EOF
-{
-    email ${LETSENCRYPT_EMAIL}
-}
-
-${DOMAIN} {
-    reverse_proxy localhost:${GAME_PORT}
-}
-EOF
-
-systemctl enable caddy
-systemctl restart caddy
-
-# --- 9. Pare-feu (ufw) : uniquement SSH + HTTP/HTTPS -------------------------------
-# Le port de jeu (GAME_PORT) n'est volontairement pas ouvert : le serveur Node
-# n'est joignable que via Caddy (localhost), jamais directement depuis l'extérieur.
-log "Configuration du pare-feu (ufw)"
-ufw allow OpenSSH
-ufw allow 80/tcp
-ufw allow 443/tcp
-ufw --force enable
-
-# --- 10. Mise à jour périodique de l'IP DuckDNS (filet de sécurité, §8.3) -----------
+# --- 8. Mise à jour de l'IP DuckDNS (avant Caddy : le tout premier lancement doit
+#        pointer le domaine sur l'IP publique courante *avant* la demande de certificat
+#        Let's Encrypt ci-dessous, sans quoi le challenge ACME échoue si le sous-domaine
+#        ne résolvait pas encore vers cette machine) -----------------------------------
 log "Configuration de la mise à jour périodique DuckDNS"
 mkdir -p /opt/duckdns
 cat > /opt/duckdns/update.sh <<EOF
@@ -253,6 +234,9 @@ curl -fsS "https://www.duckdns.org/update?domains=${DUCKDNS_SUBDOMAIN}&token=${D
   -o /var/log/duckdns.log
 EOF
 chmod +x /opt/duckdns/update.sh
+
+log "Mise à jour immédiate de l'IP DuckDNS (avant de démarrer Caddy)"
+/opt/duckdns/update.sh || true
 
 cat > /etc/systemd/system/duckdns-update.service <<'EOF'
 [Unit]
@@ -277,6 +261,30 @@ EOF
 
 systemctl daemon-reload
 systemctl enable --now duckdns-update.timer
+
+# --- 9. Reverse proxy Caddy (HTTPS automatique sur le domaine DuckDNS) -------------
+log "Écriture du Caddyfile pour $DOMAIN"
+cat > /etc/caddy/Caddyfile <<EOF
+{
+    email ${LETSENCRYPT_EMAIL}
+}
+
+${DOMAIN} {
+    reverse_proxy localhost:${GAME_PORT}
+}
+EOF
+
+systemctl enable caddy
+systemctl restart caddy
+
+# --- 10. Pare-feu (ufw) : uniquement SSH + HTTP/HTTPS -------------------------------
+# Le port de jeu (GAME_PORT) n'est volontairement pas ouvert : le serveur Node
+# n'est joignable que via Caddy (localhost), jamais directement depuis l'extérieur.
+log "Configuration du pare-feu (ufw)"
+ufw allow OpenSSH
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw --force enable
 
 # --- Résumé -------------------------------------------------------------------------
 log "Terminé."
