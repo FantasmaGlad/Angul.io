@@ -133,7 +133,9 @@ export interface ParametricModConfig {
 
 export interface BotConfig {
   enabled: boolean;
-  targetRatio: number;
+  /** Absent : laisse `BotManager.updateFluctuatingRatio` piloter le ratio (10-20%) plutôt qu'une
+   * valeur fixe — voir server/configs/*.json, qui n'en définissent volontairement pas. */
+  targetRatio?: number;
   updateFrequencyHz: number;
   proportions: {
     fuis: number;

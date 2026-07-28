@@ -17,7 +17,7 @@ import os from 'node:os';
 
 const TICK_RATE_HZ = 20;
 const PORT = Number(process.env.PORT ?? 8080);
-const BASE_ROOM_MAX_PLAYERS = 100;
+const BASE_ROOM_MAX_PLAYERS = 30;
 
 /** Nombre de threads de simulation dédiés — répartit les salons sur des threads séparés
  * (un par cœur dédié) afin d'isoler l'exécution des salons (un lag sur le salon 1 n'impacte pas le salon 2). */
@@ -31,8 +31,9 @@ const roomHost = ROOM_WORKERS > 0 ? createWorkerRoomHost(ROOM_WORKERS) : createL
 const roomManager = new RoomManager(roomHost, TICK_RATE_HZ);
 
 // Deux salons publics de base toujours présents (demande utilisateur), un par mode disponible
-// (Vanilla, Hardcore — Folie retiré) : 100 joueurs max, remplis par défaut à 50 bots (targetRatio
-// 0.5 des configs, voir server/configs/*.json — `BotManager.adjustPopulation` en fait respawner
+// (Vanilla, Hardcore — Folie retiré) : 30 joueurs max, remplis à 10-20% de bots (ratio fluctuant,
+// voir BotManager.updateFluctuatingRatio — `targetRatio` volontairement absent des configs pour
+// laisser ce ratio s'appliquer ; `BotManager.adjustPopulation` fait respawner les bots
 // automatiquement dès que leur nombre baisse), reset toutes les 2h heure de Paris. Jamais
 // supprimés par le nettoyage automatique des salons vides (durcissement avant exposition
 // publique) : contrairement aux salons créés depuis le lobby, ils doivent toujours exister, même

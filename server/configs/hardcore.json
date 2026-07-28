@@ -35,28 +35,27 @@
     "floor": 2
   },
   "arena": {
-    "width": 15000,
-    "height": 15000,
+    "width": 12000,
+    "height": 12000,
     "borderType": "STRICT_WALL"
   },
   "food": {
     "density": 20,
     "respawnRatePerSecond": 300,
     "pelletTypes": [
-      { "color": "vert", "mass": 2, "weight": 28 },
-      { "color": "bleu", "mass": 4, "weight": 22 },
-      { "color": "jaune", "mass": 6, "weight": 18 },
-      { "color": "violet", "mass": 8, "weight": 13 },
-      { "color": "rouge", "mass": 10, "weight": 10 },
-      { "color": "orange", "mass": 12, "weight": 5 },
-      { "color": "rose", "mass": 14, "weight": 3 },
-      { "color": "multicolor", "mass": 24, "weight": 1 }
+      { "color": "vert", "mass": 4, "weight": 28 },
+      { "color": "bleu", "mass": 8, "weight": 22 },
+      { "color": "jaune", "mass": 12, "weight": 18 },
+      { "color": "violet", "mass": 16, "weight": 13 },
+      { "color": "rouge", "mass": 20, "weight": 10 },
+      { "color": "orange", "mass": 24, "weight": 5 },
+      { "color": "rose", "mass": 28, "weight": 3 },
+      { "color": "multicolor", "mass": 48, "weight": 1 }
     ]
   },
   "areaConstant": 3,
   "bots": {
     "enabled": true,
-    "targetRatio": 0.5,
     "updateFrequencyHz": 2,
     "proportions": {
       "fuis": 25,

@@ -45,14 +45,14 @@ export class BotManager {
     this.updateIntervalMs = 1000 / Math.max(0.1, config.updateFrequencyHz || 2);
   }
 
-  /** Recalcule périodiquement le ratio de bots entre 3/5 (60%) et 4/5 (80%) de la capacité du salon pour un nombre fluctuant et non fixe de joueurs. */
+  /** Recalcule périodiquement le ratio de bots entre 1/10 (10%) et 2/10 (20%) de la capacité du salon pour un nombre fluctuant et non fixe de joueurs. */
   private updateFluctuatingRatio(dtMs: number): void {
     this.ratioTimerMs += dtMs;
     if (this.ratioTimerMs >= this.nextRatioChangeMs) {
       this.ratioTimerMs = 0;
       this.nextRatioChangeMs = 10_000 + Math.random() * 20_000;
-      const minRatio = 3 / 5; // 0.60 (3/5)
-      const maxRatio = 4 / 5; // 0.80 (4/5)
+      const minRatio = 1 / 10; // 0.10 (1/10)
+      const maxRatio = 2 / 10; // 0.20 (2/10)
       this.currentTargetRatio = minRatio + Math.random() * (maxRatio - minRatio);
     }
   }
