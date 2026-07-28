@@ -242,7 +242,13 @@ export default function GameView({
         previousSnapshot = latestSnapshot;
         latestSnapshot = message.entities;
         latestSnapshotAt = performance.now();
-        if (selfPlayerId) prediction.reconcile(message.entities, selfPlayerId);
+        if (selfPlayerId && movementConfig) {
+          // Latence aller simple estimée à partir du dernier round-trip mesuré (voir
+          // `lastPingMs`, ping/pong toutes les PING_INTERVAL_MS) — détermine depuis quel instant
+          // rejouer l'historique d'inputs local lors de la réconciliation (voir prediction.ts).
+          const estimatedLatencyMs = lastPingMs !== undefined ? lastPingMs / 2 : undefined;
+          prediction.reconcile(message.entities, selfPlayerId, movementConfig, estimatedLatencyMs);
+        }
         renderEngine.pushSnapshot(message.entities, message.tick, serverTickRateHz);
         serverTpsCurrent = tickRateTracker.record(latestSnapshotAt);
         if (message.leaderboard) {
