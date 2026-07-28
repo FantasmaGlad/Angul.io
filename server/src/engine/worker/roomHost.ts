@@ -3,6 +3,9 @@ import type { Room } from '../room.js';
 import type { ModResolver } from '../roomManager.js';
 import type { PlayerId, PlayerInput } from '../types.js';
 import type {
+  AdminActionResult,
+  AdminPlayerInfo,
+  AdminRoomAction,
   DeathInfo,
   JoinResult,
   LeaveResult,
@@ -42,6 +45,11 @@ export interface RoomHandle {
   input(playerId: PlayerId, input: PlayerInput): void;
   connectViewer(playerId: PlayerId, isSpectator: boolean): void;
   disconnectViewer(playerId: PlayerId): void;
+
+  /** Action admin générique (§4.3-4.4 cahier_des_charges_admin.md) — voir `AdminRoomAction`. */
+  adminAction(action: AdminRoomAction): Promise<AdminActionResult>;
+  /** Liste des joueurs du salon pour "Salons & Écrans" (§3.3). */
+  adminListPlayers(): Promise<AdminPlayerInfo[]>;
 
   onTick(listener: (tick: number, payloads: TickPayload[], stats: RoomStats) => void): void;
   onPlayerJoin(listener: (event: PlayerJoinEvent) => void): void;
@@ -90,6 +98,14 @@ class LocalRoomHandle implements RoomHandle {
 
   disconnectViewer(playerId: PlayerId): void {
     this.instance.disconnectViewer(playerId);
+  }
+
+  adminAction(action: AdminRoomAction): Promise<AdminActionResult> {
+    return Promise.resolve(this.instance.adminAction(action));
+  }
+
+  adminListPlayers(): Promise<AdminPlayerInfo[]> {
+    return Promise.resolve(this.instance.adminListPlayers());
   }
 
   onTick(listener: (tick: number, payloads: TickPayload[], stats: RoomStats) => void): void {

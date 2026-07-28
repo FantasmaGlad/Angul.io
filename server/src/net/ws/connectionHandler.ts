@@ -5,10 +5,12 @@ import {
   WS_CLOSE_NICKNAME_TAKEN,
   WS_CLOSE_ROOM_FULL,
   WS_CLOSE_ROOM_NOT_FOUND,
+  type AdminClientActionMessage,
   type ClientMessage,
 } from '@angulio/shared';
 import type { WebSocket } from 'ws';
 import type { AccountsService } from '../../accounts/service.js';
+import type { AdminAuth } from '../../admin/adminAuth.js';
 import type { RoomManager } from '../../engine/roomManager.js';
 import type { PlayerId } from '../../engine/types.js';
 import { logEvent } from '../../log.js';
@@ -17,6 +19,10 @@ import { RateLimiter } from '../rateLimiter.js';
 import { recordAccountStatsOnLeave, send, type RoomRuntime } from './broadcast.js';
 
 const MAX_NICKNAME_LENGTH = 20;
+/** Code de fermeture WebSocket applicatif pour un token admin absent/invalide sur `?admin=1` —
+ * plage privée 4000-4999 (RFC 6455), comme les codes joueur de `@angulio/shared`, mais réservé au
+ * canal admin (jamais transmis à un client joueur, pas de constante partagée nécessaire). */
+const WS_CLOSE_ADMIN_UNAUTHORIZED = 4401;
 
 export function handleWsConnection(
   socket: WebSocket,
@@ -25,11 +31,13 @@ export function handleWsConnection(
   runtimes: Map<string, RoomRuntime>,
   accounts: AccountsService | undefined,
   wsRateLimiter: RateLimiter,
+  admin: AdminAuth | undefined,
 ): void {
   const requestUrl = new URL(request.url ?? '/', 'http://localhost');
+  const isAdmin = requestUrl.searchParams.get('admin') === '1';
   const isSpectator = requestUrl.searchParams.get('spectate') === '1';
 
-  if (!isSpectator) {
+  if (!isSpectator && !isAdmin) {
     const clientIp = getClientIp(request);
     if (!wsRateLimiter.consume(clientIp)) {
       logEvent('ws_rate_limited', { ip: clientIp });
@@ -46,6 +54,63 @@ export function handleWsConnection(
   }
 
   const runtime = runtimes.get(managed.id)!;
+
+  // Canal admin dédié (`?admin=1&token=…`, cahier_des_charges_admin.md §4-§5.2) : "Salons &
+  // Écrans" (POV) et Espace Créatif — authentifié par le même token Bearer que l'API REST admin
+  // (voir AdminAuth), diffusé comme un spectateur (toutes les entités, jamais de Blob propre —
+  // §4.2 "invisibilité absolue") mais avec en plus la possibilité d'envoyer des actions
+  // (`admin_action`, voir RoomHandle.adminAction).
+  if (isAdmin) {
+    const token = requestUrl.searchParams.get('token') ?? undefined;
+    if (!admin?.isAuthenticated(token)) {
+      logEvent('admin_ws_rejected', { roomId: managed.id });
+      socket.close(WS_CLOSE_ADMIN_UNAUTHORIZED, 'Non authentifié (admin).');
+      return;
+    }
+
+    const adminViewerId = `admin-view-${runtime.nextPlayerId++}`;
+    runtime.sockets.set(adminViewerId, socket);
+    runtime.spectatorIds.add(adminViewerId);
+    managed.handle.connectViewer(adminViewerId, true);
+    logEvent('admin_ws_join', { roomId: managed.id, adminViewerId });
+    send(socket, {
+      type: 'welcome',
+      playerId: adminViewerId,
+      mapSize: managed.handle.mapSize,
+      tickRateHz: roomManager.tickRateHz,
+    });
+
+    socket.on('message', (raw: Buffer): void => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw.toString());
+      } catch {
+        return;
+      }
+      if (
+        !parsed ||
+        typeof parsed !== 'object' ||
+        (parsed as { type?: unknown }).type !== 'admin_action'
+      ) {
+        return;
+      }
+      const message = parsed as AdminClientActionMessage;
+      void managed.handle.adminAction(message.action).then((result) => {
+        if (socket.readyState === socket.OPEN) {
+          socket.send(
+            JSON.stringify({ type: 'admin_action_result', actionId: message.actionId, result }),
+          );
+        }
+      });
+    });
+
+    socket.on('close', () => {
+      runtime.sockets.delete(adminViewerId);
+      runtime.spectatorIds.delete(adminViewerId);
+      managed.handle.disconnectViewer(adminViewerId);
+    });
+    return;
+  }
 
   // Mode spectateur (`?spectate=1`)
   if (requestUrl.searchParams.get('spectate') === '1') {
@@ -122,6 +187,8 @@ export function handleWsConnection(
         managed.handle.connectViewer(playerId, false);
         if (accountId !== undefined) {
           runtime.accountIdByPlayer.set(playerId, accountId);
+          runtime.joinedAtByPlayer.set(playerId, Date.now());
+          void accounts?.recordLogin(accountId, getClientIp(request));
         }
         // Mémorisée ici en plus de `RoomHandle.onPlayerJoin` (broadcast.ts) : ce dernier ne fait
         // que rediffuser aux AUTRES sockets déjà connectées, jamais au nouvel arrivant
@@ -187,6 +254,12 @@ export function handleWsConnection(
 
     if (message.type === 'ping') {
       send(socket, { type: 'pong', t: message.t });
+      return;
+    }
+
+    if (message.type === 'latency' && playerId) {
+      const ms = Number(message.ms);
+      if (Number.isFinite(ms) && ms >= 0) runtime.latencyByPlayer.set(playerId, ms);
     }
   };
 
@@ -200,11 +273,18 @@ export function handleWsConnection(
     // lire `accountIdByPlayer` après sa suppression, sans quoi le compte ne serait jamais
     // crédité (l'id de compte serait déjà introuvable au moment de l'écriture).
     const accountId = runtime.accountIdByPlayer.get(leavingPlayerId);
+    const joinedAt = runtime.joinedAtByPlayer.get(leavingPlayerId);
+    if (accountId !== undefined && joinedAt !== undefined) {
+      void accounts?.addPlaytime(accountId, (Date.now() - joinedAt) / 1000);
+    }
 
     managed.handle.disconnectViewer(leavingPlayerId);
     runtime.sockets.delete(leavingPlayerId);
     runtime.accountIdByPlayer.delete(leavingPlayerId);
     runtime.colorByPlayer.delete(leavingPlayerId);
+    runtime.joinedAtByPlayer.delete(leavingPlayerId);
+    runtime.latencyByPlayer.delete(leavingPlayerId);
+    runtime.nicknameByPlayer.delete(leavingPlayerId);
 
     void (async () => {
       const result = await managed.handle.leave(leavingPlayerId);

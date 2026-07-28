@@ -17,6 +17,8 @@ export interface ParametricPieceState {
   massAtSplit: number;
   /** Secondes écoulées depuis la dernière masse ingurgitée (nourriture ou joueur mangé). */
   timeSinceLastEatenS: number;
+  /** Cumul de masse de nourriture mangée durant le tick courant pour plafonner le gavage. */
+  foodEatenThisTick?: number;
 }
 
 const KEY = 'parametric';

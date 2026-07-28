@@ -5,6 +5,8 @@ import type { BotProfileKind } from './botTypes.js';
 
 export interface BotStateMemory {
   lastWanderAngle?: number;
+  lastDir?: Vector2;
+  lastSplitAtMs?: number;
 }
 
 export function computeBotInput(
@@ -140,9 +142,12 @@ export function computeBotInput(
           targetDir = normalize(sub(predictedPos, center));
           intensity = 1.0;
 
-          // Seuil de Split Létal : dist <= 300px et masse / 2 >= 1.15 * cible
-          if (distToPrey <= 300 && totalMass / 2 >= targetPrey.mass * 1.15) {
+          // Seuil de Split Létal : uniquement si le bot a 1 seul morceau, dist <= 200px et cooldown de 15s
+          const now = performance.now();
+          const cooldownOk = memory.lastSplitAtMs === undefined || (now - memory.lastSplitAtMs >= 15000);
+          if (botPieces.length < 2 && cooldownOk && distToPrey <= 200 && totalMass / 2 >= targetPrey.mass * 1.35) {
             split = true;
+            memory.lastSplitAtMs = now;
           }
         } else {
           // Nourriture si pas de proie
@@ -169,9 +174,12 @@ export function computeBotInput(
         targetDir = getWanderDir(center, mapSize, memory, 0.8);
       }
 
-      // 5% chance split intempestif si masse > 40
-      if (totalMass >= 40 && Math.random() < 0.05) {
+      // Split très rare (0.2%) si masse > 300 et 1 seul morceau avec 20s de cooldown
+      const now = performance.now();
+      const cooldownOk = memory.lastSplitAtMs === undefined || (now - memory.lastSplitAtMs >= 20000);
+      if (botPieces.length < 2 && cooldownOk && totalMass >= 300 && Math.random() < 0.002) {
         split = true;
+        memory.lastSplitAtMs = now;
       }
       break;
     }
@@ -184,8 +192,18 @@ export function computeBotInput(
   if (center.y < margin && targetDir.y < 0) targetDir.y = 1;
   if (center.y > mapSize - margin && targetDir.y > 0) targetDir.y = -1;
 
+  let normDir = normalize(targetDir);
+  if (memory.lastDir && (normDir.x !== 0 || normDir.y !== 0)) {
+    const lerpRate = 0.25;
+    normDir = normalize({
+      x: memory.lastDir.x + (normDir.x - memory.lastDir.x) * lerpRate,
+      y: memory.lastDir.y + (normDir.y - memory.lastDir.y) * lerpRate,
+    });
+  }
+  memory.lastDir = normDir;
+
   // Calcul du point de destination dans le monde (10 000px devant le bot pour que toutes ses pièces gardent la même direction globale)
-  const targetWorldPos: Vector2 = add(center, scale(normalize(targetDir), 10000));
+  const targetWorldPos: Vector2 = add(center, scale(normDir, 10000));
 
   return {
     input: {

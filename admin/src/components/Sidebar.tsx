@@ -6,15 +6,13 @@ interface SidebarProps {
   onLogout: () => void;
 }
 
-const NAV_ITEMS: Array<{ view: ViewName; label: string }> = [
-  { view: 'dashboard', label: 'Dashboard' },
-  { view: 'accounts', label: 'Comptes' },
-  { view: 'moderation', label: 'Modération' },
-  { view: 'premium', label: 'Premium & dons' },
-  { view: 'leaderboard', label: 'Classements' },
+const NAV_ITEMS: Array<{ view: ViewName; label: string; icon: string }> = [
+  { view: 'joueurs', label: 'Joueurs', icon: 'group' },
+  { view: 'salons', label: 'Salons & Écrans', icon: 'stadia_controller' },
+  { view: 'creatif', label: 'Espace Créatif', icon: 'palette' },
 ];
 
-/** Navigation latérale par domaine (§3.2/§5 cahier_des_charges_ui_ux.md). */
+/** Navigation latérale (§6 cahier_des_charges_admin.md) — 3 onglets. */
 export default function Sidebar({ view, onChangeView, onLogout }: SidebarProps) {
   return (
     <aside className="sidebar">
@@ -30,6 +28,9 @@ export default function Sidebar({ view, onChangeView, onLogout }: SidebarProps) 
             className={item.view === view ? 'side-link active' : 'side-link'}
             onClick={() => onChangeView(item.view)}
           >
+            <span className="material-symbols-outlined" aria-hidden="true">
+              {item.icon}
+            </span>
             {item.label}
           </button>
         ))}

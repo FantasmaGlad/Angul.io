@@ -27,6 +27,17 @@ export interface RoomRuntime {
    * et mémorisée ici pour pouvoir la rediffuser aux nouveaux arrivants (backfill `player`, comme
    * `nickname`). */
   colorByPlayer: Map<PlayerId, string>;
+  /** Horodatage (`Date.now()`) du join d'un compte authentifié — sert à créditer
+   * `total_playtime_sec` à la déconnexion (§3.1 cahier_des_charges_admin.md, voir
+   * connectionHandler.ts). Absent pour un invité (rien à créditer, pas de ligne `players`). */
+  joinedAtByPlayer: Map<PlayerId, number>;
+  /** Dernière latence (ms, aller-retour) rapportée par le client (voir `ClientLatencyMessage`) —
+   * affichée dans "Salons & Écrans" (§3.3), absente tant que le client n'a pas encore mesuré/
+   * rapporté de valeur. */
+  latencyByPlayer: Map<PlayerId, number>;
+  /** Pseudo courant par joueur — nécessaire à la vue admin "Salons & Écrans" (§3.3), qui n'a pas
+   * accès à `Room`/`World` pour un salon hébergé par un worker (voir `WorkerRoomHost`). */
+  nicknameByPlayer: Map<PlayerId, string>;
 }
 
 /** Relaie les événements d'un salon (`RoomHandle`, voir engine/worker/roomHost.ts) vers les
@@ -45,10 +56,14 @@ export function wireRoom(
     accountIdByPlayer: new Map(),
     spectatorIds: new Set(),
     colorByPlayer: new Map(),
+    joinedAtByPlayer: new Map(),
+    latencyByPlayer: new Map(),
+    nicknameByPlayer: new Map(),
   };
   runtimes.set(managed.id, runtime);
 
   managed.handle.onPlayerJoin(({ playerId, nickname, skin }) => {
+    runtime.nicknameByPlayer.set(playerId, nickname);
     const assignedSkin =
       skin ?? (playerId.startsWith('bot-') ? getRandomSkin() : colorForNickname(nickname));
     runtime.colorByPlayer.set(playerId, assignedSkin);

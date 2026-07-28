@@ -2,7 +2,15 @@ import { parentPort, workerData } from 'node:worker_threads';
 import { resolveMod } from '../modRegistry.js';
 import { DEFAULT_INTEREST_RADIUS_PX } from './roomHost.js';
 import { RoomInstance } from './roomInstance.js';
-import type { JoinResult, LeaveResult, RespawnResult, RoomCommand, RoomWorkerEvent } from './protocol.js';
+import type {
+  AdminActionResult,
+  AdminPlayerInfo,
+  JoinResult,
+  LeaveResult,
+  RespawnResult,
+  RoomCommand,
+  RoomWorkerEvent,
+} from './protocol.js';
 
 /**
  * Point d'entrée exécuté à l'intérieur d'un `worker_thread` (voir `WorkerRoomHost`,
@@ -93,6 +101,20 @@ port.on('message', (command: RoomCommand) => {
         const instance = instances.get(command.roomId);
         const result: LeaveResult | undefined = instance?.leave(command.playerId);
         post({ type: 'leaveResponse', reqId: command.reqId, result });
+        break;
+      }
+      case 'adminActionRequest': {
+        const instance = instances.get(command.roomId);
+        const result: AdminActionResult = instance
+          ? instance.adminAction(command.action)
+          : { ok: false };
+        post({ type: 'adminActionResponse', reqId: command.reqId, result });
+        break;
+      }
+      case 'adminListPlayersRequest': {
+        const instance = instances.get(command.roomId);
+        const result: AdminPlayerInfo[] = instance ? instance.adminListPlayers() : [];
+        post({ type: 'adminListPlayersResponse', reqId: command.reqId, result });
         break;
       }
     }

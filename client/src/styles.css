@@ -324,6 +324,32 @@ select {
   }
 }
 
+/* --- Annonce admin (§4.6 cahier_des_charges_admin.md, "Diffusion de Messages & Overlays") --- */
+.announcement-banner {
+  display: none;
+  opacity: 0;
+  position: fixed;
+  top: 18%;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(80vw, 640px);
+  text-align: center;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  padding: 14px 28px;
+  border-radius: var(--radius-lg);
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+  z-index: 4;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+  transition: opacity 0.3s ease;
+}
+.announcement-banner.visible {
+  display: block;
+  opacity: 1;
+}
+
 /* --- Accueil (§4.1, refonte UI/UX : nav haute + 3 colonnes + pied de page + fond spectateur) -- */
 .home-shell {
   position: relative;

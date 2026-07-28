@@ -49,16 +49,24 @@ const TICK_DURATION_SAMPLE_SIZE = 60;
 const TICK_OVERRUN_FACTOR = 1.5;
 
 export class Room {
-  readonly world: World;
-  readonly botManager?: BotManager;
+  world: World;
+  botManager?: BotManager;
   /** Exposée (pas seulement `tickIntervalMs`) pour que le réseau puisse l'annoncer au client dans
    * `welcome` (écran de diagnostic F3, `Server TPS`) sans dupliquer la constante. */
   readonly tickRateHz: number;
-  private readonly mod: GameMod;
+  /** Ni l'un ni l'autre `readonly` (contrairement au reste de cette classe) : `switchMod` (admin,
+   * "changement de mode à chaud" §4.4 cahier_des_charges_admin.md) les reconstruit entièrement en
+   * place plutôt que de recréer toute la `Room` — la `Room` elle-même (donc l'id de salon, les
+   * sockets réseau, `botManager`) doit rester la même instance. */
+  private mod: GameMod;
   private readonly tickIntervalMs: number;
-  private timer: ReturnType<typeof setInterval> | undefined;
+  /** Joueurs gelés par l'admin (§4.3, "Gel/Freeze") — vecteurs de vitesse forcés à zéro chaque
+   * tick, entrée ignorée tant qu'ils y figurent (voir `handleInput`/`tick`). */
+  private readonly frozenPlayerIds = new Set<PlayerId>();
+  private timer: ReturnType<typeof setTimeout> | undefined;
   private resetTimer: ReturnType<typeof setTimeout> | undefined;
   private lastTickAt = 0;
+  private nextTickTargetAt = 0;
   private tickCount = 0;
   private readonly resetSchedule: RoomResetSchedule | undefined;
   private readonly stateListeners: Array<(tick: number) => void> = [];
@@ -88,12 +96,25 @@ export class Room {
 
   start(): void {
     this.lastTickAt = performance.now();
-    this.timer = setInterval(() => this.tick(), this.tickIntervalMs);
+    this.nextTickTargetAt = this.lastTickAt + this.tickIntervalMs;
+    this.scheduleNextTick();
     this.scheduleReset();
   }
 
+  private scheduleNextTick(): void {
+    const delay = Math.max(0, this.nextTickTargetAt - performance.now());
+    this.timer = setTimeout(() => {
+      this.tick();
+      this.nextTickTargetAt += this.tickIntervalMs;
+      if (performance.now() > this.nextTickTargetAt + this.tickIntervalMs * 2) {
+        this.nextTickTargetAt = performance.now() + this.tickIntervalMs;
+      }
+      this.scheduleNextTick();
+    }, delay);
+  }
+
   stop(): void {
-    if (this.timer) clearInterval(this.timer);
+    if (this.timer) clearTimeout(this.timer);
     if (this.resetTimer) clearTimeout(this.resetTimer);
   }
 
@@ -141,6 +162,10 @@ export class Room {
 
     this.mod.onTick?.(this.world, dt);
     this.botManager?.update(dt);
+
+    for (const playerId of this.frozenPlayerIds) {
+      for (const piece of this.world.getPiecesByOwner(playerId)) piece.velocity = { x: 0, y: 0 };
+    }
 
     for (const entity of this.world.allEntities()) {
       entity.position = add(entity.position, scale(entity.velocity, dt));
@@ -228,7 +253,138 @@ export class Room {
   }
 
   handleInput(playerId: PlayerId, input: PlayerInput): void {
+    if (this.frozenPlayerIds.has(playerId)) return;
     this.mod.onPlayerInput?.(this.world, playerId, input);
+  }
+
+  // --- Actions admin (cahier_des_charges_admin.md §4.3-4.4) -------------------------------
+
+  /** Élimination instantanée (§4.3, "Kill") — retire tous les morceaux du joueur ; la transition
+   * vivant -> mort est détectée génériquement au tick suivant (voir `tick()`), donc `onPlayerDeath`
+   * se déclenche normalement (écran de mort, XP créditée, etc.) sans logique dupliquée ici.
+   * `false` si le joueur est inconnu. */
+  killPlayer(playerId: PlayerId): boolean {
+    const player = this.world.getPlayer(playerId);
+    if (!player) return false;
+    for (const pieceId of [...player.pieceIds]) this.world.removeEntity(pieceId);
+    return true;
+  }
+
+  /** Gel/dégel (§4.3) — un joueur gelé ignore ses inputs (`handleInput` ci-dessus) et voit sa
+   * vélocité forcée à zéro chaque tick (voir `tick()`), quel que soit le mod. */
+  setFrozen(playerId: PlayerId, frozen: boolean): void {
+    if (frozen) this.frozenPlayerIds.add(playerId);
+    else this.frozenPlayerIds.delete(playerId);
+  }
+
+  isFrozen(playerId: PlayerId): boolean {
+    return this.frozenPlayerIds.has(playerId);
+  }
+
+  /** Ajuste la masse totale d'un joueur (§4.3, slider/saisie directe) — répartie
+   * proportionnellement entre ses morceaux existants (conserve le nombre de morceaux et leurs
+   * masses relatives) plutôt que de tout regrouper en un seul, générique (indépendant du mod,
+   * contrairement au split/à la fusion naturels). `false` si le joueur n'a aucun morceau. */
+  setPlayerMass(playerId: PlayerId, targetMass: number): boolean {
+    const pieces = this.world.getPiecesByOwner(playerId);
+    if (pieces.length === 0) return false;
+    const currentTotal = pieces.reduce((sum, piece) => sum + piece.mass, 0);
+    if (currentTotal <= 0) return false;
+    const ratio = Math.max(targetMass, pieces.length) / currentTotal;
+    for (const piece of pieces) this.world.setMass(piece, Math.max(1, piece.mass * ratio));
+    return true;
+  }
+
+  /** Split forcé (§4.3) — synthétise un input `split: true` plutôt que de dupliquer la logique de
+   * split (propre à chaque mod, voir `mods/parametric/index.ts` `trySplitPiece`) : générique et
+   * toujours cohérent avec les règles réelles du mod actif (masse min, nombre max de morceaux…).
+   * Direction arbitraire (vers la droite) : un outil de debug admin, pas une action de jeu où la
+   * direction du split compte. `false` si le joueur n'a aucun morceau. */
+  forceSplit(playerId: PlayerId): boolean {
+    const pieces = this.world.getPiecesByOwner(playerId);
+    if (pieces.length === 0) return false;
+    const center = pieces[0]!.position;
+    this.handleInput(playerId, { target: { x: center.x + 1, y: center.y }, intensity: 1, split: true });
+    return true;
+  }
+
+  /** Refusion forcée (§4.3) — regroupe tous les morceaux du joueur en un seul, en ignorant le
+   * cooldown de fusion normal (`World.mergeEntities` directement, pas `tryMerge` du mod).
+   * `false` si le joueur n'a aucun morceau. */
+  forceRemerge(playerId: PlayerId): boolean {
+    let pieces = this.world.getPiecesByOwner(playerId);
+    if (pieces.length === 0) return false;
+    while (pieces.length > 1) {
+      this.world.mergeEntities(pieces[0]!, pieces[1]!);
+      pieces = this.world.getPiecesByOwner(playerId);
+    }
+    return true;
+  }
+
+  /** Spawn de nourriture à des coordonnées précises (§4.4, outil pinceau/spawner). */
+  spawnFood(position: { x: number; y: number }, mass: number): void {
+    this.world.spawnParticle(position, mass);
+  }
+
+  /** Vide toutes les pastilles de nourriture du salon (§4.4, "Nettoyage") — renvoie le nombre
+   * retiré (affichage admin). */
+  clearFood(): number {
+    let count = 0;
+    for (const entity of this.world.allEntities()) {
+      if (entity.kind === 'particle') {
+        this.world.removeEntity(entity.id);
+        count++;
+      }
+    }
+    return count;
+  }
+
+  /** Supprime tous les bots du salon (§4.4) — `BotManager.adjustPopulation` (appelé au tick
+   * suivant) les fera réapparaître progressivement si le salon a des bots activés : un nettoyage
+   * temporaire, pas une désactivation durable. */
+  clearBots(): number {
+    return this.botManager?.clearAll() ?? 0;
+  }
+
+  /** Force le spawn immédiat d'un bot supplémentaire (§4.4) — `false` si les bots sont désactivés
+   * pour ce salon. */
+  forceSpawnBot(): boolean {
+    if (!this.botManager) return false;
+    this.botManager.forceSpawnOne();
+    return true;
+  }
+
+  /** Changement de mode à chaud (§4.4) — reconstruit `world`/`mod`/`botManager` en place (même
+   * instance de `Room`, mêmes sockets réseau connectées) plutôt que de recréer tout le salon.
+   * Équivalent d'un `reset()` sous les nouvelles règles : chaque joueur humain encore connecté est
+   * re-spawné dans le nouveau monde (mêmes id, donc pas de reconnexion nécessaire côté réseau),
+   * les bots sont abandonnés puis re-peuplés par `BotManager.adjustPopulation()` (pas d'intérêt à
+   * les faire survivre à un changement de règles). `onReset` est notifié comme pour un reset
+   * classique — le réseau (broadcast.ts) prévient les clients exactement de la même façon. */
+  switchMod(
+    mod: GameMod,
+    options: { mapSize: number; kArea?: number; maxPlayers?: number; bots?: BotConfig },
+  ): void {
+    const previousHumans = this.world
+      .allPlayers()
+      .filter((player) => !this.botManager?.isBot(player.id))
+      .map((player) => ({ id: player.id, nickname: player.nickname }));
+
+    this.frozenPlayerIds.clear();
+    this.mod = mod;
+    this.world = new World({ mapSize: options.mapSize, kArea: options.kArea });
+    this.botManager = options.bots?.enabled
+      ? new BotManager(this, options.bots, options.maxPlayers ?? 50)
+      : undefined;
+    this.mod.onRoomInit?.(this.world);
+
+    for (const player of previousHumans) {
+      this.world.addPlayer(player.id, player.nickname);
+      this.mod.onPlayerJoin?.(this.world, player.id);
+    }
+    this.botManager?.adjustPopulation();
+
+    for (const listener of this.resetListeners) listener();
   }
 
   /** Délègue au mod (voir `GameMod.getAccelerationForMass`) — `undefined` si le mod ne

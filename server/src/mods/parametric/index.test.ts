@@ -265,6 +265,28 @@ describe('createParametricMod — manger', () => {
     expect(stats.playersEaten).toBe(0);
     expect(stats.xpEarned).toBe(7);
   });
+
+  it('Blob Dieu (§4.5 cahier_des_charges_admin.md) : mange sans avantage de masse, ne peut jamais être mangé', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('admin-god-1', 'Fantadmin');
+    world.addPlayer('p1', 'Alice');
+    // Même masse (donc même rayon, chevauchement total) : sans l'exemption, ni l'un ni l'autre
+    // n'a l'avantage de masse requis (il faut 1.05x, voir `hasMassAdvantage`) — seule l'exemption
+    // Blob Dieu permet à `god` de manger `target` ici.
+    const god = world.spawnPiece('admin-god-1', { x: 500, y: 500 }, 100);
+    const target = world.spawnPiece('p1', { x: 500, y: 500 }, 100);
+
+    mod.onCollision?.(world, god, target);
+    expect(world.getEntity(target.id)).toBeUndefined();
+    expect(god.mass).toBeCloseTo(200, 6);
+
+    // Un joueur avec un avantage de masse écrasant ne peut jamais manger le dieu.
+    const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 1_000_000);
+    mod.onCollision?.(world, attacker, god);
+    expect(world.getEntity(god.id)).toBeDefined();
+  });
 });
 
 describe('createParametricMod — onPostMove (bords de carte)', () => {

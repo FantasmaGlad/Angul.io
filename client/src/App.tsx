@@ -209,6 +209,14 @@ export default function App() {
     [refreshLobby],
   );
 
+  // Transfert forcé par un admin (§3.3 cahier_des_charges_admin.md) — GameView remonte
+  // entièrement (voir `key` ci-dessous) plutôt que de rouvrir sa connexion en place : son effet
+  // principal ne dépend que du montage (voir GameView.tsx), un simple changement de prop ne
+  // rouvrirait pas de nouvelle connexion WebSocket.
+  const handleForceRoomChange = useCallback((roomId: string) => {
+    setSession((previous) => (previous ? { ...previous, roomIdOrInviteCode: roomId } : previous));
+  }, []);
+
   const isWikiRoute = path === '/wiki' || path === '/wiki/';
 
   if (isWikiRoute) {
@@ -222,11 +230,13 @@ export default function App() {
   if (session) {
     return (
       <GameView
+        key={session.roomIdOrInviteCode}
         roomIdOrInviteCode={session.roomIdOrInviteCode}
         inviteCodeToShow={session.inviteCodeToShow}
         nickname={session.nickname}
         authToken={authSession?.token}
         onExit={handleExit}
+        onForceRoomChange={handleForceRoomChange}
       />
     );
   }

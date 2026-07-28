@@ -72,6 +72,7 @@ export function startGameServer(
       authRateLimiter,
       adminRateLimiter,
       deathScreenRateLimiter,
+      runtimes,
       req,
       res,
     );
@@ -80,7 +81,15 @@ export function startGameServer(
   const wss = new WebSocketServer({ server: httpServer, perMessageDeflate: true });
 
   wss.on('connection', (socket: WebSocket, request: IncomingMessage) => {
-    handleWsConnection(socket, request, roomManager, runtimes, options.accounts, wsRateLimiter);
+    handleWsConnection(
+      socket,
+      request,
+      roomManager,
+      runtimes,
+      options.accounts,
+      wsRateLimiter,
+      options.admin,
+    );
   });
 
   const whenReady = new Promise<number>((resolvePort) => {

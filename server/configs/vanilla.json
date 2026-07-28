@@ -7,10 +7,10 @@
   },
   "physics": {
     "v0": 700,
-    "speedMultiplier": 1.0,
+    "speedMultiplier": 0.5,
     "speedMassExponent": 0.10,
     "velocityFloor": 20,
-    "accelerationBase": 1500,
+    "accelerationBase": 4500,
     "accelerationMassExponent": 0.7
   },
   "split": {
@@ -35,12 +35,12 @@
     "floor": 2
   },
   "arena": {
-    "width": 7000,
-    "height": 7000,
+    "width": 12000,
+    "height": 12000,
     "borderType": "STRICT_WALL"
   },
   "food": {
-    "density": 50,
+    "density": 35,
     "respawnRatePerSecond": 300,
     "pelletTypes": [
       { "color": "vert", "mass": 2, "weight": 28 },
@@ -56,7 +56,7 @@
   "areaConstant": 6,
   "bots": {
     "enabled": true,
-    "updateFrequencyHz": 2,
+    "updateFrequencyHz": 30,
     "proportions": {
       "fuis": 25,
       "neutre": 30,

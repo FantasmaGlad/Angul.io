@@ -889,7 +889,7 @@ describe.skipIf(!DATABASE_URL)('startGameServer (avec comptes joueurs)', () => {
     const notConfigured = await fetch(`http://localhost:${port}/api/admin/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: 'whatever' }),
+      body: JSON.stringify({ username: 'admin', password: 'whatever' }),
     });
     expect(notConfigured.status).toBe(503);
   });
@@ -900,14 +900,14 @@ describe.skipIf(!DATABASE_URL)('startGameServer (avec comptes joueurs)', () => {
     const wrong = await fetch(`http://localhost:${port}/api/admin/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: 'wrong' }),
+      body: JSON.stringify({ username: 'admin', password: 'wrong' }),
     });
     expect(wrong.status).toBe(401);
 
     const right = await fetch(`http://localhost:${port}/api/admin/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: 'adminpass123' }),
+      body: JSON.stringify({ username: 'admin', password: 'adminpass123' }),
     });
     expect(right.status).toBe(200);
     const { token } = (await right.json()) as { token: string };
@@ -935,7 +935,7 @@ describe.skipIf(!DATABASE_URL)('startGameServer (avec comptes joueurs)', () => {
     const loginResponse = await fetch(`http://localhost:${port}/api/admin/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: 'adminpass123' }),
+      body: JSON.stringify({ username: 'admin', password: 'adminpass123' }),
     });
     const { token: adminToken } = (await loginResponse.json()) as { token: string };
     const authHeaders = { Authorization: `Bearer ${adminToken}` };
@@ -945,8 +945,11 @@ describe.skipIf(!DATABASE_URL)('startGameServer (avec comptes joueurs)', () => {
       { headers: authHeaders },
     );
     expect(searchResponse.status).toBe(200);
-    const results = (await searchResponse.json()) as Array<{ id: number; pseudo: string }>;
-    expect(results.some((r) => r.id === accountId)).toBe(true);
+    const { rows } = (await searchResponse.json()) as {
+      rows: Array<{ id: number; pseudo: string }>;
+      total: number;
+    };
+    expect(rows.some((r) => r.id === accountId)).toBe(true);
 
     const detailResponse = await fetch(`http://localhost:${port}/api/admin/players/${accountId}`, {
       headers: authHeaders,
@@ -986,6 +989,177 @@ describe.skipIf(!DATABASE_URL)('startGameServer (avec comptes joueurs)', () => {
       body: JSON.stringify({ pseudo, password: 'motdepasse123' }),
     });
     expect(loginAfterBan.status).toBe(401);
+  });
+
+  it('GET /api/admin/rooms liste les salons (y compris privés) avec leurs joueurs (cahier_des_charges_admin.md §3.3)', async () => {
+    const { port, manager } = await startServer();
+    const pub = manager.createRoom({ name: 'Public', modId: 'test', visibility: 'public' });
+    const priv = manager.createRoom({ name: 'Privé', modId: 'test', visibility: 'private' });
+
+    const loginResponse = await fetch(`http://localhost:${port}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'adminpass123' }),
+    });
+    const { token: adminToken } = (await loginResponse.json()) as { token: string };
+    const authHeaders = { Authorization: `Bearer ${adminToken}` };
+
+    const socket = await connectedClient(port, pub.id);
+    const messages = collectMessages(socket);
+    socket.send(JSON.stringify({ type: 'join', nickname: 'Alice' }));
+    await waitUntil(() => messages.some((m) => m.type === 'welcome'));
+
+    const roomsResponse = await fetch(`http://localhost:${port}/api/admin/rooms`, {
+      headers: authHeaders,
+    });
+    expect(roomsResponse.status).toBe(200);
+    const rooms = (await roomsResponse.json()) as Array<{
+      id: string;
+      visibility: string;
+      players: Array<{ nickname: string; isBot: boolean }>;
+    }>;
+    expect(rooms.map((r) => r.id)).toEqual(expect.arrayContaining([pub.id, priv.id]));
+    const pubRoom = rooms.find((r) => r.id === pub.id)!;
+    expect(pubRoom.players.some((p) => p.nickname === 'Alice' && p.isBot === false)).toBe(true);
+
+    socket.close();
+  });
+
+  it('POST /api/admin/rooms/:id/action exécute une action générique (kill) sur un joueur (§4.3)', async () => {
+    const { port, manager } = await startServer();
+    const room = manager.createRoom({ name: 'Kill', modId: 'test', visibility: 'public' });
+
+    const loginResponse = await fetch(`http://localhost:${port}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'adminpass123' }),
+    });
+    const { token: adminToken } = (await loginResponse.json()) as { token: string };
+
+    const socket = await connectedClient(port, room.id);
+    const messages = collectMessages(socket);
+    socket.send(JSON.stringify({ type: 'join', nickname: 'Bob' }));
+    await waitUntil(() => messages.some((m) => m.type === 'welcome'));
+    const welcome = messages.find((m) => m.type === 'welcome')!;
+    const playerId = welcome.playerId as string;
+
+    // Le mod de test ("test") n'a pas de onPlayerJoin : aucun morceau au join, donc on en spawn un
+    // directement (même principe que le test XP plus haut, qui manipule `player.lifeStats`).
+    manager.getManagedRoom(room.id)!.room!.world.spawnPiece(playerId, { x: 0, y: 0 }, 50);
+
+    const actionResponse = await fetch(
+      `http://localhost:${port}/api/admin/rooms/${room.id}/action`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+        body: JSON.stringify({ action: { kind: 'kill', playerId } }),
+      },
+    );
+    expect(actionResponse.status).toBe(200);
+    expect(await actionResponse.json()).toMatchObject({ ok: true });
+    expect(
+      manager.getManagedRoom(room.id)!.room!.world.getPiecesByOwner(playerId),
+    ).toHaveLength(0);
+
+    socket.close();
+  });
+
+  it('POST /api/admin/rooms/:id/kick ferme la connexion du joueur ciblé (§3.3)', async () => {
+    const { port, manager } = await startServer();
+    const room = manager.createRoom({ name: 'Kick', modId: 'test', visibility: 'public' });
+
+    const loginResponse = await fetch(`http://localhost:${port}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'adminpass123' }),
+    });
+    const { token: adminToken } = (await loginResponse.json()) as { token: string };
+
+    const socket = await connectedClient(port, room.id);
+    const messages = collectMessages(socket);
+    socket.send(JSON.stringify({ type: 'join', nickname: 'Carol' }));
+    await waitUntil(() => messages.some((m) => m.type === 'welcome'));
+    const playerId = messages.find((m) => m.type === 'welcome')!.playerId as string;
+
+    const kickResponse = await fetch(`http://localhost:${port}/api/admin/rooms/${room.id}/kick`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({ playerId }),
+    });
+    expect(kickResponse.status).toBe(200);
+    await waitUntil(() => socket.readyState === WebSocket.CLOSED);
+  });
+
+  it('POST /api/admin/broadcast diffuse une annonce à tous les joueurs connectés (§4.6)', async () => {
+    const { port, manager } = await startServer();
+    const room = manager.createRoom({ name: 'Broadcast', modId: 'test', visibility: 'public' });
+
+    const loginResponse = await fetch(`http://localhost:${port}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'adminpass123' }),
+    });
+    const { token: adminToken } = (await loginResponse.json()) as { token: string };
+
+    const socket = await connectedClient(port, room.id);
+    const messages = collectMessages(socket);
+    socket.send(JSON.stringify({ type: 'join', nickname: 'Dave' }));
+    await waitUntil(() => messages.some((m) => m.type === 'welcome'));
+
+    const broadcastResponse = await fetch(`http://localhost:${port}/api/admin/broadcast`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({ text: 'Salut tout le monde', color: '#ff0000', durationMs: 2000 }),
+    });
+    expect(broadcastResponse.status).toBe(200);
+    expect(await broadcastResponse.json()).toMatchObject({ success: true, sent: 1 });
+
+    await waitUntil(() => messages.some((m) => m.type === 'announcement'));
+    const announcement = messages.find((m) => m.type === 'announcement')!;
+    expect(announcement).toMatchObject({ text: 'Salut tout le monde', color: '#ff0000' });
+
+    socket.close();
+  });
+
+  it('canal WS admin (?admin=1) : rejette un token invalide, diffuse le snapshot complet et exécute une action (§4-§5.2)', async () => {
+    const { port, manager } = await startServer();
+    const room = manager.createRoom({ name: 'Creative', modId: 'test', visibility: 'public' });
+    manager.getManagedRoom(room.id)!.room!.world.addPlayer('bot-1', 'Bot');
+    manager.getManagedRoom(room.id)!.room!.world.spawnPiece('bot-1', { x: 100, y: 100 }, 42);
+
+    const loginResponse = await fetch(`http://localhost:${port}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'adminpass123' }),
+    });
+    const { token: adminToken } = (await loginResponse.json()) as { token: string };
+
+    const rejected = new WebSocket(
+      `ws://localhost:${port}/?roomId=${room.id}&admin=1&token=bogus`,
+    );
+    await new Promise<void>((resolve) => rejected.once('close', () => resolve()));
+
+    const adminSocket = new WebSocket(
+      `ws://localhost:${port}/?roomId=${room.id}&admin=1&token=${encodeURIComponent(adminToken)}`,
+    );
+    await waitForOpen(adminSocket);
+    const adminMessages = collectMessages(adminSocket);
+    await waitUntil(() => adminMessages.some((m) => m.type === 'welcome'));
+
+    adminSocket.send(
+      JSON.stringify({
+        type: 'admin_action',
+        actionId: 'test-1',
+        action: { kind: 'setMass', playerId: 'bot-1', mass: 999 },
+      }),
+    );
+    await waitUntil(() =>
+      adminMessages.some((m) => m.type === 'admin_action_result' && m.actionId === 'test-1'),
+    );
+    const actionResult = adminMessages.find((m) => m.type === 'admin_action_result')!;
+    expect(actionResult).toMatchObject({ result: { ok: true } });
+
+    adminSocket.close();
   });
 
   describe('Sécurité, Rate Limiting & Validation Input', () => {
@@ -1046,7 +1220,7 @@ describe.skipIf(!DATABASE_URL)('startGameServer (avec comptes joueurs)', () => {
       const loginResponse = await fetch(`http://localhost:${port}/api/admin/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: 'adminpass123' }),
+        body: JSON.stringify({ username: 'admin', password: 'adminpass123' }),
       });
       const { token } = (await loginResponse.json()) as { token: string };
 

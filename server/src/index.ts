@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import 'dotenv/config';
 import { AccountsService } from './accounts/service.js';
 import { AdminAuth } from './admin/adminAuth.js';
+import { AdminUsersRepository } from './admin/adminUsersRepository.js';
 import { getPool } from './db/pool.js';
 import { listAvailableModIds } from './engine/modRegistry.js';
 import { TWO_HOUR_RESET_SCHEDULE } from './engine/resetSchedule.js';
@@ -15,7 +16,7 @@ import { startGameServer } from './net/server.js';
 
 import os from 'node:os';
 
-const TICK_RATE_HZ = 20;
+const TICK_RATE_HZ = process.env.TICK_RATE_HZ ? Number(process.env.TICK_RATE_HZ) : 30;
 const PORT = Number(process.env.PORT ?? 8080);
 const BASE_ROOM_MAX_PLAYERS = 30;
 
@@ -58,10 +59,13 @@ const baseRooms = BASE_ROOMS.map((base) =>
 // configuré de base de données (voir GameServerOptions.accounts, net/server.ts).
 const accounts = process.env.DATABASE_URL ? new AccountsService(getPool()) : undefined;
 
-// Interface admin (Lot 5.1) : optionnelle de la même façon — sans `ADMIN_PASSWORD_HASH`,
-// `/api/admin/*` répond 503 plutôt que de planter au démarrage (voir AdminAuth.isConfigured,
-// server/scripts/hashPassword.mjs pour générer le hash).
-const admin = new AdminAuth(process.env.ADMIN_PASSWORD_HASH);
+// Interface admin (cahier_des_charges_admin.md) : comptes nommés en base (`admin_users`) dès que
+// `DATABASE_URL` est configuré, repli sur `ADMIN_PASSWORD_HASH` sinon (voir AdminAuth). Sans
+// aucun des deux, `/api/admin/*` répond 503 plutôt que de planter au démarrage.
+const admin = new AdminAuth(
+  process.env.ADMIN_PASSWORD_HASH,
+  process.env.DATABASE_URL ? new AdminUsersRepository(getPool()) : undefined,
+);
 
 startGameServer(roomManager, {
   port: PORT,

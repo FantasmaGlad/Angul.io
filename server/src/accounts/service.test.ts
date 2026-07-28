@@ -119,12 +119,13 @@ describe.skipIf(!DATABASE_URL)('AccountsService (Postgres)', () => {
     const pseudo = uniquePseudo('adminview');
     await service.register(pseudo, 'motdepasse123');
 
-    const results = await service.searchAccountsForAdmin(pseudo);
-    expect(results).toHaveLength(1);
-    expect(results[0]).not.toHaveProperty('passwordHash');
-    expect(results[0]).toMatchObject({ pseudo, banned: false });
+    const { rows, total } = await service.searchAccountsForAdmin({ q: pseudo });
+    expect(total).toBe(1);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).not.toHaveProperty('passwordHash');
+    expect(rows[0]).toMatchObject({ pseudo, banned: false });
 
-    const detail = await service.getAccountForAdmin(results[0]!.id);
+    const detail = await service.getAccountForAdmin(rows[0]!.id);
     expect(detail).toMatchObject({ pseudo, bestScores: [] });
     expect(await service.getAccountForAdmin(-1)).toBeUndefined();
   });
@@ -142,5 +143,79 @@ describe.skipIf(!DATABASE_URL)('AccountsService (Postgres)', () => {
       AccountError,
     );
     expect(await service.updateAccountForAdmin(-1, { premium: true })).toBeUndefined();
+  });
+
+  it('updateAccountForAdmin : renomme un compte (rejette un pseudo déjà pris), réinitialise le mot de passe (révoque les sessions actives)', async () => {
+    const service = new AccountsService(pool);
+    const pseudoA = uniquePseudo('adm-rn-a');
+    const pseudoB = uniquePseudo('adm-rn-b');
+    const { token: tokenA } = await service.register(pseudoA, 'motdepasse123');
+    await service.register(pseudoB, 'motdepasse123');
+    const accountIdA = service.resolveToken(tokenA)!;
+
+    await expect(
+      service.updateAccountForAdmin(accountIdA, { pseudo: pseudoB }),
+    ).rejects.toBeInstanceOf(AccountError);
+
+    const newPseudo = uniquePseudo('adm-rn-c');
+    const renamed = await service.updateAccountForAdmin(accountIdA, { pseudo: newPseudo });
+    expect(renamed?.pseudo).toBe(newPseudo);
+
+    await service.updateAccountForAdmin(accountIdA, { newPassword: 'nouveaumdp456' });
+    // Le changement de mot de passe révoque les sessions actives (même principe qu'un ban).
+    expect(service.resolveToken(tokenA)).toBeUndefined();
+    await expect(service.login(newPseudo, 'motdepasse123')).rejects.toThrow();
+    const { token: freshToken } = await service.login(newPseudo, 'nouveaumdp456');
+    expect(service.resolveToken(freshToken)).toBe(accountIdA);
+  });
+
+  it("updateAccountForAdmin : couleur d'avatar et écran de mort personnalisé, resetBestScoreForAdmin", async () => {
+    const service = new AccountsService(pool);
+    const pseudo = uniquePseudo('adm-cust');
+    const { token } = await service.register(pseudo, 'motdepasse123');
+    const accountId = service.resolveToken(token)!;
+
+    const updated = await service.updateAccountForAdmin(accountId, {
+      avatarColor: '#ff0000',
+      deathMessage: 'Message admin',
+      deathBannerId: 'default_skull',
+    });
+    expect(updated).toMatchObject({
+      avatarColor: '#ff0000',
+      deathMessage: 'Message admin',
+      deathBannerId: 'default_skull',
+    });
+
+    await service.recordGameResult(accountId, 'vanilla', 1234, 10);
+    let detail = await service.getAccountForAdmin(accountId);
+    expect(detail?.bestScores).toContainEqual({ modeId: 'vanilla', bestScore: 1234 });
+    expect(detail?.bestScore).toBe(1234);
+
+    await service.resetBestScoreForAdmin(accountId, 'vanilla');
+    detail = await service.getAccountForAdmin(accountId);
+    expect(detail?.bestScores).toEqual([]);
+    expect(detail?.bestScore).toBe(0);
+  });
+
+  it('searchAccountsForAdmin : filtre par statut Premium et trie par XP décroissant', async () => {
+    const service = new AccountsService(pool);
+    const marker = randomUUID().slice(0, 6);
+    const pseudoLow = uniquePseudo(`flt${marker}lo`);
+    const pseudoHigh = uniquePseudo(`flt${marker}hi`);
+    const { token: tokenLow } = await service.register(pseudoLow, 'motdepasse123');
+    const { token: tokenHigh } = await service.register(pseudoHigh, 'motdepasse123');
+    const idLow = service.resolveToken(tokenLow)!;
+    const idHigh = service.resolveToken(tokenHigh)!;
+    await service.updateAccountForAdmin(idLow, { premium: true, xp: 10 });
+    await service.updateAccountForAdmin(idHigh, { premium: true, xp: 9999 });
+
+    const { rows } = await service.searchAccountsForAdmin({
+      q: `flt${marker}`,
+      premium: true,
+      sortBy: 'xp',
+      sortDir: 'desc',
+    });
+    expect(rows.map((r) => r.pseudo)).toEqual([pseudoHigh, pseudoLow]);
+    expect(rows.every((r) => r.premium)).toBe(true);
   });
 });

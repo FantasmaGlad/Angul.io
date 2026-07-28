@@ -6,3 +6,4 @@ export * from './protocol.js';
 export * from './botIdentities.js';
 export * from './avatarPalette.js';
 export * from './deathBanners.js';
+export * from './adminProtocol.js';

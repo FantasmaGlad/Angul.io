@@ -4,6 +4,9 @@ import type { PlayerId, PlayerInput } from '../types.js';
 import { logEvent } from '../../log.js';
 import { DEFAULT_INTEREST_RADIUS_PX, type RoomHandle, type RoomHost } from './roomHost.js';
 import type {
+  AdminActionResult,
+  AdminPlayerInfo,
+  AdminRoomAction,
   DeathInfo,
   JoinResult,
   LeaveResult,
@@ -104,6 +107,23 @@ class WorkerRoomHandle implements RoomHandle {
     this.post({ type: 'disconnectViewer', roomId: this.id, playerId });
   }
 
+  adminAction(action: AdminRoomAction): Promise<AdminActionResult> {
+    return this.request<AdminActionResult>((reqId) => ({
+      type: 'adminActionRequest',
+      reqId,
+      roomId: this.id,
+      action,
+    }));
+  }
+
+  adminListPlayers(): Promise<AdminPlayerInfo[]> {
+    return this.request<AdminPlayerInfo[]>((reqId) => ({
+      type: 'adminListPlayersRequest',
+      reqId,
+      roomId: this.id,
+    }));
+  }
+
   onTick(listener: (tick: number, payloads: TickPayload[], stats: RoomStats) => void): void {
     this.tickListeners.push(listener);
   }
@@ -179,15 +199,17 @@ export function createWorkerRoomHost(
         logEvent('room_worker_error', { workerIndex: i, roomId: event.roomId, reason: event.message });
         return;
       }
-      if (event.type === 'joinResponse' || event.type === 'respawnResponse' || event.type === 'leaveResponse') {
+      if ('reqId' in event) {
         const request = pending.get(event.reqId);
         if (request) {
           pending.delete(event.reqId);
-          request.resolve(event.result as never);
+          request.resolve((event as { result: unknown }).result as never);
         }
         return;
       }
-      handlesByRoomId.get(event.roomId)?.dispatch(event);
+      if ('roomId' in event && typeof (event as { roomId: string }).roomId === 'string') {
+        handlesByRoomId.get((event as { roomId: string }).roomId)?.dispatch(event);
+      }
     });
 
     worker.on('error', (error: Error) => {

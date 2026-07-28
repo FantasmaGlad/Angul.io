@@ -13,6 +13,10 @@ export interface AccountRow {
   avatarColor: string | null;
   deathMessage: string;
   deathBannerId: string;
+  createdAt: string;
+  lastLoginAt: string | null;
+  lastIp: string | null;
+  totalPlaytimeSec: number;
 }
 
 /** Champs modifiables par le joueur lui-même pour personnaliser son écran de mort (cahier des
@@ -23,14 +27,49 @@ export interface DeathScreenPatch {
   deathBannerId: string;
 }
 
-/** Champs modifiables par l'admin (Lot 5.2-5.4) — tous optionnels, seuls les champs fournis sont
- * écrits (voir `adminUpdateAccount`). */
+/** Champs modifiables par l'admin (cahier_des_charges_admin.md §3.2) — tous optionnels, seuls les
+ * champs fournis sont écrits (voir `adminUpdateAccount`). `passwordHash` : déjà haché par la
+ * couche service (voir `AccountsService.updateAccountForAdmin`), jamais le mot de passe en clair
+ * ici. */
 export interface AdminAccountPatch {
+  pseudo?: string;
   level?: number;
   xp?: number;
   premium?: boolean;
   cosmetics?: string[];
   banned?: boolean;
+  avatarColor?: string;
+  deathMessage?: string;
+  deathBannerId?: string;
+  passwordHash?: string;
+}
+
+/** Critères de recherche/filtrage admin (§3.1) — tous optionnels. `q` matche le pseudo (sous-chaîne,
+ * insensible à la casse) OU l'id exact si `q` est purement numérique. */
+export interface AdminSearchParams {
+  q?: string;
+  ip?: string;
+  premium?: boolean;
+  banned?: boolean;
+  minLevel?: number;
+  maxLevel?: number;
+  minXp?: number;
+  maxXp?: number;
+  sortBy?: 'pseudo' | 'level' | 'xp' | 'createdAt' | 'lastLoginAt' | 'totalPlaytimeSec' | 'bestScore';
+  sortDir?: 'asc' | 'desc';
+  limit?: number;
+  offset?: number;
+}
+
+export interface AdminSearchRow extends AccountRow {
+  /** Meilleur score historique, tous modes confondus (0 si aucune partie jouée) — voir la
+   * sous-requête `MAX(best_score)` de `searchAdmin`. */
+  bestScore: number;
+}
+
+export interface AdminSearchResult {
+  rows: AdminSearchRow[];
+  total: number;
 }
 
 export interface BestScoreRow {
@@ -60,11 +99,15 @@ interface PlayerRow {
   avatar_color: string | null;
   death_message: string;
   death_banner_id: string;
+  created_at: string;
+  last_login_at: string | null;
+  last_ip: string | null;
+  total_playtime_sec: number;
 }
 
 const ACCOUNT_COLUMNS =
   'id, pseudo, password_hash, level, xp, premium, cosmetics, banned, avatar_color, ' +
-  'death_message, death_banner_id';
+  'death_message, death_banner_id, created_at, last_login_at, last_ip, total_playtime_sec';
 
 function toAccountRow(row: PlayerRow): AccountRow {
   return {
@@ -79,6 +122,10 @@ function toAccountRow(row: PlayerRow): AccountRow {
     avatarColor: row.avatar_color,
     deathMessage: row.death_message,
     deathBannerId: row.death_banner_id,
+    createdAt: row.created_at,
+    lastLoginAt: row.last_login_at,
+    lastIp: row.last_ip,
+    totalPlaytimeSec: row.total_playtime_sec,
   };
 }
 
@@ -124,7 +171,9 @@ export class AccountsRepository {
 
   /** Recherche par sous-chaîne de pseudo, insensible à la casse (Lot 5.2) — `query` vide
    * renvoie les `limit` premiers comptes par ordre alphabétique plutôt qu'une liste vide,
-   * pratique pour parcourir la base depuis l'admin sans devoir connaître un pseudo exact. */
+   * pratique pour parcourir la base depuis l'admin sans devoir connaître un pseudo exact.
+   * @deprecated conservé pour compatibilité — préférer `searchAdmin` (filtres/tri/pagination,
+   * §3.1 cahier_des_charges_admin.md). */
   async searchByPseudo(query: string, limit = 20): Promise<AccountRow[]> {
     const result = await this.pool.query<PlayerRow>(
       `SELECT ${ACCOUNT_COLUMNS} FROM players WHERE pseudo ILIKE $1 ORDER BY pseudo LIMIT $2`,
@@ -133,25 +182,142 @@ export class AccountsRepository {
     return result.rows.map(toAccountRow);
   }
 
-  /** Écrit une correction manuelle admin (Lot 5.2-5.4 : bannissement, XP/niveau, cosmétiques,
-   * statut Premium) — seuls les champs présents dans `patch` sont modifiés. `undefined` si le
-   * compte n'existe pas (traduit en 404 côté HTTP, voir net/server.ts). */
+  /** Recherche/filtrage/tri admin complet (§3.1) — pseudo/id (`q`), IP (`ip`), statuts
+   * (Premium/Banni), plage niveau/XP, tri sur n'importe quelle colonne y compris le meilleur
+   * score historique (sous-requête `MAX(best_score)` tous modes confondus). Construit la clause
+   * `WHERE` dynamiquement (colonnes fixes, jamais de valeur utilisateur interpolée directement
+   * dans le SQL — toujours via `$n`) : plus sûr qu'une concaténation de chaînes, seule façon de
+   * combiner un nombre variable de filtres optionnels avec `pg`. */
+  async searchAdmin(params: AdminSearchParams): Promise<AdminSearchResult> {
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+
+    const push = (value: unknown): number => {
+      values.push(value);
+      return values.length;
+    };
+
+    if (params.q && params.q.trim().length > 0) {
+      const q = params.q.trim();
+      const isNumeric = /^\d+$/.test(q);
+      if (isNumeric) {
+        conditions.push(`(pseudo ILIKE $${push(`%${q}%`)} OR id = $${push(Number(q))})`);
+      } else {
+        conditions.push(`pseudo ILIKE $${push(`%${q}%`)}`);
+      }
+    }
+    if (params.ip && params.ip.trim().length > 0) {
+      conditions.push(`last_ip = $${push(params.ip.trim())}`);
+    }
+    if (params.premium !== undefined) conditions.push(`premium = $${push(params.premium)}`);
+    if (params.banned !== undefined) conditions.push(`banned = $${push(params.banned)}`);
+    if (params.minLevel !== undefined) conditions.push(`level >= $${push(params.minLevel)}`);
+    if (params.maxLevel !== undefined) conditions.push(`level <= $${push(params.maxLevel)}`);
+    if (params.minXp !== undefined) conditions.push(`xp >= $${push(params.minXp)}`);
+    if (params.maxXp !== undefined) conditions.push(`xp <= $${push(params.maxXp)}`);
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const sortColumn: Record<NonNullable<AdminSearchParams['sortBy']>, string> = {
+      pseudo: 'pseudo',
+      level: 'level',
+      xp: 'xp',
+      createdAt: 'created_at',
+      lastLoginAt: 'last_login_at',
+      totalPlaytimeSec: 'total_playtime_sec',
+      bestScore: 'best_score',
+    };
+    const orderBy = sortColumn[params.sortBy ?? 'pseudo'];
+    const direction = params.sortDir === 'desc' ? 'DESC' : 'ASC';
+    const limit = Math.min(Math.max(params.limit ?? 20, 1), 100);
+    const offset = Math.max(params.offset ?? 0, 0);
+
+    const limitPlaceholder = push(limit);
+    const offsetPlaceholder = push(offset);
+
+    const result = await this.pool.query<PlayerRow & { best_score: number; total: string }>(
+      `SELECT ${ACCOUNT_COLUMNS},
+              COALESCE((SELECT MAX(best_score) FROM player_best_scores WHERE player_id = players.id), 0) AS best_score,
+              count(*) OVER() AS total
+       FROM players
+       ${whereClause}
+       ORDER BY ${orderBy} ${direction} NULLS LAST, id ASC
+       LIMIT $${limitPlaceholder} OFFSET $${offsetPlaceholder}`,
+      values,
+    );
+
+    return {
+      rows: result.rows.map((row) => ({ ...toAccountRow(row), bestScore: Number(row.best_score) })),
+      total: result.rows[0] ? Number(result.rows[0].total) : 0,
+    };
+  }
+
+  /** Écrit une correction manuelle admin (§3.2 : pseudo, bannissement, XP/niveau, cosmétiques,
+   * statut Premium, couleur d'avatar, écran de mort, mot de passe déjà haché) — seuls les champs
+   * présents dans `patch` sont modifiés. `undefined` si le compte n'existe pas (traduit en 404
+   * côté HTTP, voir net/server.ts). Lève `PseudoTakenError` si le nouveau pseudo est déjà pris
+   * (même contrainte unique que `createAccount`). */
   async adminUpdateAccount(id: number, patch: AdminAccountPatch): Promise<AccountRow | undefined> {
     const columns: Array<[string, unknown]> = [];
+    if (patch.pseudo !== undefined) columns.push(['pseudo', patch.pseudo]);
     if (patch.level !== undefined) columns.push(['level', patch.level]);
     if (patch.xp !== undefined) columns.push(['xp', patch.xp]);
     if (patch.premium !== undefined) columns.push(['premium', patch.premium]);
     if (patch.cosmetics !== undefined) columns.push(['cosmetics', patch.cosmetics]);
     if (patch.banned !== undefined) columns.push(['banned', patch.banned]);
+    if (patch.avatarColor !== undefined) columns.push(['avatar_color', patch.avatarColor]);
+    if (patch.deathMessage !== undefined) columns.push(['death_message', patch.deathMessage]);
+    if (patch.deathBannerId !== undefined) columns.push(['death_banner_id', patch.deathBannerId]);
+    if (patch.passwordHash !== undefined) columns.push(['password_hash', patch.passwordHash]);
     if (columns.length === 0) return this.findById(id);
 
     const setClause = columns.map(([column], index) => `${column} = $${index + 2}`).join(', ');
     const values = columns.map(([, value]) => value);
-    const result = await this.pool.query<PlayerRow>(
-      `UPDATE players SET ${setClause} WHERE id = $1 RETURNING ${ACCOUNT_COLUMNS}`,
-      [id, ...values],
-    );
-    return result.rows[0] ? toAccountRow(result.rows[0]) : undefined;
+    try {
+      const result = await this.pool.query<PlayerRow>(
+        `UPDATE players SET ${setClause} WHERE id = $1 RETURNING ${ACCOUNT_COLUMNS}`,
+        [id, ...values],
+      );
+      return result.rows[0] ? toAccountRow(result.rows[0]) : undefined;
+    } catch (error) {
+      if (isUniqueViolation(error) && patch.pseudo !== undefined) {
+        throw new PseudoTakenError(patch.pseudo);
+      }
+      throw error;
+    }
+  }
+
+  /** IP + horodatage de connexion (§3.1, recherche/tri par IP et dernière connexion) — écrit à
+   * chaque join réussi (voir connectionHandler.ts), best-effort (ne doit jamais faire échouer la
+   * connexion elle-même en cas d'erreur DB passagère, voir l'appelant). */
+  async recordLogin(id: number, ip: string | undefined): Promise<void> {
+    await this.pool.query(`UPDATE players SET last_login_at = now(), last_ip = $2 WHERE id = $1`, [
+      id,
+      ip ?? null,
+    ]);
+  }
+
+  /** Cumule le temps de jeu (§3.1, tri par "temps de jeu total") — ajouté à la déconnexion
+   * (voir connectionHandler.ts), jamais recalculé/écrasé. */
+  async addPlaytime(id: number, seconds: number): Promise<void> {
+    if (seconds <= 0) return;
+    await this.pool.query(`UPDATE players SET total_playtime_sec = total_playtime_sec + $2 WHERE id = $1`, [
+      id,
+      Math.round(seconds),
+    ]);
+  }
+
+  /** Réinitialise le meilleur score d'un mode précis, ou de tous les modes si `modeId` est
+   * omis (§3.2, "réinitialisation éventuelle des scores max par mode"). */
+  async resetBestScore(id: number, modeId?: string): Promise<void> {
+    if (modeId) {
+      await this.pool.query(`DELETE FROM player_best_scores WHERE player_id = $1 AND mode_id = $2`, [
+        id,
+        modeId,
+      ]);
+    } else {
+      await this.pool.query(`DELETE FROM player_best_scores WHERE player_id = $1`, [id]);
+    }
   }
 
   /** Écrit le choix d'avatar (couleur, refonte UI/UX) — la validation contre la palette curatée

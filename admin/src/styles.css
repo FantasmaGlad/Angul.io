@@ -188,7 +188,9 @@ input:focus {
   flex: 1;
 }
 .side-link {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
@@ -196,6 +198,23 @@ input:focus {
   font-size: 13.5px;
   color: var(--text-soft);
   text-align: left;
+}
+
+/* --- Material Symbols (icônes Google, remplacent les emojis) --------------------------- */
+.material-symbols-outlined {
+  font-variation-settings:
+    'FILL' 0,
+    'wght' 400,
+    'GRAD' 0,
+    'opsz' 20;
+  font-size: 18px;
+  line-height: 1;
+  vertical-align: middle;
+  display: inline-flex;
+}
+.btn-primary .material-symbols-outlined,
+.btn-ghost .material-symbols-outlined {
+  margin-right: 2px;
 }
 .side-link:hover {
   background: var(--surface-hover);
@@ -376,6 +395,198 @@ input:focus {
   line-height: 1.6;
   max-width: 440px;
   margin: 0 auto;
+}
+
+/* --- Joueurs / Salons & Écrans / Espace Créatif (cahier_des_charges_admin.md) ----------- */
+.view-wide {
+  max-width: 1200px;
+}
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.filter-row select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+.filter-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-soft);
+}
+.filter-checkbox input {
+  width: auto;
+  accent-color: var(--accent);
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 14px;
+  font-size: 13px;
+}
+.data-table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-strong);
+}
+.data-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.data-row {
+  cursor: pointer;
+}
+.data-row:hover {
+  background: var(--surface-hover);
+}
+.id-tag {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.row-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.btn-danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.btn-danger:hover {
+  background: var(--danger);
+  color: var(--accent-ink);
+}
+
+.pagination-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 14px;
+  font-size: 12.5px;
+  color: var(--text-soft);
+}
+
+.room-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 6px;
+}
+
+/* --- POV (§3.3) -------------------------------------------------------------------------- */
+.pov-overlay {
+  position: fixed;
+  inset: 24px;
+  background: #0e0f12;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-modal);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.pov-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+}
+.pov-canvas {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+}
+
+/* --- Espace Créatif (§4) ------------------------------------------------------------------ */
+.creative-view {
+  max-width: none;
+  height: calc(100vh - 64px);
+  display: flex;
+  flex-direction: column;
+}
+.creative-toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.creative-toolbar select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 9px 14px;
+  font-size: 13px;
+  color: var(--text);
+}
+.creative-broadcast {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.creative-broadcast input[type='text'],
+.creative-broadcast input:not([type]) {
+  flex: 1;
+}
+.creative-canvas-wrap {
+  flex: 1;
+  min-height: 320px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.creative-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: crosshair;
+}
+
+.context-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 59;
+}
+.context-menu {
+  position: fixed;
+  z-index: 60;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-modal);
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  overflow: hidden;
+}
+.context-menu button {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  text-align: left;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--text);
+}
+.context-menu button:hover {
+  background: var(--surface-hover);
 }
 
 @media (max-width: 760px) {

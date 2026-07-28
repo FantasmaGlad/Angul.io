@@ -53,7 +53,20 @@ export interface ClientPingMessage {
   t: number;
 }
 
-export type ClientMessage = ClientJoinMessage | ClientInputMessage | ClientPingMessage;
+/** Round-trip mesuré côté client à partir de son propre `ping`/`pong` (voir GameView.tsx),
+ * rapporté au serveur pour affichage dans l'interface admin ("Salons & Écrans" §3.3
+ * cahier_des_charges_admin.md) — le serveur ne mesure pas lui-même la latence, il ne fait que
+ * relayer la valeur du client. */
+export interface ClientLatencyMessage {
+  type: 'latency';
+  ms: number;
+}
+
+export type ClientMessage =
+  | ClientJoinMessage
+  | ClientInputMessage
+  | ClientPingMessage
+  | ClientLatencyMessage;
 
 export interface WelcomeMessage {
   type: 'welcome';
@@ -135,8 +148,32 @@ export interface PlayerDiedMessage {
   customCard: DeathCustomCard;
 }
 
+/** Bannière/notification visuelle diffusée par l'admin (§4.6 cahier_des_charges_admin.md,
+ * "Diffusion de Messages & Overlays") — affichée au centre de l'écran, `durationMs` plus tard le
+ * client la retire de lui-même (pas de message de fin séparé). */
+export interface AnnouncementMessage {
+  type: 'announcement';
+  text: string;
+  color: string;
+  durationMs: number;
+}
+
+/** Transfert forcé vers un autre salon (§3.3, "Changement de salon / Transfert") — le client
+ * réagit en fermant sa connexion actuelle et en en ouvrant une nouvelle vers `roomId`, comme s'il
+ * avait cliqué "Rejoindre" lui-même (voir GameView.tsx). */
+export interface ForceRoomChangeMessage {
+  type: 'forceRoomChange';
+  roomId: string;
+}
+
 export type ServerMessage =
-  WelcomeMessage | WorldStateMessage | PlayerInfoMessage | PlayerDiedMessage | PongMessage;
+  | WelcomeMessage
+  | WorldStateMessage
+  | PlayerInfoMessage
+  | PlayerDiedMessage
+  | PongMessage
+  | AnnouncementMessage
+  | ForceRoomChangeMessage;
 
 /** Codes de fermeture WebSocket applicatifs (plage privée 4000-4999 de la RFC 6455), partagés
  * entre le serveur (net/server.ts, qui ferme la socket avec l'un de ces codes) et le client

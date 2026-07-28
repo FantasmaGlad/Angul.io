@@ -10,6 +10,7 @@ import {
   type Vector2,
 } from '@angulio/shared';
 import type { GameMod } from '../../engine/mod.js';
+import { isGodPlayerId } from '../../engine/godmode.js';
 import type { Entity, PlayerId, PlayerInput } from '../../engine/types.js';
 import type { World } from '../../engine/world.js';
 import { creditMassEatenXp, creditPlayerEatenXp } from '../../engine/xp.js';
@@ -151,7 +152,12 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     return true;
   }
 
+  /** Blob Dieu (§4.5 cahier_des_charges_admin.md) : invincibilité + "manger n'importe quelle
+   * entité" — vérifié ici (seul point de décision d'avantage de masse, utilisé pour l'absorption
+   * ET la répulsion) plutôt que dupliqué à chaque appelant. */
   function hasMassAdvantage(attacker: Entity, target: Entity): boolean {
+    if (isGodPlayerId(target.ownerId)) return false;
+    if (isGodPlayerId(attacker.ownerId)) return true;
     return attacker.mass >= target.mass * (1 + config.eating.massAdvantage);
   }
 
@@ -233,6 +239,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         const state = pieceState(entity);
         state.splitElapsedS += dt;
         state.timeSinceLastEatenS += dt;
+        state.foodEatenThisTick = 0;
 
         const { direction, intensity } = inputVectorOf(entity);
         // Le curseur proche du centre donne un contrôle fin (faible intensité) ; loin, le
@@ -270,15 +277,15 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
       if (a.kind === 'particle' || b.kind === 'particle') {
         const [particle, piece] = a.kind === 'particle' ? [a, b] : [b, a];
         if (piece.mass >= config.eating.minMassToEatFood) {
-          const gainedMass = particle.mass;
-          world.setMass(piece, piece.mass + gainedMass);
-          world.removeEntity(particle.id);
           const state = pieceState(piece);
-          state.timeSinceLastEatenS = 0;
-          // "1 masse mangée = 1xp" (engine/xp.ts) — bénéficie d'un combo actif comme n'importe
-          // quel autre gain d'XP, mais la nourriture ne déclenche/prolonge jamais elle-même le
-          // combo (réservé aux joueurs mangés, voir `handleEatAttempt`).
-          creditMassEatenXp(world, piece.ownerId, gainedMass, performance.now());
+          state.foodEatenThisTick = (state.foodEatenThisTick ?? 0) + particle.mass;
+          if (state.foodEatenThisTick <= 25) {
+            const gainedMass = particle.mass;
+            world.setMass(piece, piece.mass + gainedMass);
+            world.removeEntity(particle.id);
+            state.timeSinceLastEatenS = 0;
+            creditMassEatenXp(world, piece.ownerId, gainedMass, performance.now());
+          }
         }
         return;
       }

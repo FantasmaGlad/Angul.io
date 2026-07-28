@@ -1,5 +1,6 @@
 import { add, scale, type Vector2 } from '@angulio/shared';
 import type { GameMod } from '../../engine/mod.js';
+import { isGodPlayerId } from '../../engine/godmode.js';
 import type { Entity, PlayerId } from '../../engine/types.js';
 import type { World } from '../../engine/world.js';
 import { creditMassEatenXp, creditPlayerEatenXp } from '../../engine/xp.js';
@@ -36,7 +37,15 @@ export function createHardcoreMod(
   /** Identique à `handleEatAttempt` du mod paramétrique (même condition d'avantage de masse),
    * sauf le montant gagné — c'est la seule différence de mécanique de ce mode avec Vanilla. */
   function handleEatAttempt(world: World, attacker: Entity, target: Entity): boolean {
-    if (attacker.mass >= target.mass * (1 + config.eating.massAdvantage)) {
+    // Blob Dieu (§4.5 cahier_des_charges_admin.md) : jamais mangeable, mange toujours — même
+    // exemption que le mod paramétrique sous-jacent (voir `hasMassAdvantage`), dupliquée ici car
+    // Hardcore réimplémente sa propre condition d'avantage de masse (gain x10) plutôt que de
+    // réutiliser celle du mod de base.
+    if (isGodPlayerId(target.ownerId)) return false;
+    const hasAdvantage =
+      isGodPlayerId(attacker.ownerId) ||
+      attacker.mass >= target.mass * (1 + config.eating.massAdvantage);
+    if (hasAdvantage) {
       const gainedMass = target.mass * hardcoreConfig.massGainMultiplier;
       if (attacker.ownerId && target.ownerId) {
         // Écran de mort personnalisé ("Éliminé par : X") — voir World.recordAttacker.

@@ -38,6 +38,7 @@ import {
   renderFrame,
   type Camera,
 } from '../render.js';
+import { RenderEngine } from '../renderEngine.js';
 import {
   loadFpsSliderIndex,
   loadVsyncEnabled,
@@ -86,6 +87,10 @@ interface GameViewProps {
   inviteCodeToShow?: string;
   authToken?: string;
   onExit: (message?: string) => void;
+  /** Transfert forcé par un admin (§3.3 cahier_des_charges_admin.md) — GameView ne rouvre pas la
+   * connexion lui-même (son effet principal ne dépend que du montage, voir plus bas) : l'appelant
+   * (App.tsx) doit remonter ce composant avec un nouveau `roomIdOrInviteCode` (ex. via `key`). */
+  onForceRoomChange?: (roomId: string) => void;
 }
 
 export default function GameView({
@@ -94,10 +99,12 @@ export default function GameView({
   inviteCodeToShow,
   authToken,
   onExit,
+  onForceRoomChange,
 }: GameViewProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const debugOverlayRef = useRef<HTMLPreElement | null>(null);
   const comboBannerRef = useRef<HTMLDivElement | null>(null);
+  const announcementBannerRef = useRef<HTMLDivElement | null>(null);
   const hudRef = useRef<HTMLDivElement | null>(null);
 
   const statNicknameRef = useRef<HTMLSpanElement | null>(null);
@@ -107,6 +114,11 @@ export default function GameView({
   const onExitRef = useRef(onExit);
   useLayoutEffect(() => {
     onExitRef.current = onExit;
+  });
+
+  const onForceRoomChangeRef = useRef(onForceRoomChange);
+  useLayoutEffect(() => {
+    onForceRoomChangeRef.current = onForceRoomChange;
   });
 
   const connectionRef = useRef<GameConnection | null>(null);
@@ -146,6 +158,7 @@ export default function GameView({
     let lastPingMs: number | undefined;
     let lastComboLevel: number | undefined;
     let comboHideTimer: ReturnType<typeof setTimeout> | undefined;
+    let announcementHideTimer: ReturnType<typeof setTimeout> | undefined;
     let justDied = false;
     let isDeadNow = false;
 
@@ -166,6 +179,21 @@ export default function GameView({
       }, 2000);
     }
 
+    /** Annonce admin (§4.6 cahier_des_charges_admin.md, "Diffusion de Messages & Overlays") —
+     * même principe imperatif que `showComboBanner` (pas de re-render React pour un texte affiché
+     * en surimpression pendant la boucle de jeu). */
+    function showAnnouncement(text: string, color: string, durationMs: number): void {
+      const banner = announcementBannerRef.current;
+      if (!banner) return;
+      banner.textContent = text;
+      banner.style.color = color;
+      banner.classList.add('visible');
+      if (announcementHideTimer) clearTimeout(announcementHideTimer);
+      announcementHideTimer = setTimeout(() => {
+        banner.classList.remove('visible');
+      }, durationMs);
+    }
+
     const input = attachInput(canvas);
 
     const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -175,6 +203,8 @@ export default function GameView({
     );
     connectionRef.current = connection;
 
+    const renderEngine = new RenderEngine();
+
     let lastMinimapUpdateAt = 0;
 
     connection.onMessage((message: ServerMessage) => {
@@ -182,6 +212,7 @@ export default function GameView({
         selfPlayerId = message.playerId;
         mapSize = message.mapSize;
         serverTickRateHz = message.tickRateHz;
+        renderEngine.reset();
         setMapSizeState(message.mapSize);
         isDeadNow = false;
         setDeathState(DEFAULT_DEATH_STATE);
@@ -193,6 +224,7 @@ export default function GameView({
         previousSnapshot = latestSnapshot;
         latestSnapshot = message.entities;
         latestSnapshotAt = performance.now();
+        renderEngine.pushSnapshot(message.entities, serverTickRateHz);
         serverTpsCurrent = tickRateTracker.record(latestSnapshotAt);
         if (message.leaderboard) {
           setLeaderboard(message.leaderboard);
@@ -218,6 +250,13 @@ export default function GameView({
         }, 1500);
       } else if (message.type === 'pong') {
         lastPingMs = performance.now() - message.t;
+        // Rapporté au serveur pour affichage dans l'interface admin ("Salons & Écrans") — le
+        // client est seul à mesurer sa propre latence (voir ClientLatencyMessage).
+        connection.send({ type: 'latency', ms: Math.round(lastPingMs) });
+      } else if (message.type === 'announcement') {
+        showAnnouncement(message.text, message.color, message.durationMs);
+      } else if (message.type === 'forceRoomChange') {
+        onForceRoomChangeRef.current?.(message.roomId);
       }
     });
 
@@ -294,10 +333,10 @@ export default function GameView({
     window.addEventListener('keydown', onKeyDown);
 
     let rafId = 0;
+
     function frame(): void {
       const now = performance.now();
-      // Écran de mort personnalisé (cahier des charges fourni) : pas de recalcul canvas lourd
-      // tant que le joueur ne pilote plus rien — ralenti à 10 FPS plutôt que le plafond normal.
+      // Écran de mort personnalisé (cahier des charges fourni)
       const targetIntervalMs = isDeadNow
         ? Math.max(minFrameIntervalMs, DEAD_FRAME_INTERVAL_MS)
         : minFrameIntervalMs;
@@ -305,37 +344,34 @@ export default function GameView({
         rafId = requestAnimationFrame(frame);
         return;
       }
+
+      const frameDt = Math.min(50, lastFrameAt > 0 ? now - lastFrameAt : 16);
       lastFrameAt = now;
 
       const logicStart = performance.now();
-      const t = clamp((now - latestSnapshotAt) / SERVER_STATE_INTERVAL_MS, 0, 1);
-      // Culle AVANT d'interpoler (voir cullEntitiesForViewport, render.ts) : le rayon d'intérêt
-      // réseau envoyé par le serveur est bien plus large que le viewport réellement affiché à
-      // l'écran une fois zoomé — sans ce filtre, `interpolateEntities` alloue un objet par entité
-      // du rayon d'intérêt entier à chaque frame de rendu (jusqu'à 240/s), pas seulement par
-      // entité visible à l'écran. Basé sur `latestCamera` (frame précédente) plutôt que la
-      // caméra recalculée ci-dessous : elle ne bouge pas assez d'une frame à l'autre pour que ça
-      // se voie, et la marge de `cullEntitiesForViewport` couvre l'écart.
-      const culledLatest = cullEntitiesForViewport(
-        latestSnapshot,
+      const entities = renderEngine.getInterpolatedEntities(
+        frameDt,
         latestCamera,
         canvas!.width,
         canvas!.height,
         selfPlayerId,
+        false,
       );
-      const culledPrevious = previousSnapshot
-        ? cullEntitiesForViewport(
-            previousSnapshot,
-            latestCamera,
-            canvas!.width,
-            canvas!.height,
-            selfPlayerId,
-          )
-        : undefined;
-      const entities = interpolateEntities(culledPrevious, culledLatest, t);
 
-      const camera = computeCamera(entities, selfPlayerId, { x: mapSize / 2, y: mapSize / 2 });
-      latestCamera = camera;
+      const targetCamera = computeCamera(entities, selfPlayerId, { x: mapSize / 2, y: mapSize / 2 });
+      const ownForScale = ownAggregate(entities, selfPlayerId);
+      const targetScale = ownForScale
+        ? clamp(BASE_SCALE / Math.sqrt(ownForScale.mass / 50), 0.1, 1.4667)
+        : BASE_SCALE;
+
+      // Suivi de caméra direct et réactif (+ brute)
+      const cameraLerp = 0.35;
+      latestCamera = {
+        x: latestCamera.x + (targetCamera.x - latestCamera.x) * cameraLerp,
+        y: latestCamera.y + (targetCamera.y - latestCamera.y) * cameraLerp,
+        scale: latestCamera.scale + (targetScale - latestCamera.scale) * cameraLerp,
+      };
+      const camera = latestCamera;
       const logicStepMs = performance.now() - logicStart;
 
       const drawStart = performance.now();
@@ -453,6 +489,7 @@ export default function GameView({
     <>
       <canvas ref={canvasRef} id="game" />
       <div className="combo-banner" ref={comboBannerRef} aria-hidden="true" />
+      <div className="announcement-banner" ref={announcementBannerRef} aria-hidden="true" />
       <div className="game-overlay">
         <div className="stats-panel">
           <div className="stat-row">

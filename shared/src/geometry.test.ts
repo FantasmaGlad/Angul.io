@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { circleOverlapArea, massToRadius, PI } from './geometry.js';
 
 describe('massToRadius', () => {
-  it('matches Rayon(m) = √m with the default K_AREA = 3', () => {
-    expect(massToRadius(50)).toBeCloseTo(Math.sqrt(50), 10);
-    expect(massToRadius(100)).toBeCloseTo(10, 10);
+  it('calculates particle radius for mass <= 24 and player blob radius for mass > 24', () => {
     expect(massToRadius(2)).toBeCloseTo(Math.sqrt(2), 10);
+    expect(massToRadius(50)).toBeCloseTo(42, 10);
+    expect(massToRadius(100)).toBeCloseTo(24 + 18 * Math.pow(2, 0.38), 10);
   });
 });
 

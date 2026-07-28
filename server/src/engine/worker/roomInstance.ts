@@ -4,6 +4,9 @@ import { SpatialHash } from '../spatialHash.js';
 import type { PlayerId, PlayerInput } from '../types.js';
 import { buildStateMessage, computeTopScores, SPECTATOR_TICK_DIVISOR } from './snapshotBuilder.js';
 import type {
+  AdminActionResult,
+  AdminPlayerInfo,
+  AdminRoomAction,
   DeathInfo,
   JoinResult,
   LeaveResult,
@@ -43,7 +46,11 @@ export class RoomInstance {
   private readonly deathListeners: Array<(playerId: PlayerId, info: DeathInfo) => void> = [];
   private readonly resetListeners: Array<() => void> = [];
 
-  constructor(spec: RoomSpec, resolveMod: ModResolver, interestRadiusPx: number) {
+  constructor(
+    spec: RoomSpec,
+    private readonly resolveMod: ModResolver,
+    interestRadiusPx: number,
+  ) {
     this.id = spec.id;
     this.maxPlayers = spec.maxPlayers;
     this.interestRadiusPx = interestRadiusPx;
@@ -149,6 +156,76 @@ export class RoomInstance {
 
   input(playerId: PlayerId, input: PlayerInput): void {
     this.room.handleInput(playerId, input);
+  }
+
+  /** Dispatch générique des actions admin (§4.3-4.4 cahier_des_charges_admin.md) — un seul point
+   * d'entrée traversant la frontière worker (voir `RoomHandle.adminAction`, `roomWorker.ts`)
+   * plutôt qu'une méthode par action : ajouter une action ne demande de toucher que ce switch et
+   * `Room`/`BotManager`, jamais le protocole de transport lui-même. */
+  adminAction(action: AdminRoomAction): AdminActionResult {
+    switch (action.kind) {
+      case 'kill':
+        return { ok: this.room.killPlayer(action.playerId) };
+      case 'freeze':
+        this.room.setFrozen(action.playerId, true);
+        return { ok: true };
+      case 'unfreeze':
+        this.room.setFrozen(action.playerId, false);
+        return { ok: true };
+      case 'setMass':
+        return { ok: this.room.setPlayerMass(action.playerId, action.mass) };
+      case 'split':
+        return { ok: this.room.forceSplit(action.playerId) };
+      case 'remerge':
+        return { ok: this.room.forceRemerge(action.playerId) };
+      case 'spawnFood':
+        this.room.spawnFood({ x: action.x, y: action.y }, action.mass);
+        return { ok: true };
+      case 'spawnBot':
+        return { ok: this.room.forceSpawnBot() };
+      case 'clearFood':
+        return { ok: true, count: this.room.clearFood() };
+      case 'clearBots':
+        return { ok: true, count: this.room.clearBots() };
+      case 'reset':
+        this.room.reset();
+        return { ok: true };
+      case 'switchMod': {
+        const { mod, mapSize, kArea, bots } = this.resolveMod(action.modId);
+        this.room.switchMod(mod, { mapSize, kArea, maxPlayers: this.maxPlayers, bots });
+        return { ok: true };
+      }
+      case 'enableGodmode':
+        this.room.addPlayer(action.playerId, action.nickname);
+        return { ok: true };
+      case 'disableGodmode':
+        this.room.removePlayer(action.playerId);
+        return { ok: true };
+      case 'godInput':
+        this.room.handleInput(action.playerId, {
+          target: { x: action.x, y: action.y },
+          intensity: action.intensity,
+          split: action.split,
+        });
+        return { ok: true };
+      default:
+        return { ok: false };
+    }
+  }
+
+  /** Liste des joueurs du salon pour "Salons & Écrans" (§3.3) — masse totale calculée à la
+   * demande (pas maintenue en continu, cette liste n'est consultée qu'au rythme des requêtes
+   * admin, comme `Room.tickMetrics`). */
+  adminListPlayers(): AdminPlayerInfo[] {
+    return this.room.world.allPlayers().map((player) => ({
+      playerId: player.id,
+      nickname: player.nickname,
+      mass: this.room.world
+        .getPiecesByOwner(player.id)
+        .reduce((sum, piece) => sum + piece.mass, 0),
+      isBot: this.room.botManager?.isBot(player.id) ?? false,
+      isFrozen: this.room.isFrozen(player.id),
+    }));
   }
 
   /** Enregistre un destinataire d'état par tick — joueur réel (après un `join` accepté) ou

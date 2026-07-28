@@ -1,6 +1,13 @@
-import type { ServerMessage } from '@angulio/shared';
+import type {
+  AdminActionResult,
+  AdminPlayerInfo,
+  AdminRoomAction,
+  ServerMessage,
+} from '@angulio/shared';
 import type { RoomResetSchedule } from '../resetSchedule.js';
 import type { PlayerId, PlayerInput } from '../types.js';
+
+export type { AdminActionResult, AdminPlayerInfo, AdminRoomAction };
 
 /** Description d'un salon à créer, indépendante de l'hébergement (voir `LocalRoomHost`/
  * `WorkerRoomHost`) — uniquement des valeurs sérialisables (jamais un `GameMod` déjà résolu, qui
@@ -51,6 +58,16 @@ export interface LeaveResult {
   transformedXp: number;
 }
 
+// --- Actions admin (cahier_des_charges_admin.md §4.3-4.4) -------------------------------
+//
+// Traversent la même frontière worker_thread que `input`/`join` ci-dessus (voir
+// `RoomHandle.adminAction`, `RoomInstance.adminAction`, `roomWorker.ts`) — un salon hébergé par un
+// worker (défaut en production, voir index.ts `ROOM_WORKERS`) n'est autrement joignable que par
+// `postMessage`, jamais par accès direct à `Room`/`World` depuis le thread principal.
+// `AdminRoomAction`/`AdminActionResult`/`AdminPlayerInfo` vivent dans `@angulio/shared`
+// (adminProtocol.ts, ré-exportés ci-dessus) : ce sont aussi les types du message WebSocket admin
+// (connectionHandler.ts `?admin=1`), pas seulement du protocole interne worker_threads.
+
 export type JoinResult =
   | {
       ok: true;
@@ -95,12 +112,16 @@ export type RoomCommand =
   | { type: 'input'; roomId: string; playerId: PlayerId; input: PlayerInput }
   | { type: 'joinRequest'; reqId: number; roomId: string; nickname: string; skin?: string }
   | { type: 'respawnRequest'; reqId: number; roomId: string; playerId: PlayerId; nickname: string }
-  | { type: 'leaveRequest'; reqId: number; roomId: string; playerId: PlayerId };
+  | { type: 'leaveRequest'; reqId: number; roomId: string; playerId: PlayerId }
+  | { type: 'adminActionRequest'; reqId: number; roomId: string; action: AdminRoomAction }
+  | { type: 'adminListPlayersRequest'; reqId: number; roomId: string };
 
 export type RoomWorkerEvent =
   | { type: 'joinResponse'; reqId: number; result: JoinResult }
   | { type: 'respawnResponse'; reqId: number; result: RespawnResult }
   | { type: 'leaveResponse'; reqId: number; result: LeaveResult | undefined }
+  | { type: 'adminActionResponse'; reqId: number; result: AdminActionResult }
+  | { type: 'adminListPlayersResponse'; reqId: number; result: AdminPlayerInfo[] }
   | { type: 'tick'; roomId: string; tick: number; payloads: TickPayload[]; stats: RoomStats }
   | { type: 'playerJoin'; roomId: string; event: PlayerJoinEvent }
   | { type: 'playerDeath'; roomId: string; playerId: PlayerId; info: DeathInfo }

@@ -4,6 +4,7 @@ import {
   type LeaderboardEntry,
   type ServerMessage,
 } from '@angulio/shared';
+import { isGodPlayerId } from '../godmode.js';
 import type { Room } from '../room.js';
 import type { SpatialHash } from '../spatialHash.js';
 import type { Entity, PlayerId, PlayerState } from '../types.js';
@@ -25,7 +26,7 @@ export const SPECTATOR_TICK_DIVISOR = 1;
  * id (pas aléatoire à chaque tick) pour qu'une pastille visible reste visible tant qu'elle existe,
  * au lieu de scintiller à chaque nouveau snapshot. Les ids d'entité sont des entiers croissants
  * (voir World.addEntity), donc un simple modulo suffit. */
-export const SPECTATOR_FOOD_SAMPLE_EVERY = 4;
+export const SPECTATOR_FOOD_SAMPLE_EVERY = 12;
 
 export function isVisibleToSpectator(entity: Entity): boolean {
   if (entity.kind !== 'particle') return true;
@@ -42,6 +43,7 @@ export interface TopScoreEntry {
  * socket) — indépendant du destinataire, seul `isSelf` varie par joueur. */
 export function computeTopScores(world: World, players: PlayerState[]): TopScoreEntry[] {
   return players
+    .filter((p) => !isGodPlayerId(p.id)) // Blob Dieu (§4.2 cahier_des_charges_admin.md) : invisible du classement
     .map((p) => {
       let score = 0;
       for (const pieceId of p.pieceIds) {
@@ -122,13 +124,11 @@ export function buildStateMessage(
   for (const piece of ownPieces) visible.set(piece.id, piece);
 
   const ownMass = ownPieces.reduce((sum, p) => sum + p.mass, 0);
-  // Plafonnée à `mapSize` : au-delà, le rayon "couvre" déjà toute la carte donc l'agrandir
-  // encore n'ajoute aucune entité réellement visible — seulement plus de cellules de grille
-  // interrogées et un payload réseau plus lourd pour rien (source des pics observés sur les
-  // très grosses masses).
+  const cameraScale = ownMass > 0 ? Math.max(0.08, 1.2 / Math.sqrt(ownMass / 50)) : 1.2;
+  const requiredViewportRadius = Math.ceil(1500 / cameraScale) + 1000;
   const effectiveRadius =
     ownMass > 0
-      ? Math.min(world.mapSize, Math.round(interestRadiusPx + Math.sqrt(ownMass) * 15))
+      ? Math.min(world.mapSize, Math.max(interestRadiusPx, requiredViewportRadius))
       : interestRadiusPx;
 
   if (isSpectator) {

@@ -144,8 +144,8 @@ export interface RenderFrameResult {
 
 /** Marge (en pixels *monde*) ajoutée autour du viewport pour le culling — évite qu'une entité en
  * bordure d'écran apparaisse/disparaisse brutalement (sans interpolation) au moindre mouvement de
- * caméra ; suffisant pour rester invisible au joueur sans annuler le gain de performance. */
-const CULL_MARGIN_WORLD_PX = 300;
+ * caméra. */
+const CULL_MARGIN_WORLD_PX = 800;
 
 /**
  * Filtre les entités à celles réellement utiles à cette frame (les morceaux du joueur, toujours

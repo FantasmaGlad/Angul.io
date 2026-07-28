@@ -42,7 +42,7 @@ export class BotManager {
     this.room = room;
     this.config = config;
     this.maxRoomCapacity = maxRoomCapacity;
-    this.updateIntervalMs = 1000 / Math.max(0.1, config.updateFrequencyHz || 2);
+    this.updateIntervalMs = 1000 / Math.max(0.1, config.updateFrequencyHz || 30);
   }
 
   /** Recalcule périodiquement le ratio de bots entre 1/10 (10%) et 2/10 (20%) de la capacité du salon pour un nombre fluctuant et non fixe de joueurs. */
@@ -238,5 +238,25 @@ export class BotManager {
 
   get activeBotCount(): number {
     return this.activeBots.size;
+  }
+
+  /** Supprime tous les bots actifs (§4.4 cahier_des_charges_admin.md, "Nettoyage") — même
+   * mécanique que `onReset` (retrait direct de `world`, pas `room.removePlayer`, qui
+   * redéclencherait `adjustPopulation` à chaque itération), mais sans réinitialiser le reste du
+   * salon. Renvoie le nombre de bots retirés (affichage admin). */
+  clearAll(): number {
+    const count = this.activeBots.size;
+    for (const botId of Array.from(this.activeBots.keys())) {
+      this.room.world.removePlayer(botId);
+    }
+    this.activeBots.clear();
+    this.adjustPopulation();
+    return count;
+  }
+
+  /** Force le spawn immédiat d'un bot supplémentaire (§4.4, "Spawner"), au-delà du peuplement
+   * automatique de `adjustPopulation` — un profil aléatoire, comme un spawn naturel. */
+  forceSpawnOne(): void {
+    this.spawnBot();
   }
 }

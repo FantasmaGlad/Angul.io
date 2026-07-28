@@ -1,15 +1,16 @@
 import { useCallback, useState } from 'react';
 import { adminLogin, clearAdminSession, loadAdminSession, saveAdminSession } from './adminApi.js';
-import AccountsView from './components/AccountsView.js';
-import PlaceholderView from './components/PlaceholderView.js';
-import PremiumView from './components/PremiumView.js';
+import CreativeView from './components/CreativeView.js';
+import PlayersView from './components/PlayersView.js';
+import RoomsView from './components/RoomsView.js';
 import Sidebar from './components/Sidebar.js';
 
-export type ViewName = 'dashboard' | 'accounts' | 'moderation' | 'premium' | 'leaderboard';
+export type ViewName = 'joueurs' | 'salons' | 'creatif';
 
 export default function App() {
   const [token, setToken] = useState<string | undefined>(() => loadAdminSession());
-  const [view, setView] = useState<ViewName>('accounts');
+  const [view, setView] = useState<ViewName>('joueurs');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
 
@@ -17,7 +18,7 @@ export default function App() {
     void (async () => {
       setLoginError('');
       try {
-        const newToken = await adminLogin(password);
+        const newToken = await adminLogin(username, password);
         saveAdminSession(newToken);
         setPassword('');
         setToken(newToken);
@@ -25,7 +26,7 @@ export default function App() {
         setLoginError((error as Error).message);
       }
     })();
-  }, [password]);
+  }, [username, password]);
 
   const handleLogout = useCallback(() => {
     clearAdminSession();
@@ -48,7 +49,19 @@ export default function App() {
           </p>
           <input
             className="login-password-input"
+            type="text"
+            autoComplete="username"
+            placeholder="Nom d'utilisateur"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') handleLogin();
+            }}
+          />
+          <input
+            className="login-password-input"
             type="password"
+            autoComplete="current-password"
             placeholder="Mot de passe admin"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
@@ -69,37 +82,9 @@ export default function App() {
     <div className="app-shell">
       <Sidebar view={view} onChangeView={setView} onLogout={handleLogout} />
       <main className="main-content">
-        {view === 'dashboard' && (
-          <PlaceholderView
-            title="Dashboard"
-            subtitle="Vue d'ensemble en temps réel des salons et joueurs actifs."
-          >
-            Nécessite un endpoint admin exposant les salons actifs (y compris privés) et le nombre
-            de joueurs connectés, qui n'existe pas encore côté serveur (voir
-            cahier_des_charges_ui_ux.md §10).
-          </PlaceholderView>
-        )}
-        {view === 'accounts' && <AccountsView token={token} onAuthError={handleAuthError} />}
-        {view === 'moderation' && (
-          <PlaceholderView
-            title="Modération"
-            subtitle="Historique des bannissements et corrections manuelles."
-          >
-            Les bannissements et corrections restent possibles dès aujourd'hui depuis "Comptes",
-            mais leur historique n'est pas encore tracé côté serveur (voir
-            cahier_des_charges_ui_ux.md §10).
-          </PlaceholderView>
-        )}
-        {view === 'premium' && <PremiumView token={token} onAuthError={handleAuthError} />}
-        {view === 'leaderboard' && (
-          <PlaceholderView
-            title="Classements"
-            subtitle="Vue de gestion des classements, correction des scores contestés."
-          >
-            Nécessite un endpoint d'agrégation des meilleurs scores tous comptes confondus, qui
-            n'existe pas encore côté serveur (voir cahier_des_charges_ui_ux.md §10).
-          </PlaceholderView>
-        )}
+        {view === 'joueurs' && <PlayersView token={token} onAuthError={handleAuthError} />}
+        {view === 'salons' && <RoomsView token={token} onAuthError={handleAuthError} />}
+        {view === 'creatif' && <CreativeView token={token} onAuthError={handleAuthError} />}
       </main>
     </div>
   );

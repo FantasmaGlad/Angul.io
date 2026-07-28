@@ -8,7 +8,8 @@ import {
   AccountsRepository,
   PseudoTakenError,
   type AccountRow,
-  type AdminAccountPatch,
+  type AdminAccountPatch as RepoAdminAccountPatch,
+  type AdminSearchParams,
   type DeathScreenPatch,
 } from './accountsRepository.js';
 import { hashPassword, verifyPassword } from './passwords.js';
@@ -46,9 +47,10 @@ export interface AccountProfile {
   deathBannerId: string;
 }
 
-/** Vue d'un compte destinée à l'interface admin (Lot 5.2-5.4) — inclut `id` (nécessaire pour
- * cibler les endpoints admin) et `banned`, jamais exposés au profil joueur lui-même
- * (`AccountProfile`) ; n'expose jamais `passwordHash`. */
+/** Vue d'un compte destinée à l'interface admin (cahier_des_charges_admin.md §3.1-3.2) — inclut
+ * `id` (nécessaire pour cibler les endpoints admin), `banned`, IP/dates de connexion et temps de
+ * jeu (recherche/tri §3.1), jamais exposés au profil joueur lui-même (`AccountProfile`) ; n'expose
+ * jamais `passwordHash`. */
 export interface AdminAccountView {
   id: number;
   pseudo: string;
@@ -57,11 +59,58 @@ export interface AdminAccountView {
   premium: boolean;
   cosmetics: string[];
   banned: boolean;
+  avatarColor?: string;
+  deathMessage: string;
+  deathBannerId: string;
+  createdAt: string;
+  lastLoginAt?: string;
+  lastIp?: string;
+  totalPlaytimeSec: number;
+  /** Absent d'une réponse `updateAccountForAdmin` (pas requêté, changerait rarement suite à une
+   * simple correction de profil) — toujours présent depuis `searchAccountsForAdmin`/
+   * `getAccountForAdmin`. */
+  bestScore?: number;
 }
 
-/** Vue admin détaillée d'un compte, avec ses meilleurs scores (Lot 5.2, "consultation"). */
+/** Vue admin détaillée d'un compte, avec ses meilleurs scores (§3.2, "consultation"). */
 export interface AdminAccountDetail extends AdminAccountView {
   bestScores: BestScore[];
+}
+
+/** Correction manuelle admin (§3.2) — `newPassword` est en clair ici uniquement en transit
+ * process (jamais écrit sur disque/log) : haché par `updateAccountForAdmin` avant tout appel au
+ * repository, qui ne connaît que des hash (voir `RepoAdminAccountPatch.passwordHash`). */
+export interface AdminAccountPatch {
+  pseudo?: string;
+  level?: number;
+  xp?: number;
+  premium?: boolean;
+  cosmetics?: string[];
+  banned?: boolean;
+  avatarColor?: string;
+  deathMessage?: string;
+  deathBannerId?: string;
+  newPassword?: string;
+}
+
+export interface AdminSearchQuery {
+  q?: string;
+  ip?: string;
+  premium?: boolean;
+  banned?: boolean;
+  minLevel?: number;
+  maxLevel?: number;
+  minXp?: number;
+  maxXp?: number;
+  sortBy?: AdminSearchParams['sortBy'];
+  sortDir?: 'asc' | 'desc';
+  limit?: number;
+  offset?: number;
+}
+
+export interface AdminSearchResponse {
+  rows: AdminAccountView[];
+  total: number;
 }
 
 /** Erreur "attendue" (pseudo pris, identifiants invalides, validation) — distincte d'une erreur
@@ -158,6 +207,19 @@ export class AccountsService {
     return this.getProfile(accountId);
   }
 
+  /** IP + horodatage de connexion (§3.1, recherche/tri admin) — appelé au join réussi (voir
+   * connectionHandler.ts), ne doit jamais faire échouer la connexion elle-même (voir l'appelant,
+   * qui n'attend pas cette promesse). */
+  async recordLogin(accountId: number, ip: string | undefined): Promise<void> {
+    await this.repository.recordLogin(accountId, ip);
+  }
+
+  /** Cumule le temps de jeu total (§3.1) — appelé à la déconnexion avec la durée de la session en
+   * secondes (voir connectionHandler.ts). */
+  async addPlaytime(accountId: number, seconds: number): Promise<void> {
+    await this.repository.addPlaytime(accountId, seconds);
+  }
+
   /** Carte d'écran de mort à diffuser au moment où le joueur meurt (voir broadcast.ts) — lecture
    * dédiée, plus légère que `getProfile` (pas de requête `bestScores`) puisqu'elle est appelée à
    * chaque mort, pas seulement à l'ouverture de la page Profil. `undefined` pour un compte
@@ -221,35 +283,61 @@ export class AccountsService {
     return account?.premium ?? false;
   }
 
-  // --- Interface admin (Lot 5.2-5.4) --------------------------------------------------------
+  // --- Interface admin (cahier_des_charges_admin.md §3.1-3.2) --------------------------------
 
-  /** `query` vide liste les premiers comptes par ordre alphabétique (voir
-   * `AccountsRepository.searchByPseudo`) — pratique pour parcourir la base depuis l'admin. */
-  async searchAccountsForAdmin(query: string): Promise<AdminAccountView[]> {
-    const rows = await this.repository.searchByPseudo(query);
-    return rows.map(toAdminView);
+  /** Recherche/filtrage/tri paginé (§3.1) — voir `AccountsRepository.searchAdmin`. */
+  async searchAccountsForAdmin(query: AdminSearchQuery): Promise<AdminSearchResponse> {
+    const { rows, total } = await this.repository.searchAdmin(query as AdminSearchParams);
+    return { rows: rows.map((row) => ({ ...toAdminView(row), bestScore: row.bestScore })), total };
   }
 
   async getAccountForAdmin(accountId: number): Promise<AdminAccountDetail | undefined> {
     const account = await this.repository.findById(accountId);
     if (!account) return undefined;
     const bestScores = await this.repository.getBestScores(accountId);
-    return { ...toAdminView(account), bestScores };
+    const bestScore = bestScores.reduce((max, s) => Math.max(max, s.bestScore), 0);
+    return { ...toAdminView(account), bestScore, bestScores };
   }
 
-  /** Correction manuelle admin (Lot 5.2 bannissement, 5.3 XP/niveau, 5.4 cosmétiques/Premium) —
-   * une seule route pour les quatre, le patch ne contient que les champs à modifier. Bannir
-   * révoque immédiatement les sessions actives du compte (voir `SessionStore`) : sans ça, un
-   * joueur banni resterait connecté jusqu'à sa prochaine reconnexion. */
+  /** Correction manuelle admin (§3.2 : pseudo, bannissement, XP/niveau, cosmétiques,
+   * Premium, couleur d'avatar, écran de mort, réinitialisation de mot de passe) — une seule
+   * route pour tous ces champs, le patch ne contient que ceux à modifier. Bannir révoque
+   * immédiatement les sessions actives du compte (voir `SessionStore`) : sans ça, un joueur banni
+   * resterait connecté jusqu'à sa prochaine reconnexion. Un changement de mot de passe révoque de
+   * la même façon ses sessions actives (cohérent avec un changement de mot de passe volontaire). */
   async updateAccountForAdmin(
     accountId: number,
     patch: AdminAccountPatch,
   ): Promise<AdminAccountView | undefined> {
     validateAdminPatch(patch);
-    const updated = await this.repository.adminUpdateAccount(accountId, patch);
-    if (!updated) return undefined;
-    if (patch.banned === true) this.sessions.revokeSessionsForAccount(accountId);
-    return toAdminView(updated);
+    const repoPatch: RepoAdminAccountPatch = {
+      pseudo: patch.pseudo,
+      level: patch.level,
+      xp: patch.xp,
+      premium: patch.premium,
+      cosmetics: patch.cosmetics,
+      banned: patch.banned,
+      avatarColor: patch.avatarColor,
+      deathMessage: patch.deathMessage,
+      deathBannerId: patch.deathBannerId,
+      passwordHash: patch.newPassword ? await hashPassword(patch.newPassword) : undefined,
+    };
+    try {
+      const updated = await this.repository.adminUpdateAccount(accountId, repoPatch);
+      if (!updated) return undefined;
+      if (patch.banned === true || patch.newPassword) {
+        this.sessions.revokeSessionsForAccount(accountId);
+      }
+      return toAdminView(updated);
+    } catch (error) {
+      if (error instanceof PseudoTakenError) throw new AccountError(error.message);
+      throw error;
+    }
+  }
+
+  /** Réinitialise le meilleur score d'un mode (ou de tous les modes si omis) — §3.2. */
+  async resetBestScoreForAdmin(accountId: number, modeId?: string): Promise<void> {
+    await this.repository.resetBestScore(accountId, modeId);
   }
 }
 
@@ -262,6 +350,13 @@ function toAdminView(account: AccountRow): AdminAccountView {
     premium: account.premium,
     cosmetics: account.cosmetics,
     banned: account.banned,
+    avatarColor: account.avatarColor ?? undefined,
+    deathMessage: account.deathMessage,
+    deathBannerId: account.deathBannerId,
+    createdAt: account.createdAt,
+    lastLoginAt: account.lastLoginAt ?? undefined,
+    lastIp: account.lastIp ?? undefined,
+    totalPlaytimeSec: account.totalPlaytimeSec,
   };
 }
 
@@ -270,6 +365,8 @@ function toAdminView(account: AccountRow): AdminAccountView {
  * (pas de vraie règle métier derrière) — juste de quoi empêcher une valeur absurde tapée par
  * erreur dans le formulaire admin (ex. XP négatif) de corrompre durablement un compte. */
 function validateAdminPatch(patch: AdminAccountPatch): void {
+  if (patch.pseudo !== undefined) validatePseudo(patch.pseudo);
+  if (patch.newPassword !== undefined) validatePassword(patch.newPassword);
   if (patch.level !== undefined && (!Number.isInteger(patch.level) || patch.level < 1)) {
     throw new AccountError('Le niveau doit être un entier positif.');
   }

@@ -3,13 +3,22 @@ import type { AccountsService } from '../../accounts/service.js';
 import type { AdminAuth } from '../../admin/adminAuth.js';
 import type { RoomManager } from '../../engine/roomManager.js';
 import type { RateLimiter } from '../rateLimiter.js';
+import type { RoomRuntime } from '../ws/broadcast.js';
 import {
   handleAdminGetPlayer,
   handleAdminLogin,
   handleAdminLogout,
+  handleAdminResetBestScore,
   handleAdminSearchPlayers,
   handleAdminUpdatePlayer,
 } from './routes/admin.js';
+import {
+  handleAdminBroadcast,
+  handleAdminKick,
+  handleAdminListRooms,
+  handleAdminRoomAction,
+  handleAdminTransfer,
+} from './routes/adminRooms.js';
 import { handleAdminHealth } from './routes/health.js';
 import {
   handleGetProfile,
@@ -36,6 +45,7 @@ export async function handleHttpRequest(
   authRateLimiter: RateLimiter,
   adminRateLimiter: RateLimiter,
   deathScreenRateLimiter: RateLimiter,
+  runtimes: Map<string, RoomRuntime>,
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
@@ -120,6 +130,49 @@ export async function handleHttpRequest(
   }
   if (adminPlayerMatch && req.method === 'PATCH') {
     await handleAdminUpdatePlayer(accounts, admin, Number(adminPlayerMatch[1]), req, res);
+    return;
+  }
+
+  const adminResetBestScoreMatch = /^\/api\/admin\/players\/(\d+)\/reset-best-score$/.exec(
+    url.pathname,
+  );
+  if (adminResetBestScoreMatch && req.method === 'POST') {
+    await handleAdminResetBestScore(accounts, admin, Number(adminResetBestScoreMatch[1]), req, res);
+    return;
+  }
+
+  if (url.pathname === '/api/admin/rooms' && req.method === 'GET') {
+    await handleAdminListRooms(roomManager, runtimes, admin, req, res);
+    return;
+  }
+
+  if (url.pathname === '/api/admin/broadcast' && req.method === 'POST') {
+    await handleAdminBroadcast(runtimes, admin, req, res);
+    return;
+  }
+
+  const adminRoomActionMatch = /^\/api\/admin\/rooms\/([^/]+)\/action$/.exec(url.pathname);
+  if (adminRoomActionMatch && req.method === 'POST') {
+    await handleAdminRoomAction(roomManager, admin, decodeURIComponent(adminRoomActionMatch[1]!), req, res);
+    return;
+  }
+
+  const adminKickMatch = /^\/api\/admin\/rooms\/([^/]+)\/kick$/.exec(url.pathname);
+  if (adminKickMatch && req.method === 'POST') {
+    await handleAdminKick(runtimes, admin, decodeURIComponent(adminKickMatch[1]!), req, res);
+    return;
+  }
+
+  const adminTransferMatch = /^\/api\/admin\/rooms\/([^/]+)\/transfer$/.exec(url.pathname);
+  if (adminTransferMatch && req.method === 'POST') {
+    await handleAdminTransfer(
+      roomManager,
+      runtimes,
+      admin,
+      decodeURIComponent(adminTransferMatch[1]!),
+      req,
+      res,
+    );
     return;
   }
 
