@@ -15,7 +15,7 @@ export function massToRadius(mass: number, kArea: number = PI): number {
   if (mass <= 24) {
     return Math.sqrt(mass);
   }
-  return 24 + 18 * Math.pow(mass / 50, 0.38);
+  return 48 + 36 * Math.pow(mass / 50, 0.38);
 }
 
 /**

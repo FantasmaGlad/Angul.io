@@ -87,16 +87,16 @@ export default function SpectatorBackground({ roomId, zooming }: SpectatorBackgr
   const [isSwitching, setIsSwitching] = useState(false);
 
   useEffect(() => {
-    if (!roomId) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
+    const targetRoomId = roomId || '1';
     setIsSwitching(true);
 
     let connection: GameConnection | undefined;
     const timeoutId = window.setTimeout(() => {
       const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
       connection = new GameConnection(
-        `${wsProtocol}://${location.host}/?roomId=${encodeURIComponent(roomId)}&spectate=1`,
+        `${wsProtocol}://${location.host}/?roomId=${encodeURIComponent(targetRoomId)}&spectate=1`,
       );
       connection.onClose(() => {
         setIsSwitching(false);

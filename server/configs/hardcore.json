@@ -6,8 +6,8 @@
     "minSplitMass": 100
   },
   "physics": {
-    "v0": 700,
-    "speedMultiplier": 0.75,
+    "v0": 245,
+    "speedMultiplier": 1.5,
     "speedMassExponent": 0.10,
     "velocityFloor": 20,
     "accelerationBase": 4500,

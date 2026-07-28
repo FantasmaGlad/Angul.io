@@ -30,15 +30,19 @@ export default function TopNav({ accountActive, pseudo, level, avatarColor }: To
 
       <nav className="top-nav-links">
         <button type="button" onClick={() => window.open('/classement', '_blank')}>
+          <span className="material-symbols-outlined nav-icon" style={{ fontSize: '18px', verticalAlign: 'middle', marginRight: '4px' }}>leaderboard</span>
           Classement
         </button>
         <button type="button" onClick={() => window.open('/wiki', '_blank')}>
+          <span className="material-symbols-outlined nav-icon" style={{ fontSize: '18px', verticalAlign: 'middle', marginRight: '4px' }}>help_outline</span>
           Wiki
         </button>
         <button type="button" onClick={() => window.open('/a-propos', '_blank')}>
+          <span className="material-symbols-outlined nav-icon" style={{ fontSize: '18px', verticalAlign: 'middle', marginRight: '4px' }}>info</span>
           À Propos
         </button>
         <button type="button" onClick={() => window.open('/parametres', '_blank')}>
+          <span className="material-symbols-outlined nav-icon" style={{ fontSize: '18px', verticalAlign: 'middle', marginRight: '4px' }}>settings</span>
           Réglages
         </button>
       </nav>

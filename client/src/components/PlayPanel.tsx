@@ -48,6 +48,7 @@ export default function PlayPanel({
         </label>
 
         <button className="play-button-main" type="button" onClick={onPlay}>
+          <span className="material-symbols-outlined" style={{ fontSize: '22px', verticalAlign: 'middle', marginRight: '6px' }}>sports_esports</span>
           JOUER MAINTENANT
         </button>
         {homeError && <p className="error-text">{homeError}</p>}

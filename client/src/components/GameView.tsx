@@ -361,7 +361,7 @@ export default function GameView({
       const targetCamera = computeCamera(entities, selfPlayerId, { x: mapSize / 2, y: mapSize / 2 });
       const ownForScale = ownAggregate(entities, selfPlayerId);
       const targetScale = ownForScale
-        ? clamp(BASE_SCALE / Math.sqrt(ownForScale.mass / 50), 0.1, 1.4667)
+        ? clamp(BASE_SCALE / Math.sqrt(ownForScale.mass / 50), 0.1, 2.2)
         : BASE_SCALE;
 
       // Suivi de caméra direct et réactif (+ brute)
