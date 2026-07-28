@@ -80,6 +80,23 @@ describe('createParametricMod — onTick (vitesse/accélération)', () => {
     expect(piece.velocity.x).toBeCloseTo(velocityForMass(50, config) * 0.5, 5);
   });
 
+  it('applique une zone morte autour de la cible (évite le tremblotement de direction sur un vecteur quasi nul)', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    const piece = world.spawnPiece('p1', { x: 500, y: 500 }, 50);
+
+    // Cible à moins de 3px (zone morte) : intensité effective nulle malgré intensity=1, donc
+    // aucune force de pilotage — la vitesse reste nulle plutôt que d'osciller vers une direction
+    // instable (offset quasi nul).
+    mod.onPlayerInput?.(world, 'p1', { target: { x: 501, y: 500 }, intensity: 1, split: false });
+    mod.onTick?.(world, 1);
+
+    expect(piece.velocity.x).toBeCloseTo(0, 6);
+    expect(piece.velocity.y).toBeCloseTo(0, 6);
+  });
+
   it('applique la decay passive', () => {
     const config = testConfig();
     const mod = createParametricMod(config);

@@ -67,6 +67,12 @@ interface InputSample {
 /** Fenêtre de journal conservée (ms) — doit largement couvrir la pire latence réaliste (RTT +
  * marge de traitement serveur) ; au-delà, un échantillon ne sera de toute façon jamais rejoué. */
 const HISTORY_WINDOW_MS = 600;
+/** Doit rester identique à `TARGET_DEAD_ZONE_PX` (server/src/mods/parametric/index.ts) — voir
+ * `integrate()`. Élimine l'instabilité de normalisation d'un vecteur quasi nul (`offset` de la
+ * position vers la cible) : c'était le tremblotement visible du blob du joueur (absent des
+ * robots/joueurs distants, toujours lissés par l'interpolation, jamais par un recalcul brut à
+ * chaque frame de rendu comme ici). */
+const TARGET_DEAD_ZONE_PX = 3;
 /** Repli si aucune mesure de latence n'est encore disponible (avant le premier `pong`, voir
  * GameView.tsx) — plutôt conservateur (rejoue peu) qu'agressif (rejouerait trop et re-créerait de
  * l'avance non ancrée). */
@@ -154,10 +160,13 @@ export class LocalPrediction {
   ): void {
     const offset = sub(target, piece.position);
     const dist = length(offset);
+    // Zone morte : voir TARGET_DEAD_ZONE_PX et son homologue serveur (inputVectorOf,
+    // mods/parametric/index.ts) — intensité effective nulle, direction sans importance.
     const direction = dist > 0 ? scale(offset, 1 / dist) : { x: 1, y: 0 };
+    const effectiveIntensity = dist < TARGET_DEAD_ZONE_PX ? 0 : intensity;
 
-    const targetVelocity = scale(direction, velocityForMass(piece.mass, movement) * intensity);
-    const maxChange = accelerationForMass(piece.mass, movement) * intensity * dtSeconds;
+    const targetVelocity = scale(direction, velocityForMass(piece.mass, movement) * effectiveIntensity);
+    const maxChange = accelerationForMass(piece.mass, movement) * effectiveIntensity * dtSeconds;
     piece.velocity = moveToward(piece.velocity, targetVelocity, maxChange);
     piece.position = add(piece.position, scale(piece.velocity, dtSeconds));
   }

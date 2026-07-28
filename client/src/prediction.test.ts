@@ -87,6 +87,24 @@ describe('LocalPrediction — réconciliation par rejeu', () => {
     expect(entity!.x).toBeCloseTo(25, 5);
   });
 
+  it("n'applique aucune force dans la zone morte autour de la cible (évite le tremblotement)", () => {
+    const prediction = new LocalPrediction();
+    const nowSpy = vi.spyOn(performance, 'now');
+
+    nowSpy.mockReturnValueOnce(0);
+    prediction.reconcile([ownSnapshot('1', 0, 0)], 'self', MOVEMENT, 0);
+
+    // Cible à 1px (< TARGET_DEAD_ZONE_PX) : intensité effective nulle malgré intensity=1, donc la
+    // vitesse (nulle au départ) ne bouge pas — pas de direction instable calculée sur ce vecteur
+    // quasi nul.
+    nowSpy.mockReturnValueOnce(16);
+    prediction.step(0.016, { x: 1, y: 0 }, 1, MOVEMENT);
+
+    const [entity] = prediction.applyTo([ownSnapshot('1', 999, 999)], 'self');
+    expect(entity!.x).toBeCloseTo(0, 6);
+    expect(entity!.y).toBeCloseTo(0, 6);
+  });
+
   it('amorce directement un morceau inconnu (premier state de la vie, ou apparu ce tick)', () => {
     const prediction = new LocalPrediction();
     const nowSpy = vi.spyOn(performance, 'now');

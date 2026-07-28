@@ -29,6 +29,10 @@ import {
 import { pieceState } from './pieceState.js';
 
 const FALLBACK_DIRECTION: Vector2 = { x: 1, y: 0 };
+/** Rayon (px monde) autour de la cible du curseur en-deçà duquel `inputVectorOf` n'applique plus
+ * aucune force de pilotage — voir son commentaire (élimine l'instabilité de normalisation d'un
+ * vecteur quasi nul, seule vraiment visible via la prédiction locale du client). */
+const TARGET_DEAD_ZONE_PX = 3;
 
 /**
  * Construit un mode de jeu entièrement défini par `config` (voir config.ts). Aucune règle de
@@ -110,7 +114,18 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     const state = pieceState(piece);
     const offset = sub(state.inputTarget, piece.position);
     const dist = length(offset);
-    if (dist === 0) return { direction: FALLBACK_DIRECTION, intensity: state.inputIntensity };
+    // Zone morte autour de la cible : en-deçà, normaliser `offset` diviserait par un nombre
+    // proche de zéro — un bruit de position infime (arrondi flottant, un pixel de souris) produit
+    // alors une direction qui peut faire des allers-retours complets d'une frame à l'autre. Le
+    // serveur ne l'expose jamais visuellement à lui seul (dilué dans l'interpolation entre deux
+    // ticks, voir renderEngine.ts), mais la prédiction locale du client (prediction.ts, qui
+    // rejoue ce même calcul à chaque frame de rendu, jusqu'à 240 fois/seconde) l'expose telle
+    // quelle — c'était le tremblotement visible du blob du joueur, absent des robots/joueurs
+    // distants (toujours lissés par l'interpolation). Intensité à 0 (pas juste une direction de
+    // repli) : la vitesse cible devient nulle quelle que soit `direction`, donc AUCUNE force n'est
+    // appliquée tant que le morceau reste dans cette zone — il ralentit/dérive naturellement au
+    // lieu d'osciller, un comportement stable par construction.
+    if (dist < TARGET_DEAD_ZONE_PX) return { direction: FALLBACK_DIRECTION, intensity: 0 };
     return { direction: scale(offset, 1 / dist), intensity: state.inputIntensity };
   }
 
