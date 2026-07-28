@@ -219,6 +219,15 @@ export default function App() {
     );
   }
 
+  const [guestSkin] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('angulio.guestSkin');
+      if (saved) return saved;
+    } catch {}
+    return getRandomSkin();
+  });
+  const effectiveAvatarColor = avatarColor ?? guestSkin;
+
   const knownSubPaths = [
     '/compte',
     '/profil',
@@ -234,7 +243,11 @@ export default function App() {
           <AccountPage authSession={authSession} onAuthChange={setAuthSession} />
         )}
         {path === '/profil' && (
-          <ProfilePage authToken={authSession?.token} onAvatarColorChange={setAvatarColor} />
+          <ProfilePage
+            authToken={authSession?.token}
+            onAvatarColorChange={setAvatarColor}
+            currentSkin={effectiveAvatarColor}
+          />
         )}
         {path === '/parametres' && <SettingsPage />}
         {path === '/classement' && <LeaderboardPage />}
@@ -243,9 +256,6 @@ export default function App() {
       </Suspense>
     );
   }
-
-  const [guestSkin] = useState<string>(() => getRandomSkin());
-  const effectiveAvatarColor = avatarColor ?? guestSkin;
 
   return (
     <>

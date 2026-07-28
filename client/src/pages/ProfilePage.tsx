@@ -18,19 +18,12 @@ import { navigate } from '../router.js';
 import PageLayout from './PageLayout.js';
 
 interface ProfilePageProps {
-  /** Absent pour un visiteur sans compte : la page reste accessible (réglages FPS, demande
-   * utilisateur) mais les sections liées au compte (niveau/XP/avatar/écran de mort/scores) sont
-   * remplacées par une invitation à se connecter plutôt que de rediriger toute la page vers
-   * `/compte` comme avant. */
   authToken: string | undefined;
-  /** Notifie App.tsx du changement (refonte UI/UX, avatar procédural) pour que le badge de
-   * TopNav.tsx reflète la nouvelle couleur sans attendre un rechargement de page. */
   onAvatarColorChange: (color: string) => void;
+  currentSkin?: string;
 }
 
-/** Profil (sous-page dédiée, refonte UI/UX — remplace l'ancien `ProfileModal.tsx`, qui
- * s'affichait par-dessus le panneau Compte au lieu d'avoir sa propre URL). */
-export default function ProfilePage({ authToken, onAvatarColorChange }: ProfilePageProps) {
+export default function ProfilePage({ authToken, onAvatarColorChange, currentSkin }: ProfilePageProps) {
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [error, setError] = useState('');
   const [savingColor, setSavingColor] = useState<string | null>(null);
@@ -60,22 +53,26 @@ export default function ProfilePage({ authToken, onAvatarColorChange }: ProfileP
     };
   }, [authToken]);
 
-  // Brouillon initialisé une fois le profil chargé (fetch async) — modifiable librement avant
-  // "Enregistrer les modifications", sans écrire à chaque frappe (cahier des charges fourni).
   useEffect(() => {
     if (!profile) return;
     setDeathMessageDraft(profile.deathMessage);
     setDeathBannerDraft(profile.deathBannerId);
   }, [profile]);
 
+  const activeSkin = profile?.avatarColor ?? currentSkin ?? 'Banane';
+
   const handlePickColor = (color: string): void => {
+    onAvatarColorChange(color);
+    try {
+      localStorage.setItem('angulio.guestSkin', color);
+    } catch {}
+
     if (!authToken || color === profile?.avatarColor) return;
     setSavingColor(color);
     void (async () => {
       try {
         const updated = await updateAvatarColor(authToken, color);
         setProfile(updated);
-        onAvatarColorChange(color);
         setError('');
       } catch (err) {
         setError((err as Error).message);
@@ -109,47 +106,55 @@ export default function ProfilePage({ authToken, onAvatarColorChange }: ProfileP
     <PageLayout title="Profil">
       {error && <p className="error-text">{error}</p>}
 
-      {/* Toujours visible, avec ou sans compte (demande utilisateur) : un réglage local à
-          l'appareil, pas une donnée de compte — voir aussi SettingsPage.tsx, même composant. */}
+      <section className="lobby-section">
+        <span className="section-title">Choix du Skin d'Avatar</span>
+        <div className="avatar-swatch-grid">
+          {SKINS.map((skin) => (
+            <button
+              key={skin}
+              type="button"
+              className={`avatar-swatch${activeSkin === skin ? ' selected' : ''}`}
+              disabled={savingColor !== null}
+              aria-label={`Choisir le skin ${skin}`}
+              onClick={() => handlePickColor(skin)}
+            >
+              <img src={SKIN_IMAGE_MAP[skin]} alt={skin} className="avatar-skin-img" />
+              <span className="avatar-skin-name">{skin}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
       <FpsModeSelector />
 
       {!authToken && (
         <section className="lobby-section">
-          <span className="section-title">Compte</span>
+          <span className="section-title">Compte Invité</span>
           <p className="account-status">
-            Connecte-toi pour voir ton niveau, personnaliser ton avatar et ton écran de mort, et
-            suivre tes meilleurs scores.
+            Tu joues actuellement en tant qu'invité. Ton skin sélectionné est actif pour tes prochaines parties. Connecte-toi pour enregistrer tes scores et personnaliser ton écran de mort !
           </p>
           <button
             className="btn-primary-action"
             type="button"
             onClick={() => navigate('/compte')}
           >
-            Se connecter
+            Se connecter / S'inscrire
           </button>
         </section>
       )}
 
       {profile && (
         <>
-          <p className="account-status">{profile.pseudo}</p>
-
           <section className="lobby-section">
-            <span className="section-title">Skin d'avatar (blob en jeu)</span>
-            <div className="avatar-swatch-grid">
-              {SKINS.map((skin) => (
-                <button
-                  key={skin}
-                  type="button"
-                  className={`avatar-swatch${profile.avatarColor === skin ? ' selected' : ''}`}
-                  disabled={savingColor !== null}
-                  aria-label={`Choisir le skin ${skin}`}
-                  onClick={() => handlePickColor(skin)}
-                >
-                  <img src={SKIN_IMAGE_MAP[skin]} alt={skin} className="avatar-skin-img" />
-                  <span className="avatar-skin-name">{skin}</span>
-                </button>
-              ))}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <span className="section-title">Joueur : {profile.pseudo}</span>
+              <button
+                className="btn-ghost"
+                type="button"
+                onClick={() => navigate('/compte')}
+              >
+                Gérer le compte / Déconnexion
+              </button>
             </div>
           </section>
 

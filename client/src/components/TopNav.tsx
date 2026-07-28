@@ -46,8 +46,8 @@ export default function TopNav({ accountActive, pseudo, level, avatarColor }: To
       <button
         type="button"
         className="account-cluster"
-        onClick={() => navigate(accountActive ? '/profil' : '/compte')}
-        aria-label={accountActive ? `Compte : ${pseudo}` : 'Se connecter'}
+        onClick={() => navigate('/profil')}
+        aria-label={accountActive ? `Profil : ${pseudo}` : 'Profil et skins'}
       >
         <span className="account-avatar-badge" aria-hidden="true">
           {skinUrl ? (

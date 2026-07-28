@@ -423,5 +423,5 @@ export function colorFor(
   if (name) {
     return skinForNickname(name);
   }
-  return 'Banane';
+  return skinForNickname(entity.p);
 }

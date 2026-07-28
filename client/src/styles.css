@@ -60,7 +60,15 @@ canvas {
 /* Le canvas de jeu reste transparent (`clearRect`, render.ts) ; son fond CSS passe par
    `--game-bg`, un token dédié plutôt que `--bg` directement — au cas où le jeu et le chrome
    doivent un jour à nouveau diverger (ç'a été le cas un temps avec un chrome sombre). */
-#game,
+#game {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 0;
+  background: var(--game-bg);
+}
+
 .spectator-background {
   background: var(--game-bg);
 }

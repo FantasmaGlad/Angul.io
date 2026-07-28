@@ -4,6 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import { GameConnection } from '../net.js';
 import { cullEntitiesForViewport, interpolateEntities, renderFrame, type Camera } from '../render.js';
 
+import {
+  loadFpsSliderIndex,
+  loadVsyncEnabled,
+  minFrameIntervalMs as computeMinFrameIntervalMs,
+} from '../settings.js';
+
 /** Même cadence que le tick serveur par défaut (voir Room) — sert de base à l'interpolation
  * d'affichage, comme dans GameView.tsx. */
 const SERVER_STATE_INTERVAL_MS = 50;
@@ -13,19 +19,9 @@ const SERVER_STATE_INTERVAL_MS = 50;
  * nouveau `Map()` alloué à chaque frame (~60/s). */
 const NO_NICKNAMES = new Map<string, string>();
 
-/** Un fond décoratif n'a pas besoin de suivre le taux de rafraîchissement réel de l'écran (jusqu'à
- * 240Hz+) : ça ne change rien à ce que l'œil perçoit pour une simple ambiance en arrière-plan,
- * mais ça multiplie le travail CPU pour rien — surtout une fois multiplié par le nombre de
- * visiteurs de l'accueil ayant chacun ce rendu qui tourne en continu (source de lag observée dès
- * l'écran d'accueil, voir aussi la gestion d'intérêt spectateur dans broadcast.ts côté serveur). */
-const BACKGROUND_FRAME_INTERVAL_MS = 1000 / 30;
-
-/** Délai avant d'ouvrir la nouvelle connexion spectateur après un changement de `roomId` — si
- * l'utilisateur re-clique sur un autre mode avant l'écoulement de ce délai, l'effet précédent est
- * nettoyé (voir cleanup ci-dessous) et aucune connexion n'est jamais ouverte pour l'étape
- * intermédiaire : évite d'ouvrir/fermer un socket par clic lors d'un survol rapide des modes
- * (charge serveur inutile, voir broadcast.ts côté serveur pour le coût par connexion). */
-const ROOM_SWITCH_DEBOUNCE_MS = 150;
+/** Délai avant d'ouvrir la nouvelle connexion spectateur après un changement de `roomId` — très
+ * court (50ms) pour garantir une bascule ultra-réactive sur l'accueil. */
+const ROOM_SWITCH_DEBOUNCE_MS = 50;
 
 interface SpectatorState {
   mapSize: number;
@@ -100,16 +96,11 @@ export default function SpectatorBackground({ roomId, zooming }: SpectatorBackgr
     let rafId = 0;
     let lastFrameAt = 0;
     function frame(now: number): void {
-      if (now - lastFrameAt >= BACKGROUND_FRAME_INTERVAL_MS) {
+      const minInterval = computeMinFrameIntervalMs(loadVsyncEnabled(), loadFpsSliderIndex());
+      if (now - lastFrameAt >= minInterval) {
         lastFrameAt = now;
         const { previousSnapshot, latestSnapshot, latestSnapshotAt, camera } = stateRef.current;
         const t = clamp((performance.now() - latestSnapshotAt) / SERVER_STATE_INTERVAL_MS, 0, 1);
-        // Culle AVANT d'interpoler, comme GameView.tsx (voir cullEntitiesForViewport, render.ts) :
-        // le salon observé peut contenir bien plus d'entités que ce qu'un fond dézoomé affiche
-        // réellement à l'écran — sans ce filtre, ce coût d'interpolation tourne à 30 fps pour
-        // chaque visiteur de l'accueil et grossit avec la population du salon, indépendamment de
-        // ce que l'œil peut voir (source de lag observée dès l'écran d'accueil sur un salon
-        // peuplé).
         const culledLatest = cullEntitiesForViewport(
           latestSnapshot,
           camera,
@@ -133,21 +124,9 @@ export default function SpectatorBackground({ roomId, zooming }: SpectatorBackgr
     };
   }, []);
 
-  // Feedback visuel de bascule (demande utilisateur : le switch de salon paraissait peu réactif)
-  // — activé immédiatement au clic, indépendamment de la latence de reconnexion ci-dessous, et
-  // désactivé dès réception du `welcome` du nouveau salon (voir plus bas).
+  // Feedback visuel de bascule
   const [isSwitching, setIsSwitching] = useState(false);
 
-  // Connexion spectateur — une par salon observé, recréée à chaque changement de `roomId` (voir
-  // Home.tsx : suit désormais le mode sélectionné plutôt qu'un salon fixe). Ne touche jamais au
-  // canvas directement, seulement à `stateRef` (lu par la boucle de rendu ci-dessus) : la nouvelle
-  // connexion remplace les données affichées uniquement une fois son premier `state` reçu, jamais
-  // avant — pas de trou visible pendant la reconnexion.
-  //
-  // L'ouverture de la connexion elle-même est différée de `ROOM_SWITCH_DEBOUNCE_MS` : si `roomId`
-  // change à nouveau avant l'écoulement du délai, le cleanup ci-dessous annule le timeout avant
-  // qu'aucun socket n'ait été ouvert — un survol rapide des modes n'ouvre/ferme donc plus un
-  // socket par étape intermédiaire, seulement pour le salon sur lequel l'utilisateur s'arrête.
   useEffect(() => {
     if (!roomId) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -160,6 +139,9 @@ export default function SpectatorBackground({ roomId, zooming }: SpectatorBackgr
       connection = new GameConnection(
         `${wsProtocol}://${location.host}/?roomId=${encodeURIComponent(roomId)}&spectate=1`,
       );
+      connection.onClose(() => {
+        setIsSwitching(false);
+      });
       connection.onMessage((message: ServerMessage) => {
         if (message.type === 'welcome') {
           stateRef.current.mapSize = message.mapSize;

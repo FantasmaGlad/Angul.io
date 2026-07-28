@@ -18,12 +18,21 @@ export class SpatialHash {
   }
 
   insert(entity: Entity): void {
-    const key = this.cellKey(entity.position);
-    const bucket = this.cells.get(key);
-    if (bucket) {
-      bucket.push(entity.id);
-    } else {
-      this.cells.set(key, [entity.id]);
+    const minCx = Math.floor((entity.position.x - entity.radius) / this.cellSize);
+    const maxCx = Math.floor((entity.position.x + entity.radius) / this.cellSize);
+    const minCy = Math.floor((entity.position.y - entity.radius) / this.cellSize);
+    const maxCy = Math.floor((entity.position.y + entity.radius) / this.cellSize);
+
+    for (let cx = minCx; cx <= maxCx; cx++) {
+      for (let cy = minCy; cy <= maxCy; cy++) {
+        const key = `${cx},${cy}`;
+        let bucket = this.cells.get(key);
+        if (!bucket) {
+          bucket = [];
+          this.cells.set(key, bucket);
+        }
+        bucket.push(entity.id);
+      }
     }
   }
 

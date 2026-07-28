@@ -281,4 +281,21 @@ describe('createParametricMod — onPostMove (bords de carte)', () => {
     expect(piece.position.x).toBeCloseTo(piece.radius, 6);
     expect(piece.velocity.x).toBe(0);
   });
+
+  it('ne fait pas apparaître les particules de nourriture sous un joueur', () => {
+    const config = testConfig({ food: { density: 10, respawnRatePerSecond: 10, pelletTypes: [{ color: 'vert', mass: 1, weight: 1 }] } });
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'BigPlayer');
+    // Joueur de très grande masse avec un rayon de 500px au centre (5000, 5000)
+    const bigPiece = world.spawnPiece('p1', { x: 5000, y: 5000 }, 250000);
+
+    mod.onTick?.(world, 1);
+
+    const particles = world.allEntities().filter((e) => e.kind === 'particle');
+    for (const particle of particles) {
+      const dist = Math.hypot(particle.position.x - bigPiece.position.x, particle.position.y - bigPiece.position.y);
+      expect(dist).toBeGreaterThanOrEqual(bigPiece.radius);
+    }
+  });
 });

@@ -42,6 +42,32 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     };
   }
 
+  function isUnderPlayerPiece(world: World, pos: Vector2): boolean {
+    for (const entity of world.allEntities()) {
+      if (entity.kind === 'piece' || entity.ownerId !== undefined) {
+        const dist = distance(pos, entity.position);
+        if (dist < entity.radius + 5) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function randomFoodPosition(world: World, margin: number = 1): Vector2 {
+    const MAX_ATTEMPTS = 15;
+    let candidate = randomPositionInMap(margin);
+
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      if (!isUnderPlayerPiece(world, candidate)) {
+        return candidate;
+      }
+      candidate = randomPositionInMap(margin);
+    }
+
+    return candidate;
+  }
+
   function spawnPlayerPiece(world: World, playerId: PlayerId): void {
     const margin = Math.sqrt((config.areaConstant * config.player.startMass) / Math.PI);
     world.spawnPiece(playerId, randomPositionInMap(margin), config.player.startMass);
@@ -226,7 +252,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         const toSpawn = Math.min(Math.floor(foodSpawnCredit), target - particleCount);
         foodSpawnCredit -= toSpawn;
         for (let i = 0; i < toSpawn; i++) {
-          world.spawnParticle(randomPositionInMap(1), randomFoodMass(config));
+          world.spawnParticle(randomFoodPosition(world, 1), randomFoodMass(config));
         }
       }
     },
