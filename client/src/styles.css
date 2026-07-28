@@ -433,8 +433,10 @@ select {
   align-items: center;
   gap: 20px;
   padding: 16px 32px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
+  border-bottom: 1px solid rgba(46, 49, 51, 0.12);
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
 }
 
 .brand-mark-btn {
@@ -542,29 +544,148 @@ select {
   border-radius: var(--radius-pill);
 }
 
-/* --- Layout 3 Colonnes --- */
+/* --- Layout Principal & Glassmorphism --- */
 .home-columns {
+  position: relative;
   flex: 1;
-  display: grid;
-  grid-template-columns: minmax(0, 280px) minmax(0, 360px) minmax(0, 320px);
-  /* `space-between` (demande utilisateur) plutôt que `center` : sur un écran large, "Sélection
-     du mode" et "Créer un salon privé" doivent se coller aux deux bords de l'écran plutôt que
-     de rester groupées avec les 3 colonnes au centre, entourées de vide. */
-  justify-content: space-between;
-  gap: 24px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   padding: 36px 48px;
   box-sizing: border-box;
 }
 
 .home-column {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: rgba(241, 241, 243, 0.82);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(46, 49, 51, 0.18);
   border-radius: var(--radius-lg);
   padding: 24px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
+  box-shadow: 0 12px 36px rgba(46, 49, 51, 0.1);
+}
+
+.play-panel {
+  width: 100%;
+  max-width: 420px;
+}
+
+/* --- Handles & Tiroirs Latéraux --- */
+.drawer-handle {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(241, 241, 243, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--border-strong);
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.drawer-handle.left-handle {
+  left: 0;
+  border-left: none;
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+}
+.drawer-handle.right-handle {
+  right: 0;
+  border-right: none;
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+}
+
+.drawer-handle:hover {
+  background: var(--bg);
+  border-color: var(--text);
+}
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  background: rgba(15, 17, 21, 0.25);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: drawer-fade-in 0.2s ease;
+}
+
+@keyframes drawer-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.drawer-container {
+  position: fixed;
+  top: 64px;
+  bottom: 48px;
+  z-index: 30;
+  width: 360px;
+  max-width: 88vw;
+  box-sizing: border-box;
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.drawer-container.left-drawer {
+  left: 0;
+  transform: translateX(-100%);
+}
+.drawer-container.left-drawer.open {
+  transform: translateX(0);
+}
+
+.drawer-container.right-drawer {
+  right: 0;
+  transform: translateX(100%);
+}
+.drawer-container.right-drawer.open {
+  transform: translateX(0);
+}
+
+.drawer-container .home-column {
+  height: 100%;
+  overflow-y: auto;
+  border-radius: 0;
+}
+.drawer-container.left-drawer .home-column {
+  border-top-right-radius: var(--radius-lg);
+  border-bottom-right-radius: var(--radius-lg);
+}
+.drawer-container.right-drawer .home-column {
+  border-top-left-radius: var(--radius-lg);
+  border-bottom-left-radius: var(--radius-lg);
+}
+
+.drawer-close-btn {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 35;
+  background: transparent;
+  border: none;
+  color: var(--text-soft);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.15s ease;
+}
+.drawer-close-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
 }
 
 /* --- Clean Inputs & Selects --- */

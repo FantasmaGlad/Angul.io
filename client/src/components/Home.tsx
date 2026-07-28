@@ -100,14 +100,17 @@ export default function Home({
     }
   }, [rooms, selectedMode, defaultRoomId, activeSpectatorRoomId]);
 
+  const [leftDrawerOpen, setLeftDrawerOpen] = useState(false);
+  const [rightDrawerOpen, setRightDrawerOpen] = useState(false);
+
   const spectatorRoomId = activeSpectatorRoomId ?? defaultRoomId;
 
   return (
     <div className="home-shell">
       {/* Fond spectateur : élément séparé de `.home-ui` ci-dessous pour pouvoir zoomer l'un
-          "en avant" pendant que l'autre zoome "en arrière" (transition d'entrée en jeu, voir
-          styles.css `.spectator-background.zooming`/`.home-ui.leaving`). */}
+          "en avant" pendant que l'autre zoome "en arrière" (transition d'entrée en jeu). */}
       <SpectatorBackground roomId={spectatorRoomId} zooming={leaving} />
+
       <div className={`home-ui${leaving ? ' leaving' : ''}`}>
         <TopNav
           accountActive={accountActive}
@@ -115,14 +118,70 @@ export default function Home({
           level={level}
           avatarColor={avatarColor}
         />
-        <main className="home-columns">
-          <ModeRoomList
-            modes={modes}
-            rooms={rooms}
-            selectedMode={selectedMode}
-            onSelectMode={onSelectMode}
-            onJoinRoom={onJoinRoom}
+
+        {/* Languette tiroir gauche : Salons & Modes */}
+        <button
+          type="button"
+          className={`drawer-handle left-handle${leftDrawerOpen ? ' active' : ''}`}
+          onClick={() => {
+            setLeftDrawerOpen(!leftDrawerOpen);
+            setRightDrawerOpen(false);
+          }}
+          title="Afficher les salons publics et modes de jeu"
+        >
+          <span className="material-symbols-outlined">stadia_controller</span>
+          <span>Salons ({rooms.length})</span>
+        </button>
+
+        {/* Languette tiroir droit : Salon Privé & Code */}
+        <button
+          type="button"
+          className={`drawer-handle right-handle${rightDrawerOpen ? ' active' : ''}`}
+          onClick={() => {
+            setRightDrawerOpen(!rightDrawerOpen);
+            setLeftDrawerOpen(false);
+          }}
+          title="Rejoindre par code ou créer un salon privé"
+        >
+          <span className="material-symbols-outlined">vpn_key</span>
+          <span>Salon Privé</span>
+        </button>
+
+        {/* Backdrop sombre flouté si un tiroir est ouvert */}
+        {(leftDrawerOpen || rightDrawerOpen) && (
+          <div
+            className="drawer-backdrop"
+            onClick={() => {
+              setLeftDrawerOpen(false);
+              setRightDrawerOpen(false);
+            }}
           />
+        )}
+
+        <main className="home-columns">
+          {/* Tiroir Latéral Gauche */}
+          <div className={`drawer-container left-drawer${leftDrawerOpen ? ' open' : ''}`}>
+            <button
+              type="button"
+              className="drawer-close-btn"
+              onClick={() => setLeftDrawerOpen(false)}
+              title="Fermer"
+            >
+              <span className="material-symbols-outlined">close</span>
+            </button>
+            <ModeRoomList
+              modes={modes}
+              rooms={rooms}
+              selectedMode={selectedMode}
+              onSelectMode={onSelectMode}
+              onJoinRoom={(roomId) => {
+                setLeftDrawerOpen(false);
+                onJoinRoom(roomId);
+              }}
+            />
+          </div>
+
+          {/* Console de Jeu Centrale (Hero) */}
           <PlayPanel
             playersOnline={playersOnline}
             nickname={nickname}
@@ -132,14 +191,30 @@ export default function Home({
             rooms={rooms}
             onJoinRoom={onJoinRoom}
           />
-          <CreateRoomPanel
-            modes={modes}
-            authToken={authToken}
-            isPremium={isPremium}
-            isLoggedIn={isLoggedIn}
-            onJoinRoom={onJoinRoom}
-          />
+
+          {/* Tiroir Latéral Droit */}
+          <div className={`drawer-container right-drawer${rightDrawerOpen ? ' open' : ''}`}>
+            <button
+              type="button"
+              className="drawer-close-btn"
+              onClick={() => setRightDrawerOpen(false)}
+              title="Fermer"
+            >
+              <span className="material-symbols-outlined">close</span>
+            </button>
+            <CreateRoomPanel
+              modes={modes}
+              authToken={authToken}
+              isPremium={isPremium}
+              isLoggedIn={isLoggedIn}
+              onJoinRoom={(roomId, code) => {
+                setRightDrawerOpen(false);
+                onJoinRoom(roomId, code);
+              }}
+            />
+          </div>
         </main>
+
         <BottomBar />
       </div>
     </div>
