@@ -47,8 +47,8 @@ APP_USER="angulio"
 GAME_PORT="8080"
 NODE_MAJOR="20"
 
-DUCKDNS_SUBDOMAIN=""                                  # ex. "angulio" -> angulio.duckdns.org — À REMPLIR
-DUCKDNS_TOKEN=""                                      # jeton depuis https://www.duckdns.org — À REMPLIR
+DUCKDNS_SUBDOMAIN="${DUCKDNS_SUBDOMAIN:-angulio}"                                  # ex. "angulio" -> angulio.duckdns.org — À REMPLIR
+DUCKDNS_TOKEN="${DUCKDNS_TOKEN:-04a14b39-d04b-4a17-a8a8-c8488c457aaf}"                                      # jeton depuis https://www.duckdns.org — À REMPLIR
 LETSENCRYPT_EMAIL="clement.barillot3901@gmail.com"    # contact ACME de Caddy, modifiable
 ADMIN_PASSWORD=""                                     # mot de passe admin (Lot 5.1) en clair — requis
                                                        # seulement au premier déploiement (voir
