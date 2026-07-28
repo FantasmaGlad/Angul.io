@@ -1155,6 +1155,11 @@ select {
   font-size: 24px;
   font-weight: 800;
 }
+.subpage-header.wide {
+  width: 980px;
+  max-width: 95vw;
+}
+
 .subpage-body {
   width: 520px;
   max-width: 100%;
@@ -1167,6 +1172,46 @@ select {
   box-shadow: 0 12px 36px rgba(46, 49, 51, 0.12);
   box-sizing: border-box;
   margin-bottom: 60px;
+}
+
+.subpage-body.wide {
+  width: 980px;
+  max-width: 95vw;
+  padding: 32px 36px;
+}
+
+.profile-header-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 18px 24px;
+  margin-bottom: 20px;
+}
+
+.profile-header-user {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.profile-dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+}
+
+@media (max-width: 860px) {
+  .profile-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.avatar-swatch-grid.spacious {
+  grid-template-columns: repeat(auto-fill, minmax(105px, 1fr));
+  gap: 14px;
 }
 
 /* --- Support Image & GIF Personnalisé --- */

@@ -116,259 +116,320 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
   const previewBanner = deathBannerById(deathBannerDraft || 'default_skull');
   const xpProg = profile ? calculateXpProgress(profile.xp) : null;
 
+  const handleLogout = (): void => {
+    localStorage.removeItem('angulio.session');
+    window.location.href = '/';
+  };
+
   return (
-    <PageLayout title="Profil">
+    <PageLayout title="Profil Joueur" wide={true}>
       {error && <p className="error-text">{error}</p>}
 
-      <section className="lobby-section">
-        <span className="section-title">Choix du Skin d'Avatar</span>
-        <div className="avatar-swatch-grid">
-          {SKINS.map((skin) => (
-            <button
-              key={skin}
-              type="button"
-              className={`avatar-swatch${activeSkin === skin ? ' selected' : ''}`}
-              disabled={savingColor !== null}
-              aria-label={`Choisir le skin ${skin}`}
-              onClick={() => handlePickColor(skin)}
-            >
-              <img src={SKIN_IMAGE_MAP[skin]} alt={skin} className="avatar-skin-img" />
-              <span className="avatar-skin-name">{skin}</span>
-            </button>
-          ))}
-        </div>
-      </section>
-
       {!authToken && (
-        <section className="lobby-section">
-          <span className="section-title">Compte Invité</span>
-          <p className="account-status">
-            Tu joues actuellement en tant qu'invité. Ton skin sélectionné est actif pour tes prochaines parties. Connecte-toi pour enregistrer tes scores et personnaliser ton écran de mort !
-          </p>
-          <button
-            className="btn-primary-action"
-            type="button"
-            onClick={() => navigate('/compte')}
-          >
-            Se connecter / S'inscrire
-          </button>
-        </section>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <section className="lobby-section">
+            <span className="section-title">Compte Invité</span>
+            <p className="account-status" style={{ marginTop: 6 }}>
+              Vous jouez actuellement en tant qu'invité. Votre skin sélectionné est actif pour vos prochaines parties. Connectez-vous pour enregistrer vos scores et personnaliser votre écran de mort !
+            </p>
+            <button
+              className="btn-primary-action"
+              type="button"
+              onClick={() => navigate('/compte')}
+              style={{ marginTop: 12 }}
+            >
+              Se connecter / S'inscrire
+            </button>
+          </section>
+
+          <section className="lobby-section">
+            <span className="section-title">Choix du Skin d'Avatar</span>
+            <div className="avatar-swatch-grid spacious" style={{ marginTop: 12 }}>
+              {SKINS.map((skin) => (
+                <button
+                  key={skin}
+                  type="button"
+                  className={`avatar-swatch${activeSkin === skin ? ' selected' : ''}`}
+                  disabled={savingColor !== null}
+                  aria-label={`Choisir le skin ${skin}`}
+                  onClick={() => handlePickColor(skin)}
+                >
+                  <img src={SKIN_IMAGE_MAP[skin]} alt={skin} className="avatar-skin-img" />
+                  <span className="avatar-skin-name">{skin}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        </div>
       )}
 
       {profile && (
         <>
-          <section className="lobby-section">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-              <span className="section-title">Joueur : {profile.pseudo}</span>
-              <button
-                className="btn-ghost"
-                type="button"
-                onClick={() => navigate('/compte')}
-              >
-                Gérer le compte / Déconnexion
-              </button>
-            </div>
-          </section>
-
-          {xpProg && (
-            <div className="xp-progress-card">
-              <div className="xp-progress-header">
-                <span>Niveau {xpProg.level}</span>
-                <span>{xpProg.pct}%</span>
-              </div>
-              <div className="xp-progress-track">
-                <div className="xp-progress-fill" style={{ width: `${xpProg.pct}%` }} />
-              </div>
-              <span className="xp-progress-text">
-                {xpProg.currentXpInLevel} / {xpProg.costForNextLevel} XP ({profile.xp} XP total)
-              </span>
-            </div>
-          )}
-
-          <div className="stat-row">
-            <span className="stat-label">Niveau</span>
-            <span className="stat-value">{profile.level}</span>
-          </div>
-          <div className="stat-row">
-            <span className="stat-label">XP Total</span>
-            <span className="stat-value">{profile.xp}</span>
-          </div>
-          <div className="stat-row">
-            <span className="stat-label">Premium</span>
-            <span className="stat-value">{profile.premium ? 'Oui' : 'Non'}</span>
-          </div>
-          <div className="stat-row">
-            <span className="stat-label">Cosmétiques</span>
-            <span className="stat-value">
-              {profile.cosmetics.length > 0 ? profile.cosmetics.join(', ') : 'Aucun'}
-            </span>
-          </div>
-
-          <section className="lobby-section">
-            <span className="section-title">Écran de mort personnalisé</span>
-
-            <label className="field">
-              <span className="field-label-row">
-                <span className="field-label">Message de défaite</span>
-                <span className="char-counter">
-                  {deathMessageDraft.length} / {MAX_DEATH_MESSAGE_LENGTH}
-                </span>
-              </span>
-              <input
-                className="clean-input"
-                value={deathMessageDraft}
-                maxLength={MAX_DEATH_MESSAGE_LENGTH}
-                onChange={(event) => setDeathMessageDraft(event.target.value)}
-                placeholder="Bien joué ! À la prochaine."
+          <div className="profile-header-banner">
+            <div className="profile-header-user">
+              <img
+                src={SKIN_IMAGE_MAP[activeSkin] ?? SKIN_IMAGE_MAP.Banane}
+                alt={activeSkin}
+                style={{ width: 52, height: 52, borderRadius: '50%', border: '2px solid var(--accent)' }}
               />
-            </label>
-
-            <span className="field-label" style={{ marginTop: 16, display: 'block' }}>
-              Image ou GIF personnalisé (tous formats)
-            </span>
-            <div className="custom-banner-uploader">
-              <label htmlFor="banner-file-input">Téléverser une image ou GIF local :</label>
-              <input
-                id="banner-file-input"
-                type="file"
-                accept="image/*,.gif,.png,.jpg,.jpeg,.webp,.svg"
-                style={{ display: 'none' }}
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  if (file.size > 5 * 1024 * 1024) {
-                    setDeathScreenError('Le fichier est trop volumineux (max 5 Mo).');
-                    return;
-                  }
-                  const reader = new FileReader();
-                  reader.onload = (event) => {
-                    const result = event.target?.result as string;
-                    if (result) {
-                      setDeathBannerDraft(result);
-                      setDeathScreenError('');
-                    }
-                  };
-                  reader.readAsDataURL(file);
-                }}
-              />
-              <button
-                type="button"
-                className="file-upload-btn"
-                onClick={() => document.getElementById('banner-file-input')?.click()}
-              >
-                <span className="material-symbols-outlined">upload_file</span>
-                Choisir une image ou un GIF (PNG, JPG, GIF, WEBP...)
-              </button>
-
-              <label htmlFor="banner-url-input" style={{ marginTop: 8 }}>Ou coller un lien URL d'image/GIF :</label>
-              <input
-                id="banner-url-input"
-                className="clean-input"
-                placeholder="https://exemple.com/image.gif"
-                value={isCustomImageBanner(deathBannerDraft) ? deathBannerDraft : ''}
-                onChange={(e) => {
-                  const val = e.target.value.trim();
-                  if (val) setDeathBannerDraft(val);
-                }}
-              />
-            </div>
-
-            <span className="field-label" style={{ marginTop: 14, display: 'block' }}>
-              Thèmes prédéfinis
-            </span>
-            <div className="death-banner-grid">
-              {DEATH_BANNERS.map((banner) => {
-                const locked = profile.level < banner.unlockLevel;
-                return (
-                  <button
-                    key={banner.id}
-                    type="button"
-                    className={`death-banner-option${deathBannerDraft === banner.id ? ' selected' : ''}${locked ? ' locked' : ''}`}
-                    style={{
-                      background: `linear-gradient(135deg, ${banner.gradient[0]}, ${banner.gradient[1]})`,
-                    }}
-                    disabled={locked}
-                    onClick={() => setDeathBannerDraft(banner.id)}
-                  >
-                    <span className="material-symbols-outlined" style={{ fontSize: '24px', marginRight: '6px', verticalAlign: 'middle' }}>
-                      {banner.icon}
-                    </span>
-                    <span className="death-banner-label">{banner.label}</span>
-                    {locked && (
-                      <span className="death-banner-lock-badge">Niveau {banner.unlockLevel}</span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-
-            <span className="field-label" style={{ marginTop: 16, display: 'block' }}>
-              Prévisualisation en direct
-            </span>
-            <div className="death-preview-card">
-              <div
-                className="death-preview-banner"
-                style={{
-                  background: isCustomImageBanner(deathBannerDraft)
-                    ? `url("${deathBannerDraft}") center/cover no-repeat`
-                    : `linear-gradient(135deg, ${previewBanner.gradient[0]}, ${previewBanner.gradient[1]})`,
-                  minHeight: 80,
-                  position: 'relative',
-                  overflow: 'hidden',
-                }}
-              >
-                {isCustomImageBanner(deathBannerDraft) && (
-                  <div style={{ position: 'absolute', inset: 0, background: 'rgba(0, 0, 0, 0.45)' }} />
-                )}
-                <div style={{ position: 'relative', zIndex: 1 }}>
-                  {!isCustomImageBanner(deathBannerDraft) && (
-                    <span className="material-symbols-outlined" style={{ fontSize: '28px', display: 'block', marginBottom: '4px' }}>
-                      {previewBanner.icon}
-                    </span>
-                  )}
-                  <span style={{ fontWeight: 800, textShadow: '0 2px 4px rgba(0,0,0,0.6)' }}>
-                    VOUS ÊTES MORT !
-                  </span>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: 18, color: 'var(--text)' }}>
+                  Joueur : {profile.pseudo}
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                  <span className="account-badge-pill premium">Niveau {profile.level}</span>
+                  <span className="account-badge-pill">{profile.premium ? 'Compte Premium' : 'Compte Membre'}</span>
                 </div>
               </div>
-              <p className="death-preview-message">
-                "{deathMessageDraft || 'Bien joué ! À la prochaine.'}"
-              </p>
-              <div className="death-preview-stats">
-                <span>Masse finale : 1 420</span>
-                <span>Rang : #3</span>
-                <span>Temps : 04m 12s</span>
-              </div>
             </div>
 
-            {deathScreenError && <p className="error-text">{deathScreenError}</p>}
-            <button
-              className="btn-primary-action"
-              type="button"
-              disabled={savingDeathScreen}
-              onClick={handleSaveDeathScreen}
-              style={{ marginTop: 12 }}
-            >
-              {savingDeathScreen ? 'Enregistrement…' : 'Enregistrer les modifications'}
+            <button className="btn-ghost" type="button" onClick={handleLogout}>
+              <span className="material-symbols-outlined" style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }}>
+                logout
+              </span>
+              Déconnexion
             </button>
-            {deathScreenSaved && <p className="status-text">Enregistré.</p>}
-          </section>
+          </div>
 
-          <section className="lobby-section">
-            <span className="section-title">Meilleurs scores</span>
-            <ul className="profile-scores">
-              {profile.bestScores.length === 0 ? (
-                <li>Aucune partie jouée pour le moment.</li>
-              ) : (
-                profile.bestScores.map((score) => (
-                  <li key={score.modeId}>
-                    <span>{modeMeta(score.modeId).label}</span>
-                    <span>{score.bestScore}</span>
-                  </li>
-                ))
+          <div className="profile-dashboard-grid">
+            {/* Colonne de Gauche : Skins & Statistiques */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <section className="lobby-section">
+                <span className="section-title">Choix du Skin d'Avatar</span>
+                <div className="avatar-swatch-grid spacious" style={{ marginTop: 12 }}>
+                  {SKINS.map((skin) => (
+                    <button
+                      key={skin}
+                      type="button"
+                      className={`avatar-swatch${activeSkin === skin ? ' selected' : ''}`}
+                      disabled={savingColor !== null}
+                      aria-label={`Choisir le skin ${skin}`}
+                      onClick={() => handlePickColor(skin)}
+                    >
+                      <img src={SKIN_IMAGE_MAP[skin]} alt={skin} className="avatar-skin-img" />
+                      <span className="avatar-skin-name">{skin}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              {xpProg && (
+                <section className="lobby-section">
+                  <span className="section-title">Progression de Niveau</span>
+                  <div className="xp-progress-card" style={{ marginTop: 10 }}>
+                    <div className="xp-progress-header">
+                      <span>Niveau {xpProg.level}</span>
+                      <span>{xpProg.pct}%</span>
+                    </div>
+                    <div className="xp-progress-track">
+                      <div className="xp-progress-fill" style={{ width: `${xpProg.pct}%` }} />
+                    </div>
+                    <span className="xp-progress-text">
+                      {xpProg.currentXpInLevel} / {xpProg.costForNextLevel} XP ({profile.xp} XP total)
+                    </span>
+                  </div>
+                </section>
               )}
-            </ul>
-          </section>
+
+              <section className="lobby-section">
+                <span className="section-title">Statistiques du Compte</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
+                  <div className="stat-row">
+                    <span className="stat-label">Niveau Actuel</span>
+                    <span className="stat-value">{profile.level}</span>
+                  </div>
+                  <div className="stat-row">
+                    <span className="stat-label">XP Cumulé</span>
+                    <span className="stat-value">{profile.xp} XP</span>
+                  </div>
+                  <div className="stat-row">
+                    <span className="stat-label">Statut du Compte</span>
+                    <span className="stat-value">{profile.premium ? 'Premium' : 'Standard'}</span>
+                  </div>
+                  <div className="stat-row">
+                    <span className="stat-label">Cosmétiques Débloqués</span>
+                    <span className="stat-value">
+                      {profile.cosmetics.length > 0 ? profile.cosmetics.join(', ') : 'Aucun'}
+                    </span>
+                  </div>
+                </div>
+              </section>
+
+              <section className="lobby-section">
+                <span className="section-title">Meilleurs Scores</span>
+                <ul className="profile-scores" style={{ marginTop: 10 }}>
+                  {profile.bestScores.length === 0 ? (
+                    <li style={{ color: 'var(--text-soft)' }}>Aucune partie enregistrée pour le moment.</li>
+                  ) : (
+                    profile.bestScores.map((score) => (
+                      <li key={score.modeId}>
+                        <span>{modeMeta(score.modeId).label}</span>
+                        <strong>{score.bestScore} pts</strong>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              </section>
+            </div>
+
+            {/* Colonne de Droite : Écran de Mort & Customisation */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <section className="lobby-section">
+                <span className="section-title">Écran de Mort Personnalisé</span>
+
+                <label className="field" style={{ marginTop: 12 }}>
+                  <span className="field-label-row">
+                    <span className="field-label">Message de défaite</span>
+                    <span className="char-counter">
+                      {deathMessageDraft.length} / {MAX_DEATH_MESSAGE_LENGTH}
+                    </span>
+                  </span>
+                  <input
+                    className="clean-input"
+                    value={deathMessageDraft}
+                    maxLength={MAX_DEATH_MESSAGE_LENGTH}
+                    onChange={(event) => setDeathMessageDraft(event.target.value)}
+                    placeholder="Bien joué ! À la prochaine."
+                  />
+                </label>
+
+                <span className="field-label" style={{ marginTop: 16, display: 'block' }}>
+                  Image ou GIF personnalisé (tous formats)
+                </span>
+                <div className="custom-banner-uploader">
+                  <label htmlFor="banner-file-input">Téléverser une image ou GIF local :</label>
+                  <input
+                    id="banner-file-input"
+                    type="file"
+                    accept="image/*,.gif,.png,.jpg,.jpeg,.webp,.svg"
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (file.size > 5 * 1024 * 1024) {
+                        setDeathScreenError('Le fichier est trop volumineux (max 5 Mo).');
+                        return;
+                      }
+                      const reader = new FileReader();
+                      reader.onload = (event) => {
+                        const result = event.target?.result as string;
+                        if (result) {
+                          setDeathBannerDraft(result);
+                          setDeathScreenError('');
+                        }
+                      };
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="file-upload-btn"
+                    onClick={() => document.getElementById('banner-file-input')?.click()}
+                  >
+                    <span className="material-symbols-outlined">upload_file</span>
+                    Choisir une image ou un GIF (PNG, JPG, GIF, WEBP...)
+                  </button>
+
+                  <label htmlFor="banner-url-input" style={{ marginTop: 8 }}>Ou coller un lien URL d'image/GIF :</label>
+                  <input
+                    id="banner-url-input"
+                    className="clean-input"
+                    placeholder="https://exemple.com/image.gif"
+                    value={isCustomImageBanner(deathBannerDraft) ? deathBannerDraft : ''}
+                    onChange={(e) => {
+                      const val = e.target.value.trim();
+                      if (val) setDeathBannerDraft(val);
+                    }}
+                  />
+                </div>
+
+                <span className="field-label" style={{ marginTop: 14, display: 'block' }}>
+                  Thèmes prédéfinis
+                </span>
+                <div className="death-banner-grid">
+                  {DEATH_BANNERS.map((banner) => {
+                    const locked = profile.level < banner.unlockLevel;
+                    return (
+                      <button
+                        key={banner.id}
+                        type="button"
+                        className={`death-banner-option${deathBannerDraft === banner.id ? ' selected' : ''}${locked ? ' locked' : ''}`}
+                        style={{
+                          background: `linear-gradient(135deg, ${banner.gradient[0]}, ${banner.gradient[1]})`,
+                        }}
+                        disabled={locked}
+                        onClick={() => setDeathBannerDraft(banner.id)}
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: '24px', marginRight: '6px', verticalAlign: 'middle' }}>
+                          {banner.icon}
+                        </span>
+                        <span className="death-banner-label">{banner.label}</span>
+                        {locked && (
+                          <span className="death-banner-lock-badge">Niveau {banner.unlockLevel}</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <span className="field-label" style={{ marginTop: 18, display: 'block' }}>
+                  Aperçu en Direct de l'Écran de Mort
+                </span>
+                <div className="death-preview-card">
+                  <div
+                    className="death-preview-banner"
+                    style={{
+                      background: isCustomImageBanner(deathBannerDraft)
+                        ? `url("${deathBannerDraft}") center/cover no-repeat`
+                        : `linear-gradient(135deg, ${previewBanner.gradient[0]}, ${previewBanner.gradient[1]})`,
+                      minHeight: 90,
+                      position: 'relative',
+                      overflow: 'hidden',
+                      borderRadius: 'var(--radius-md)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#ffffff',
+                    }}
+                  >
+                    {isCustomImageBanner(deathBannerDraft) && (
+                      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0, 0, 0, 0.45)' }} />
+                    )}
+                    <div style={{ position: 'relative', zIndex: 1, textAlign: 'center' }}>
+                      {!isCustomImageBanner(deathBannerDraft) && (
+                        <span className="material-symbols-outlined" style={{ fontSize: '28px', display: 'block', marginBottom: '4px' }}>
+                          {previewBanner.icon}
+                        </span>
+                      )}
+                      <span style={{ fontWeight: 800, fontSize: 16, textShadow: '0 2px 4px rgba(0,0,0,0.6)' }}>
+                        VOUS ÊTES MORT !
+                      </span>
+                    </div>
+                  </div>
+                  <p className="death-preview-message" style={{ textAlign: 'center', margin: '12px 0 8px 0', fontStyle: 'italic' }}>
+                    "{deathMessageDraft || 'Bien joué ! À la prochaine.'}"
+                  </p>
+                  <div className="death-preview-stats">
+                    <span>Masse finale : 1 420</span>
+                    <span>Rang : #3</span>
+                    <span>Temps : 04m 12s</span>
+                  </div>
+                </div>
+
+                {deathScreenError && <p className="error-text" style={{ marginTop: 10 }}>{deathScreenError}</p>}
+                <button
+                  className="btn-primary-action"
+                  type="button"
+                  disabled={savingDeathScreen}
+                  onClick={handleSaveDeathScreen}
+                  style={{ marginTop: 14, width: '100%', padding: '12px 18px' }}
+                >
+                  {savingDeathScreen ? 'Enregistrement…' : 'Enregistrer les modifications'}
+                </button>
+                {deathScreenSaved && <p className="status-text" style={{ marginTop: 8, textAlign: 'center' }}>Enregistré avec succès.</p>}
+              </section>
+            </div>
+          </div>
         </>
       )}
     </PageLayout>

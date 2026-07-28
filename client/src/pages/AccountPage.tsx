@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { clearSession, login, register, saveSession, type AuthResult } from '../auth.js';
 import { navigate } from '../router.js';
 import PageLayout from './PageLayout.js';
@@ -8,15 +8,17 @@ interface AccountPageProps {
   onAuthChange: (session: AuthResult | undefined) => void;
 }
 
-/** Compte joueur (Lot 3.2/3.3/3.6) — entièrement optionnel, le pseudo de l'accueil reste
- * utilisable seul pour une partie en invité. Profil et Paramètres sont désormais des sous-pages
- * séparées, accessibles depuis la nav (TopNav.tsx) — cette page ne gère plus que
- * connexion/inscription/déconnexion. */
 export default function AccountPage({ authSession, onAuthChange }: AccountPageProps) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [pseudo, setPseudo] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (authSession) {
+      navigate('/profil');
+    }
+  }, [authSession]);
 
   const handleSubmit = (): void => {
     void (async () => {
@@ -27,6 +29,7 @@ export default function AccountPage({ authSession, onAuthChange }: AccountPagePr
         saveSession(result);
         setPassword('');
         onAuthChange(result);
+        navigate('/profil');
       } catch (err) {
         setError((err as Error).message);
       }
