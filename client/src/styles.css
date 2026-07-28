@@ -1,3 +1,27 @@
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,300..700,0..1,-50..200');
+
+/* --- Material Symbols (icônes Google) ---------------------------------------------------- */
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined', sans-serif;
+  font-weight: normal;
+  font-style: normal;
+  font-size: 20px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-flex;
+  vertical-align: middle;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings:
+    'FILL' 0,
+    'wght' 400,
+    'GRAD' 0,
+    'opsz' 20;
+}
+
 /* ---------------------------------------------------------------------------------------
  * Design "Onyx" (refonte UI/UX 2026-07, ajusté sur demande utilisateur) — fond clair (respire,
  * facile à lire), les tons Onyx fournis par l'utilisateur (#353839 #2E3133 #484A6E #6E708F
