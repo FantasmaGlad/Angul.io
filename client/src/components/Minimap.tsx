@@ -2,16 +2,23 @@ import { clamp } from '@angulio/shared';
 
 interface MinimapProps {
   position?: { x: number; y: number };
+  playerMass?: number;
   mapSize: number;
 }
 
-export default function Minimap({ position, mapSize }: MinimapProps) {
+export default function Minimap({ position, playerMass, mapSize }: MinimapProps) {
   const effectiveSize = mapSize > 0 ? mapSize : 15000;
   const posX = position ? clamp(position.x, 0, effectiveSize) : effectiveSize / 2;
   const posY = position ? clamp(position.y, 0, effectiveSize) : effectiveSize / 2;
 
   const pctX = (posX / effectiveSize) * 100;
   const pctY = (posY / effectiveSize) * 100;
+
+  // Calcul du diamètre du blob de repère (de 10px pour ~50 mass jusqu'à 36px pour les très gros blocs)
+  const dotDiameter = Math.min(
+    38,
+    Math.max(10, Math.round(10 + Math.sqrt(playerMass || 50) * 0.25)),
+  );
 
   const colIdx = Math.min(2, Math.floor((posX / effectiveSize) * 3));
   const rowIdx = Math.min(2, Math.floor((posY / effectiveSize) * 3));
@@ -55,6 +62,8 @@ export default function Minimap({ position, mapSize }: MinimapProps) {
             style={{
               left: `${pctX}%`,
               top: `${pctY}%`,
+              width: `${dotDiameter}px`,
+              height: `${dotDiameter}px`,
             }}
           />
         </div>

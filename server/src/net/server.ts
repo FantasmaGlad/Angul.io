@@ -21,7 +21,7 @@ export interface GameServerOptions {
   rateLimitMaxAttempts?: number;
 }
 
-const INTEREST_RADIUS_PX_DEFAULT = 3000;
+const INTEREST_RADIUS_PX_DEFAULT = 9000;
 
 export interface GameServerHandle {
   whenReady: Promise<number>;

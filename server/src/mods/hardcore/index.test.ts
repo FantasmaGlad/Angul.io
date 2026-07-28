@@ -4,8 +4,8 @@ import { testConfig } from '../parametric/testConfig.js';
 import { accelerationForMass } from '../parametric/physics.js';
 import { createHardcoreMod } from './index.js';
 
-function freshWorld(mapSize = 15000): World {
-  return new World({ mapSize });
+function freshWorld(mapSize = 15000, kArea = testConfig().areaConstant): World {
+  return new World({ mapSize, kArea });
 }
 
 describe('createHardcoreMod — onCollision (absorption entre joueurs)', () => {

@@ -43,8 +43,8 @@ describe('createParametricMod — onTick (vitesse/accélération)', () => {
     const piece = world.spawnPiece('p1', { x: 500, y: 500 }, 50);
 
     mod.onPlayerInput?.(world, 'p1', { target: { x: 600, y: 500 }, intensity: 1, split: false });
-    // dt assez grand pour que l'accélération (1500 px/s²) atteigne v(50)=300 px/s en un seul tick
-    mod.onTick?.(world, 0.2);
+    // dt assez grand pour que l'accélération (1500 px/s²) atteigne v(50)=1000 px/s
+    mod.onTick?.(world, 1.0);
 
     expect(piece.velocity.x).toBeCloseTo(velocityForMass(50, config), 6);
     expect(piece.velocity.y).toBeCloseTo(0, 6);

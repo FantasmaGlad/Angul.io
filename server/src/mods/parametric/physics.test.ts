@@ -12,22 +12,22 @@ describe('velocityForMass — v(m) = MAX(Vfloor, V0·kv·(M0/m)^gamma)', () => {
   const config = testConfig();
 
   it('vaut V0 à la masse de départ', () => {
-    expect(velocityForMass(50, config)).toBeCloseTo(300, 6);
+    expect(velocityForMass(50, config)).toBeCloseTo(1000, 6);
   });
 
   it('décroît avec la masse', () => {
-    expect(velocityForMass(200, config)).toBeCloseTo(221.14038259366518, 6);
+    expect(velocityForMass(200, config)).toBeCloseTo(870.5505632961241, 6);
   });
 
   it('ne descend jamais sous Vfloor', () => {
-    expect(velocityForMass(100_000_000, config)).toBe(20);
+    expect(velocityForMass(1e20, config)).toBe(20);
   });
 
   it('kv multiplie la vitesse globalement (mode "plus rapide")', () => {
     const fast = testConfig({
       physics: { ...config.physics, speedMultiplier: 2.5 },
     });
-    expect(velocityForMass(50, fast)).toBeCloseTo(750, 6);
+    expect(velocityForMass(50, fast)).toBeCloseTo(2500, 6);
   });
 });
 

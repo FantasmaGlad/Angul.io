@@ -513,7 +513,7 @@ export default function GameView({
       )}
 
       {/* Minimap (quadrillage 3x3 : 1-3 horizontal, A-C vertical) */}
-      <Minimap position={playerPos} mapSize={mapSizeState} />
+      <Minimap position={playerPos} playerMass={own?.mass} mapSize={mapSizeState} />
 
       <pre className="debug-overlay" ref={debugOverlayRef} />
     </>

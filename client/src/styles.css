@@ -1684,11 +1684,11 @@ a.btn-primary {
   height: 280px;
   background: var(--surface);
   border: 1px solid var(--border-strong);
-  border-radius: 12px;
+  border-radius: 8px;
   box-shadow: var(--shadow-modal);
   display: flex;
   flex-direction: column;
-  padding: 10px;
+  padding: 4px;
   user-select: none;
   pointer-events: none;
   z-index: 50;
@@ -1697,11 +1697,11 @@ a.btn-primary {
 .minimap-header {
   display: flex;
   justify-content: space-around;
-  padding-left: 20px;
-  font-size: 14px;
+  padding-left: 16px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--text-soft);
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .minimap-body {
@@ -1714,8 +1714,8 @@ a.btn-primary {
   display: flex;
   flex-direction: column;
   justify-content: space-around;
-  width: 20px;
-  font-size: 14px;
+  width: 16px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--text-soft);
   text-align: center;
@@ -1728,7 +1728,7 @@ a.btn-primary {
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
   border: 1px solid var(--border-strong);
-  border-radius: 6px;
+  border-radius: 4px;
   overflow: hidden;
   background: var(--bg);
 }
@@ -1739,7 +1739,7 @@ a.btn-primary {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-faint);
   font-weight: 600;
 }
@@ -1754,8 +1754,6 @@ a.btn-primary {
 
 .minimap-player-dot {
   position: absolute;
-  width: 14px;
-  height: 14px;
   background: var(--accent);
   border: 2px solid var(--text);
   border-radius: 50%;
@@ -1763,14 +1761,16 @@ a.btn-primary {
   box-shadow: 0 0 10px var(--accent);
   transition:
     left 0.05s linear,
-    top 0.05s linear;
+    top 0.05s linear,
+    width 0.1s ease-out,
+    height 0.1s ease-out;
 }
 
 .minimap-sector-tag {
-  font-size: 13px;
+  font-size: 11px;
   text-align: center;
   color: var(--accent);
   font-weight: 700;
-  margin-top: 6px;
+  margin-top: 3px;
   letter-spacing: 0.05em;
 }

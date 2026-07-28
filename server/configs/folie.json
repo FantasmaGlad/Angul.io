@@ -6,9 +6,9 @@
     "minSplitMass": 400
   },
   "physics": {
-    "v0": 300,
+    "v0": 1000,
     "speedMultiplier": 2.5,
-    "speedMassExponent": 0.22,
+    "speedMassExponent": 0.10,
     "velocityFloor": 20,
     "accelerationBase": 1500,
     "accelerationMassExponent": 0.7
@@ -41,8 +41,8 @@
     "bounceRestitution": 0.8
   },
   "food": {
-    "density": 60,
-    "respawnRatePerSecond": 200,
+    "density": 300,
+    "respawnRatePerSecond": 1000,
     "pelletTypes": [
       { "color": "vert", "mass": 1, "weight": 10 },
       { "color": "bleu", "mass": 2, "weight": 10 },
@@ -54,7 +54,7 @@
       { "color": "multicolor", "mass": 12, "weight": 15 }
     ]
   },
-  "areaConstant": 4.71238898038469,
+  "areaConstant": 6.283185307179586,
   "bots": {
     "enabled": true,
     "targetRatio": 0.5,
