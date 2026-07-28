@@ -4,6 +4,7 @@ import {
   SKIN_IMAGE_MAP,
   SKINS,
   deathBannerById,
+  isCustomImageBanner,
 } from '@angulio/shared';
 import { useEffect, useState } from 'react';
 import {
@@ -222,8 +223,58 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
               />
             </label>
 
+            <span className="field-label" style={{ marginTop: 16, display: 'block' }}>
+              Image ou GIF personnalisé (tous formats)
+            </span>
+            <div className="custom-banner-uploader">
+              <label htmlFor="banner-file-input">Téléverser une image ou GIF local :</label>
+              <input
+                id="banner-file-input"
+                type="file"
+                accept="image/*,.gif,.png,.jpg,.jpeg,.webp,.svg"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  if (file.size > 5 * 1024 * 1024) {
+                    setDeathScreenError('Le fichier est trop volumineux (max 5 Mo).');
+                    return;
+                  }
+                  const reader = new FileReader();
+                  reader.onload = (event) => {
+                    const result = event.target?.result as string;
+                    if (result) {
+                      setDeathBannerDraft(result);
+                      setDeathScreenError('');
+                    }
+                  };
+                  reader.readAsDataURL(file);
+                }}
+              />
+              <button
+                type="button"
+                className="file-upload-btn"
+                onClick={() => document.getElementById('banner-file-input')?.click()}
+              >
+                <span className="material-symbols-outlined">upload_file</span>
+                Choisir une image ou un GIF (PNG, JPG, GIF, WEBP...)
+              </button>
+
+              <label htmlFor="banner-url-input" style={{ marginTop: 8 }}>Ou coller un lien URL d'image/GIF :</label>
+              <input
+                id="banner-url-input"
+                className="clean-input"
+                placeholder="https://exemple.com/image.gif"
+                value={isCustomImageBanner(deathBannerDraft) ? deathBannerDraft : ''}
+                onChange={(e) => {
+                  const val = e.target.value.trim();
+                  if (val) setDeathBannerDraft(val);
+                }}
+              />
+            </div>
+
             <span className="field-label" style={{ marginTop: 14, display: 'block' }}>
-              Bannière de mort
+              Thèmes prédéfinis
             </span>
             <div className="death-banner-grid">
               {DEATH_BANNERS.map((banner) => {
@@ -251,20 +302,34 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
               })}
             </div>
 
-            <span className="field-label" style={{ marginTop: 14, display: 'block' }}>
+            <span className="field-label" style={{ marginTop: 16, display: 'block' }}>
               Prévisualisation en direct
             </span>
             <div className="death-preview-card">
               <div
                 className="death-preview-banner"
                 style={{
-                  background: `linear-gradient(135deg, ${previewBanner.gradient[0]}, ${previewBanner.gradient[1]})`,
+                  background: isCustomImageBanner(deathBannerDraft)
+                    ? `url("${deathBannerDraft}") center/cover no-repeat`
+                    : `linear-gradient(135deg, ${previewBanner.gradient[0]}, ${previewBanner.gradient[1]})`,
+                  minHeight: 80,
+                  position: 'relative',
+                  overflow: 'hidden',
                 }}
               >
-                <span className="material-symbols-outlined" style={{ fontSize: '28px', display: 'block', marginBottom: '6px' }}>
-                  {previewBanner.icon}
-                </span>
-                <span>VOUS ÊTES MORT !</span>
+                {isCustomImageBanner(deathBannerDraft) && (
+                  <div style={{ position: 'absolute', inset: 0, background: 'rgba(0, 0, 0, 0.45)' }} />
+                )}
+                <div style={{ position: 'relative', zIndex: 1 }}>
+                  {!isCustomImageBanner(deathBannerDraft) && (
+                    <span className="material-symbols-outlined" style={{ fontSize: '28px', display: 'block', marginBottom: '4px' }}>
+                      {previewBanner.icon}
+                    </span>
+                  )}
+                  <span style={{ fontWeight: 800, textShadow: '0 2px 4px rgba(0,0,0,0.6)' }}>
+                    VOUS ÊTES MORT !
+                  </span>
+                </div>
               </div>
               <p className="death-preview-message">
                 "{deathMessageDraft || 'Bien joué ! À la prochaine.'}"

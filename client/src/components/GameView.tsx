@@ -10,6 +10,7 @@ import {
   deathBannerById,
   DEFAULT_DEATH_BANNER_ID,
   DEFAULT_DEATH_MESSAGE,
+  isCustomImageBanner,
   WS_CLOSE_NICKNAME_TAKEN,
   WS_CLOSE_ROOM_EXPIRED,
   WS_CLOSE_ROOM_FULL,
@@ -629,13 +630,24 @@ export default function GameView({
             <div
               className="death-banner"
               style={{
-                background: `linear-gradient(135deg, ${deathBannerById(deathState.customCard.bannerId).gradient[0]}, ${deathBannerById(deathState.customCard.bannerId).gradient[1]})`,
+                background: isCustomImageBanner(deathState.customCard.bannerId)
+                  ? `url("${deathState.customCard.bannerId}") center/cover no-repeat`
+                  : `linear-gradient(135deg, ${deathBannerById(deathState.customCard.bannerId).gradient[0]}, ${deathBannerById(deathState.customCard.bannerId).gradient[1]})`,
+                position: 'relative',
+                overflow: 'hidden',
               }}
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '28px', display: 'block', marginBottom: '6px' }}>
-                {deathBannerById(deathState.customCard.bannerId).icon}
-              </span>
-              <p className="death-banner-message">"{deathState.customCard.message}"</p>
+              {isCustomImageBanner(deathState.customCard.bannerId) && (
+                <div style={{ position: 'absolute', inset: 0, background: 'rgba(0, 0, 0, 0.45)' }} />
+              )}
+              <div style={{ position: 'relative', zIndex: 1 }}>
+                {!isCustomImageBanner(deathState.customCard.bannerId) && (
+                  <span className="material-symbols-outlined" style={{ fontSize: '28px', display: 'block', marginBottom: '6px' }}>
+                    {deathBannerById(deathState.customCard.bannerId).icon}
+                  </span>
+                )}
+                <p className="death-banner-message">"{deathState.customCard.message}"</p>
+              </div>
             </div>
 
             <div className="death-stats-grid">

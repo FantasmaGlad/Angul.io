@@ -64,14 +64,24 @@ export const DEFAULT_DEATH_BANNER_ID = DEATH_BANNERS[0]!.id;
 export const DEFAULT_DEATH_MESSAGE = 'Bien joué ! À la prochaine.';
 export const MAX_DEATH_MESSAGE_LENGTH = 100;
 
+export function isCustomImageBanner(id: string | undefined): boolean {
+  if (!id) return false;
+  return (
+    id.startsWith('data:image/') ||
+    id.startsWith('http://') ||
+    id.startsWith('https://') ||
+    id.startsWith('url(')
+  );
+}
+
 export function deathBannerById(id: string): DeathBanner {
   return DEATH_BANNERS.find((banner) => banner.id === id) ?? DEATH_BANNERS[0]!;
 }
 
-/** Une bannière est utilisable par un compte si elle est déverrouillée à son niveau — validé
- * côté serveur (voir `AccountsService.updateDeathScreen`) avant tout enregistrement, jamais
- * fait confiance au client. */
+/** Une bannière est utilisable par un compte si elle est déverrouillée à son niveau ou s'il s'agit
+ * d'une image/GIF personnalisée. */
 export function isDeathBannerUnlocked(id: string, level: number): boolean {
+  if (isCustomImageBanner(id)) return true;
   const banner = DEATH_BANNERS.find((b) => b.id === id);
   return banner !== undefined && level >= banner.unlockLevel;
 }

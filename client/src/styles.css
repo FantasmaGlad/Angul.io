@@ -1119,15 +1119,17 @@ select {
    Remplacent les anciennes modales superposées (`Panel.tsx`/`ProfileModal.tsx`, supprimés) : une
    URL propre par page (voir router.ts) au lieu d'un empilement de calques `position: fixed`. */
 .subpage {
-  min-height: 100%;
+  min-height: 100vh;
+  height: auto;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 48px 24px;
+  padding: 40px 24px 80px 24px;
   box-sizing: border-box;
 }
 .subpage-header {
-  width: 420px;
+  width: 520px;
   max-width: 100%;
   display: flex;
   flex-direction: column;
@@ -1150,18 +1152,109 @@ select {
 }
 .subpage-title {
   margin: 0;
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 800;
 }
 .subpage-body {
-  width: 420px;
+  width: 520px;
   max-width: 100%;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: rgba(241, 241, 243, 0.88);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(46, 49, 51, 0.18);
   border-radius: var(--radius-lg);
-  padding: 24px 26px;
-  box-shadow: var(--shadow-modal);
-  height: fit-content;
+  padding: 28px 30px;
+  box-shadow: 0 12px 36px rgba(46, 49, 51, 0.12);
+  box-sizing: border-box;
+  margin-bottom: 60px;
+}
+
+/* --- Support Image & GIF Personnalisé --- */
+.custom-banner-uploader {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-top: 10px;
+  margin-bottom: 14px;
+}
+
+.custom-banner-uploader label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+
+.file-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.file-upload-btn:hover {
+  background: var(--surface-hover);
+  border-color: var(--accent);
+}
+
+.custom-image-preview-img {
+  width: 100%;
+  height: 90px;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  margin-top: 8px;
+}
+
+/* --- Tableau de Bord Compte --- */
+.account-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.account-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px 20px;
+}
+
+.account-card-profile {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.account-badge-pill {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-hover);
+  color: var(--text-soft);
+}
+.account-badge-pill.premium {
+  background: linear-gradient(135deg, #d4af37, #f3e5ab);
+  color: #5a4500;
 }
 
 .lobby-section {
