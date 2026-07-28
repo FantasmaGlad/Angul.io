@@ -75,8 +75,13 @@ export function randomFoodMass(config: ParametricModConfig): number {
 }
 
 /** Nombre cible de particules de nourriture pour la carte actuelle, dérivé de la densité
- * (pellets / bloc de 1000×1000 px²) plutôt qu'un total fixe indépendant de la taille de carte. */
-export function foodTargetCount(config: ParametricModConfig): number {
+ * (pellets / bloc de 1000×1000 px²) plutôt qu'un total fixe indépendant de la taille de carte.
+ * Si aucun joueur humain n'est présent (humanCount === 0), la nourriture est réduite en mode ambiance (~30%). */
+export function foodTargetCount(config: ParametricModConfig, humanCount: number = 1): number {
   const areaInBlocks = (config.arena.width * config.arena.height) / (1000 * 1000);
-  return Math.round(config.food.density * areaInBlocks);
+  const baseTarget = Math.round(config.food.density * areaInBlocks);
+  if (humanCount === 0) {
+    return Math.max(100, Math.round(baseTarget * 0.3));
+  }
+  return baseTarget;
 }

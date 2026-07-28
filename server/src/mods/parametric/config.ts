@@ -136,6 +136,8 @@ export interface BotConfig {
   /** Absent : laisse `BotManager.updateFluctuatingRatio` piloter le ratio (10-20%) plutôt qu'une
    * valeur fixe — voir server/configs/*.json, qui n'en définissent volontairement pas. */
   targetRatio?: number;
+  /** Nombre de bots maintenus en mode ambiance à 0 joueur humain connecté (défaut : 6). */
+  ambientTargetCount?: number;
   updateFrequencyHz: number;
   proportions: {
     fuis: number;

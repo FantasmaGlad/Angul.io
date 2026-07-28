@@ -1,4 +1,4 @@
-import { getRandomSkin } from '@angulio/shared';
+import { getRandomSkin, isBotId } from '@angulio/shared';
 import type { BotConfig } from '../../mods/parametric/config.js';
 import type { Room } from '../room.js';
 import type { PlayerId } from '../types.js';
@@ -86,8 +86,8 @@ export class BotManager {
     // Toujours réserver au moins 1 place pour un joueur humain s'il n'y a pas d'humain connecté
     const maxBotsAllowed = Math.max(0, this.maxRoomCapacity - Math.max(1, humanCount));
 
-    // 1. Les Challenger Bots (jusqu'à 10, bridés par la capacité autorisée du salon)
-    const maxChallengers = Math.min(10, maxBotsAllowed);
+    // 1. Les Challenger Bots (jusqu'à 10, bridés par la capacité autorisée du salon ; 0 si 0 humain pour l'ambiance)
+    const maxChallengers = humanCount === 0 ? 0 : Math.min(10, maxBotsAllowed);
     let spawnedThisTick = 0;
 
     for (let rank = 1; rank <= maxChallengers; rank++) {
@@ -109,12 +109,15 @@ export class BotManager {
       }
     }
 
-    // 2. Ajuster le reste de la population de bots normaux (fluctuant entre 3/5 et 4/5 de la capacité)
+    // 2. Ajuster le reste de la population de bots normaux (mode ambiance à 0 joueur humain si ambientTargetCount est défini)
     const effectiveRatio = this.config.targetRatio ?? this.currentTargetRatio;
     const targetBotCount = Math.floor(this.maxRoomCapacity * effectiveRatio);
+    const ambientCount = this.config.ambientTargetCount;
     const desiredBots = Math.min(
       maxBotsAllowed,
-      Math.max(maxChallengers, targetBotCount - humanCount),
+      humanCount === 0 && ambientCount !== undefined
+        ? ambientCount
+        : Math.max(maxChallengers, targetBotCount - humanCount),
     );
 
     // Si on manque de bots : spawn progressif (limité à maxSpawnPerTick par tick)
@@ -233,7 +236,7 @@ export class BotManager {
   }
 
   isBot(playerId: PlayerId): boolean {
-    return this.activeBots.has(playerId);
+    return isBotId(playerId) || this.activeBots.has(playerId);
   }
 
   get activeBotCount(): number {

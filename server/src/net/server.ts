@@ -78,7 +78,22 @@ export function startGameServer(
     );
   });
 
-  const wss = new WebSocketServer({ server: httpServer, perMessageDeflate: true });
+  const wss = new WebSocketServer({
+    server: httpServer,
+    perMessageDeflate: {
+      zlibDeflateOptions: {
+        chunkSize: 1024,
+        memLevel: 7,
+        level: 3,
+      },
+      zlibInflateOptions: {
+        chunkSize: 10 * 1024,
+      },
+      clientNoContextTakeover: true,
+      serverNoContextTakeover: true,
+      threshold: 1024,
+    },
+  });
 
   wss.on('connection', (socket: WebSocket, request: IncomingMessage) => {
     handleWsConnection(

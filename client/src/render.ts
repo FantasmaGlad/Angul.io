@@ -1,4 +1,4 @@
-import { BOT_COLORS, clamp, SKIN_IMAGE_MAP, skinForNickname, type EntitySnapshot } from '@angulio/shared';
+import { BOT_COLORS, clamp, isBotId, SKIN_IMAGE_MAP, skinForNickname, type EntitySnapshot } from '@angulio/shared';
 import { ownAggregate } from './stats.js';
 
 const skinImageCache = new Map<string, HTMLImageElement>();
@@ -260,7 +260,7 @@ export function renderFrame(
     if (nickname) {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      const fontSize = entity.p!.startsWith('bot-')
+      const fontSize = isBotId(entity.p!)
         ? botNicknameFontSizePx(ctx, nickname, screenRadius)
         : Math.max(10, screenRadius * 0.3);
       ctx.font = `normal ${fontSize}px sans-serif`;

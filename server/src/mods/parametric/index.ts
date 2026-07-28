@@ -2,6 +2,7 @@ import {
   add,
   circleOverlapArea,
   distance,
+  isBotId,
   length,
   massToArea,
   moveToward,
@@ -252,8 +253,10 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         if (decayedMass !== entity.mass) world.setMass(entity, decayedMass);
       }
 
+      const allPlayers = world.allPlayers();
+      const humanCount = allPlayers.filter((p) => !isBotId(p.id)).length;
       const particleCount = world.allEntities().filter((e) => e.kind === 'particle').length;
-      const target = foodTargetCount(config);
+      const target = foodTargetCount(config, humanCount);
       if (particleCount < target) {
         foodSpawnCredit += config.food.respawnRatePerSecond * dt;
         const toSpawn = Math.min(Math.floor(foodSpawnCredit), target - particleCount);

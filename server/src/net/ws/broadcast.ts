@@ -3,6 +3,7 @@ import {
   DEFAULT_DEATH_BANNER_ID,
   DEFAULT_DEATH_MESSAGE,
   getRandomSkin,
+  isBotId,
   type DeathCustomCard,
   type ServerMessage,
 } from '@angulio/shared';
@@ -65,16 +66,26 @@ export function wireRoom(
   managed.handle.onPlayerJoin(({ playerId, nickname, skin }) => {
     runtime.nicknameByPlayer.set(playerId, nickname);
     const assignedSkin =
-      skin ?? (playerId.startsWith('bot-') ? getRandomSkin() : colorForNickname(nickname));
+      skin ?? (isBotId(playerId) ? getRandomSkin() : colorForNickname(nickname));
     runtime.colorByPlayer.set(playerId, assignedSkin);
     const playerInfo = { type: 'player' as const, playerId, nickname, color: assignedSkin };
     for (const socket of runtime.sockets.values()) send(socket, playerInfo);
   });
 
   managed.handle.onTick((_tick, payloads) => {
+    let cachedSpectatorJson: string | undefined;
     for (const { playerId, message } of payloads) {
       const socket = runtime.sockets.get(playerId);
-      if (socket) send(socket, message);
+      if (socket) {
+        if (runtime.spectatorIds.has(playerId)) {
+          if (cachedSpectatorJson === undefined) {
+            cachedSpectatorJson = JSON.stringify(message);
+          }
+          sendRaw(socket, cachedSpectatorJson);
+        } else {
+          send(socket, message);
+        }
+      }
     }
   });
 
@@ -154,6 +165,17 @@ export function recordAccountStatsOnLeave(
     });
 }
 
+/** Seuil maximal de données accumulées dans le buffer de la socket avant de sauter un envoi (64 Ko). */
+const MAX_BUFFERED_AMOUNT = 65536;
+
+export function sendRaw(socket: WebSocket, jsonString: string): void {
+  if (socket.readyState === socket.OPEN && socket.bufferedAmount <= MAX_BUFFERED_AMOUNT) {
+    socket.send(jsonString);
+  }
+}
+
 export function send(socket: WebSocket, message: ServerMessage): void {
-  if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message));
+  if (socket.readyState === socket.OPEN && socket.bufferedAmount <= MAX_BUFFERED_AMOUNT) {
+    socket.send(JSON.stringify(message));
+  }
 }

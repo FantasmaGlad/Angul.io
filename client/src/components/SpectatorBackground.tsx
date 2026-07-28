@@ -56,8 +56,12 @@ export default function SpectatorBackground({ roomId, zooming }: SpectatorBackgr
     let rafId = 0;
     let lastFrameAt = 0;
 
+    const SPECTATOR_MAX_FPS = 30;
+    const SPECTATOR_MIN_INTERVAL_MS = 1000 / SPECTATOR_MAX_FPS;
+
     function frame(now: number): void {
-      const minInterval = computeMinFrameIntervalMs(loadVsyncEnabled(), loadFpsSliderIndex());
+      const playerMinInterval = computeMinFrameIntervalMs(loadVsyncEnabled(), loadFpsSliderIndex());
+      const minInterval = Math.max(SPECTATOR_MIN_INTERVAL_MS, playerMinInterval);
       if (now - lastFrameAt >= minInterval) {
         const frameDt = Math.min(50, lastFrameAt > 0 ? now - lastFrameAt : 16);
         lastFrameAt = now;

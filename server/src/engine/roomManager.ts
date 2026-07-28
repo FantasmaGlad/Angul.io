@@ -239,7 +239,7 @@ export class RoomManager {
     for (const entry of [...this.rooms.values()]) {
       if (entry.permanent) continue;
 
-      if (this.playerCountOf(entry) > 0) {
+      if (this.humanCountOf(entry) > 0) {
         entry.lastNonEmptyAt = now;
         continue;
       }
@@ -330,21 +330,39 @@ export class RoomManager {
     return this.roomStats.get(entry.id)?.playerCount ?? 0;
   }
 
+  humanCountOf(entry: ManagedRoom): number {
+    if (entry.room) {
+      const botManager = entry.room.botManager;
+      return entry.room.world.allPlayers().filter((p) => !botManager?.isBot(p.id)).length;
+    }
+    return this.roomStats.get(entry.id)?.humanCount ?? 0;
+  }
+
   /** Version complète de `playerCountOf`, pour `/api/admin/health` (server/src/net/metrics.ts) —
    * même préférence "lecture directe si disponible" (voir `playerCountOf`), mais avec la charge
    * de tick en plus. */
   roomStatsOf(entry: ManagedRoom): RoomStats {
     if (entry.room) {
       const metrics = entry.room.tickMetrics();
+      const allPlayers = entry.room.world.allPlayers();
+      const botManager = entry.room.botManager;
+      const humanCount = allPlayers.filter((p) => !botManager?.isBot(p.id)).length;
       return {
-        playerCount: entry.room.world.allPlayers().length,
+        playerCount: allPlayers.length,
+        humanCount,
         tickAvgMs: metrics.avgMs,
         tickP95Ms: metrics.p95Ms,
         tickOverruns: metrics.overruns,
       };
     }
     return (
-      this.roomStats.get(entry.id) ?? { playerCount: 0, tickAvgMs: 0, tickP95Ms: 0, tickOverruns: 0 }
+      this.roomStats.get(entry.id) ?? {
+        playerCount: 0,
+        humanCount: 0,
+        tickAvgMs: 0,
+        tickP95Ms: 0,
+        tickOverruns: 0,
+      }
     );
   }
 }

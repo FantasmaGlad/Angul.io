@@ -16,7 +16,20 @@ export function getPool(): Pool {
           'Voir server/.env.example.',
       );
     }
-    pool = new Pool({ connectionString });
+    const max = process.env.PG_POOL_MAX ? parseInt(process.env.PG_POOL_MAX, 10) : 10;
+    const statement_timeout = process.env.PG_STATEMENT_TIMEOUT_MS
+      ? parseInt(process.env.PG_STATEMENT_TIMEOUT_MS, 10)
+      : 10000;
+    const idleTimeoutMillis = process.env.PG_IDLE_TIMEOUT_MS
+      ? parseInt(process.env.PG_IDLE_TIMEOUT_MS, 10)
+      : 30000;
+
+    pool = new Pool({
+      connectionString,
+      max,
+      statement_timeout,
+      idleTimeoutMillis,
+    });
   }
   return pool;
 }

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type { RoomSummary } from '../lobby.js';
 import BottomBar from './BottomBar.js';
 import CreateRoomPanel from './CreateRoomPanel.js';
@@ -59,14 +60,47 @@ export default function Home({
   isLoggedIn,
   defaultRoomId,
 }: HomeProps) {
-  // Suit le mode actuellement sélectionné (colonne `ModeRoomList`, demande utilisateur : "switch
-  // de serveur" → bascule du fond immédiatement) plutôt qu'un salon fixe — le salon le plus
-  // peuplé de ce mode, avec repli sur le salon permanent tant qu'aucun salon public n'existe
-  // encore pour ce mode (ou pendant le tout premier chargement, avant que `rooms` soit peuplé).
-  const spectatorRoomId =
-    [...rooms]
+  const [activeSpectatorRoomId, setActiveSpectatorRoomId] = useState<string | undefined>(
+    defaultRoomId,
+  );
+
+  // Hystérésis sur la sélection du salon spectateur : évite les bascules/reconnexions intempestives
+  // de la WebSocket du fond spectateur lors des rafraîchissements réguliers (10s) du lobby
+  // quand deux salons ont des effectifs proches.
+  useEffect(() => {
+    const candidateRooms = [...rooms]
       .filter((room) => room.modId === selectedMode)
-      .sort((a, b) => b.playerCount - a.playerCount)[0]?.id ?? defaultRoomId;
+      .sort((a, b) => b.playerCount - a.playerCount);
+
+    const topRoom = candidateRooms[0];
+    if (!topRoom) {
+      if (defaultRoomId && activeSpectatorRoomId !== defaultRoomId) {
+        setActiveSpectatorRoomId(defaultRoomId);
+      }
+      return;
+    }
+
+    if (!activeSpectatorRoomId) {
+      setActiveSpectatorRoomId(topRoom.id);
+      return;
+    }
+
+    const currentRoom = candidateRooms.find((r) => r.id === activeSpectatorRoomId);
+    if (!currentRoom) {
+      setActiveSpectatorRoomId(topRoom.id);
+      return;
+    }
+
+    const HYSTERESIS_THRESHOLD = 3;
+    if (
+      topRoom.id !== currentRoom.id &&
+      topRoom.playerCount >= currentRoom.playerCount + HYSTERESIS_THRESHOLD
+    ) {
+      setActiveSpectatorRoomId(topRoom.id);
+    }
+  }, [rooms, selectedMode, defaultRoomId, activeSpectatorRoomId]);
+
+  const spectatorRoomId = activeSpectatorRoomId ?? defaultRoomId;
 
   return (
     <div className="home-shell">

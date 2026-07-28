@@ -1,3 +1,4 @@
+import type { ServerMessage } from '@angulio/shared';
 import { Room } from '../room.js';
 import type { ModResolver } from '../roomManager.js';
 import { SpatialHash } from '../spatialHash.js';
@@ -249,8 +250,12 @@ export class RoomInstance {
   private handleTick(tick: number): void {
     const world = this.room.world;
     const metrics = this.room.tickMetrics();
+    const allPlayers = Array.from(world.allPlayers());
+    const botManager = this.room.botManager;
+    const humanCount = allPlayers.filter((p) => !botManager?.isBot(p.id)).length;
     const stats: RoomStats = {
-      playerCount: world.allPlayers().length,
+      playerCount: allPlayers.length,
+      humanCount,
       tickAvgMs: metrics.avgMs,
       tickP95Ms: metrics.p95Ms,
       tickOverruns: metrics.overruns,
@@ -274,14 +279,33 @@ export class RoomInstance {
     for (const entity of allEntities) this.interestHash.insert(entity);
 
     const payloads: TickPayload[] = [];
+    let sharedSpectatorMessage: ServerMessage | undefined;
+    const shouldSendSpectatorTick = tick % SPECTATOR_TICK_DIVISOR === 0;
+
     for (const playerId of this.viewerIds) {
       const isSpectator = this.spectatorIds.has(playerId);
-      if (isSpectator && tick % SPECTATOR_TICK_DIVISOR !== 0) continue;
+      if (isSpectator) {
+        if (!shouldSendSpectatorTick) continue;
+        if (!sharedSpectatorMessage) {
+          sharedSpectatorMessage = buildStateMessage({
+            room: this.room,
+            playerId: 'spectator',
+            isSpectator: true,
+            tick,
+            allEntities,
+            topScores,
+            interestHash: this.interestHash,
+            interestRadiusPx: this.interestRadiusPx,
+          }).message;
+        }
+        payloads.push({ playerId, message: sharedSpectatorMessage });
+        continue;
+      }
 
       const { message, totalMass } = buildStateMessage({
         room: this.room,
         playerId,
-        isSpectator,
+        isSpectator: false,
         tick,
         allEntities,
         topScores,
@@ -290,10 +314,8 @@ export class RoomInstance {
       });
       payloads.push({ playerId, message });
 
-      if (!isSpectator) {
-        const previousMax = this.maxMassByPlayer.get(playerId) ?? 0;
-        if (totalMass > previousMax) this.maxMassByPlayer.set(playerId, totalMass);
-      }
+      const previousMax = this.maxMassByPlayer.get(playerId) ?? 0;
+      if (totalMass > previousMax) this.maxMassByPlayer.set(playerId, totalMass);
     }
 
     for (const listener of this.tickListeners) listener(tick, payloads, stats);

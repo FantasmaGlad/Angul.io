@@ -32,6 +32,7 @@ export interface TickPayload {
 
 export interface RoomStats {
   playerCount: number;
+  humanCount: number;
   tickAvgMs: number;
   tickP95Ms: number;
   tickOverruns: number;

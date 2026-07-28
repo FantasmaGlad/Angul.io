@@ -38,7 +38,7 @@ export default function CreateRoomPanel({
   const [roomName, setRoomName] = useState('');
   const [selectedMode, setSelectedMode] = useState('');
   const [maxPlayers, setMaxPlayers] = useState(String(DEFAULT_ROOM_MAX_PLAYERS));
-  const [duration, setDuration] = useState(DURATION_OPTIONS[DURATION_OPTIONS.length - 1]!.value);
+  const [duration, setDuration] = useState('2h');
   const [isPrivate, setIsPrivate] = useState(true);
   const [botsEnabled, setBotsEnabled] = useState(true);
   const [previewCode, setPreviewCode] = useState(() => generate6DigitCode());

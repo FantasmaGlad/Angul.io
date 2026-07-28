@@ -21,7 +21,7 @@ import { activeComboLevel } from '../xp.js';
  * échantillonnée (les pastilles individuelles n'apportent presque rien visuellement à cette
  * échelle) plutôt qu'envoyée en totalité — les morceaux de joueurs/bots, eux, restent tous
  * envoyés (peu nombreux, visuellement significatifs pour un fond "vue d'ensemble du serveur"). */
-export const SPECTATOR_TICK_DIVISOR = 1;
+export const SPECTATOR_TICK_DIVISOR = 4;
 /** 1 pastille de nourriture sur `SPECTATOR_FOOD_SAMPLE_EVERY` est retenue — sélection stable par
  * id (pas aléatoire à chaque tick) pour qu'une pastille visible reste visible tant qu'elle existe,
  * au lieu de scintiller à chaque nouveau snapshot. Les ids d'entité sont des entiers croissants

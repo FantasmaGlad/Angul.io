@@ -137,4 +137,67 @@ describe('BotManager', () => {
     expect(room.world.getPlayer('human-1')).toBeDefined();
     expect(room.world.allPlayers().length).toBeLessThanOrEqual(2);
   });
+
+  it('réduit la population à ambientTargetCount lorsque 0 joueur humain est présent', () => {
+    const config = testConfig({
+      bots: {
+        enabled: true,
+        targetRatio: 0.5,
+        ambientTargetCount: 6,
+        updateFrequencyHz: 2,
+        proportions: { fuis: 25, neutre: 30, agressif: 30, fou: 15 },
+      },
+    });
+    const mod = createParametricMod(config);
+    const room = new Room(mod, {
+      mapSize: 1000,
+      tickRateHz: 20,
+      maxPlayers: 30,
+      bots: config.bots,
+    });
+
+    room.tick();
+    expect(room.botManager?.activeBotCount).toBe(6);
+
+    room.addPlayer('h1', 'Humain');
+    expect(room.botManager?.activeBotCount).toBe(14);
+  });
+
+  it('ne produit pas de thrashing (joins répétés) en mode ambiance sur plusieurs ticks consécutifs', () => {
+    const config = testConfig({
+      bots: {
+        enabled: true,
+        targetRatio: 0.5,
+        ambientTargetCount: 6,
+        updateFrequencyHz: 2,
+        proportions: { fuis: 25, neutre: 30, agressif: 30, fou: 15 },
+      },
+    });
+    const mod = createParametricMod(config);
+    const room = new Room(mod, {
+      mapSize: 1000,
+      tickRateHz: 20,
+      maxPlayers: 30,
+      bots: config.bots,
+    });
+
+    let botJoinCount = 0;
+    room.onPlayerJoin((id) => {
+      if (id.startsWith('bot-')) botJoinCount++;
+    });
+
+    // Tick 1 : initialisation
+    room.tick();
+    const initialJoins = botJoinCount;
+    expect(initialJoins).toBe(6);
+    expect(room.botManager?.activeBotCount).toBe(6);
+
+    // Ticks 2 à 6 : vérification qu'aucun bot supplémentaire ne rejoint/quitte
+    for (let i = 0; i < 5; i++) {
+      room.tick();
+    }
+
+    expect(botJoinCount).toBe(initialJoins);
+    expect(room.botManager?.activeBotCount).toBe(6);
+  });
 });

@@ -118,3 +118,8 @@ export const BOT_IDENTITIES: BotIdentity[] = [
 export const BOT_COLORS: Record<string, string> = Object.fromEntries(
   BOT_IDENTITIES.map((b) => [b.name, b.color]),
 );
+
+/** Détermine si un ID de joueur correspond à un bot d'après son préfixe déterministe (`bot-`). */
+export function isBotId(id: string): boolean {
+  return id.startsWith('bot-');
+}

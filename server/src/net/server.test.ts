@@ -554,8 +554,8 @@ describe('startGameServer', () => {
       const port = await handle.whenReady;
 
       const spectator = new WebSocket(`ws://localhost:${port}/?roomId=${summary.id}&spectate=1`);
-      await waitForOpen(spectator);
       const messages = collectMessages(spectator);
+      await waitForOpen(spectator);
 
       await waitUntil(() => messages.some((m) => m.type === 'welcome'));
       expect(messages.find((m) => m.type === 'welcome')).toMatchObject({ mapSize: 4242 });
@@ -1142,8 +1142,8 @@ describe.skipIf(!DATABASE_URL)('startGameServer (avec comptes joueurs)', () => {
     const adminSocket = new WebSocket(
       `ws://localhost:${port}/?roomId=${room.id}&admin=1&token=${encodeURIComponent(adminToken)}`,
     );
-    await waitForOpen(adminSocket);
     const adminMessages = collectMessages(adminSocket);
+    await waitForOpen(adminSocket);
     await waitUntil(() => adminMessages.some((m) => m.type === 'welcome'));
 
     adminSocket.send(

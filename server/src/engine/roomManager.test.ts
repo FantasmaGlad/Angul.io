@@ -356,5 +356,48 @@ describe('RoomManager', () => {
       expect(managed.room.botManager?.activeBotCount ?? 0).toBe(0);
       expect(managed.room.world.allPlayers()).toHaveLength(0);
     });
+
+    it('supprime un salon non-permanent avec bots lorsque le nombre de joueurs humains tombe à 0', () => {
+      const botsConfig = {
+        enabled: true,
+        targetRatio: 0.5,
+        ambientTargetCount: 6,
+        updateFrequencyHz: 2,
+        proportions: { fuis: 25, neutre: 30, agressif: 30, fou: 15 },
+      };
+      const manager = makeManager(() => ({ mod: testMod, mapSize: 1000, bots: botsConfig }), 20, {
+        emptyRoomGraceMs: 50,
+      });
+
+      const summary = manager.createRoom({
+        name: 'Salon Privé Bots',
+        modId: 'vanilla',
+        visibility: 'private',
+        botsEnabled: true,
+      });
+
+      const managed = manager.allManagedRooms().find((r) => r.id === summary.id)!;
+      // Active les bots
+      managed.room.tick();
+      expect(managed.room.world.allPlayers().length).toBeGreaterThan(0);
+
+      // Un joueur humain arrive puis repart
+      managed.room.addPlayer('human-1', 'Alice');
+      expect(manager.humanCountOf(managed)).toBe(1);
+
+      managed.room.removePlayer('human-1');
+      expect(manager.humanCountOf(managed)).toBe(0);
+
+      // Avancer le temps au-delà de emptyRoomGraceMs
+      const originalNow = Date.now;
+      try {
+        Date.now = () => originalNow() + 100;
+        manager.pruneEmptyRooms();
+      } finally {
+        Date.now = originalNow;
+      }
+
+      expect(manager.allManagedRooms().find((r) => r.id === summary.id)).toBeUndefined();
+    });
   });
 });

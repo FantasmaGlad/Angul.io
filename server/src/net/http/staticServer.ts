@@ -42,7 +42,10 @@ export async function serveStatic(
     }
   }
 
-  res.writeHead(200, { 'Content-Type': contentTypeFor(filePath), 'Cache-Control': 'no-cache' });
+  const cacheControl = filePath.endsWith('index.html')
+    ? 'no-cache'
+    : 'public, max-age=31536000, immutable';
+  res.writeHead(200, { 'Content-Type': contentTypeFor(filePath), 'Cache-Control': cacheControl });
   createReadStream(filePath).pipe(res);
 }
 
