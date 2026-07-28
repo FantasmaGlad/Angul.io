@@ -105,6 +105,7 @@ export default function GameView({
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [deathState, setDeathState] = useState<DeathState>(DEFAULT_DEATH_STATE);
   const [playerPos, setPlayerPos] = useState<{ x: number; y: number } | undefined>(undefined);
+  const [playerMass, setPlayerMass] = useState<number | undefined>(undefined);
   const [mapSizeState, setMapSizeState] = useState<number>(15000);
 
   useEffect(() => {
@@ -311,6 +312,7 @@ export default function GameView({
       if (now - lastMinimapUpdateAt > 100) {
         lastMinimapUpdateAt = now;
         setPlayerPos(currentPos);
+        setPlayerMass(own?.mass);
       }
 
       if (statMassRef.current) {
@@ -513,7 +515,7 @@ export default function GameView({
       )}
 
       {/* Minimap (quadrillage 3x3 : 1-3 horizontal, A-C vertical) */}
-      <Minimap position={playerPos} playerMass={own?.mass} mapSize={mapSizeState} />
+      <Minimap position={playerPos} playerMass={playerMass} mapSize={mapSizeState} />
 
       <pre className="debug-overlay" ref={debugOverlayRef} />
     </>
