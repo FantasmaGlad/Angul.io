@@ -42,9 +42,10 @@ export async function serveStatic(
     }
   }
 
-  const cacheControl = filePath.endsWith('index.html')
-    ? 'no-cache'
-    : 'public, max-age=31536000, immutable';
+  const cacheControl =
+    filePath.endsWith('.html') || filePath.endsWith('.js') || filePath.endsWith('.css')
+      ? 'no-cache, must-revalidate'
+      : 'public, max-age=86400';
   res.writeHead(200, { 'Content-Type': contentTypeFor(filePath), 'Cache-Control': cacheControl });
   createReadStream(filePath).pipe(res);
 }
