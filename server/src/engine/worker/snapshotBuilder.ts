@@ -1,5 +1,6 @@
 import { type EntitySnapshot, type LeaderboardEntry, type ServerMessage } from '@angulio/shared';
 import { isGodPlayerId } from '../godmode.js';
+import type { GameMod } from '../mod.js';
 import type { Room } from '../room.js';
 import type { Entity, PlayerId, PlayerState } from '../types.js';
 import type { World } from '../world.js';
@@ -133,13 +134,18 @@ export function buildStateMessage(
   const player = world.getPlayer(playerId);
   const comboLevel = player ? activeComboLevel(player.lifeStats.combo, performance.now()) : undefined;
 
+  const modDashGetter = (room as unknown as { mod?: GameMod }).mod?.getDashState;
+  const dashState = modDashGetter ? modDashGetter.call((room as unknown as { mod: GameMod }).mod, world, playerId) : undefined;
+
   const selfFields: {
     accelerationPerSec2?: number;
     combo?: { level: number };
     pieces?: Array<{ id: string; vx: number; vy: number }>;
+    dash?: { charges: number; maxCharges: number; canDash: boolean; rechargeProgress: number };
   } = {};
   if (accelerationPerSec2 !== undefined) selfFields.accelerationPerSec2 = accelerationPerSec2;
   if (comboLevel !== undefined) selfFields.combo = { level: comboLevel };
+  if (dashState) selfFields.dash = dashState;
   // Vélocité autoritaire de chaque morceau (voir protocol.ts `self.pieces`) — `ownPieces` est déjà
   // intégrée pour CE tick par `Room.tick()` avant que `buildStateMessage` ne soit appelé, jamais
   // une valeur périmée.

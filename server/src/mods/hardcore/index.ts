@@ -1,7 +1,7 @@
 import { add, circleOverlapArea, clamp, distance, PI, scale, type Vector2 } from '@angulio/shared';
 import type { GameMod } from '../../engine/mod.js';
 import { isGodPlayerId } from '../../engine/godmode.js';
-import type { Entity, PlayerId } from '../../engine/types.js';
+import type { Entity, PlayerId, PlayerInput } from '../../engine/types.js';
 import type { World } from '../../engine/world.js';
 import { creditMassEatenXp, creditPlayerEatenXp } from '../../engine/xp.js';
 import type { ParametricModConfig } from '../parametric/config.js';
@@ -141,12 +141,93 @@ export function createHardcoreMod(
     }
   }
 
+  const dashStates = new Map<PlayerId, PlayerDashState>();
+
+  interface PlayerDashState {
+    charges: number;
+    lastDashTimeMs: number;
+    rechargeProgressMs: number;
+  }
+
+  function getOrCreateDashState(playerId: PlayerId): PlayerDashState {
+    let state = dashStates.get(playerId);
+    if (!state) {
+      state = { charges: 3, lastDashTimeMs: 0, rechargeProgressMs: 0 };
+      dashStates.set(playerId, state);
+    }
+    return state;
+  }
+
   return {
     ...base,
     id: config.id,
 
+    onPlayerJoin(world: World, playerId: PlayerId) {
+      dashStates.set(playerId, { charges: 3, lastDashTimeMs: 0, rechargeProgressMs: 0 });
+      base.onPlayerJoin?.(world, playerId);
+    },
+
+    onPlayerLeave(world: World, playerId: PlayerId) {
+      dashStates.delete(playerId);
+      base.onPlayerLeave?.(world, playerId);
+    },
+
+    onPlayerDeath(world: World, playerId: PlayerId) {
+      dashStates.delete(playerId);
+      base.onPlayerDeath?.(world, playerId);
+    },
+
+    onPlayerInput(world: World, playerId: PlayerId, input: PlayerInput) {
+      base.onPlayerInput?.(world, playerId, input);
+
+      if (input.dash) {
+        const pieces = world.getPiecesByOwner(playerId);
+        if (pieces.length === 1) {
+          const piece = pieces[0]!;
+          const state = getOrCreateDashState(playerId);
+          const now = performance.now();
+          if (state.charges > 0 && now - state.lastDashTimeMs >= 1000) {
+            state.charges -= 1;
+            state.lastDashTimeMs = now;
+
+            const dx = input.target.x - piece.position.x;
+            const dy = input.target.y - piece.position.y;
+            const len = Math.hypot(dx, dy);
+            const dir: Vector2 = len > 0 ? { x: dx / len, y: dy / len } : { x: 1, y: 0 };
+            const DASH_IMPULSE_SPEED = 900;
+            piece.velocity = add(piece.velocity, scale(dir, DASH_IMPULSE_SPEED));
+          }
+        }
+      }
+    },
+
+    getDashState(world: World, playerId: PlayerId) {
+      const pieces = world.getPiecesByOwner(playerId);
+      const state = getOrCreateDashState(playerId);
+      const now = performance.now();
+      const canDash = pieces.length === 1 && state.charges > 0 && now - state.lastDashTimeMs >= 1000;
+      const rechargeProgress = state.charges < 3 ? clamp(state.rechargeProgressMs / 10000, 0, 1) : 1;
+      return {
+        charges: state.charges,
+        maxCharges: 3,
+        canDash,
+        rechargeProgress,
+      };
+    },
+
     onTick(world: World, dt: number) {
       base.onTick?.(world, dt);
+
+      // Mise à jour de la recharge des dashs (10s par charge)
+      for (const [playerId, state] of dashStates.entries()) {
+        if (state.charges < 3) {
+          state.rechargeProgressMs += dt * 1000;
+          if (state.rechargeProgressMs >= 10000) {
+            state.charges += 1;
+            state.rechargeProgressMs = state.charges < 3 ? state.rechargeProgressMs - 10000 : 0;
+          }
+        }
+      }
 
       // Règle Hardcore : si un joueur devient trop gros (seuil exact ci-dessous, >= 200 de masse
       // ET > 2x le deuxième — l'ancien commentaire ici parlait de "10x", désynchronisé du seuil

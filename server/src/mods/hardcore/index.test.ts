@@ -205,3 +205,70 @@ describe('createHardcoreMod — onTick (règle 2x leader split)', () => {
     expect(world.getPiecesByOwner('p1')).toHaveLength(1);
   });
 });
+
+describe('createHardcoreMod — Dash (touche F)', () => {
+  it('propulse le blob vers l’avant quand le joueur a 1 seul morceau et des charges', () => {
+    const config = testConfig();
+    const mod = createHardcoreMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Dasher');
+    mod.onPlayerJoin?.(world, 'p1');
+
+    const pieces = world.getPiecesByOwner('p1');
+    expect(pieces).toHaveLength(1);
+    const piece = pieces[0]!;
+    piece.position = { x: 500, y: 500 };
+    piece.velocity = { x: 0, y: 0 };
+
+    // Dash vers la droite (target x: 1000, y: 500)
+    mod.onPlayerInput?.(world, 'p1', {
+      target: { x: 1000, y: 500 },
+      intensity: 1,
+      split: false,
+      dash: true,
+    });
+
+    expect(piece.velocity.x).toBeGreaterThan(500);
+
+    const dashState = (mod as any).getDashState(world, 'p1');
+    expect(dashState.charges).toBe(2);
+    expect(dashState.canDash).toBe(false); // Cooldown 1s
+  });
+
+  it('interdit le dash si le joueur est divisé (> 1 morceau)', () => {
+    const config = testConfig();
+    const mod = createHardcoreMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'SplitPlayer');
+    world.spawnPiece('p1', { x: 500, y: 500 }, 50);
+    world.spawnPiece('p1', { x: 600, y: 500 }, 50);
+
+    const dashState = (mod as any).getDashState(world, 'p1');
+    expect(dashState.canDash).toBe(false);
+  });
+
+  it('recharge 1 charge au bout de 10 secondes', () => {
+    const config = testConfig();
+    const mod = createHardcoreMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Dasher');
+    mod.onPlayerJoin?.(world, 'p1');
+
+    // Dash 1 fois
+    mod.onPlayerInput?.(world, 'p1', {
+      target: { x: 1000, y: 500 },
+      intensity: 1,
+      split: false,
+      dash: true,
+    });
+
+    expect((mod as any).getDashState(world, 'p1').charges).toBe(2);
+
+    // Écoulement de 10 secondes (200 ticks de 0.05s)
+    for (let i = 0; i < 200; i++) {
+      mod.onTick?.(world, 0.05);
+    }
+
+    expect((mod as any).getDashState(world, 'p1').charges).toBe(3);
+  });
+});

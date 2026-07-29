@@ -28,6 +28,7 @@ import {
   type GpuInfo,
   type NetworkInfo,
 } from '../debugOverlay.js';
+import { audioManager } from '../audio.js';
 import { attachInput } from '../input.js';
 import { GameConnection } from '../net.js';
 import { LocalPrediction } from '../prediction.js';
@@ -135,6 +136,23 @@ export default function GameView({
   const [playerMass, setPlayerMass] = useState<number | undefined>(undefined);
   const [mapSizeState, setMapSizeState] = useState<number>(15000);
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
+  const [dashInfo, setDashInfo] = useState<{
+    charges: number;
+    maxCharges: number;
+    canDash: boolean;
+    rechargeProgress: number;
+  } | undefined>(undefined);
+
+  useEffect(() => {
+    const isHardcore = roomIdOrInviteCode.toLowerCase().includes('hardcore');
+    const musicTrack = isHardcore
+      ? '/assets/Sons/Musiques/Hardcore.m4a'
+      : '/assets/Sons/Musiques/vanilla.m4a';
+    audioManager.playMusic(musicTrack, true);
+    return () => {
+      audioManager.stopMusic();
+    };
+  }, [roomIdOrInviteCode]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -309,6 +327,9 @@ export default function GameView({
         if (message.leaderboard) {
           setLeaderboard(message.leaderboard);
         }
+        if (message.self?.dash !== undefined) {
+          setDashInfo(message.self.dash);
+        }
         const comboLevel = message.self?.combo?.level;
         if (comboLevel !== undefined && comboLevel !== lastComboLevel) {
           showComboBanner(comboLevel);
@@ -385,7 +406,13 @@ export default function GameView({
           // (lissée/en retard) — voir `LocalPrediction.getOwnPosition`.
           const ownPosition = prediction.getOwnPosition() ?? latestCamera;
           const { target, intensity } = input.getTarget({ ...latestCamera, ...ownPosition });
-          connection.send({ type: 'input', target, intensity, split: input.consumeSplit() });
+          connection.send({
+            type: 'input',
+            target,
+            intensity,
+            split: input.consumeSplit(),
+            dash: input.consumeDash(),
+          });
         }
         scheduleInput();
       }, intervalMs);
@@ -624,6 +651,34 @@ export default function GameView({
       <canvas ref={canvasRef} id="game" />
       <div className="combo-banner" ref={comboBannerRef} aria-hidden="true" />
       <div className="announcement-banner" ref={announcementBannerRef} aria-hidden="true" />
+      {dashInfo && (
+        <div className="dash-hud-wrapper">
+          <div className="dash-hud-badge">
+            <span className="dash-hud-label">
+              ⚡ DASH <span className="dash-hud-key">F</span>
+            </span>
+            <div className="dash-segments-track">
+              {Array.from({ length: dashInfo.maxCharges }).map((_, i) => {
+                const isFull = i < dashInfo.charges;
+                const isCurrentRecharging = i === dashInfo.charges;
+                const fillWidth = isFull
+                  ? 100
+                  : isCurrentRecharging
+                    ? Math.round(dashInfo.rechargeProgress * 100)
+                    : 0;
+                return (
+                  <div key={i} className={`dash-segment-box ${isFull ? 'full' : ''}`}>
+                    {!isFull && <div className="dash-segment-fill" style={{ width: `${fillWidth}%` }} />}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          {!dashInfo.canDash && dashInfo.charges === 0 && (
+            <div className="dash-disabled-hint">Recharge en cours… (10s/charge)</div>
+          )}
+        </div>
+      )}
       <div className="game-overlay">
         <div className="stats-panel">
           <div className="stat-row">

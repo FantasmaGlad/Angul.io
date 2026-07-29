@@ -42,4 +42,5 @@ export interface PlayerInput {
   target: Vector2;
   intensity: number;
   split: boolean;
+  dash?: boolean;
 }

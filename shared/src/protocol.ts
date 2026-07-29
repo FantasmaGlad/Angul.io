@@ -45,6 +45,8 @@ export interface ClientInputMessage {
   intensity: number;
   /** true uniquement sur le tick où le split est demandé (déclenchement, pas un état maintenu). */
   split: boolean;
+  /** true uniquement sur le tick où le dash est demandé (touche F). */
+  dash?: boolean;
 }
 
 /** Mesure de latence réelle (aller-retour), pour l'écran de debug F3 — le serveur renvoie `t`
@@ -118,6 +120,13 @@ export interface WorldStateMessage {
      * à `entities` coûterait de la bande passante à tous les autres viewers pour rien. Absent si le
      * joueur n'a aucun morceau. */
     pieces?: Array<{ id: string; vx: number; vy: number }>;
+    /** État du dash du joueur (mode Hardcore) pour le HUD en haut de l'écran. */
+    dash?: {
+      charges: number;
+      maxCharges: number;
+      canDash: boolean;
+      rechargeProgress: number;
+    };
   };
 }
 

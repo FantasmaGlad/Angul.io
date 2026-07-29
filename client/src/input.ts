@@ -32,6 +32,8 @@ export interface InputTracker {
   getTarget(camera: Camera): { target: Vector2; intensity: number };
   /** true une seule fois par pression de la barre espace (consommé après lecture). */
   consumeSplit(): boolean;
+  /** true une seule fois par pression de la touche F (consommé après lecture). */
+  consumeDash(): boolean;
   /** Retire les écouteurs attachés par `attachInput` — à appeler quand le canvas associé est
    * démonté (ex. retour à l'accueil, GameView.tsx) pour ne pas accumuler d'écouteurs `keydown`
    * au fil des parties successives (chaque partie remonte un nouveau canvas). */
@@ -51,6 +53,7 @@ export function attachInput(canvas: HTMLCanvasElement, onSplitRequested?: () => 
   let mouseX = canvas.width / 2;
   let mouseY = canvas.height / 2;
   let splitRequested = false;
+  let dashRequested = false;
   /** Détection du front montant du bouton "split" manette — l'API Gamepad n'a pas d'événement,
    * seulement un état interrogé à chaque frame (voir `pollGamepad`), donc le front doit être
    * calculé nous-mêmes en comparant à l'état précédent. */
@@ -66,6 +69,9 @@ export function attachInput(canvas: HTMLCanvasElement, onSplitRequested?: () => 
       event.preventDefault();
       splitRequested = true;
       onSplitRequested?.();
+    } else if (event.code === 'KeyF' || event.key === 'f' || event.key === 'F') {
+      event.preventDefault();
+      dashRequested = true;
     }
   };
 
@@ -125,6 +131,11 @@ export function attachInput(canvas: HTMLCanvasElement, onSplitRequested?: () => 
     consumeSplit(): boolean {
       const value = splitRequested;
       splitRequested = false;
+      return value;
+    },
+    consumeDash(): boolean {
+      const value = dashRequested;
+      dashRequested = false;
       return value;
     },
     detach(): void {

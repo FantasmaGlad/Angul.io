@@ -334,6 +334,7 @@ function validateInputMessage(message: ClientMessage & { type: 'input' }):
       target: { x: number; y: number };
       intensity: number;
       split: boolean;
+      dash?: boolean;
     }
   | undefined {
   if (!message.target || typeof message.target !== 'object') return undefined;
@@ -346,10 +347,12 @@ function validateInputMessage(message: ClientMessage & { type: 'input' }):
   const intensity = Number.isFinite(rawIntensity) ? Math.min(1.0, Math.max(0.0, rawIntensity)) : 0;
 
   const split = Boolean(message.split);
+  const dash = message.dash ? true : undefined;
 
   return {
     target: { x: targetX, y: targetY },
     intensity,
     split,
+    ...(dash ? { dash } : {}),
   };
 }

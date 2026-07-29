@@ -11,6 +11,7 @@ import {
   updateDeathScreen,
   type AccountProfile,
 } from '../auth.js';
+import { audioManager } from '../audio.js';
 import { modeMeta } from '../modes.js';
 import { navigate } from '../router.js';
 import PageLayout from './PageLayout.js';
@@ -107,6 +108,19 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
   const [deathScreenError, setDeathScreenError] = useState('');
   const [savingDeathScreen, setSavingDeathScreen] = useState(false);
   const [deathScreenSaved, setDeathScreenSaved] = useState(false);
+
+  const [musicVolume, setMusicVolume] = useState(() => audioManager.getMusicVolume());
+  const [sfxVolume, setSfxVolume] = useState(() => audioManager.getSfxVolume());
+
+  const handleMusicChange = (vol: number) => {
+    setMusicVolume(vol);
+    audioManager.setMusicVolume(vol);
+  };
+
+  const handleSfxChange = (vol: number) => {
+    setSfxVolume(vol);
+    audioManager.setSfxVolume(vol);
+  };
 
   useEffect(() => {
     if (!authToken) {
@@ -270,6 +284,116 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
                   </div>
                 </section>
               )}
+
+              <section className="lobby-section">
+                <span className="section-title">Paramètres Sonores du Jeu</span>
+                <div className="audio-settings-card">
+                  <div className="audio-settings-row">
+                    <div className="audio-control-item">
+                      <div className="audio-control-label">
+                        <span className="material-symbols-outlined">music_note</span>
+                        Musique
+                      </div>
+                      <div className="audio-slider-wrapper">
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={musicVolume}
+                          className="audio-slider"
+                          onChange={(e) => handleMusicChange(parseFloat(e.target.value))}
+                        />
+                        <span className="audio-value-badge">{Math.round(musicVolume * 100)}%</span>
+                      </div>
+                      <div className="audio-preset-btns">
+                        <button type="button" className="audio-preset-btn" onClick={() => handleMusicChange(0)}>Mute</button>
+                        <button type="button" className="audio-preset-btn" onClick={() => handleMusicChange(0.5)}>50%</button>
+                        <button type="button" className="audio-preset-btn" onClick={() => handleMusicChange(1)}>100%</button>
+                      </div>
+                    </div>
+
+                    <div className="audio-control-item">
+                      <div className="audio-control-label">
+                        <span className="material-symbols-outlined">volume_up</span>
+                        Effets Sonores
+                      </div>
+                      <div className="audio-slider-wrapper">
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={sfxVolume}
+                          className="audio-slider"
+                          onChange={(e) => handleSfxChange(parseFloat(e.target.value))}
+                        />
+                        <span className="audio-value-badge">{Math.round(sfxVolume * 100)}%</span>
+                      </div>
+                      <div className="audio-preset-btns">
+                        <button type="button" className="audio-preset-btn" onClick={() => handleSfxChange(0)}>Mute</button>
+                        <button type="button" className="audio-preset-btn" onClick={() => handleSfxChange(0.5)}>50%</button>
+                        <button type="button" className="audio-preset-btn" onClick={() => handleSfxChange(1)}>100%</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="lobby-section">
+                <span className="section-title">Paramètres Sonores du Jeu</span>
+                <div className="audio-settings-card">
+                  <div className="audio-settings-row">
+                    <div className="audio-control-item">
+                      <div className="audio-control-label">
+                        <span className="material-symbols-outlined">music_note</span>
+                        Musique
+                      </div>
+                      <div className="audio-slider-wrapper">
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={musicVolume}
+                          className="audio-slider"
+                          onChange={(e) => handleMusicChange(parseFloat(e.target.value))}
+                        />
+                        <span className="audio-value-badge">{Math.round(musicVolume * 100)}%</span>
+                      </div>
+                      <div className="audio-preset-btns">
+                        <button type="button" className="audio-preset-btn" onClick={() => handleMusicChange(0)}>Mute</button>
+                        <button type="button" className="audio-preset-btn" onClick={() => handleMusicChange(0.5)}>50%</button>
+                        <button type="button" className="audio-preset-btn" onClick={() => handleMusicChange(1)}>100%</button>
+                      </div>
+                    </div>
+
+                    <div className="audio-control-item">
+                      <div className="audio-control-label">
+                        <span className="material-symbols-outlined">volume_up</span>
+                        Effets Sonores
+                      </div>
+                      <div className="audio-slider-wrapper">
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={sfxVolume}
+                          className="audio-slider"
+                          onChange={(e) => handleSfxChange(parseFloat(e.target.value))}
+                        />
+                        <span className="audio-value-badge">{Math.round(sfxVolume * 100)}%</span>
+                      </div>
+                      <div className="audio-preset-btns">
+                        <button type="button" className="audio-preset-btn" onClick={() => handleSfxChange(0)}>Mute</button>
+                        <button type="button" className="audio-preset-btn" onClick={() => handleSfxChange(0.5)}>50%</button>
+                        <button type="button" className="audio-preset-btn" onClick={() => handleSfxChange(1)}>100%</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
 
               <section className="lobby-section">
                 <span className="section-title">Statistiques du Compte</span>

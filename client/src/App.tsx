@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { getRandomSkin } from '@angulio/shared';
 import { fetchProfile, loadSession, type AuthResult } from './auth.js';
+import AssetPreloader from './components/AssetPreloader.js';
 import Home from './components/Home.js';
 import GameView from './components/GameView.js';
 import { navigate, usePath } from './router.js';
@@ -42,6 +43,7 @@ interface GameSession {
 }
 
 export default function App() {
+  const [showPreloader, setShowPreloader] = useState(true);
   const [nickname, setNickname] = useState('');
   const [session, setSession] = useState<GameSession | null>(null);
   // Transition d'entrée en jeu (demande utilisateur) : le temps que l'UI d'accueil "zoome en
@@ -274,6 +276,7 @@ export default function App() {
 
   return (
     <>
+      {showPreloader && <AssetPreloader onComplete={() => setShowPreloader(false)} />}
       <Home
         nickname={nickname}
         onNicknameChange={setNickname}
