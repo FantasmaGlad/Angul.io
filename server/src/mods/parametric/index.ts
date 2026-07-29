@@ -224,8 +224,18 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
    * position) plutôt qu'une direction unique partagée par tous les morceaux du joueur : si le
    * curseur est positionné entre plusieurs morceaux, chacun s'en rapproche indépendamment
    * (regroupement), au lieu que tous partent dans la même direction relative.
+   *
+   * `intensity` (contrôle analogique, voir `PlayerInput.intensity`) est forcée à 1 dès qu'un
+   * joueur a plus d'un morceau : elle est dérivée côté client de la distance souris↔CENTRE ÉCRAN
+   * (voir input.ts `CONTROL_RADIUS_PX`), et l'écran est centré sur le BARYCENTRE des morceaux du
+   * joueur — placer le curseur "au milieu" pour regrouper ses morceaux après un split (l'intuition
+   * naturelle, et le comportement demandé) donnait donc une intensité quasi nulle à chaque morceau
+   * individuellement distant de ce barycentre, malgré une direction de convergence parfaitement
+   * valide : les morceaux ne bougeaient quasiment pas au lieu de converger à pleine vitesse. Le
+   * contrôle analogique fin ne garde son sens que pour un morceau unique (le curseur est alors
+   * proche de SA position, pas d'un barycentre distinct).
    */
-  function inputVectorOf(piece: Entity): { direction: Vector2; intensity: number; accelIntensity: number } {
+  function inputVectorOf(world: World, piece: Entity): { direction: Vector2; intensity: number; accelIntensity: number } {
     const state = pieceState(piece);
     const offset = sub(state.inputTarget, piece.position);
     const dist = length(offset);
@@ -242,7 +252,9 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     // ré-entrer, geler/dégeler en boucle : le tremblotement visible du blob (absent des robots/
     // joueurs distants, toujours lissés par l'interpolation, jamais recalculés bruts par frame).
     if (dist < TARGET_DEAD_ZONE_PX) return { direction: FALLBACK_DIRECTION, intensity: 0, accelIntensity: 1 };
-    return { direction: scale(offset, 1 / dist), intensity: state.inputIntensity, accelIntensity: 1 };
+    const hasMultiplePieces = piece.ownerId !== undefined && world.getPiecesByOwner(piece.ownerId).length > 1;
+    const intensity = hasMultiplePieces ? 1 : state.inputIntensity;
+    return { direction: scale(offset, 1 / dist), intensity, accelIntensity: 1 };
   }
 
   /** Divise un morceau en deux (masse restante m/2, éjecté = m/2 * eta_W — metriques.md §9,
@@ -252,7 +264,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     if (world.getPiecesByOwner(playerId).length >= config.player.maxSplits) return;
 
     const half = piece.mass / 2;
-    const { direction: dir } = inputVectorOf(piece); // le split ignore l'intensité, toujours "plein"
+    const { direction: dir } = inputVectorOf(world, piece); // le split ignore l'intensité, toujours "plein"
 
     world.setMass(piece, half);
     const originState = pieceState(piece);
@@ -288,7 +300,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     const amount = config.eject.amount;
     if (piece.mass < amount * EJECT_MIN_MASS_MULTIPLIER) return;
 
-    const { direction: dir } = inputVectorOf(piece); // l'éjection ignore l'intensité, toujours "pleine"
+    const { direction: dir } = inputVectorOf(world, piece); // l'éjection ignore l'intensité, toujours "pleine"
 
     world.setMass(piece, piece.mass - amount);
     state.ejectCooldownS = EJECT_COOLDOWN_SECONDS;
@@ -328,7 +340,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
   function hasMassAdvantage(attacker: Entity, target: Entity): boolean {
     if (isGodPlayerId(target.ownerId)) return false;
     if (isGodPlayerId(attacker.ownerId)) return true;
-    return attacker.mass >= target.mass * (1 + config.eating.massAdvantage);
+    return attacker.mass > target.mass;
   }
 
   /** Masse minimale sous laquelle une cible en cours d'absorption est retirée entièrement plutôt
@@ -362,8 +374,8 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     const targetArea = PI * target.radius * target.radius;
     const overlapFraction = targetArea > 0 ? clamp(overlap / targetArea, 0, 1) : 1;
 
-    // Dès 60% (0.6) de la surface du blob recouverte, la cible est immédiatement dévorée.
-    if (overlapFraction < 0.6) return false;
+    // Dès 70% (0.7, arrondi de 2/3) de la surface du blob recouverte, la cible est immédiatement dévorée.
+    if (overlapFraction < 0.7) return false;
 
     const massToTransfer = target.mass;
 
@@ -391,6 +403,59 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
   }
 
   let foodSpawnCredit = 0;
+  const lastPunitiveSplitByPlayer = new Map<PlayerId, number>();
+
+  function splitPlayerMaxRadially(world: World, playerId: PlayerId): void {
+    let angleIndex = 0;
+    let iterationGuard = 0;
+    const MIN_PUNITIVE_SPLIT_MASS = 1;
+
+    while (
+      world.getPiecesByOwner(playerId).length < config.player.maxSplits &&
+      iterationGuard < 10
+    ) {
+      iterationGuard++;
+      const pieces = world.getPiecesByOwner(playerId);
+      const eligible = pieces.filter((p) => p.mass >= MIN_PUNITIVE_SPLIT_MASS);
+      if (eligible.length === 0) break;
+
+      let splitOccurred = false;
+      const count = eligible.length;
+      for (let i = 0; i < count; i++) {
+        if (world.getPiecesByOwner(playerId).length >= config.player.maxSplits) break;
+        const piece = eligible[i]!;
+        if (piece.mass < MIN_PUNITIVE_SPLIT_MASS) continue;
+
+        const angle = (angleIndex / 8) * (2 * Math.PI);
+        angleIndex++;
+        const dir: Vector2 = { x: Math.cos(angle), y: Math.sin(angle) };
+
+        const half = piece.mass / 2;
+        world.setMass(piece, half);
+        const originState = pieceState(piece);
+        originState.splitElapsedS = 0;
+        originState.massAtSplit = half;
+
+        const ejectedMass = half * config.split.ejectEfficiency;
+        const ejectedPosition = add(piece.position, scale(dir, piece.radius * 2));
+        const ejected = world.spawnPiece(playerId, ejectedPosition, ejectedMass);
+        ejected.velocity = scale(
+          dir,
+          velocityForMass(ejectedMass, config) * config.split.ejectSpeedFactor,
+        );
+
+        const ejectedState = pieceState(ejected);
+        ejectedState.inputTarget = { ...originState.inputTarget };
+        ejectedState.inputIntensity = originState.inputIntensity;
+        ejectedState.splitElapsedS = 0;
+        ejectedState.massAtSplit = ejectedMass;
+
+        splitOccurred = true;
+      }
+
+      if (!splitOccurred) break;
+    }
+  }
 
   return {
     id: config.id,
@@ -448,7 +513,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         state.foodEatenThisTick = 0;
         state.ejectCooldownS = Math.max(0, state.ejectCooldownS - dt);
 
-        const { direction, intensity, accelIntensity } = inputVectorOf(entity);
+        const { direction, intensity, accelIntensity } = inputVectorOf(world, entity);
         // Le curseur proche du centre donne un contrôle fin (faible intensité) ; loin, le
         // plein régime — vitesse cible ET taux d'accélération sont réduits de concert, SAUF dans
         // la zone morte (intensity=0, accelIntensity=1) où l'on garde l'accélération pleine pour
@@ -471,6 +536,36 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         foodSpawnCredit -= toSpawn;
         for (let i = 0; i < toSpawn; i++) {
           world.spawnParticle(randomFoodPosition(world, 1), randomFoodMass(config));
+        }
+      }
+
+      // Malus du leader étendu au Top 5 (mutualisé dans le mod paramétrique de base pour Vanilla + Hardcore)
+      const playerTotals: Array<{ playerId: PlayerId; totalMass: number }> = [];
+      for (const player of allPlayers) {
+        const pieces = world.getPiecesByOwner(player.id);
+        if (pieces.length === 0) continue;
+        const totalMass = pieces.reduce((sum, p) => sum + p.mass, 0);
+        if (totalMass > 0) {
+          playerTotals.push({ playerId: player.id, totalMass });
+        }
+      }
+
+      if (playerTotals.length >= 2) {
+        playerTotals.sort((a, b) => b.totalMass - a.totalMass);
+        const maxRankToCheck = Math.min(5, playerTotals.length - 1);
+        const nowMs = performance.now();
+        for (let i = 1; i <= maxRankToCheck; i++) {
+          const leader = playerTotals[i - 1]!;
+          const runnerUp = playerTotals[i]!;
+          const lastSplitMs = lastPunitiveSplitByPlayer.get(leader.playerId) ?? -10000;
+          if (
+            leader.totalMass >= 200 &&
+            leader.totalMass > runnerUp.totalMass * 2 &&
+            nowMs - lastSplitMs >= 10000
+          ) {
+            lastPunitiveSplitByPlayer.set(leader.playerId, nowMs);
+            splitPlayerMaxRadially(world, leader.playerId);
+          }
         }
       }
     },
@@ -524,19 +619,30 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         return;
       }
 
-      // Deux morceaux de joueurs différents : absorption s'il y a un avantage de masse
-      // (sans répulsion pour permettre à l'attaquant de dévorer sa cible), ou répulsion
-      // si aucune entité n'a l'avantage (masses équivalentes) afin de bloquer le chevauchement.
-      const aCanEatB = hasMassAdvantage(a, b);
-      const bCanEatA = hasMassAdvantage(b, a);
-
-      if (aCanEatB || bCanEatA) {
-        if (aCanEatB) handleEatAttempt(world, a, b, dt);
-        else handleEatAttempt(world, b, a, dt);
+      // Blob Dieu (§4.5 cahier_des_charges_admin.md) : mange n'importe quelle entité immédiatement sans condition de masse.
+      if (isGodPlayerId(a.ownerId) || isGodPlayerId(b.ownerId)) {
+        if (hasMassAdvantage(a, b)) handleEatAttempt(world, a, b, dt);
+        else if (hasMassAdvantage(b, a)) handleEatAttempt(world, b, a, dt);
         return;
       }
 
-      applyRepulsion(a, b);
+      // Deux morceaux de joueurs différents :
+      // 1. Si la différence de masse est <= 5%, ils se croisent librement sans se manger ni se repousser (demande utilisateur).
+      const minMass = Math.min(a.mass, b.mass);
+      const massDiffPct = minMass > 0 ? Math.abs(a.mass - b.mass) / minMass : 0;
+      if (massDiffPct <= 0.05) {
+        return;
+      }
+
+      // 2. Si la masse diffère de plus de 5%, le plus gros tente de manger le plus petit s'il atteint au moins 70% de chevauchement.
+      // Tant que le chevauchement est < 70%, appliquer une répulsion pour matérialiser le contact physique et éviter la disparition subite à distance.
+      const [attacker, victim] = a.mass > b.mass ? [a, b] : [b, a];
+      if (hasMassAdvantage(attacker, victim)) {
+        const ate = handleEatAttempt(world, attacker, victim, dt);
+        if (!ate) {
+          applyRepulsion(attacker, victim, false);
+        }
+      }
     },
   };
 }

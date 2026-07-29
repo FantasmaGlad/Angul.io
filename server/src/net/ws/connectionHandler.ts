@@ -2,6 +2,7 @@ import type { IncomingMessage } from 'node:http';
 import {
   colorForNickname,
   getRandomSkin,
+  skinForNickname,
   WS_CLOSE_NICKNAME_TAKEN,
   WS_CLOSE_ROOM_FULL,
   WS_CLOSE_ROOM_NOT_FOUND,
@@ -144,6 +145,15 @@ export function handleWsConnection(
       movement: managed.handle.movement,
       modId: managed.modId,
     });
+    for (const [pId, nickname] of runtime.nicknameByPlayer.entries()) {
+      const color = runtime.colorByPlayer.get(pId) ?? skinForNickname(nickname);
+      send(socket, {
+        type: 'player',
+        playerId: pId,
+        nickname,
+        color,
+      });
+    }
     socket.on('close', () => {
       runtime.sockets.delete(spectatorId);
       runtime.spectatorIds.delete(spectatorId);
@@ -226,11 +236,11 @@ export function handleWsConnection(
         });
 
         for (const existingPlayer of result.existingPlayers) {
-          let existingColor = runtime.colorByPlayer.get(existingPlayer.id);
-          if (!existingColor) {
-            existingColor = getRandomSkin();
-            runtime.colorByPlayer.set(existingPlayer.id, existingColor);
-          }
+          const existingColor =
+            existingPlayer.skin ??
+            runtime.colorByPlayer.get(existingPlayer.id) ??
+            skinForNickname(existingPlayer.nickname);
+          runtime.colorByPlayer.set(existingPlayer.id, existingColor);
           send(socket, {
             type: 'player',
             playerId: existingPlayer.id,

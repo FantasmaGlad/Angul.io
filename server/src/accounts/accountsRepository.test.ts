@@ -158,4 +158,19 @@ describe.skipIf(!DATABASE_URL)('AccountsRepository (Postgres)', () => {
     const hardcoreRows = await repository.getLeaderboard('hardcore', 1000);
     expect(hardcoreRows.some((row) => row.pseudo === other.pseudo)).toBe(false);
   });
+
+  it('getLeaderboard("mass") trie par la meilleure masse atteinte tous modes confondus', async () => {
+    const player = await repository.createAccount(uniquePseudo('lbmass'), 'hash');
+    const other = await repository.createAccount(uniquePseudo('lbmass'), 'hash');
+    createdIds.push(player.id, other.id);
+
+    await repository.recordBestMass(player.id, 'vanilla', 25000);
+    await repository.recordBestMass(other.id, 'hardcore', 15000);
+
+    const massRows = await repository.getLeaderboard('mass', 1000);
+    const ours = massRows.filter((row) => [player.pseudo, other.pseudo].includes(row.pseudo));
+    expect(ours.map((row) => row.pseudo)).toEqual([player.pseudo, other.pseudo]);
+    expect(ours[0]).toMatchObject({ pseudo: player.pseudo, score: 25000 });
+    expect(ours[1]).toMatchObject({ pseudo: other.pseudo, score: 15000 });
+  });
 });

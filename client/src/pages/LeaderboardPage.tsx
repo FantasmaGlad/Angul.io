@@ -58,6 +58,7 @@ export default function LeaderboardPage() {
 
   const tabs = [
     { id: 'global', label: 'Global · XP' },
+    { id: 'mass', label: 'Global · Meilleure Masse' },
     ...modes.map((modeId) => ({ id: modeId, label: modeMeta(modeId).label })),
   ];
 
@@ -78,7 +79,11 @@ export default function LeaderboardPage() {
 
       <section className="lobby-section">
         <span className="section-title">
-          {activeTab === 'global' ? 'Top Joueurs — XP Totale' : `Top Joueurs — ${modeMeta(activeTab).label}`}
+          {activeTab === 'global'
+            ? 'Top Joueurs — XP Totale'
+            : activeTab === 'mass'
+            ? 'Top Joueurs — Meilleure Masse (Tous modes)'
+            : `Top Joueurs — ${modeMeta(activeTab).label}`}
         </span>
 
         {error && <p className="error-text">{error}</p>}
@@ -112,7 +117,7 @@ export default function LeaderboardPage() {
                   <span className="leaderboard-page-pseudo">{entry.pseudo}</span>
                   <span className="account-badge-pill">Niveau {entry.level}</span>
                   <span className="leaderboard-page-score">
-                    {entry.score.toLocaleString('fr-FR')} {activeTab === 'global' ? 'XP' : 'pts'}
+                    {entry.score.toLocaleString('fr-FR')} {activeTab === 'global' ? 'XP' : 'Masse'}
                   </span>
                 </div>
               );

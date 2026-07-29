@@ -55,6 +55,7 @@ export interface DeathInfo {
 }
 
 export interface LeaveResult {
+  rawScore: number;
   transformedScore: number;
   transformedXp: number;
 }
@@ -77,7 +78,7 @@ export type JoinResult =
        * "backfill" `player` envoyé au nouvel arrivant (voir connectionHandler.ts). Couleur non
        * incluse : résolue côté thread principal (compte/DB ou repli déterministe), voir
        * `RoomRuntime.colorByPlayer`. */
-      existingPlayers: Array<{ id: PlayerId; nickname: string }>;
+      existingPlayers: Array<{ id: PlayerId; nickname: string; skin?: string }>;
     }
   | { ok: false; reason: 'room_full' | 'nickname_taken' };
 

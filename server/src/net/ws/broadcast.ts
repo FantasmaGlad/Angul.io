@@ -79,7 +79,20 @@ export function wireRoom(
     for (const socket of runtime.sockets.values()) send(socket, playerInfo);
   });
 
+  let lastPeakMassSyncAt = Date.now();
+
   managed.handle.onTick((_tick, payloads) => {
+    const now = Date.now();
+    if (accountsService && now - lastPeakMassSyncAt >= 10000) {
+      lastPeakMassSyncAt = now;
+      for (const [pId, accountId] of runtime.accountIdByPlayer.entries()) {
+        const peakMass = managed.handle.getPlayerMaxMass?.(pId);
+        if (peakMass && peakMass > 0) {
+          accountsService.recordBestMass(accountId, managed.modId, peakMass).catch(() => {});
+        }
+      }
+    }
+
     let cachedSpectatorJson: string | undefined;
     for (const { playerId, message } of payloads) {
       const socket = runtime.sockets.get(playerId);
@@ -101,16 +114,29 @@ export function wireRoom(
     logEvent('player_died', { roomId: managed.id, playerId });
 
     const accountId = runtime.accountIdByPlayer.get(playerId);
-    if (accountsService && accountId !== undefined && (info.transformedScore > 0 || info.transformedXp > 0)) {
-      accountsService
-        .recordGameResult(accountId, managed.modId, info.transformedScore, info.transformedXp)
-        .catch((error: unknown) => {
-          logEvent('account_stats_write_failed', {
-            roomId: managed.id,
-            playerId,
-            reason: (error as Error).message,
+    if (accountsService && accountId !== undefined) {
+      if (info.finalScore > 0) {
+        accountsService
+          .recordBestMass(accountId, managed.modId, info.finalScore)
+          .catch((error: unknown) => {
+            logEvent('account_stats_write_failed', {
+              roomId: managed.id,
+              playerId,
+              reason: (error as Error).message,
+            });
           });
-        });
+      }
+      if (info.transformedScore > 0 || info.transformedXp > 0) {
+        accountsService
+          .recordGameResult(accountId, managed.modId, info.transformedScore, info.transformedXp)
+          .catch((error: unknown) => {
+            logEvent('account_stats_write_failed', {
+              roomId: managed.id,
+              playerId,
+              reason: (error as Error).message,
+            });
+          });
+      }
     }
 
     const socket = runtime.sockets.get(playerId);
@@ -123,14 +149,12 @@ export function wireRoom(
       // de victoire, affichée à la place de l'écran de mort personnalisé du joueur — celui-ci reste
       // utilisé pour toute autre cause de mort (joueur humain, reset de salon). `botKillGifPath`
       // ne renvoie une bannière que si un GIF a réellement été déposé pour CE bot (voir son
-      // commentaire) ; sinon la bannière retombe sur celle du joueur/le dégradé par défaut plutôt
-      // que de référencer un fichier inexistant.
+      // commentaire) ; sinon la bannière retombe sur le dégradé par défaut plutôt que de référencer la bannière du joueur tué.
       const botMessage = info.killerNickname ? BOT_KILL_MESSAGES[info.killerNickname] : undefined;
       const customCard: DeathCustomCard = botMessage
         ? {
             message: botMessage,
-            bannerId:
-              botKillGifPath(info.killerNickname!) ?? card?.bannerId ?? DEFAULT_DEATH_BANNER_ID,
+            bannerId: botKillGifPath(info.killerNickname!) ?? DEFAULT_DEATH_BANNER_ID,
           }
         : card
           ? { message: card.message, bannerId: card.bannerId }
@@ -172,21 +196,34 @@ export function recordAccountStatsOnLeave(
   managed: ManagedRoom,
   accountId: number | undefined,
   playerId: PlayerId,
-  result: { transformedScore: number; transformedXp: number } | undefined,
+  result: { rawScore?: number; transformedScore: number; transformedXp: number } | undefined,
 ): void {
   if (!accounts || !result) return;
   if (accountId === undefined) return;
-  if (result.transformedScore <= 0 && result.transformedXp <= 0) return;
 
-  accounts
-    .recordGameResult(accountId, managed.modId, result.transformedScore, result.transformedXp)
-    .catch((error: unknown) => {
-      logEvent('account_stats_write_failed', {
-        roomId: managed.id,
-        playerId,
-        reason: (error as Error).message,
+  if (result.rawScore && result.rawScore > 0) {
+    accounts
+      .recordBestMass(accountId, managed.modId, result.rawScore)
+      .catch((error: unknown) => {
+        logEvent('account_stats_write_failed', {
+          roomId: managed.id,
+          playerId,
+          reason: (error as Error).message,
+        });
       });
-    });
+  }
+
+  if (result.transformedScore > 0 || result.transformedXp > 0) {
+    accounts
+      .recordGameResult(accountId, managed.modId, result.transformedScore, result.transformedXp)
+      .catch((error: unknown) => {
+        logEvent('account_stats_write_failed', {
+          roomId: managed.id,
+          playerId,
+          reason: (error as Error).message,
+        });
+      });
+  }
 }
 
 /** Seuil maximal de données accumulées dans le buffer de la socket avant de sauter un envoi (64 Ko)

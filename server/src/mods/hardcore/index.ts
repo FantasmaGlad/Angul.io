@@ -82,73 +82,19 @@ export function createHardcoreMod(
     return true;
   }
 
-  function splitPlayerMaxRadially(world: World, playerId: PlayerId): void {
-    let angleIndex = 0;
-    let iterationGuard = 0;
-    const MIN_PUNITIVE_SPLIT_MASS = 1;
-
-    while (
-      world.getPiecesByOwner(playerId).length < config.player.maxSplits &&
-      iterationGuard < 10
-    ) {
-      iterationGuard++;
-      const pieces = world.getPiecesByOwner(playerId);
-      const eligible = pieces.filter((p) => p.mass >= MIN_PUNITIVE_SPLIT_MASS);
-      if (eligible.length === 0) break;
-
-      let splitOccurred = false;
-      const count = eligible.length;
-      for (let i = 0; i < count; i++) {
-        if (world.getPiecesByOwner(playerId).length >= config.player.maxSplits) break;
-        const piece = eligible[i]!;
-        if (piece.mass < MIN_PUNITIVE_SPLIT_MASS) continue;
-
-        // `2*Math.PI` (tour complet), pas `6` : l'approximation littérale laissait un secteur
-        // d'environ 16° jamais couvert par aucune direction d'éjection.
-        const angle = (angleIndex / 8) * (2 * Math.PI);
-        angleIndex++;
-        const dir: Vector2 = { x: Math.cos(angle), y: Math.sin(angle) };
-
-        const half = piece.mass / 2;
-        world.setMass(piece, half);
-        const originState = pieceState(piece);
-        originState.splitElapsedS = 0;
-        originState.massAtSplit = half;
-
-        const ejectedMass = half * config.split.ejectEfficiency;
-        const ejectedPosition = add(piece.position, scale(dir, piece.radius * 2));
-        const ejected = world.spawnPiece(playerId, ejectedPosition, ejectedMass);
-        ejected.velocity = scale(
-          dir,
-          velocityForMass(ejectedMass, config) * config.split.ejectSpeedFactor,
-        );
-
-        const ejectedState = pieceState(ejected);
-        ejectedState.inputTarget = { ...originState.inputTarget };
-        ejectedState.inputIntensity = originState.inputIntensity;
-        ejectedState.splitElapsedS = 0;
-        ejectedState.massAtSplit = ejectedMass;
-
-        splitOccurred = true;
-      }
-
-      if (!splitOccurred) break;
-    }
-  }
-
   interface DashState {
     charges: number;
     lastDashTimeMs: number;
     rechargeProgressMs: number;
   }
 
+  const HARDCORE_MAX_DASHES = 5;
   const dashStates = new Map<PlayerId, DashState>();
-  const lastPunitiveSplitByPlayer = new Map<PlayerId, number>();
 
   function getOrCreateDashState(playerId: PlayerId): DashState {
     let state = dashStates.get(playerId);
     if (!state) {
-      state = { charges: 3, lastDashTimeMs: -10000, rechargeProgressMs: 0 };
+      state = { charges: HARDCORE_MAX_DASHES, lastDashTimeMs: -10000, rechargeProgressMs: 0 };
       dashStates.set(playerId, state);
     }
     return state;
@@ -159,7 +105,7 @@ export function createHardcoreMod(
     id: config.id,
 
     onPlayerJoin(world: World, playerId: PlayerId) {
-      dashStates.set(playerId, { charges: 3, lastDashTimeMs: -10000, rechargeProgressMs: 0 });
+      dashStates.set(playerId, { charges: HARDCORE_MAX_DASHES, lastDashTimeMs: -10000, rechargeProgressMs: 0 });
       base.onPlayerJoin?.(world, playerId);
     },
 
@@ -202,10 +148,10 @@ export function createHardcoreMod(
       const state = getOrCreateDashState(playerId);
       const now = performance.now();
       const canDash = pieces.length === 1 && state.charges > 0 && now - state.lastDashTimeMs >= 1000;
-      const rechargeProgress = state.charges < 3 ? clamp(state.rechargeProgressMs / 4000, 0, 1) : 1;
+      const rechargeProgress = state.charges < HARDCORE_MAX_DASHES ? clamp(state.rechargeProgressMs / 4000, 0, 1) : 1;
       return {
         charges: state.charges,
-        maxCharges: 3,
+        maxCharges: HARDCORE_MAX_DASHES,
         canDash,
         rechargeProgress,
       };
@@ -216,11 +162,11 @@ export function createHardcoreMod(
 
       // Mise à jour de la recharge des dashs (4s par charge)
       for (const [playerId, state] of dashStates.entries()) {
-        if (state.charges < 3) {
+        if (state.charges < HARDCORE_MAX_DASHES) {
           state.rechargeProgressMs += dt * 1000;
           if (state.rechargeProgressMs >= 4000) {
             state.charges += 1;
-            state.rechargeProgressMs = state.charges < 3 ? state.rechargeProgressMs - 4000 : 0;
+            state.rechargeProgressMs = state.charges < HARDCORE_MAX_DASHES ? state.rechargeProgressMs - 4000 : 0;
           }
         }
       }
@@ -263,30 +209,6 @@ export function createHardcoreMod(
           const dir: Vector2 = len > 0 ? { x: dx / len, y: dy / len } : { x: 1, y: 0 };
           const DASH_IMPULSE_SPEED = 2700;
           piece.velocity = add(piece.velocity, scale(dir, DASH_IMPULSE_SPEED));
-        }
-      }
-
-      const playerTotals: Array<{ playerId: PlayerId; totalMass: number }> = [];
-      for (const player of world.allPlayers()) {
-        const pieces = world.getPiecesByOwner(player.id);
-        if (pieces.length === 0) continue;
-        const totalMass = pieces.reduce((sum, p) => sum + p.mass, 0);
-        if (totalMass > 0) {
-          playerTotals.push({ playerId: player.id, totalMass });
-        }
-      }
-
-      if (playerTotals.length >= 1) {
-        playerTotals.sort((a, b) => b.totalMass - a.totalMass);
-        const leader = playerTotals[0]!;
-        const runnerUp = playerTotals[1] ?? { playerId: '', totalMass: config.player.startMass };
-        // Règle Hardcore : Si le 1er joueur a au moins 200 de masse et qu'il fait plus de 2x la masse du N-1,
-        // déclencher l'explosion punitive radiale (au maximum une fois toutes les 10s pour éviter la boucle 20Hz créatrice de lag).
-        const lastSplitMs = lastPunitiveSplitByPlayer.get(leader.playerId) ?? -10000;
-        const nowMs = performance.now();
-        if (leader.totalMass >= 200 && leader.totalMass > runnerUp.totalMass * 2 && nowMs - lastSplitMs >= 10000) {
-          lastPunitiveSplitByPlayer.set(leader.playerId, nowMs);
-          splitPlayerMaxRadially(world, leader.playerId);
         }
       }
     },

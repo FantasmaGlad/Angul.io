@@ -44,17 +44,49 @@
     "borderType": "STRICT_WALL"
   },
   "food": {
-    "density": 35,
-    "respawnRatePerSecond": 300,
+    "density": 5,
+    "respawnRatePerSecond": 20,
     "pelletTypes": [
-      { "color": "vert", "mass": 2, "weight": 28 },
-      { "color": "bleu", "mass": 4, "weight": 22 },
-      { "color": "jaune", "mass": 6, "weight": 18 },
-      { "color": "violet", "mass": 8, "weight": 13 },
-      { "color": "rouge", "mass": 10, "weight": 10 },
-      { "color": "orange", "mass": 12, "weight": 5 },
-      { "color": "rose", "mass": 14, "weight": 3 },
-      { "color": "multicolor", "mass": 24, "weight": 1 }
+      {
+        "color": "vert",
+        "mass": 2,
+        "weight": 28
+      },
+      {
+        "color": "bleu",
+        "mass": 4,
+        "weight": 22
+      },
+      {
+        "color": "jaune",
+        "mass": 6,
+        "weight": 18
+      },
+      {
+        "color": "violet",
+        "mass": 8,
+        "weight": 13
+      },
+      {
+        "color": "rouge",
+        "mass": 10,
+        "weight": 10
+      },
+      {
+        "color": "orange",
+        "mass": 12,
+        "weight": 5
+      },
+      {
+        "color": "rose",
+        "mass": 14,
+        "weight": 3
+      },
+      {
+        "color": "multicolor",
+        "mass": 24,
+        "weight": 1
+      }
     ]
   },
   "areaConstant": 3,

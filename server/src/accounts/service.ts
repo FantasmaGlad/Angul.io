@@ -283,6 +283,14 @@ export class AccountsService {
     );
   }
 
+  async recordBestMass(
+    accountId: number,
+    modeId: string,
+    mass: number,
+  ): Promise<void> {
+    await this.repository.recordBestMass(accountId, modeId, Math.round(mass));
+  }
+
   /** Lot 6.4 — un compte non-Premium (ou un invité, `accountId` `undefined`) ne peut pas créer
    * de salon (cahier des charges §5.3) ; `false` pour un compte introuvable plutôt qu'une
    * exception, net/server.ts traite les deux cas de la même façon (403). */

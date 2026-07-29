@@ -21,7 +21,7 @@
     "amount": 5
   },
   "merge": {
-    "baseTimeSec": 30,
+    "baseTimeSec": 10,
     "massFactor": 0,
     "overlapMinFraction": 0.3
   },
@@ -44,10 +44,14 @@
     "borderType": "STRICT_WALL"
   },
   "food": {
-    "density": 9,
-    "respawnRatePerSecond": 300,
+    "density": 5,
+    "respawnRatePerSecond": 50,
     "pelletTypes": [
-      { "color": "vert", "mass": 1, "weight": 100 }
+      {
+        "color": "vert",
+        "mass": 1,
+        "weight": 100
+      }
     ]
   },
   "areaConstant": 6,

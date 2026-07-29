@@ -124,7 +124,7 @@ export class World {
 
   // --- Joueurs -----------------------------------------------------------
 
-  addPlayer(id: PlayerId, nickname: string): PlayerState {
+  addPlayer(id: PlayerId, nickname: string, skin?: string): PlayerState {
     const player: PlayerState = {
       id,
       nickname,
@@ -132,6 +132,7 @@ export class World {
       alive: false,
       lifeStats: createLifeStats(),
       spawnedAtMs: performance.now(),
+      skin,
     };
     this.players.set(id, player);
     return player;

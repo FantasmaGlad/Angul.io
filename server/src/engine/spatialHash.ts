@@ -7,7 +7,8 @@ import type { Entity, EntityId } from './types.js';
  */
 export class SpatialHash {
   private readonly cellSize: number;
-  private cells = new Map<string, EntityId[]>();
+  private cells = new Map<number, EntityId[]>();
+  private scratchSet = new Set<EntityId>();
 
   constructor(cellSize: number) {
     this.cellSize = cellSize;
@@ -25,7 +26,7 @@ export class SpatialHash {
 
     for (let cx = minCx; cx <= maxCx; cx++) {
       for (let cy = minCy; cy <= maxCy; cy++) {
-        const key = `${cx},${cy}`;
+        const key = ((cx & 0xffff) << 16) | (cy & 0xffff);
         let bucket = this.cells.get(key);
         if (!bucket) {
           bucket = [];
@@ -47,15 +48,17 @@ export class SpatialHash {
     const cx = Math.floor(position.x / this.cellSize);
     const cy = Math.floor(position.y / this.cellSize);
     const result: EntityId[] = [];
-    const visited = new Set<EntityId>();
+    this.scratchSet.clear();
 
     for (let dx = -cellRange; dx <= cellRange; dx++) {
       for (let dy = -cellRange; dy <= cellRange; dy++) {
-        const bucket = this.cells.get(`${cx + dx},${cy + dy}`);
+        const key = (((cx + dx) & 0xffff) << 16) | ((cy + dy) & 0xffff);
+        const bucket = this.cells.get(key);
         if (bucket) {
-          for (const id of bucket) {
-            if (!visited.has(id)) {
-              visited.add(id);
+          for (let i = 0; i < bucket.length; i++) {
+            const id = bucket[i]!;
+            if (!this.scratchSet.has(id)) {
+              this.scratchSet.add(id);
               result.push(id);
             }
           }
@@ -64,10 +67,5 @@ export class SpatialHash {
     }
     return result;
   }
-
-  private cellKey(position: Vector2): string {
-    const cx = Math.floor(position.x / this.cellSize);
-    const cy = Math.floor(position.y / this.cellSize);
-    return `${cx},${cy}`;
-  }
 }
+

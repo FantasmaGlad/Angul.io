@@ -60,9 +60,25 @@ function roundMass(value: number): number {
 }
 
 export function toSnapshot(entity: Entity): EntitySnapshot {
+  if (entity.kind === 'particle') {
+    let snap = (entity as any)._snapshot as EntitySnapshot | undefined;
+    if (!snap) {
+      snap = {
+        i: entity.id,
+        k: 'f',
+        x: round1(entity.position.x),
+        y: round1(entity.position.y),
+        r: round1(entity.radius),
+        m: roundMass(entity.mass),
+        p: entity.ownerId,
+      };
+      (entity as any)._snapshot = snap;
+    }
+    return snap;
+  }
   return {
     i: entity.id,
-    k: entity.kind === 'particle' ? 'f' : 'c',
+    k: 'c',
     x: round1(entity.position.x),
     y: round1(entity.position.y),
     r: round1(entity.radius),

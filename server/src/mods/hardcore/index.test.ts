@@ -9,20 +9,20 @@ function freshWorld(mapSize = 15000, kArea = testConfig().areaConstant): World {
 }
 
 describe('createHardcoreMod — onCollision (absorption entre joueurs)', () => {
-  it('multiplie la masse gagnée en mangeant un autre joueur (x10 par défaut, absorption complète — dt largement suffisant)', () => {
+  it('multiplie la masse gagnée en mangeant un autre joueur (cahier des charges §3.4 #2 : "gains de masse multipliés x10 ou configurable") — la nourriture ambiante n\'est pas concernée : l\'agressivité voulue vient de la prédation entre joueurs, pas de la cueillette passive.', () => {
     const config = testConfig();
     const mod = createHardcoreMod(config);
     const world = freshWorld();
     world.addPlayer('p1', 'Alice');
     world.addPlayer('p2', 'Bob');
-    const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 105);
+    const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 120);
     const target = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
 
     mod.onCollision?.(world, attacker, target, 1);
 
     expect(world.getEntity(target.id)).toBeUndefined();
-    // 105 + 100*2 = 305, pas 205 (comportement Vanilla)
-    expect(attacker.mass).toBeCloseTo(305, 6);
+    // 120 + 100*2 = 320, pas 220 (comportement Vanilla)
+    expect(attacker.mass).toBeCloseTo(320, 6);
   });
 
   it('absorbe PROGRESSIVEMENT, multiplicateur appliqué à chaque tranche transférée (pas seulement au total final)', () => {
@@ -31,14 +31,14 @@ describe('createHardcoreMod — onCollision (absorption entre joueurs)', () => {
     const world = freshWorld();
     world.addPlayer('p1', 'Alice');
     world.addPlayer('p2', 'Bob');
-    const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 105);
+    const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 120);
     const target = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
 
     // Attaquant avec avantage de masse absorbe la cible et gagne sa masse multipliée par massGainMultiplier (x2 par défaut)
     mod.onCollision?.(world, attacker, target, 1 / 20);
 
     expect(world.getEntity(target.id)).toBeUndefined();
-    expect(attacker.mass).toBe(105 + 100 * 2); // 105 + 200
+    expect(attacker.mass).toBe(120 + 100 * 2); // 120 + 200
   });
 
   it('respecte un multiplicateur personnalisé', () => {
@@ -47,12 +47,12 @@ describe('createHardcoreMod — onCollision (absorption entre joueurs)', () => {
     const world = freshWorld();
     world.addPlayer('p1', 'Alice');
     world.addPlayer('p2', 'Bob');
-    const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 105);
+    const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 120);
     const target = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
 
     mod.onCollision?.(world, attacker, target, 1);
 
-    expect(attacker.mass).toBe(105 + 100 * 3);
+    expect(attacker.mass).toBe(120 + 100 * 3);
   });
 
   it("crédite l'XP sur la masse gagnée déjà multipliée (x2), pas la masse brute de la cible", () => {
@@ -61,7 +61,7 @@ describe('createHardcoreMod — onCollision (absorption entre joueurs)', () => {
     const world = freshWorld();
     world.addPlayer('p1', 'Alice');
     world.addPlayer('p2', 'Bob');
-    const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 105);
+    const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 120);
     const target = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
 
     mod.onCollision?.(world, attacker, target, 1);
@@ -231,7 +231,7 @@ describe('createHardcoreMod — Dash (touche F)', () => {
     expect(piece.velocity.x).toBeGreaterThan(500);
 
     const dashState = (mod as any).getDashState(world, 'p1');
-    expect(dashState.charges).toBe(2);
+    expect(dashState.charges).toBe(4);
     expect(dashState.canDash).toBe(false); // Cooldown 1s
   });
 
@@ -262,13 +262,13 @@ describe('createHardcoreMod — Dash (touche F)', () => {
       dash: true,
     });
 
-    expect((mod as any).getDashState(world, 'p1').charges).toBe(2);
+    expect((mod as any).getDashState(world, 'p1').charges).toBe(4);
 
     // Écoulement de 4 secondes (80 ticks de 0.05s)
     for (let i = 0; i < 80; i++) {
       mod.onTick?.(world, 0.05);
     }
 
-    expect((mod as any).getDashState(world, 'p1').charges).toBe(3);
+    expect((mod as any).getDashState(world, 'p1').charges).toBe(5);
   });
 });

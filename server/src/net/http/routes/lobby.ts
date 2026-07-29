@@ -129,6 +129,11 @@ export async function handleGetLeaderboard(
   const modeId = modeParam && modeParam !== 'global' ? modeParam : undefined;
   const limitParam = Number(url.searchParams.get('limit'));
   const limit = Number.isFinite(limitParam) && limitParam > 0 ? limitParam : DEFAULT_LEADERBOARD_LIMIT;
-  const entries = await accounts.getLeaderboard(modeId, limit);
-  respondJson(res, 200, entries);
+  try {
+    const entries = await accounts.getLeaderboard(modeId, limit);
+    respondJson(res, 200, entries);
+  } catch (error) {
+    logEvent('leaderboard_error', { reason: (error as Error).message });
+    respondJson(res, 200, []);
+  }
 }

@@ -183,7 +183,9 @@ export class RenderEngine {
     const lerpPosFactor = 1 - Math.exp(-24 * dtSec);
     const lerpRadiusFactor = 1 - Math.exp(-18 * dtSec);
 
+    const seenIds = new Set<string>();
     const smoothed = interpolated.map((e) => {
+      seenIds.add(e.i);
       let curr = this.smoothMap.get(e.i);
       if (!curr) {
         curr = { x: e.x, y: e.y, r: e.r };
@@ -208,6 +210,12 @@ export class RenderEngine {
         r: curr.r,
       };
     });
+
+    if (this.smoothMap.size > seenIds.size + 100) {
+      for (const id of this.smoothMap.keys()) {
+        if (!seenIds.has(id)) this.smoothMap.delete(id);
+      }
+    }
 
     // Puis le culling de viewport (ou conservation de tout si spectateur)
     if (isSpectator) {

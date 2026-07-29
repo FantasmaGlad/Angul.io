@@ -99,6 +99,8 @@ export function attachInput(
 
   let smoothedMouseX = canvas.width / 2;
   let smoothedMouseY = canvas.height / 2;
+  let smoothedStickX = 0;
+  let smoothedStickY = 0;
   let lastFrameTickTime = performance.now();
 
   function findActiveGamepad(): Gamepad | null {
@@ -121,16 +123,24 @@ export function attachInput(
     lastFrameTickTime = now;
 
     // Lissage exponentiel très réactif (k = 32) : crée une trajectoire en "cloche" fluide lors
-    // des virages serrés/flicks de la souris, supprimant les sauts de direction brutaux et le tressautement.
+    // des virages serrés/flicks de la souris et de la manette.
     const lerpFactor = 1 - Math.exp(-32 * dtSec);
     smoothedMouseX += (mouseX - smoothedMouseX) * lerpFactor;
     smoothedMouseY += (mouseY - smoothedMouseY) * lerpFactor;
 
     const pad = findActiveGamepad();
-    const wasGamepadActive = gamepadActive;
-    gamepadActive = pad !== null;
-    if (gamepadActive !== wasGamepadActive) {
-      canvas.style.cursor = gamepadActive ? 'none' : '';
+    const rawStickX = pad?.axes[0] ?? 0;
+    const rawStickY = pad?.axes[1] ?? 0;
+    smoothedStickX += (rawStickX - smoothedStickX) * lerpFactor;
+    smoothedStickY += (rawStickY - smoothedStickY) * lerpFactor;
+
+    const hasStickInput = Math.hypot(rawStickX, rawStickY) > GAMEPAD_STICK_DEAD_ZONE;
+    const hasAnyButtonPressed = pad?.buttons.some((b) => b.pressed) ?? false;
+    const isGamepadInUse = pad !== null && (hasStickInput || hasAnyButtonPressed);
+
+    if (isGamepadInUse && !gamepadActive) {
+      gamepadActive = true;
+      canvas.style.cursor = 'none';
     }
 
     const checkButton = (
@@ -169,9 +179,8 @@ export function attachInput(
       // potentiellement resté loin du centre ou hors canvas, imposer une commande parasite dès
       // que le stick se recentre.
       if (gamepadActive) {
-        const pad = findActiveGamepad();
-        const stickX = pad?.axes[0] ?? 0;
-        const stickY = pad?.axes[1] ?? 0;
+        const stickX = smoothedStickX;
+        const stickY = smoothedStickY;
         const magnitude = Math.hypot(stickX, stickY);
         const intensity = magnitude >= GAMEPAD_STICK_DEAD_ZONE ? Math.min(1, magnitude) : 0;
         const direction: Vector2 =

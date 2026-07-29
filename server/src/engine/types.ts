@@ -35,6 +35,8 @@ export interface PlayerState {
    * écran de mort (voir `World.recordAttacker`, `Room.tick`). `undefined` si mort autrement
    * (bords de carte, décor) ou si personne ne l'a jamais mangé cette vie. */
   lastAttackerId?: PlayerId;
+  /** Skin / identifiant d'avatar sélectionné ou assigné pour ce joueur. */
+  skin?: string;
 }
 
 export interface PlayerInput {

@@ -255,6 +255,7 @@ export default function GameView({
     window.addEventListener('mousemove', trackMouse);
 
     let dashZoomBonus = 0;
+    let currentModId: string | undefined;
 
     const input = attachInput(
       canvas,
@@ -279,16 +280,17 @@ export default function GameView({
         });
       },
       () => {
+        if (currentModId !== 'hardcore') return;
         dashZoomBonus = 0.5;
-        if (selfPlayerId) {
-          const ownPosition = prediction.getOwnPosition() ?? latestCamera;
-          const { target: inputTarget } = input.getTarget({ ...latestCamera, ...ownPosition });
-          const dx = inputTarget.x - ownPosition.x;
-          const dy = inputTarget.y - ownPosition.y;
-          const len = Math.hypot(dx, dy);
-          const dir = len > 0 ? { x: dx / len, y: dy / len } : { x: 1, y: 0 };
-          prediction.applyDash(dir, 2700);
-        }
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        const dx = lastMouseX - centerX;
+        const dy = lastMouseY - centerY;
+        const len = Math.hypot(dx, dy);
+        const dir = len > 0 ? { x: dx / len, y: dy / len } : { x: 1, y: 0 };
+        prediction.applyDash(dir, 2700);
       },
     );
 
@@ -306,6 +308,7 @@ export default function GameView({
 
     connection.onMessage((message: ServerMessage) => {
       if (message.type === 'welcome') {
+        currentModId = message.modId;
         selfPlayerId = message.playerId;
         mapSize = message.mapSize;
         serverTickRateHz = message.tickRateHz;
@@ -440,7 +443,7 @@ export default function GameView({
             target,
             intensity,
             split: input.consumeSplit(),
-            dash: input.consumeDash(),
+            dash: currentModId === 'hardcore' ? input.consumeDash() : (input.consumeDash(), false),
             eject: input.consumeEject(),
           });
         }
@@ -472,12 +475,11 @@ export default function GameView({
       ? '/assets/Sons/Musiques/Hardcore.m4a'
       : '/assets/Sons/Musiques/vanilla.m4a';
     audioManager.playMusic(musicUrl);
-
     let lastFrameAt = 0;
 
     function onKeyDown(event: KeyboardEvent): void {
       if (event.key === ' ' || event.code === 'Space') {
-        if (isDeadNow) {
+        if (isDeadNow && !justDied) {
           event.preventDefault();
           respawn();
         }

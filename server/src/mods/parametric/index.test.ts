@@ -350,8 +350,8 @@ describe('createParametricMod — manger', () => {
     const world = freshWorld();
     world.addPlayer('p1', 'Alice');
     world.addPlayer('p2', 'Bob');
-    const piece1 = world.spawnPiece('p1', { x: 500, y: 500 }, 100);
-    const piece2 = world.spawnPiece('p2', { x: 510, y: 500 }, 100);
+    const piece1 = world.spawnPiece('p1', { x: 500, y: 500 }, 120);
+    const piece2 = world.spawnPiece('p2', { x: 550, y: 500 }, 100);
     const distanceBefore = distance(piece1.position, piece2.position);
 
     mod.onCollision?.(world, piece1, piece2, 1 / 20);
@@ -365,13 +365,13 @@ describe('createParametricMod — manger', () => {
     const world = freshWorld();
     world.addPlayer('p1', 'Alice');
     world.addPlayer('p2', 'Bob');
-    const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 105);
+    const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 120);
     const target = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
 
     mod.onCollision?.(world, attacker, target, 1 / 20);
 
     expect(world.getEntity(target.id)).toBeUndefined();
-    expect(attacker.mass).toBe(205);
+    expect(attacker.mass).toBe(220);
   });
 
   it('ne mange PAS un morceau de joueur si le chevauchement est inférieur à 0.6 (60%)', () => {
@@ -411,7 +411,7 @@ describe('createParametricMod — manger', () => {
     const world = freshWorld();
     world.addPlayer('p1', 'Alice');
     world.addPlayer('p2', 'Bob');
-    const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 105);
+    const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 120);
     const target = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
 
     mod.onCollision?.(world, attacker, target, 1);
@@ -459,6 +459,46 @@ describe('createParametricMod — manger', () => {
     mod.onCollision?.(world, attacker, god, 1);
     expect(world.getEntity(god.id)).toBeDefined();
   });
+
+  it('exige au moins 70% de chevauchement de la cible pour qu’elle soit entièrement mangée', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Attacker');
+    world.addPlayer('p2', 'Victim');
+
+    // Attaquant de masse 1000 à (500, 500), Victime de masse 100
+    const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 1000);
+    // Victime placée à 160px (chevauchement partiel < 70%)
+    const victimFar = world.spawnPiece('p2', { x: 660, y: 500 }, 100);
+
+    mod.onCollision?.(world, attacker, victimFar, 0.05);
+    // Chevauchement insuffisant (< 70%) : la cible n'est pas mangée
+    expect(world.getEntity(victimFar.id)).toBeDefined();
+
+    // Victime superposée quasi au centre (x: 550, chevauchement > 70%)
+    const victimClose = world.spawnPiece('p2', { x: 550, y: 500 }, 100);
+    mod.onCollision?.(world, attacker, victimClose, 0.05);
+    // Mangée immédiatement
+    expect(world.getEntity(victimClose.id)).toBeUndefined();
+  });
+
+  it('laisse se croiser sans répulsion ni mangeage deux blobs dont la masse diffère de <= 5%', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Player1');
+    world.addPlayer('p2', 'Player2');
+
+    const blobA = world.spawnPiece('p1', { x: 500, y: 500 }, 100);
+    const blobB = world.spawnPiece('p2', { x: 505, y: 500 }, 103); // Différence de 3%
+
+    mod.onCollision?.(world, blobA, blobB, 0.05);
+    // Ni mangé ni repoussé
+    expect(world.getEntity(blobA.id)).toBeDefined();
+    expect(world.getEntity(blobB.id)).toBeDefined();
+    expect(blobA.position.x).toBe(500);
+  });
 });
 
 describe('createParametricMod — onPostMove (bords de carte)', () => {
@@ -491,5 +531,58 @@ describe('createParametricMod — onPostMove (bords de carte)', () => {
       const dist = Math.hypot(particle.position.x - bigPiece.position.x, particle.position.y - bigPiece.position.y);
       expect(dist).toBeGreaterThanOrEqual(bigPiece.radius);
     }
+  });
+});
+
+describe('createParametricMod — intensité multi-morceaux', () => {
+  it('force intensity = 1 quand le joueur possède plus d’un morceau', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    world.spawnPiece('p1', { x: 500, y: 500 }, 50);
+    world.spawnPiece('p1', { x: 600, y: 500 }, 50);
+
+    // Cible proche du premier morceau avec intensity 0.1
+    mod.onPlayerInput?.(world, 'p1', { target: { x: 510, y: 500 }, intensity: 0.1, split: false });
+    mod.onTick?.(world, 0.5);
+
+    const pieces = world.getPiecesByOwner('p1');
+    // Vitesse plein régime vers la cible grâce à intensity forced to 1
+    expect(Math.abs(pieces[0]!.velocity.x)).toBeGreaterThan(100);
+  });
+});
+
+describe('createParametricMod — Malus du leader Top 5 (punitive split)', () => {
+  it('se déclenche pour un joueur du Top 5 si sa masse est >= 200 et > 2x celle du rang immédiatement derrière lui', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Leader');
+    world.addPlayer('p2', 'RunnerUp');
+
+    world.spawnPiece('p1', { x: 500, y: 500 }, 5000);
+    world.spawnPiece('p2', { x: 2000, y: 2000 }, 100);
+
+    expect(world.getPiecesByOwner('p1')).toHaveLength(1);
+
+    mod.onTick?.(world, 0.05);
+
+    const leaderPieces = world.getPiecesByOwner('p1');
+    expect(leaderPieces.length).toBe(config.player.maxSplits);
+  });
+
+  it('NE SE DÉCLENCHE PAS si le joueur est seul dans le salon (playerTotals.length === 1)', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'SoloPlayer');
+
+    world.spawnPiece('p1', { x: 500, y: 500 }, 5000);
+
+    mod.onTick?.(world, 0.05);
+
+    const soloPieces = world.getPiecesByOwner('p1');
+    expect(soloPieces).toHaveLength(1);
   });
 });

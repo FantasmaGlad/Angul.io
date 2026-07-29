@@ -41,6 +41,7 @@ export interface RoomHandle {
   join(nickname: string, skin?: string): Promise<JoinResult>;
   respawn(playerId: PlayerId, nickname: string): Promise<RespawnResult>;
   leave(playerId: PlayerId): Promise<LeaveResult | undefined>;
+  getPlayerMaxMass?(playerId: PlayerId): number;
   input(playerId: PlayerId, input: PlayerInput): void;
   connectViewer(playerId: PlayerId, isSpectator: boolean): void;
   disconnectViewer(playerId: PlayerId): void;
@@ -87,6 +88,10 @@ class LocalRoomHandle implements RoomHandle {
 
   leave(playerId: PlayerId): Promise<LeaveResult | undefined> {
     return Promise.resolve(this.instance.leave(playerId));
+  }
+
+  getPlayerMaxMass(playerId: PlayerId): number {
+    return this.instance.getPlayerMaxMass(playerId);
   }
 
   input(playerId: PlayerId, input: PlayerInput): void {

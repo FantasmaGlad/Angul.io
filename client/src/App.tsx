@@ -5,6 +5,7 @@ import { audioManager } from './audio.js';
 import AssetPreloader from './components/AssetPreloader.js';
 import Home from './components/Home.js';
 import GameView from './components/GameView.js';
+import { ErrorBoundary } from './components/ErrorBoundary.js';
 import { navigate, usePath } from './router.js';
 import {
   fetchAvailableModes,
@@ -232,15 +233,17 @@ export default function App() {
 
   if (session) {
     return (
-      <GameView
-        key={session.roomIdOrInviteCode}
-        roomIdOrInviteCode={session.roomIdOrInviteCode}
-        inviteCodeToShow={session.inviteCodeToShow}
-        nickname={session.nickname}
-        authToken={authSession?.token}
-        onExit={handleExit}
-        onForceRoomChange={handleForceRoomChange}
-      />
+      <ErrorBoundary>
+        <GameView
+          key={session.roomIdOrInviteCode}
+          roomIdOrInviteCode={session.roomIdOrInviteCode}
+          inviteCodeToShow={session.inviteCodeToShow}
+          nickname={session.nickname}
+          authToken={authSession?.token}
+          onExit={handleExit}
+          onForceRoomChange={handleForceRoomChange}
+        />
+      </ErrorBoundary>
     );
   }
 

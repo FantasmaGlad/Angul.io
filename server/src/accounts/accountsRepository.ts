@@ -363,6 +363,30 @@ export class AccountsRepository {
    * (`modeId` omis, onglet "Global") ou par meilleur score pour un mode donné (jointure sur
    * `player_best_scores`, un compte qui n'a jamais joué ce mode n'apparaît simplement pas). */
   async getLeaderboard(modeId: string | undefined, limit: number): Promise<LeaderboardRow[]> {
+    if (modeId === 'mass' || modeId === 'global-mass') {
+      const result = await this.pool.query<{
+        pseudo: string;
+        level: number;
+        avatar_color: string | null;
+        score: string;
+      }>(
+        `SELECT p.pseudo, p.level, p.avatar_color, MAX(pbs.best_score) AS score
+         FROM player_best_scores pbs
+         JOIN players p ON p.id = pbs.player_id
+         WHERE p.banned = false
+         GROUP BY p.id, p.pseudo, p.level, p.avatar_color
+         ORDER BY MAX(pbs.best_score) DESC, p.id ASC
+         LIMIT $1`,
+        [limit],
+      );
+      return result.rows.map((row) => ({
+        pseudo: row.pseudo,
+        level: row.level,
+        avatarColor: row.avatar_color,
+        score: Number(row.score),
+      }));
+    }
+
     if (modeId) {
       const result = await this.pool.query<{
         pseudo: string;
@@ -404,6 +428,20 @@ export class AccountsRepository {
       avatarColor: row.avatar_color,
       score: row.xp,
     }));
+  }
+
+  /** Écrit la meilleure masse maximale atteinte dans un mode sans toucher à l'XP ni au niveau du compte
+   * (utilisé pour les modes comme Hardcore où l'XP ne se cumule pas mais la meilleure masse doit être au classement). */
+  async recordBestMass(accountId: number, modeId: string, mass: number): Promise<void> {
+    if (mass <= 0) return;
+    await this.pool.query(
+      `INSERT INTO player_best_scores (player_id, mode_id, best_score, updated_at)
+       VALUES ($1, $2, $3, now())
+       ON CONFLICT (player_id, mode_id) DO UPDATE
+         SET best_score = GREATEST(player_best_scores.best_score, EXCLUDED.best_score),
+             updated_at = now()`,
+      [accountId, modeId, Math.round(mass)],
+    );
   }
 
   /**

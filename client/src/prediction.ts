@@ -140,15 +140,24 @@ const VISUAL_CORRECTION_SPEED_PX_PER_S = 600;
  * il ne reste plus qu'un biais résiduel de l'ordre de `accel·dt²/2` par bloc (voir le commentaire
  * de `chunkHistoryForReplay`), pas un vrai désaccord.
  *
- * 2.5 (pas 1.5) : `accelerationBase` a été augmenté de 50% et `accelerationMassExponent` réduit de
- * moitié (server/configs/*.json, demande utilisateur "plus de réactivité") — l'accélération
- * effective a donc augmenté pour toute masse, et avec elle ce biais résiduel (proportionnel à
- * `accel`) ; à 1.5 (ancien seuil, calibré sur l'ancienne accélération), le résidu dépassait le
- * seuil plus souvent, déclenchant un lissage visuel superflu perçu comme un léger tremblement à
- * chaque accélération/décélération (signalé en Hardcore, dont l'accélération de base — v0 plus
- * bas, speedMultiplier plus élevé — sature sa vitesse cible plus vite, donc accélère plus souvent
- * "à fond"). */
-const RECONCILE_IGNORE_THRESHOLD_PX = 3.0;
+ * Dérivé DYNAMIQUEMENT (voir `reconcile`) de `accel·dtTick²/2` plutôt qu'une constante fixe —
+ * l'ancienne valeur (un nombre "magique" en pixels, 1.5 puis 2.5 puis 3.0 au fil des réglages de
+ * `accelerationBase`/`accelerationMassExponent`, voir historique de ce fichier) devait être
+ * recalibrée à la main à chaque changement de la physique d'un mode, et restait fausse pour tout
+ * futur mode avec sa propre config (le biais résiduel est proportionnel à l'accélération EFFECTIVE
+ * du morceau, qui dépend de sa masse ET du mod actif — pas une constante universelle). En dérivant
+ * le seuil de la formule physique elle-même (accélération réelle du morceau × pas de tick², voir
+ * le commentaire de `chunkHistoryForReplay`), tout mode futur obtient automatiquement un seuil
+ * cohérent avec ses propres réglages, sans retouche manuelle — "communise" ce correctif entre
+ * Vanilla, Hardcore et tout mod à venir. */
+const RECONCILE_IGNORE_SAFETY_FACTOR = 1.5;
+/** Plancher (px) du seuil dynamique ci-dessus — pur bruit d'arrondi flottant à masse/accélération
+ * quasi nulle, jamais un vrai désaccord ; évite que le seuil ne tombe à (quasi) zéro et ne
+ * déclenche un lissage visuel pour un résidu insignifiant. */
+const RECONCILE_IGNORE_FLOOR_PX = 0.5;
+/** Plafond (px) du seuil dynamique ci-dessus — borne supérieure pour éviter que des objets de test
+ * ou des accélérations extrêmes ne fassent s'envoler le seuil d'ignorance. */
+const RECONCILE_IGNORE_MAX_PX = 3.0;
 /** Pas de temps interne FIXE auquel `step()` intègre la simulation locale (voir le commentaire
  * d'en-tête, "fix your timestep") — indépendant du `dt` réel de la frame de rendu. Assez fin pour
  * qu'aucun sous-pas ne soit perceptible individuellement, même sur un écran très haut
@@ -237,19 +246,27 @@ export class LocalPrediction {
 
       for (const chunk of replayChunks) {
         this.integrate(predicted, chunk.dtSeconds, chunk.target, chunk.intensity, movement);
-        for (const dash of activeDashes) {
-          predicted.velocity = add(predicted.velocity, dash.impulse);
-        }
+      }
+      for (const dash of activeDashes) {
+        predicted.velocity = add(predicted.velocity, dash.impulse);
       }
 
       // Écart résiduel entre "où la prédiction en était déjà" et "où le rejeu vient de la
       // reconstruire" — quasi nul dans le cas normal (bruit d'intégration dt variable/fixe, voir
-      // RECONCILE_IGNORE_THRESHOLD_PX), plus significatif seulement quand un événement non rejoué
+      // le seuil dynamique ci-dessous), plus significatif seulement quand un événement non rejoué
       // (répulsion, croissance...) a réellement déplacé le morceau côté serveur. Voir aussi
       // RECONCILE_SNAP_THRESHOLD_PX.
       const residual = sub(predicted.position, beforeReconcile);
       const residualDist = length(residual);
-      if (residualDist <= RECONCILE_IGNORE_THRESHOLD_PX) {
+      const tickSeconds = serverTickRateHz && serverTickRateHz > 0 ? 1 / serverTickRateHz : 1 / 30;
+      const dynamicIgnoreThresholdPx = Math.min(
+        RECONCILE_IGNORE_MAX_PX,
+        Math.max(
+          RECONCILE_IGNORE_FLOOR_PX,
+          accelerationForMass(predicted.mass, movement) * tickSeconds * tickSeconds * 0.5 * RECONCILE_IGNORE_SAFETY_FACTOR,
+        ),
+      );
+      if (residualDist <= dynamicIgnoreThresholdPx) {
         predicted.position = beforeReconcile;
       } else if (residualDist <= RECONCILE_SNAP_THRESHOLD_PX) {
         // `predicted.position` reste la reconstruction exacte (la simulation ne doit jamais
@@ -300,11 +317,19 @@ export class LocalPrediction {
     this.pruneHistory(atMs);
   }
 
-  /** Applique localement une impulsion de Dash à toutes les pièces prédites du joueur pour éviter tout décalage entre la prédiction locale et le serveur. */
+  /** Applique localement une impulsion de Dash à toutes les pièces prédites du joueur pour éviter tout décalage entre la prédiction locale et le serveur.
+   *
+   * Journalise aussi l'impulsion dans `pendingDashes` (voir son commentaire de champ) —
+   * indispensable pour que `reconcile()` la réapplique lors du rejeu : sans cet enregistrement,
+   * le tout premier `state` reçu après le dash réinitialise `predicted.velocity` sur la vélocité
+   * autoritaire (pré-dash, voir `reconcile`) et le rejeu ne restitue jamais l'impulsion —
+   * l'accélération locale du dash est alors visuellement annulée puis "revient" d'un coup au
+   * tick suivant, perçu comme un gros lag/saccade au dash. */
   applyDash(direction: Vector2, speedImpulse = 2700): void {
     for (const piece of this.pieces.values()) {
       piece.velocity = add(piece.velocity, scale(direction, speedImpulse));
     }
+    this.pendingDashes.push({ atMs: performance.now(), impulse: scale(direction, speedImpulse) });
   }
 
   /** Regroupe les échantillons fins de `step()` (pas `FIXED_STEP_SECONDS`, 1/240s) en blocs dont la
@@ -388,7 +413,13 @@ export class LocalPrediction {
     // mods/parametric/index.ts) — intensité effective nulle, direction sans importance.
     const direction = dist > 0 ? scale(offset, 1 / dist) : { x: 1, y: 0 };
     const inDeadZone = dist < TARGET_DEAD_ZONE_PX;
-    const effectiveIntensity = inDeadZone ? 0 : intensity;
+    // Miroir exact d'`inputVectorOf` côté serveur (voir son commentaire) : dès que le joueur a
+    // plus d'un morceau, l'intensité analogique (dérivée souris↔centre écran, hors de propos
+    // dès que le curseur est placé entre plusieurs morceaux pour les regrouper) est ignorée au
+    // profit d'une convergence à pleine vitesse — sans ce miroir, la prédiction locale
+    // divergerait du serveur et `reconcile()` "snapperait" la position à chaque `state` reçu.
+    const hasMultiplePieces = this.pieces.size > 1;
+    const effectiveIntensity = inDeadZone ? 0 : hasMultiplePieces ? 1 : intensity;
     const accelIntensity = 1;
 
     const targetVelocity = scale(direction, velocityForMass(piece.mass, movement) * effectiveIntensity);
@@ -402,6 +433,10 @@ export class LocalPrediction {
     while (this.history.length > 0 && this.history[0]!.atMs < cutoff) {
       this.history.shift();
     }
+    // Même fenêtre que l'historique d'inputs (`pendingDashes` n'a besoin de couvrir que ce que
+    // `reconcile()` peut encore rejouer) — sans cet élagage, chaque dash de la session
+    // s'accumulerait indéfiniment (fuite mémoire non bornée sur une longue partie).
+    this.pendingDashes = this.pendingDashes.filter((d) => d.atMs >= cutoff);
   }
 
   /** Remplace, dans `entities` (déjà interpolées/cullées côté serveur-distant), la position des

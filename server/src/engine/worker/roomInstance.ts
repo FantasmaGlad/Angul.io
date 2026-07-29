@@ -121,7 +121,9 @@ export class RoomInstance {
       .some((p) => p.nickname.toLowerCase() === nickname.toLowerCase());
     if (nicknameTaken) return { ok: false, reason: 'nickname_taken' };
 
-    const existingPlayers = world.allPlayers().map((p) => ({ id: p.id, nickname: p.nickname }));
+    const existingPlayers = world
+      .allPlayers()
+      .map((p) => ({ id: p.id, nickname: p.nickname, skin: p.skin }));
     const playerId = String(this.nextPlayerId++);
     this.maxMassByPlayer.set(playerId, 0);
     this.room.addPlayer(playerId, nickname, skin);
@@ -136,6 +138,10 @@ export class RoomInstance {
       return { respawned: true };
     }
     return { respawned: false };
+  }
+
+  getPlayerMaxMass(playerId: PlayerId): number {
+    return Math.round(this.maxMassByPlayer.get(playerId) ?? 0);
   }
 
   /** `undefined` si `playerId` est inconnu (déjà retiré, ou jamais un vrai joueur — un spectateur
@@ -156,7 +162,7 @@ export class RoomInstance {
     this.viewerIds.delete(playerId);
     this.spectatorIds.delete(playerId);
 
-    return { transformedScore, transformedXp };
+    return { rawScore, transformedScore, transformedXp };
   }
 
   input(playerId: PlayerId, input: PlayerInput): void {
@@ -278,6 +284,18 @@ export class RoomInstance {
 
     const allEntities = world.allEntities();
     const topScores = computeTopScores(world, Array.from(world.allPlayers()));
+
+    for (const player of allPlayers) {
+      let currentMass = 0;
+      for (const pieceId of player.pieceIds) {
+        const piece = world.getEntity(pieceId);
+        if (piece) currentMass += piece.mass;
+      }
+      const prevMax = this.maxMassByPlayer.get(player.id) ?? 0;
+      if (currentMass > prevMax) {
+        this.maxMassByPlayer.set(player.id, currentMass);
+      }
+    }
 
     const payloads: TickPayload[] = [];
     let sharedSpectatorMessage: ServerMessage | undefined;
