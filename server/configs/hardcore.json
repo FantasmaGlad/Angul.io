@@ -57,7 +57,7 @@
   "bots": {
     "enabled": true,
     "ambientTargetCount": 6,
-    "updateFrequencyHz": 30,
+    "updateFrequencyHz": 2,
     "proportions": {
       "fuis": 25,
       "neutre": 30,
