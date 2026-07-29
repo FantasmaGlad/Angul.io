@@ -343,6 +343,12 @@ function drawMulticolorFood(
  * à interpoler ; une entité absente du dernier snapshot (mangée/despawn) disparaît immédiatement
  * plutôt que de s'estomper — suffisant pour le MVP, pas de justification à une animation de
  * sortie pour l'instant.
+ *
+ * `m` (masse) est interpolée comme le reste : `computeCamera`/`ownAggregate` s'en servent pour le
+ * zoom caméra, lui-même utilisé (GameView) pour convertir la position souris en coordonnées monde
+ * à chaque frame — une masse qui saute par palier à chaque `state` (au lieu des ~60-240 frames de
+ * rendu interpolées) y crée un micro-saut de zoom, donc un micro-saut de la cible de direction du
+ * joueur, perceptible comme un tressautement à chaque gain de masse (nourriture/absorption).
  */
 export function interpolateEntities(
   previous: EntitySnapshot[] | undefined,
@@ -360,6 +366,7 @@ export function interpolateEntities(
       x: before.x + (entity.x - before.x) * t,
       y: before.y + (entity.y - before.y) * t,
       r: before.r + (entity.r - before.r) * t,
+      m: before.m + (entity.m - before.m) * t,
     };
   });
 }
