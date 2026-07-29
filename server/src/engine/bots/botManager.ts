@@ -147,7 +147,7 @@ export class BotManager {
       maxBotsAllowed,
       humanCount === 0 && ambientCount !== undefined
         ? ambientCount
-        : Math.max(maxChallengers, targetBotCount - humanCount),
+        : Math.max(ambientCount ?? 0, targetBotCount - humanCount),
     );
 
     // Si on manque de bots : spawn progressif (limité à maxSpawnPerTick par tick)
