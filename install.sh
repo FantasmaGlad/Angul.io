@@ -133,7 +133,7 @@ else
 fi
 
 log "Installation des dépendances npm et build (shared/server/client/admin)"
-sudo -u "$APP_USER" bash -c "cd '$APP_DIR' && npm ci && npm run build"
+sudo -u "$APP_USER" bash -c "cd '$APP_DIR' && rm -f server/tsconfig.tsbuildinfo shared/tsconfig.tsbuildinfo && npm ci && npm run build"
 
 # --- 6. PostgreSQL (Lot 3, comptes joueurs) : rôle/base applicatifs, server/.env,
 #        migrations ------------------------------------------------------------------
