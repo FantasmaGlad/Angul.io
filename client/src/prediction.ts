@@ -1,6 +1,8 @@
 import {
   accelerationForMass,
   add,
+  distance,
+  dot,
   length,
   massToRadius,
   moveToward,
