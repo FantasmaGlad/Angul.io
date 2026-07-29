@@ -278,6 +278,10 @@ describe('BotManager', () => {
     secondPiece.position = { ...firstPiece.position };
     room.world.rebuildSpatialHash();
 
+    for (const bot of (room as any).botManager.activeBots.values()) {
+      bot.accumulatorMs = 0;
+    }
+
     const handleInputSpy = vi.spyOn(room, 'handleInput');
     room.tick();
 

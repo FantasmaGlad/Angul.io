@@ -521,15 +521,25 @@ export default function GameView({
       // que cette duplication existait.
       const targetCamera = computeCamera(entities, selfPlayerId, { x: mapSize / 2, y: mapSize / 2 });
 
-      // Suivi de caméra lissé et indépendant du framerate : la position reste réactive,
-      // l'échelle (zoom) utilise un lissage très doux pour éviter les saccades/à-coups au ramassage.
-      const cameraPosLerp = 1 - Math.exp(-15 * (frameDt / 1000));
+      // Suivi de caméra lissé et indépendant du framerate : pour le joueur local (selfPlayerId),
+      // ancrer la position (x, y) directement sur la position prédite (targetCamera) annule 100%
+      // du lag/tressautement relatif de la caméra par rapport à son propre blob. Seul le zoom (scale)
+      // conserve un lissage très doux. En spectateur, la position reste lissée doucement.
       const cameraScaleLerp = 1 - Math.exp(-3.5 * (frameDt / 1000));
-      latestCamera = {
-        x: latestCamera.x + (targetCamera.x - latestCamera.x) * cameraPosLerp,
-        y: latestCamera.y + (targetCamera.y - latestCamera.y) * cameraPosLerp,
-        scale: latestCamera.scale + (targetCamera.scale - latestCamera.scale) * cameraScaleLerp,
-      };
+      if (selfPlayerId) {
+        latestCamera = {
+          x: targetCamera.x,
+          y: targetCamera.y,
+          scale: latestCamera.scale + (targetCamera.scale - latestCamera.scale) * cameraScaleLerp,
+        };
+      } else {
+        const cameraPosLerp = 1 - Math.exp(-15 * (frameDt / 1000));
+        latestCamera = {
+          x: latestCamera.x + (targetCamera.x - latestCamera.x) * cameraPosLerp,
+          y: latestCamera.y + (targetCamera.y - latestCamera.y) * cameraPosLerp,
+          scale: latestCamera.scale + (targetCamera.scale - latestCamera.scale) * cameraScaleLerp,
+        };
+      }
       // L'effet de "dash" au split est un pur transform CSS sur le canvas (voir attachInput
       // plus haut et styles.css `#game.split-punch`) — jamais mélangé à cette caméra LOGIQUE, qui
       // reste le seul repère utilisé par le rendu ET par la conversion écran->monde (input.ts).
