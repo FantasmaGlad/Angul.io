@@ -228,22 +228,12 @@ export function createHardcoreMod(
         return;
       }
 
-      // Deux morceaux de joueurs différents : absorption s'il y a un avantage de masse,
-      // ou répulsion si aucune entité n'a l'avantage (masses équivalentes).
-      const hasAdvA =
-        isGodPlayerId(a.ownerId) ||
-        (!isGodPlayerId(b.ownerId) && a.mass >= b.mass * (1 + config.eating.massAdvantage));
-      const hasAdvB =
-        isGodPlayerId(b.ownerId) ||
-        (!isGodPlayerId(a.ownerId) && b.mass >= a.mass * (1 + config.eating.massAdvantage));
-
-      if (hasAdvA || hasAdvB) {
-        if (hasAdvA) handleEatAttempt(world, a, b, dt);
-        else handleEatAttempt(world, b, a, dt);
-        return;
+      // Deux morceaux de joueurs différents : le plus gros tente de manger le plus petit s'il atteint au moins 70% de chevauchement. Aucune répulsion entre joueurs.
+      if (a.mass > b.mass) {
+        handleEatAttempt(world, a, b, dt);
+      } else if (b.mass > a.mass) {
+        handleEatAttempt(world, b, a, dt);
       }
-
-      applyRepulsion(a, b);
     },
 
     transformScoreForAccount() {

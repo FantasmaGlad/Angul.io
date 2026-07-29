@@ -7,10 +7,7 @@ export default function AboutPage() {
         <strong>Angul.io</strong> — plateforme de jeu multijoueur temps réel inspirée d'Agar.io,
         avec un système de salons et de modes de jeu scriptables.
       </p>
-      <div className="stat-row">
-        <span className="stat-label">Version</span>
-        <span className="stat-value">1.1</span>
-      </div>
+
       <div className="stat-row">
         <span className="stat-label">Licence</span>
         <span className="stat-value">AGPL-3.0-or-later</span>

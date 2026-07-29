@@ -273,6 +273,7 @@ export class LocalPrediction {
         // Téléportation importante (mort/respawn, bord de carte) : réinitialisation visuelle directe.
       }
     }
+    this.applySelfRepulsion();
 
     for (const id of [...this.pieces.keys()]) {
       if (!seenIds.has(id)) this.pieces.delete(id);
@@ -283,34 +284,51 @@ export class LocalPrediction {
    * la simulation locale des morceaux du joueur exactement comme `onTick`/`onPlayerInput` du mod
    * paramétrique (server/src/mods/parametric/index.ts) le font côté serveur, et journalise
    * l'échantillon pour un rejeu ultérieur (voir `reconcile`). */
+  private applySelfRepulsion(): void {
+    if (this.pieces.size <= 1) return;
+    const pieceList = Array.from(this.pieces.values());
+    for (let i = 0; i < pieceList.length; i++) {
+      for (let j = i + 1; j < pieceList.length; j++) {
+        const a = pieceList[i]!;
+        const b = pieceList[j]!;
+        const rA = massToRadius(a.mass);
+        const rB = massToRadius(b.mass);
+        const d = distance(a.position, b.position);
+        const restDistance = rA + rB;
+        const penetration = restDistance - d;
+        if (penetration > 0) {
+          const dir = d > 0 ? scale(sub(a.position, b.position), 1 / d) : { x: 1, y: 0 };
+          const totalMass = a.mass + b.mass;
+          const moveA = penetration * (b.mass / totalMass);
+          const moveB = penetration * (a.mass / totalMass);
+          a.position = add(a.position, scale(dir, moveA));
+          b.position = sub(b.position, scale(dir, moveB));
+
+          const closingSpeed = dot(sub(a.velocity, b.velocity), dir);
+          if (closingSpeed < 0) {
+            a.velocity = sub(a.velocity, scale(dir, closingSpeed * (b.mass / totalMass)));
+            b.velocity = add(b.velocity, scale(dir, closingSpeed * (a.mass / totalMass)));
+          }
+        }
+      }
+    }
+  }
+
   step(dtSeconds: number, target: Vector2, intensity: number, movement: MovementConfig): void {
     if (dtSeconds <= 0) return;
 
     const effTarget = target;
     const effIntensity = intensity;
-
-    // Accumulateur (voir le commentaire d'en-tête, "fix your timestep") : le `dt` réel de la frame
-    // de rendu ne sert qu'à savoir COMBIEN de pas fixes exécuter, jamais comme pas d'intégration
-    // lui-même — la simulation locale reste ainsi déterministe, indépendante du framerate réel.
-    this.accumulatorSeconds = Math.min(this.accumulatorSeconds + dtSeconds, MAX_FRAME_SECONDS);
-    const maxOffsetStep = VISUAL_CORRECTION_SPEED_PX_PER_S * FIXED_STEP_SECONDS;
-    // Un seul horodatage pour tous les sous-pas de CET appel — largement assez précis pour le
-    // découpage `sinceMs` de `reconcile()` (granularité de plusieurs ms), et évite un appel
-    // `performance.now()` par sous-pas (jusqu'à des dizaines par frame sur un gros ralentissement).
     const atMs = performance.now();
 
-    while (this.accumulatorSeconds >= FIXED_STEP_SECONDS) {
-      this.accumulatorSeconds -= FIXED_STEP_SECONDS;
+    this.history.push({ atMs, dtSeconds, target: effTarget, intensity: effIntensity });
 
-      this.history.push({ atMs, dtSeconds: FIXED_STEP_SECONDS, target: effTarget, intensity: effIntensity });
-
-      for (const piece of this.pieces.values()) {
-        this.integrate(piece, FIXED_STEP_SECONDS, effTarget, effIntensity, movement);
-        // Résorption à vitesse plafonnée de l'écart d'affichage laissé par une réconciliation
-        // récente (voir `reconcile`), au même pas fixe que le reste de la simulation locale.
-        piece.visualOffset = moveToward(piece.visualOffset, { x: 0, y: 0 }, maxOffsetStep);
-      }
+    const maxOffsetStep = VISUAL_CORRECTION_SPEED_PX_PER_S * dtSeconds;
+    for (const piece of this.pieces.values()) {
+      this.integrate(piece, dtSeconds, effTarget, effIntensity, movement);
+      piece.visualOffset = moveToward(piece.visualOffset, { x: 0, y: 0 }, maxOffsetStep);
     }
+    this.applySelfRepulsion();
     this.pruneHistory(atMs);
   }
 

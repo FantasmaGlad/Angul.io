@@ -483,7 +483,7 @@ describe('createParametricMod — manger', () => {
     expect(world.getEntity(victimClose.id)).toBeUndefined();
   });
 
-  it('laisse se croiser sans répulsion ni mangeage deux blobs dont la masse diffère de <= 5%', () => {
+  it('ne mange pas et ne repousse pas deux blobs si le chevauchement est < 70%', () => {
     const config = testConfig();
     const mod = createParametricMod(config);
     const world = freshWorld();
@@ -491,7 +491,7 @@ describe('createParametricMod — manger', () => {
     world.addPlayer('p2', 'Player2');
 
     const blobA = world.spawnPiece('p1', { x: 500, y: 500 }, 100);
-    const blobB = world.spawnPiece('p2', { x: 505, y: 500 }, 103); // Différence de 3%
+    const blobB = world.spawnPiece('p2', { x: 525, y: 500 }, 103); // Chevauchement partiel < 70%
 
     mod.onCollision?.(world, blobA, blobB, 0.05);
     // Ni mangé ni repoussé

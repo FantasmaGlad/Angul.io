@@ -535,22 +535,12 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         return;
       }
 
-      // Deux morceaux de joueurs différents :
-      // 1. Si la différence de masse est <= 5%, ils se croisent librement sans se manger ni se repousser (demande utilisateur).
-      const minMass = Math.min(a.mass, b.mass);
-      const massDiffPct = minMass > 0 ? Math.abs(a.mass - b.mass) / minMass : 0;
-      if (massDiffPct <= 0.05) {
-        return;
+      // Deux morceaux de joueurs différents : le plus gros tente de manger le plus petit s'il atteint au moins 70% de chevauchement. Aucune répulsion entre joueurs.
+      if (a.mass > b.mass) {
+        handleEatAttempt(world, a, b, dt);
+      } else if (b.mass > a.mass) {
+        handleEatAttempt(world, b, a, dt);
       }
-
-      // 2. Si la masse diffère de plus de 5%, le plus gros tente de manger le plus petit s'il atteint au moins 70% de chevauchement.
-      const [attacker, victim] = a.mass > b.mass ? [a, b] : [b, a];
-      if (hasMassAdvantage(attacker, victim)) {
-        handleEatAttempt(world, attacker, victim, dt);
-        return;
-      }
-
-      applyRepulsion(a, b);
     },
   };
 }
