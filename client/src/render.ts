@@ -226,17 +226,17 @@ export function renderFrame(
     currentEntityMap.set(entity.i, entity);
   }
 
-  // Détection des entités mangées/disparues pour animer leur aspiration
+  // Détection des créatures mangées/disparues pour animer leur aspiration (les pastilles de nourriture disparaissent instantanément)
   if (prevEntityMap.size > 0) {
     for (const [id, prev] of prevEntityMap.entries()) {
-      if (!currentEntityMap.has(id)) {
-        const color = prev.k === 'c' ? colorFor(prev, nicknames, colors) : foodColorForMass(prev.m);
+      if (!currentEntityMap.has(id) && prev.k === 'c') {
+        const color = colorFor(prev, nicknames, colors);
         eatenParticles.push({
           x: prev.x,
           y: prev.y,
           radius: prev.r,
           color,
-          skinId: prev.k === 'c' ? color : undefined,
+          skinId: color,
           startTime: nowMs,
           durationMs: 200,
         });

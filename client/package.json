@@ -6,8 +6,9 @@
   "main": "./src/main.tsx",
   "scripts": {
     "dev": "vite",
+    "prebuild": "mkdir -p public/assets/Sons/Musiques && cp -r ../assets/Sons/* public/assets/Sons/",
     "typecheck": "tsc -p tsconfig.json",
-    "build": "npm run typecheck && vite build"
+    "build": "npm run prebuild && npm run typecheck && vite build"
   },
   "dependencies": {
     "@angulio/shared": "*",

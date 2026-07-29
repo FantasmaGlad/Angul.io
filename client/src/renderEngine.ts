@@ -90,9 +90,13 @@ export class RenderEngine {
     const nowMs = performance.now();
     const tickIntervalMs = 1000 / this.serverTickRateHz;
 
-    if (this.epochTick === undefined) {
+    if (this.epochTick === undefined || this.epochClientMs === undefined) {
       this.epochTick = tick;
       this.epochClientMs = nowMs;
+    } else {
+      // Ajustement doux de l'ancrage d'horloge pour éviter la dérive temporelle post-gigue
+      const expectedEpochMs = nowMs - (tick - this.epochTick) * tickIntervalMs;
+      this.epochClientMs += (expectedEpochMs - this.epochClientMs) * 0.05;
     }
     if (this.lastArrivalMs !== undefined) {
       const deviationMs = Math.abs(nowMs - this.lastArrivalMs - tickIntervalMs);
@@ -117,15 +121,10 @@ export class RenderEngine {
     isSpectator = false,
   ): EntitySnapshot[] {
     const stateIntervalMs = 1000 / (this.serverTickRateHz || 30);
-    // Buffer ADAPTATIF à la gigue réellement observée (voir `jitterEmaMs`) : plancher bas (proche
-    // du minimum historique) sur une bonne connexion — latence perçue minimale — et élargi
-    // automatiquement seulement quand une vraie gigue est mesurée, plutôt qu'un délai fixe
-    // conservateur imposé à tout le monde par défaut (l'ancien réglage, dimensionné pour le pire
-    // cas mesuré en production, ajoutait ~50ms de latence même aux connexions parfaites).
-    const minDelayMs = Math.max(50, stateIntervalMs * 1.5);
+    const minDelayMs = Math.max(70, stateIntervalMs * 2.1);
     const maxDelayMs = stateIntervalMs * 6;
     const interpDelayMs = clamp(
-      stateIntervalMs * 1.5 + this.jitterEmaMs * JITTER_MARGIN_FACTOR,
+      stateIntervalMs * 2.1 + this.jitterEmaMs * JITTER_MARGIN_FACTOR,
       minDelayMs,
       maxDelayMs,
     );
