@@ -301,16 +301,10 @@ export class LocalPrediction {
         if (penetration > 0) {
           const dir = d > 0 ? scale(sub(a.position, b.position), 1 / d) : { x: 1, y: 0 };
           const totalMass = a.mass + b.mass;
-          const moveA = penetration * (b.mass / totalMass);
-          const moveB = penetration * (a.mass / totalMass);
+          const moveA = penetration * 0.5 * (b.mass / totalMass);
+          const moveB = penetration * 0.5 * (a.mass / totalMass);
           a.position = add(a.position, scale(dir, moveA));
           b.position = sub(b.position, scale(dir, moveB));
-
-          const closingSpeed = dot(sub(a.velocity, b.velocity), dir);
-          if (closingSpeed < 0) {
-            a.velocity = sub(a.velocity, scale(dir, closingSpeed * (b.mass / totalMass)));
-            b.velocity = add(b.velocity, scale(dir, closingSpeed * (a.mass / totalMass)));
-          }
         }
       }
     }

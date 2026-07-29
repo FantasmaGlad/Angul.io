@@ -14,7 +14,7 @@ export interface SessionStore {
   revokeSessionsForAccount(accountId: number): void;
 }
 
-const DEFAULT_SESSION_TTL_MS = 24 * 60 * 60_000; // 24 heures
+const DEFAULT_SESSION_TTL_MS = 30 * 24 * 60 * 60_000; // 30 jours
 
 /**
  * Sessions en mémoire (token opaque -> session) avec expiration automatique après 24h.

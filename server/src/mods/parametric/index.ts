@@ -480,6 +480,39 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
           world.spawnParticle(randomFoodPosition(world, 1), randomFoodMass(config));
         }
       }
+
+      // Punition diviseur pour le Top 5 si le leader a au moins 200 de masse et qu'il est 2x plus gros que le joueur suivant
+      if (world.tickCount % 20 === 0) {
+        const playersByMass = allPlayers
+          .filter((p) => !isGodPlayerId(p.id))
+          .map((p) => ({
+            player: p,
+            totalMass: world.getPiecesByOwner(p.id).reduce((sum, piece) => sum + piece.mass, 0),
+          }))
+          .sort((a, b) => b.totalMass - a.totalMass);
+
+        for (let rank = 0; rank < Math.min(5, playersByMass.length); rank++) {
+          const current = playersByMass[rank]!;
+          const next = playersByMass[rank + 1];
+          const nextMass = next ? next.totalMass : 0;
+
+          if (current.totalMass >= 200 && (nextMass === 0 || current.totalMass >= 2 * nextMass)) {
+            const stateKey = `punitive_split_${current.player.id}`;
+            const lastPunish = (current.player as any)[stateKey] ?? 0;
+            const now = performance.now();
+            if (now - lastPunish >= 10000) {
+              (current.player as any)[stateKey] = now;
+              const pieces = world.getPiecesByOwner(current.player.id);
+              if (pieces.length > 0) {
+                const biggest = pieces.reduce((max, p) => (p.mass > max.mass ? p : max), pieces[0]!);
+                if (biggest.mass >= config.player.minSplitMass) {
+                  trySplitPiece(world, current.player.id, biggest);
+                }
+              }
+            }
+          }
+        }
+      }
     },
 
     onPostMove(world: World) {
@@ -508,22 +541,12 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         return;
       }
 
-      // Deux morceaux du MÊME joueur ("même équipe", demande utilisateur) : candidats à la
-      // fusion, jamais à l'absorption — mais tant que la fusion n'a pas lieu (cooldown post-split
-      // pas écoulé, ou chevauchement insuffisant), collision DURE, SANS REBOND (position +
-      // annulation de la vélocité de rapprochement, voir `applyRepulsion(hard=true)`) plutôt qu'un
-      // chevauchement libre ou une répulsion molle qui se refait repousser en boucle par l'input
-      // du joueur (perçu comme un rebond/tremblement).
-      //
-      // `restDistance` : la répulsion ne les sépare que jusqu'au chevauchement MINIMAL exigé par
-      // `tryMerge` (`config.merge.overlapMinFraction`), pas jusqu'à un contact nul — sans ce
-      // correctif, un contact nul ne peut plus jamais regagner le chevauchement requis une fois le
-      // cooldown écoulé (la répulsion le ramène à zéro à chaque tick avant que le cooldown expire),
-      // et la fusion ne se déclenche donc jamais en jeu réel (seuls des tests qui placent les deux
-      // morceaux DÉJÀ profondément chevauchés dès le départ le manquaient).
+      // Deux morceaux du MÊME joueur ("même équipe") : candidats à la fusion
       if (a.ownerId && a.ownerId === b.ownerId) {
         if (!tryMerge(world, a, b)) {
-          applyRepulsion(a, b, true, fullSeparationDistance(a, b));
+          const targetArea = Math.min(PI * a.radius * a.radius, PI * b.radius * b.radius) * config.merge.overlapMinFraction;
+          const restDist = restingDistanceForOverlap(a.radius, b.radius, targetArea);
+          applyRepulsion(a, b, true, restDist);
         }
         return;
       }

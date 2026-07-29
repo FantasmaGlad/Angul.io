@@ -144,6 +144,8 @@ export default function App() {
           setIsPremium(false);
           setLevel(undefined);
           setAvatarColor(undefined);
+          clearSession();
+          setAuthSession(undefined);
         }
       }
     })();

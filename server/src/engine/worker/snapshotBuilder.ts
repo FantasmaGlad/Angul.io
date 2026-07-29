@@ -35,15 +35,21 @@ export interface TopScoreEntry {
 
 /** Classement calculé une seule fois par tick (voir buildStateMessage, appelé une fois par
  * socket) — indépendant du destinataire, seul `isSelf` varie par joueur. */
-export function computeTopScores(world: World, players: PlayerState[]): TopScoreEntry[] {
+export function computeTopScores(
+  world: World,
+  players: PlayerState[],
+  maxMassMap?: Map<PlayerId, number>,
+): TopScoreEntry[] {
   return players
     .filter((p) => !isGodPlayerId(p.id)) // Blob Dieu (§4.2 cahier_des_charges_admin.md) : invisible du classement
     .map((p) => {
-      let score = 0;
+      let currentMass = 0;
       for (const pieceId of p.pieceIds) {
         const piece = world.getEntity(pieceId);
-        if (piece) score += piece.mass;
+        if (piece) currentMass += piece.mass;
       }
+      const peakMass = maxMassMap?.get(p.id) ?? currentMass;
+      const score = Math.max(currentMass, peakMass);
       return { id: p.id, nickname: p.nickname, score: Math.floor(score) };
     })
     .filter((p) => p.score > 0)

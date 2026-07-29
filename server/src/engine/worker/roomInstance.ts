@@ -283,7 +283,7 @@ export class RoomInstance {
     }
 
     const allEntities = world.allEntities();
-    const topScores = computeTopScores(world, Array.from(world.allPlayers()));
+    const topScores = computeTopScores(world, Array.from(world.allPlayers()), this.maxMassByPlayer);
 
     for (const player of allPlayers) {
       let currentMass = 0;

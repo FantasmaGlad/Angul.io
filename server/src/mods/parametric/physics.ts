@@ -41,13 +41,17 @@ export function absorptionRatePerSec(config: ParametricModConfig): number {
 
 function decayLambda(mass: number, config: ParametricModConfig, timeSinceLastEatenS = 10): number {
   const floor = config.decay.floor ?? 2;
-  // Aucune perte de masse pendant les 10 premières secondes sans masse ingurgitée
-  if (mass <= floor || timeSinceLastEatenS < 10) return 0;
+  const decayDelayS = mass > 20000 ? 0.5 : 10;
+  if (mass <= floor || timeSinceLastEatenS < decayDelayS) return 0;
 
   let rate = 0.002;
   let intervalSec = 10;
 
-  if (mass > 10000) {
+  if (mass > 20000) {
+    const dizaines = Math.floor(mass / 10000);
+    rate = dizaines * 0.01;
+    intervalSec = 0.5;
+  } else if (mass > 10000) {
     // Incrémenter la perte de 1% par 5s pour chaque dizaine de milliers de masse (ex: 30 000 -> 3% en 5s)
     const dizaines = Math.floor(mass / 10000);
     rate = dizaines * 0.01;
