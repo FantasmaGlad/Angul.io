@@ -10,6 +10,18 @@ class AudioManager {
   constructor() {
     this.musicVol = this.loadStoredVolume(MUSIC_VOLUME_KEY, 0.5);
     this.sfxVol = this.loadStoredVolume(SFX_VOLUME_KEY, 0.7);
+
+    if (typeof window !== 'undefined') {
+      const unlock = () => {
+        if (this.musicAudio && this.musicAudio.paused && this.currentMusicUrl) {
+          void this.musicAudio.play().catch(() => {});
+        }
+      };
+      window.addEventListener('pointerdown', unlock);
+      window.addEventListener('click', unlock);
+      window.addEventListener('keydown', unlock);
+      window.addEventListener('touchstart', unlock);
+    }
   }
 
   private loadStoredVolume(key: string, defaultValue: number): number {
@@ -61,19 +73,18 @@ class AudioManager {
     audio.loop = loop;
     audio.volume = this.musicVol;
 
-    audio.play().catch(() => {
-      // Autoplay restreint par le navigateur : déverrouillage automatique au premier clic/touche
-      const unlock = () => {
-        if (this.musicAudio === audio && audio.paused) {
+    const tryPlay = () => {
+      audio.play().catch(() => {
+        // Fallback en minuscule si casse différente sur Linux
+        const altUrl = url.toLowerCase();
+        if (altUrl !== url) {
+          audio.src = altUrl;
           void audio.play().catch(() => {});
         }
-        window.removeEventListener('pointerdown', unlock);
-        window.removeEventListener('keydown', unlock);
-      };
-      window.addEventListener('pointerdown', unlock, { once: true });
-      window.addEventListener('keydown', unlock, { once: true });
-    });
+      });
+    };
 
+    tryPlay();
     this.musicAudio = audio;
   }
 

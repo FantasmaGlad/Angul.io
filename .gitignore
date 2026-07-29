@@ -6,6 +6,7 @@ build/
 # seuls client/static/* (icônes, manifest, service worker) et les *.html sources (client/,
 # admin/, à la racine de chaque app, hors public/) sont des fichiers suivis par git.
 client/public/
+!client/public/assets/Sons/
 admin/public/
 .env
 .env.*

@@ -76,6 +76,7 @@ export class RenderEngine {
     this.epochClientMs = undefined;
     this.jitterEmaMs = 0;
     this.lastArrivalMs = undefined;
+    this.smoothMap.clear();
   }
 
   public pushSnapshot(entities: EntitySnapshot[], tick: number, serverTickRateHz?: number): void {
@@ -177,17 +178,50 @@ export class RenderEngine {
     // Pour éviter tout pop visuel d'entité entre snapA et snapB, l'interpolation se fait d'abord
     const interpolated = interpolateEntities(fromEntities, toEntities, t);
 
+    // Lissage exponentiel style Agar.io officiel : élimine le tressautement à 60/144/240 FPS
+    const dtSec = Math.min(0.05, Math.max(0.001, frameDt / 1000));
+    const lerpPosFactor = 1 - Math.exp(-24 * dtSec);
+    const lerpRadiusFactor = 1 - Math.exp(-18 * dtSec);
+
+    const smoothed = interpolated.map((e) => {
+      let curr = this.smoothMap.get(e.i);
+      if (!curr) {
+        curr = { x: e.x, y: e.y, r: e.r };
+        this.smoothMap.set(e.i, curr);
+      } else {
+        const dx = e.x - curr.x;
+        const dy = e.y - curr.y;
+        if (dx * dx + dy * dy > 40000) {
+          curr.x = e.x;
+          curr.y = e.y;
+          curr.r = e.r;
+        } else {
+          curr.x += dx * lerpPosFactor;
+          curr.y += dy * lerpPosFactor;
+          curr.r += (e.r - curr.r) * lerpRadiusFactor;
+        }
+      }
+      return {
+        ...e,
+        x: curr.x,
+        y: curr.y,
+        r: curr.r,
+      };
+    });
+
     // Puis le culling de viewport (ou conservation de tout si spectateur)
     if (isSpectator) {
-      return interpolated;
+      return smoothed;
     }
 
     return cullEntitiesForViewport(
-      interpolated,
+      smoothed,
       camera,
       viewportWidth,
       viewportHeight,
       selfPlayerId,
     );
   }
+
+  private smoothMap = new Map<string, { x: number; y: number; r: number }>();
 }

@@ -276,9 +276,25 @@ export function renderFrame(
     drawCalls++;
   }
 
+  // Récupération des créatures pour la disparition instantanée des pastilles dès la collision à 5%
+  const creatures = entities.filter((e) => e.k === 'c');
+
+  const visibleEntities = entities.filter((entity) => {
+    if (entity.k !== 'f') return true;
+    for (const c of creatures) {
+      const dx = entity.x - c.x;
+      const dy = entity.y - c.y;
+      const hitRadius = c.r * 1.05 + entity.r;
+      if (dx * dx + dy * dy <= hitRadius * hitRadius) {
+        return false; // Disparition instantanée sans animation dès l'impact
+      }
+    }
+    return true;
+  });
+
   const foodPathsByColor = new Map<string, Path2D>();
 
-  for (const entity of entities) {
+  for (const entity of visibleEntities) {
     const screenX = toScreenX(entity.x);
     const screenY = toScreenY(entity.y);
     // Rayon écran dérivé directement du rayon PHYSIQUE réel (`entity.r`, voir
