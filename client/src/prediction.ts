@@ -46,7 +46,17 @@ import {
  * de fusion, bords de carte…) avec un vrai risque de désync silencieuse. Un vrai événement
  * discontinu (split, collision, mangé…) survenu depuis le dernier `state` connu n'est de toute
  * façon pas rejouable : il est simplement absorbé au `state` SUIVANT, qui ré-ancre la position à
- * nouveau — pas de logique de seuil/snap séparée nécessaire. */
+ * nouveau — MAIS voir `RECONCILE_SNAP_THRESHOLD_PX` : un absorbé "sec" s'est révélé bien plus
+ * visible que prévu en pratique, la répulsion entre morceaux (server/src/mods/parametric/index.ts
+ * `applyRepulsion`) se déclenchant en continu dès qu'un bot frôle le joueur sur une carte peuplée —
+ * pas un événement rare, un nudge de position à quasiment chaque `state` reçu. D'où le lissage
+ * borné ci-dessous, appliqué à l'écart RÉSIDUEL post-rejeu (jamais à l'écart brut position-à-
+ * position comme l'ancienne réconciliation blend/snap pré-e0ec331) : dans le cas normal (aucun
+ * événement non modélisé depuis le dernier `state`), rejouer depuis `authoritative` reconstruit
+ * exactement la position déjà prédite — l'écart résiduel est donc nul et ce lissage n'a aucun
+ * effet, contrairement à l'ancien blend qui tirait le blob en arrière en continu proportionnellement
+ * à la latence (le bug que e0ec331 corrigeait). Il ne s'active que quand le résidu est non nul,
+ * c'est-à-dire précisément quand un événement non rejouable (répulsion, croissance) l'a produit. */
 
 interface PredictedPiece {
   position: Vector2;
@@ -77,6 +87,15 @@ const TARGET_DEAD_ZONE_PX = 3;
  * GameView.tsx) — plutôt conservateur (rejoue peu) qu'agressif (rejouerait trop et re-créerait de
  * l'avance non ancrée). */
 const DEFAULT_LATENCY_MS = 60;
+/** Écart résiduel (px, post-rejeu) au-delà duquel on snap immédiatement plutôt que lisser — au-delà
+ * de ce seuil, quasi certainement un vrai téléport (mort/respawn, nouveau morceau, bord de carte),
+ * pas un nudge de répulsion routinier. Valeur reprise de l'ancienne réconciliation blend/snap
+ * (pré-e0ec331), qui s'appliquait déjà au même ordre de grandeur d'écart. */
+const RECONCILE_SNAP_THRESHOLD_PX = 120;
+/** Fraction de l'écart résiduel comblée à chaque `state` reçu (~30Hz) en-dessous du seuil ci-dessus
+ * — assez rapide pour rester imperceptible sur un nudge de répulsion typique (quelques px), assez
+ * doux pour ne jamais recréer de micro-saut. */
+const RECONCILE_BLEND_FACTOR = 0.35;
 
 export class LocalPrediction {
   private readonly pieces = new Map<string, PredictedPiece>();
@@ -118,11 +137,22 @@ export class LocalPrediction {
         continue;
       }
 
+      const beforeReconcile = predicted.position;
       predicted.mass = entity.m;
       predicted.position = authoritative;
       for (const sample of this.history) {
         if (sample.atMs <= sinceMs) continue;
         this.integrate(predicted, sample.dtSeconds, sample.target, sample.intensity, movement);
+      }
+
+      // Écart résiduel entre "où la prédiction en était déjà" et "où le rejeu vient de la
+      // reconstruire" — nul dans le cas normal (rien à lisser), non nul seulement quand un
+      // événement non rejoué (répulsion, croissance...) a réellement déplacé le morceau côté
+      // serveur depuis le dernier `state` connu. Voir RECONCILE_SNAP_THRESHOLD_PX.
+      const residual = sub(predicted.position, beforeReconcile);
+      const residualDist = length(residual);
+      if (residualDist > 0 && residualDist <= RECONCILE_SNAP_THRESHOLD_PX) {
+        predicted.position = add(beforeReconcile, scale(residual, RECONCILE_BLEND_FACTOR));
       }
     }
 

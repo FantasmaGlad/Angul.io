@@ -61,7 +61,7 @@ describe('LocalPrediction — réconciliation par rejeu', () => {
     expect(entity!.y).toBeCloseTo(0, 5);
   });
 
-  it('corrige malgré tout un vrai désaccord avec le serveur (collision non prédite, etc.)', () => {
+  it('lisse (au lieu de snapper d’un coup) un petit désaccord serveur non prédit (répulsion, croissance...)', () => {
     const prediction = new LocalPrediction();
     const nowSpy = vi.spyOn(performance, 'now');
     const target = { x: 1000, y: 0 };
@@ -76,15 +76,43 @@ describe('LocalPrediction — réconciliation par rejeu', () => {
     nowSpy.mockReturnValueOnce(300);
     prediction.step(0.1, target, 1, MOVEMENT);
 
-    // Cette fois, le serveur était réellement à (15,0) à t≈200 (ex. ralenti par une collision) —
-    // 5 unités de moins que ce que le client avait prédit.
+    // Cette fois, le serveur était réellement à (15,0) à t≈200 (ex. répulsion contre un bot) —
+    // 5 unités de moins que ce que le client avait prédit. Rejouer le pas suivant (+10) par-dessus
+    // cette vérité donne 25 (résidu de -5 par rapport aux 30 déjà prédits) — un petit résidu de ce
+    // type (répulsion routinière, très fréquente sur une carte peuplée de bots) est maintenant
+    // lissé progressivement plutôt qu'appliqué d'un coup (RECONCILE_BLEND_FACTOR = 0.35), pour
+    // éviter le tressautement constant que produisait un snap dur à chaque `state` reçu.
     nowSpy.mockReturnValueOnce(300);
     prediction.reconcile([ownSnapshot('1', 15, 0)], 'self', MOVEMENT, 100);
 
     const [entity] = prediction.applyTo([ownSnapshot('1', 999, 999)], 'self');
-    // Rejoue le même pas (+10) par-dessus la nouvelle vérité (15) : 25, pas 30 — le désaccord réel
-    // est bien répercuté, contrairement à la simple latence dans le test précédent.
-    expect(entity!.x).toBeCloseTo(25, 5);
+    // 30 + (25-30)*0.35 = 28.25 : seule une fraction du résidu est appliquée, pas le résidu entier.
+    expect(entity!.x).toBeCloseTo(28.25, 5);
+  });
+
+  it('snap immédiatement sur un vrai désaccord massif (téléportation, mort/respawn, nouveau morceau)', () => {
+    const prediction = new LocalPrediction();
+    const nowSpy = vi.spyOn(performance, 'now');
+    const target = { x: 1000, y: 0 };
+
+    nowSpy.mockReturnValueOnce(0);
+    prediction.reconcile([ownSnapshot('1', 0, 0)], 'self', MOVEMENT, 0);
+
+    nowSpy.mockReturnValueOnce(100);
+    prediction.step(0.1, target, 1, MOVEMENT);
+    nowSpy.mockReturnValueOnce(200);
+    prediction.step(0.1, target, 1, MOVEMENT);
+    nowSpy.mockReturnValueOnce(300);
+    prediction.step(0.1, target, 1, MOVEMENT);
+
+    // Écart de 200 unités (bien au-delà de RECONCILE_SNAP_THRESHOLD_PX = 120) : un vrai
+    // désaccord discontinu, pas un nudge de répulsion — corrigé intégralement, sans lissage.
+    nowSpy.mockReturnValueOnce(300);
+    prediction.reconcile([ownSnapshot('1', -200, 0)], 'self', MOVEMENT, 100);
+
+    const [entity] = prediction.applyTo([ownSnapshot('1', 999, 999)], 'self');
+    // -200 + 10 (rejeu du dernier pas) = -190, sans atténuation.
+    expect(entity!.x).toBeCloseTo(-190, 5);
   });
 
   it("n'applique aucune force dans la zone morte autour de la cible (évite le tremblotement)", () => {
