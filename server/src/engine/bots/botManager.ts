@@ -169,15 +169,19 @@ export class BotManager {
     let index: number;
     let nickname: string;
     let botId: PlayerId;
+    // Pseudos déjà portés par un bot actif dans CE salon — voir `generateBotNickname` (évite deux
+    // bots homonymes, ex. le bot #1 "neutre" et le bot #1 "agressif" retombant sur le même nom
+    // avant ce correctif).
+    const usedNames = new Set(Array.from(this.activeBots.values(), (b) => b.nickname));
 
     if (profile === 'challenger' && rank !== undefined) {
       index = rank;
-      nickname = generateBotNickname('challenger', rank);
+      nickname = generateBotNickname('challenger', rank, usedNames);
       botId = `bot-challenger-${rank}`;
     } else {
       this.botCounters[profile] += 1;
       index = this.botCounters[profile];
-      nickname = generateBotNickname(profile, index);
+      nickname = generateBotNickname(profile, index, usedNames);
       botId = `bot-${profile}-${index}`;
     }
 

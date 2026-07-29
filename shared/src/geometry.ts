@@ -15,7 +15,11 @@ export function massToRadius(mass: number, kArea: number = PI): number {
   if (mass <= 24) {
     return Math.sqrt(mass);
   }
-  return 36 + 27 * Math.pow(mass / 50, 0.38);
+  // Facteur 0.5 (demande utilisateur) : rayon de départ (mass=startMass, typiquement 50) réduit
+  // de moitié par rapport à la masse — courbe entière divisée par 2 (pas seulement le point de
+  // départ) pour rester cohérente à toute masse > 24, combiné au dézoom de caméra de base accru
+  // (client/src/render.ts BASE_SCALE) pour une carte perçue plus grande/spacieuse.
+  return (36 + 27 * Math.pow(mass / 50, 0.38)) * 0.5;
 }
 
 /**

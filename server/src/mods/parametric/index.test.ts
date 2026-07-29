@@ -168,7 +168,7 @@ describe('createParametricMod — fusion', () => {
     pieceState(a).splitElapsedS = config.merge.baseTimeSec;
     pieceState(b).splitElapsedS = config.merge.baseTimeSec;
 
-    mod.onCollision?.(world, a, b);
+    mod.onCollision?.(world, a, b, 1 / 20);
 
     expect(world.getPiecesByOwner('p1')).toHaveLength(1);
   });
@@ -183,12 +183,12 @@ describe('createParametricMod — fusion', () => {
     pieceState(a).splitElapsedS = 1;
     pieceState(b).splitElapsedS = config.merge.baseTimeSec;
 
-    mod.onCollision?.(world, a, b);
+    mod.onCollision?.(world, a, b, 1 / 20);
 
     expect(world.getPiecesByOwner('p1')).toHaveLength(2);
   });
 
-  it('repousse les morceaux du même joueur tant que la fusion n’est pas possible (correctif : ils se chevauchaient librement au lieu de collisionner)', () => {
+  it('repousse DUREMENT les morceaux du même joueur tant que la fusion n’est pas possible (correctif : ils se chevauchaient librement au lieu de collisionner)', () => {
     const config = testConfig();
     const mod = createParametricMod(config);
     const world = freshWorld();
@@ -197,12 +197,21 @@ describe('createParametricMod — fusion', () => {
     const b = world.spawnPiece('p1', { x: 505, y: 500 }, 100); // très chevauchés (5px d'écart)
     pieceState(a).splitElapsedS = 1; // cooldown post-split pas écoulé
     pieceState(b).splitElapsedS = 1;
+    // Vélocités qui se rapprochent l'une de l'autre le long de l'axe de contact (x) — la
+    // répulsion "dure" (demande utilisateur : "collisions d'une même équipe dures, sans rebond")
+    // doit annuler cette composante en plus de repousser les positions, voir `applyRepulsion`.
+    a.velocity = { x: 50, y: 0 };
+    b.velocity = { x: -50, y: 0 };
     const distanceBefore = distance(a.position, b.position);
 
-    mod.onCollision?.(world, a, b);
+    mod.onCollision?.(world, a, b, 1 / 20);
 
     expect(world.getPiecesByOwner('p1')).toHaveLength(2); // toujours pas fusionnés
     expect(distance(a.position, b.position)).toBeGreaterThan(distanceBefore); // repoussés
+    // La composante de vélocité qui rapprochait a et b (le long de x) est annulée : a ralentit,
+    // b aussi — ils ne se rapprochent plus l'un de l'autre le long de l'axe de contact.
+    expect(a.velocity.x).toBeLessThan(50);
+    expect(b.velocity.x).toBeGreaterThan(-50);
   });
 
   it('ne repousse plus une fois la fusion effectuée (un seul morceau restant)', () => {
@@ -215,13 +224,13 @@ describe('createParametricMod — fusion', () => {
     pieceState(a).splitElapsedS = config.merge.baseTimeSec;
     pieceState(b).splitElapsedS = config.merge.baseTimeSec;
 
-    expect(() => mod.onCollision?.(world, a, b)).not.toThrow();
+    expect(() => mod.onCollision?.(world, a, b, 1 / 20)).not.toThrow();
     expect(world.getPiecesByOwner('p1')).toHaveLength(1);
   });
 });
 
 describe('createParametricMod — manger', () => {
-  it('mange un autre joueur avec l’avantage de masse requis', () => {
+  it('mange un autre joueur avec l’avantage de masse requis (absorption complète — dt largement suffisant)', () => {
     const config = testConfig();
     const mod = createParametricMod(config);
     const world = freshWorld();
@@ -230,10 +239,44 @@ describe('createParametricMod — manger', () => {
     const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 105);
     const target = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
 
-    mod.onCollision?.(world, attacker, target);
+    // dt=1s, chevauchement total (même position) : à absorptionRatePerSec par défaut (3),
+    // largement de quoi transférer 100% de la masse de la cible en un seul appel — équivalent à
+    // l'ancien comportement "instantané" pour cette assertion précise.
+    mod.onCollision?.(world, attacker, target, 1);
 
     expect(world.getEntity(target.id)).toBeUndefined();
     expect(attacker.mass).toBeCloseTo(205, 6);
+  });
+
+  it('absorbe PROGRESSIVEMENT (pas d’un coup) : un petit dt ne transfère qu’une fraction de la masse, la cible rétrécit sans disparaître (fix_vitesse_reseau — demande utilisateur : "pas juste téléportation et disparition")', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    world.addPlayer('p2', 'Bob');
+    const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 105);
+    const target = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
+
+    // dt d'un tick à 20Hz (0.05s) : à absorptionRatePerSec=3 (défaut) et chevauchement total
+    // (même position), massToTransfer = 100 * 3 * 1 * 0.05 = 15 — bien en-deçà de la masse totale
+    // de la cible (100), qui doit donc SURVIVRE ce tick, juste amputée de 15 de masse.
+    mod.onCollision?.(world, attacker, target, 1 / 20);
+
+    expect(world.getEntity(target.id)).toBeDefined();
+    expect(target.mass).toBeCloseTo(85, 6);
+    expect(attacker.mass).toBeCloseTo(120, 6); // 105 + 15
+
+    // Répété sur suffisamment de ticks, la cible finit par disparaître entièrement (décroissance
+    // continue, jamais un saut) — la masse totale gagnée par l'attaquant converge vers celle
+    // perdue par la cible (à ABSORPTION_REMOVE_FLOOR près, négligeable).
+    for (let i = 0; i < 200 && world.getEntity(target.id); i++) {
+      mod.onCollision?.(world, attacker, target, 1 / 20);
+    }
+    expect(world.getEntity(target.id)).toBeUndefined();
+    // ~105 + 100 : le tout dernier reliquat (sous ABSORPTION_REMOVE_FLOOR, jamais crédité à
+    // l'attaquant) borne l'écart, jamais plus d'1 unité de masse perdue dans l'arrondi.
+    expect(attacker.mass).toBeGreaterThan(204);
+    expect(attacker.mass).toBeLessThanOrEqual(205);
   });
 
   it('mange une particule si la masse est suffisante', () => {
@@ -244,7 +287,7 @@ describe('createParametricMod — manger', () => {
     const piece = world.spawnPiece('p1', { x: 500, y: 500 }, 50);
     const particle = world.spawnParticle({ x: 500, y: 500 }, 1);
 
-    mod.onCollision?.(world, piece, particle);
+    mod.onCollision?.(world, piece, particle, 1 / 20);
 
     expect(world.getEntity(particle.id)).toBeUndefined();
     expect(piece.mass).toBeCloseTo(51, 6);
@@ -259,7 +302,7 @@ describe('createParametricMod — manger', () => {
     const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 105);
     const target = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
 
-    mod.onCollision?.(world, attacker, target);
+    mod.onCollision?.(world, attacker, target, 1);
 
     const stats = world.getPlayer('p1')!.lifeStats;
     expect(stats.massEaten).toBe(100);
@@ -275,7 +318,7 @@ describe('createParametricMod — manger', () => {
     const piece = world.spawnPiece('p1', { x: 500, y: 500 }, 50);
     const particle = world.spawnParticle({ x: 500, y: 500 }, 7);
 
-    mod.onCollision?.(world, piece, particle);
+    mod.onCollision?.(world, piece, particle, 1 / 20);
 
     const stats = world.getPlayer('p1')!.lifeStats;
     expect(stats.massEaten).toBe(7);
@@ -295,13 +338,13 @@ describe('createParametricMod — manger', () => {
     const god = world.spawnPiece('admin-god-1', { x: 500, y: 500 }, 100);
     const target = world.spawnPiece('p1', { x: 500, y: 500 }, 100);
 
-    mod.onCollision?.(world, god, target);
+    mod.onCollision?.(world, god, target, 1);
     expect(world.getEntity(target.id)).toBeUndefined();
     expect(god.mass).toBeCloseTo(200, 6);
 
     // Un joueur avec un avantage de masse écrasant ne peut jamais manger le dieu.
     const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 1_000_000);
-    mod.onCollision?.(world, attacker, god);
+    mod.onCollision?.(world, attacker, god, 1);
     expect(world.getEntity(god.id)).toBeDefined();
   });
 });

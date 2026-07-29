@@ -70,12 +70,16 @@ export function colorForSkinFallback(skinId: string): string {
 /** Échelle à la masse de référence : délibérément > 1 (zoomé par rapport à la taille "réelle"
  * du morceau) plutôt qu'un cadrage 1:1 — meilleur contrôle en début de partie (viser devient
  * plus précis avec un morceau qui occupe plus d'espace à l'écran), et laisse la place à la
- * sensation classique de dézoom progressif à mesure que la masse grossit (demande utilisateur). */
-export const BASE_SCALE = 1.44;
+ * sensation classique de dézoom progressif à mesure que la masse grossit (demande utilisateur).
+ * Divisée par 1.5 (÷1.5 = dézoom de base +50%, demande utilisateur) par rapport à la valeur
+ * d'origine (1.44) — combinée à la taille de départ des morceaux réduite de moitié
+ * (shared/geometry.ts `massToRadius`), la carte perçue est plus vaste/spacieuse dès le début
+ * d'une partie. */
+export const BASE_SCALE = 1.44 / 1.5;
 const MIN_SCALE = 0.1;
 /** Légèrement au-dessus de `BASE_SCALE` : laisse un peu de marge de zoom supplémentaire pour
  * les morceaux plus petits que la référence (ex. juste après un split). */
-const MAX_SCALE = 1.76;
+const MAX_SCALE = 1.76 / 1.5;
 /** Le client n'a pas besoin de connaître M_START du mod actif : cette référence ne sert
  * qu'à calibrer le zoom, pas la simulation elle-même. */
 const REFERENCE_MASS = 50;
@@ -112,6 +116,26 @@ const MULTICOLOR_FOOD_MASS = 12;
  * pour le pellet Multicolor (voir `MULTICOLOR_FOOD_MASS`, dégradé dédié). */
 export function foodColorForMass(mass: number): string {
   return FOOD_COLORS_BY_MASS[mass] ?? FOOD_COLOR_FALLBACK;
+}
+
+/** Amplification du rayon MONDE (`entity.r`, physique — voir shared/geometry.ts `massToRadius`)
+ * appliquée avant conversion écran, purement pour l'affichage (demande utilisateur : "plus une
+ * pastille rapporte, plus elle est grosse") — sans toucher au rayon physique lui-même (collision/
+ * ramassage côté serveur), volontairement minuscule pour les pastilles (quelques px monde) et pas
+ * du tout ce qui rend la différence de taille lisible à l'écran une fois dézoomé. */
+const FOOD_VISUAL_SCALE = 2.5;
+
+/** Rayon ÉCRAN d'une pastille de nourriture — `Math.max(1, entity.r * camera.scale)` seul
+ * s'effondrait au même 1px pour TOUTES les pastilles dès que `camera.scale` descend sous ~0.2-0.3
+ * (dézoom courant en jeu, un gros joueur y passe le plus clair de son temps) : `entity.r` va de
+ * ~1.4 (masse 1) à ~4.9px MONDE (masse 24, Multicolor), un écart déjà réduit à néant par ce
+ * plancher plat AVANT même le dézoom. `massFloorPx` (plancher ÉCRAN, pas monde) croît lui aussi
+ * avec la masse — la hiérarchie de taille reste lisible même complètement dézoomé, jamais un tas
+ * de points identiques. */
+function foodScreenRadius(mass: number, worldRadius: number, cameraScale: number): number {
+  const scaled = worldRadius * cameraScale * FOOD_VISUAL_SCALE;
+  const massFloorPx = 2 + Math.sqrt(Math.max(0, mass));
+  return Math.max(massFloorPx, scaled);
 }
 /** Espacement de la grille en pixels *monde* (donc fixe quel que soit le zoom, comme des
  * carreaux de papier millimétré vus de plus ou moins loin). */
@@ -212,14 +236,20 @@ export function renderFrame(
   for (const entity of entities) {
     const screenX = toScreenX(entity.x);
     const screenY = toScreenY(entity.y);
-    const screenRadius = entity.r * camera.scale;
+    // Rayon utilisé pour le test de culling ET le dessin — pour la nourriture, le rayon VISUEL
+    // amplifié (voir `foodScreenRadius`), jamais le rayon physique brut seul (sinon une pastille
+    // culée "juste avant" son bord visuel réel, plus grand, disparaîtrait quelques px trop tôt).
+    const screenRadius =
+      entity.k === 'f'
+        ? foodScreenRadius(entity.m, entity.r, camera.scale)
+        : entity.r * camera.scale;
 
     if (screenX + screenRadius < 0 || screenX - screenRadius > canvas.width) continue;
     if (screenY + screenRadius < 0 || screenY - screenRadius > canvas.height) continue;
 
     if (entity.k === 'f') {
       if (entity.m === MULTICOLOR_FOOD_MASS) {
-        drawMulticolorFood(ctx, screenX, screenY, Math.max(1, screenRadius));
+        drawMulticolorFood(ctx, screenX, screenY, screenRadius);
         drawCalls++;
         continue;
       }
@@ -229,8 +259,8 @@ export function renderFrame(
         path = new Path2D();
         foodPathsByColor.set(color, path);
       }
-      path.moveTo(screenX + Math.max(1, screenRadius), screenY);
-      path.arc(screenX, screenY, Math.max(1, screenRadius), 0, Math.PI * 2);
+      path.moveTo(screenX + screenRadius, screenY);
+      path.arc(screenX, screenY, screenRadius, 0, Math.PI * 2);
       continue;
     }
 

@@ -26,6 +26,19 @@ export function accelerationForMass(mass: number, config: ParametricModConfig): 
   return sharedAccelerationForMass(mass, toMovementConfig(config));
 }
 
+/** Repli si `config.eating.absorptionRatePerSec` est absent (mode non mis à jour, ou fixture de
+ * test) — 3 : à chevauchement plein et soutenu, une cible perd ~95% de sa masse en ~1s
+ * (exp(-3)≈0.05), assez rapide pour rester satisfaisant, assez lent pour être visiblement
+ * "grignoté" plutôt qu'instantané (voir `handleEatAttempt`). */
+const DEFAULT_ABSORPTION_RATE_PER_SEC = 3;
+
+/** Fraction de la masse RESTANTE de la cible transférée par seconde, à 100% de chevauchement de
+ * sa surface — voir `ParametricModConfig['eating']['absorptionRatePerSec']` et
+ * `mods/parametric/index.ts` `handleEatAttempt`. */
+export function absorptionRatePerSec(config: ParametricModConfig): number {
+  return config.eating.absorptionRatePerSec ?? DEFAULT_ABSORPTION_RATE_PER_SEC;
+}
+
 function decayLambda(mass: number, config: ParametricModConfig, timeSinceLastEatenS = 10): number {
   const floor = config.decay.floor ?? 2;
   // Aucune perte de masse pendant les 10 premières secondes sans masse ingurgitée

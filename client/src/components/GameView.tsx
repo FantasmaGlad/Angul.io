@@ -6,7 +6,6 @@ import type {
   ServerMessage,
 } from '@angulio/shared';
 import {
-  clamp,
   DEFAULT_DEATH_BANNER_ID,
   DEFAULT_DEATH_MESSAGE,
   isCustomImageBanner,
@@ -192,6 +191,19 @@ export default function GameView({
      * que la partie n'est pas figée, juste en train de se rattacher. */
     let isReconnecting = false;
 
+    /** Effet de zoom "punch" au split (demande utilisateur : "zoom véloce en direction du split,
+     * qui revient à sa position initiale à la fin de l'accélération du split, pour donner une
+     * sensation de vitesse") — durée fixe plutôt qu'asservie à la vraie décélération serveur du
+     * morceau éjecté (dépendrait de sa masse, voir server/configs/*.json split.ejectSpeedFactor) :
+     * assez courte pour se sentir comme "la poussée" du split, sans jamais traîner. Indépendant du
+     * lissage de caméra habituel (`cameraLerp` ci-dessous, plus lent) : décroît sur sa propre durée
+     * courte pour un coup de zoom net, appliqué APRÈS le lissage plutôt que d'y être mélangé. */
+    const SPLIT_ZOOM_DURATION_MS = 450;
+    const SPLIT_ZOOM_PUNCH = 0.18; // +18% de zoom-avant au pic (t=0)
+    const SPLIT_ZOOM_PUSH_WORLD_PX = 220; // décalage caméra max dans la direction du split
+    let splitZoomStartMs: number | undefined;
+    let splitZoomDirection: { x: number; y: number } = { x: 0, y: 0 };
+
     function respawn(): void {
       isDeadNow = false;
       setDeathState(DEFAULT_DEATH_STATE);
@@ -224,7 +236,17 @@ export default function GameView({
       }, durationMs);
     }
 
-    const input = attachInput(canvas);
+    const input = attachInput(canvas, () => {
+      // Retour visuel local IMMÉDIAT (voir le commentaire d'en-tête d'`attachInput` — pas le
+      // canal réseau, `consumeSplit()`, lu à part par `scheduleInput` plus bas).
+      splitZoomStartMs = performance.now();
+      const ownPosition = prediction.getOwnPosition() ?? latestCamera;
+      const { target } = input.getTarget({ ...latestCamera, ...ownPosition });
+      const dx = target.x - ownPosition.x;
+      const dy = target.y - ownPosition.y;
+      const dist = Math.hypot(dx, dy);
+      splitZoomDirection = dist > 0 ? { x: dx / dist, y: dy / dist } : { x: 0, y: 0 };
+    });
 
     const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
     const tokenParam = authToken ? `&token=${encodeURIComponent(authToken)}` : '';
@@ -455,20 +477,42 @@ export default function GameView({
       );
       if (selfPlayerId) entities = prediction.applyTo(entities, selfPlayerId);
 
+      // `targetCamera.scale` (voir computeCamera, render.ts) est la SEULE formule de zoom par
+      // masse — pas de duplication locale avec des bornes MIN_SCALE/MAX_SCALE recopiées à la
+      // main : une telle copie était restée figée à l'ancienne valeur de MAX_SCALE lors du réglage
+      // du dézoom de base (demande utilisateur, task #7) alors que `computeCamera` avait bien été
+      // mis à jour — la caméra effectivement affichée ne suivait donc PAS le nouveau réglage tant
+      // que cette duplication existait.
       const targetCamera = computeCamera(entities, selfPlayerId, { x: mapSize / 2, y: mapSize / 2 });
-      const ownForScale = ownAggregate(entities, selfPlayerId);
-      const targetScale = ownForScale
-        ? clamp(BASE_SCALE / Math.sqrt(ownForScale.mass / 50), 0.1, 1.76)
-        : BASE_SCALE;
 
       // Suivi de caméra lissé et indépendant du framerate
       const cameraLerp = 1 - Math.exp(-15 * (frameDt / 1000));
       latestCamera = {
         x: latestCamera.x + (targetCamera.x - latestCamera.x) * cameraLerp,
         y: latestCamera.y + (targetCamera.y - latestCamera.y) * cameraLerp,
-        scale: latestCamera.scale + (targetScale - latestCamera.scale) * cameraLerp,
+        scale: latestCamera.scale + (targetCamera.scale - latestCamera.scale) * cameraLerp,
       };
-      const camera = latestCamera;
+
+      // Effet de zoom "punch" au split (voir attachInput plus haut) — décroissance QUADRATIQUE
+      // (ease-out) sur sa propre durée courte, appliquée APRÈS le lissage de caméra habituel
+      // (plus lent, pas adapté à un "coup" net) : la caméra RENDUE ce frame reçoit le coup de zoom
+      // + un léger décalage dans la direction du split, mais `latestCamera` (l'état lissé porté à
+      // la frame suivante) reste propre, non pollué par cet effet transitoire.
+      let camera = latestCamera;
+      if (splitZoomStartMs !== undefined) {
+        const elapsedMs = now - splitZoomStartMs;
+        if (elapsedMs >= SPLIT_ZOOM_DURATION_MS) {
+          splitZoomStartMs = undefined;
+        } else {
+          const progress = elapsedMs / SPLIT_ZOOM_DURATION_MS;
+          const decay = (1 - progress) * (1 - progress);
+          camera = {
+            x: latestCamera.x + splitZoomDirection.x * SPLIT_ZOOM_PUSH_WORLD_PX * decay,
+            y: latestCamera.y + splitZoomDirection.y * SPLIT_ZOOM_PUSH_WORLD_PX * decay,
+            scale: latestCamera.scale * (1 + SPLIT_ZOOM_PUNCH * decay),
+          };
+        }
+      }
       const logicStepMs = performance.now() - logicStart;
 
       const drawStart = performance.now();

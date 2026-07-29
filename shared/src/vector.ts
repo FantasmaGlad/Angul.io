@@ -25,6 +25,12 @@ export function distance(a: Vector2, b: Vector2): number {
   return length(sub(a, b));
 }
 
+/** Produit scalaire — utilisé pour projeter une vélocité relative sur une normale de contact
+ * (collision "dure", voir server/src/mods/parametric/index.ts `applyRepulsion`). */
+export function dot(a: Vector2, b: Vector2): number {
+  return a.x * b.x + a.y * b.y;
+}
+
 export function normalize(v: Vector2): Vector2 {
   const len = length(v);
   if (len === 0) return { x: 0, y: 0 };

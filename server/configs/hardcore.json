@@ -10,8 +10,8 @@
     "speedMultiplier": 3.0,
     "speedMassExponent": 0.0333,
     "velocityFloor": 20,
-    "accelerationBase": 4500,
-    "accelerationMassExponent": 0.7
+    "accelerationBase": 6750,
+    "accelerationMassExponent": 0.35
   },
   "split": {
     "ejectEfficiency": 1.0,
@@ -24,7 +24,8 @@
   },
   "eating": {
     "massAdvantage": 0.05,
-    "minMassToEatFood": 2
+    "minMassToEatFood": 2,
+    "absorptionRatePerSec": 3
   },
   "decay": {
     "threshold": 100,
@@ -35,8 +36,8 @@
     "floor": 2
   },
   "arena": {
-    "width": 7000,
-    "height": 7000,
+    "width": 10000,
+    "height": 10000,
     "borderType": "STRICT_WALL"
   },
   "food": {

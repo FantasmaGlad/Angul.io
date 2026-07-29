@@ -21,8 +21,11 @@ export interface GameMod {
   /** Appelé juste après l'intégration des positions (ex : clamp aux bords de la carte). */
   onPostMove?(world: World, dt: number): void;
 
-  /** Appelé pour chaque paire d'entités dont les cercles se chevauchent ce tick. */
-  onCollision?(world: World, a: Entity, b: Entity): void;
+  /** Appelé pour chaque paire d'entités dont les cercles se chevauchent ce tick. `dt` (pas de
+   * temps fixe du tick, voir Room.tick()) permet une résolution progressive dépendante du temps
+   * (ex. absorption graduelle entre joueurs, voir mods/parametric/index.ts) plutôt qu'un seul
+   * événement instantané par paire par tick. */
+  onCollision?(world: World, a: Entity, b: Entity, dt: number): void;
 
   /** Un client vient de rejoindre la room ; c'est au mod de faire apparaître ses morceaux. */
   onPlayerJoin?(world: World, playerId: PlayerId): void;

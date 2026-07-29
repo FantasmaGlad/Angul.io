@@ -9,7 +9,7 @@ function freshWorld(mapSize = 15000, kArea = testConfig().areaConstant): World {
 }
 
 describe('createHardcoreMod — onCollision (absorption entre joueurs)', () => {
-  it('multiplie la masse gagnée en mangeant un autre joueur (x10 par défaut)', () => {
+  it('multiplie la masse gagnée en mangeant un autre joueur (x10 par défaut, absorption complète — dt largement suffisant)', () => {
     const config = testConfig();
     const mod = createHardcoreMod(config);
     const world = freshWorld();
@@ -18,11 +18,31 @@ describe('createHardcoreMod — onCollision (absorption entre joueurs)', () => {
     const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 105);
     const target = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
 
-    mod.onCollision?.(world, attacker, target);
+    mod.onCollision?.(world, attacker, target, 1);
 
     expect(world.getEntity(target.id)).toBeUndefined();
     // 105 + 100*2 = 305, pas 205 (comportement Vanilla)
     expect(attacker.mass).toBeCloseTo(305, 6);
+  });
+
+  it('absorbe PROGRESSIVEMENT, multiplicateur appliqué à chaque tranche transférée (pas seulement au total final)', () => {
+    const config = testConfig();
+    const mod = createHardcoreMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    world.addPlayer('p2', 'Bob');
+    const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 105);
+    const target = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
+
+    // Même tick fin (1/20s) que le test équivalent du mod paramétrique : la CIBLE perd 15 de
+    // masse (100*3*1*0.05, absorptionRatePerSec par défaut), mais l'ATTAQUANT en gagne 30
+    // (x2, massGainMultiplier par défaut) — le multiplicateur s'applique à la tranche transférée,
+    // pas seulement à un total final.
+    mod.onCollision?.(world, attacker, target, 1 / 20);
+
+    expect(world.getEntity(target.id)).toBeDefined();
+    expect(target.mass).toBeCloseTo(85, 6);
+    expect(attacker.mass).toBeCloseTo(135, 6); // 105 + 15*2
   });
 
   it('respecte un multiplicateur personnalisé', () => {
@@ -34,7 +54,7 @@ describe('createHardcoreMod — onCollision (absorption entre joueurs)', () => {
     const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 105);
     const target = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
 
-    mod.onCollision?.(world, attacker, target);
+    mod.onCollision?.(world, attacker, target, 1);
 
     expect(attacker.mass).toBeCloseTo(105 + 100 * 3, 6);
   });
@@ -48,7 +68,7 @@ describe('createHardcoreMod — onCollision (absorption entre joueurs)', () => {
     const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 105);
     const target = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
 
-    mod.onCollision?.(world, attacker, target);
+    mod.onCollision?.(world, attacker, target, 1);
 
     const stats = world.getPlayer('p1')!.lifeStats;
     expect(stats.massEaten).toBeCloseTo(200, 6); // 100 * 2
@@ -65,7 +85,7 @@ describe('createHardcoreMod — onCollision (absorption entre joueurs)', () => {
     const a = world.spawnPiece('p1', { x: 500, y: 500 }, 100);
     const b = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
 
-    mod.onCollision?.(world, a, b);
+    mod.onCollision?.(world, a, b, 1 / 20);
 
     expect(world.getEntity(a.id)).toBeDefined();
     expect(world.getEntity(b.id)).toBeDefined();
@@ -83,7 +103,7 @@ describe('createHardcoreMod — onCollision (nourriture et fusion, comportement 
     const piece = world.spawnPiece('p1', { x: 500, y: 500 }, 50);
     const particle = world.spawnParticle({ x: 500, y: 500 }, 1);
 
-    mod.onCollision?.(world, piece, particle);
+    mod.onCollision?.(world, piece, particle, 1 / 20);
 
     expect(world.getEntity(particle.id)).toBeUndefined();
     expect(piece.mass).toBeCloseTo(51, 6); // +1 masse (sa masse reste la même, la cellule gagne en taille via areaConstant)
@@ -97,7 +117,7 @@ describe('createHardcoreMod — onCollision (nourriture et fusion, comportement 
     const a = world.spawnPiece('p1', { x: 500, y: 500 }, 100);
     const b = world.spawnPiece('p1', { x: 500, y: 500 }, 100);
 
-    mod.onCollision?.(world, a, b);
+    mod.onCollision?.(world, a, b, 1 / 20);
 
     // Fusion classique (comportement du mod paramétrique, cooldown déjà écoulé par défaut pour
     // un morceau jamais splitté — voir pieceState.ts) : un seul morceau restant, masse simplement

@@ -82,6 +82,14 @@ export interface ParametricModConfig {
     minMassToEatFood: number;
     /** Multiplicateur de masse gagnée par la nourriture (1.5 = +50% de grossissement). */
     foodEfficiency?: number;
+    /** Fraction de la masse restante de la cible transférée par seconde À CHEVAUCHEMENT PLEIN
+     * (100% de sa surface recouverte) — l'absorption entre joueurs (avantage de masse) est
+     * désormais PROGRESSIVE (transfert continu proportionnel au chevauchement réel, tick après
+     * tick) plutôt qu'un seul événement instantané une fois un seuil de recouvrement franchi (qui
+     * donnait l'impression d'une "téléportation" : la cible n'était ni repoussée ni visiblement
+     * grignotée avant de disparaître d'un coup, voir `handleEatAttempt`). Absent = repli sur
+     * `DEFAULT_ABSORPTION_RATE_PER_SEC` (physics.ts). */
+    absorptionRatePerSec?: number;
   };
 
   /** Perte de masse passive — Mm (`floor`) et Ml (les taux/seuil) de la feuille Excel,

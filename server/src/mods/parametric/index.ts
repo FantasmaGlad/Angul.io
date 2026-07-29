@@ -1,7 +1,9 @@
 import {
   add,
   circleOverlapArea,
+  clamp,
   distance,
+  dot,
   isBotId,
   length,
   massToArea,
@@ -20,6 +22,7 @@ import { applyBorder } from './border.js';
 
 import type { ParametricModConfig } from './config.js';
 import {
+  absorptionRatePerSec,
   applyPassiveDecay,
   accelerationForMass,
   foodTargetCount,
@@ -159,7 +162,16 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     ejectedState.massAtSplit = ejectedMass;
   }
 
-  function applyRepulsion(a: Entity, b: Entity): void {
+  /** Repousse deux morceaux hors de leur pénétration mutuelle — correction de POSITION (résout
+   * 100% du chevauchement en un seul appel, mass-weighted), commune aux deux variantes. `hard`
+   * (réservé aux morceaux d'un MÊME joueur, voir `onCollision` — demande utilisateur : "collisions
+   * d'une même équipe dures, sans rebond") ajoute une correction de VÉLOCITÉ : annule la
+   * composante de la vélocité relative dirigée le long de la normale de contact, pour un contact
+   * SOLIDE qui ne se refait pas repousser en boucle par sa propre vélocité résiduelle à la frame
+   * suivante — contrairement à la répulsion molle entre adversaires (jamais `hard`), qui laisse
+   * volontairement les deux morceaux libres de se rapprocher à nouveau au tick suivant (permet le
+   * chevauchement progressif pendant une absorption, voir `handleEatAttempt`). */
+  function applyRepulsion(a: Entity, b: Entity, hard = false): void {
     const d = distance(a.position, b.position);
     const penetration = a.radius + b.radius - d;
     if (penetration <= 0) return;
@@ -171,6 +183,19 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
 
     a.position = add(a.position, scale(dir, moveA));
     b.position = sub(b.position, scale(dir, moveB));
+
+    if (hard) {
+      // `dir` pointe de b vers a : une vélocité relative (a-b) dont la projection sur `dir` est
+      // négative signifie que les deux morceaux se rapprochent encore le long de la normale de
+      // contact malgré la correction de position ci-dessus — on annule CETTE composante (mass-
+      // weighted, même répartition que la correction de position), sans toucher la composante
+      // tangentielle (le joueur garde le contrôle du mouvement le long du contact).
+      const closingSpeed = dot(sub(a.velocity, b.velocity), dir);
+      if (closingSpeed < 0) {
+        a.velocity = sub(a.velocity, scale(dir, closingSpeed * (b.mass / totalMass)));
+        b.velocity = add(b.velocity, scale(dir, closingSpeed * (a.mass / totalMass)));
+      }
+    }
   }
 
   /** Cooldown de fusion mass-dépendant : T(m) = Tbase + gamma_rec*m (par morceau, feuille
@@ -202,43 +227,68 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     return attacker.mass >= target.mass * (1 + config.eating.massAdvantage);
   }
 
-  function handleEatAttempt(world: World, attacker: Entity, target: Entity): boolean {
-    if (hasMassAdvantage(attacker, target)) {
-      const dist = distance(attacker.position, target.position);
-      const overlap = circleOverlapArea(attacker.radius, target.radius, dist);
-      const targetArea = 3 * target.radius * target.radius;
+  /** Masse minimale sous laquelle une cible en cours d'absorption est retirée entièrement plutôt
+   * que de laisser traîner indéfiniment un reliquat quasi nul (la décroissance appliquée par
+   * `handleEatAttempt` est exponentielle, elle n'atteint jamais exactement 0). */
+  const ABSORPTION_REMOVE_FLOOR = 0.5;
 
-      // Exige un chevauchement d'au moins 2/3 (66.7%) de la surface de la cible pour l'absorber
-      // (relevé depuis 1/3 : trop permissif, une cible pouvait se faire manger alors qu'elle
-      // n'était que légèrement chevauchée, perçu comme une absorption à distance injustifiée).
-      if (overlap >= (targetArea * 2) / 3) {
-        const gainedMass = target.mass;
+  /** Absorption PROGRESSIVE (demande utilisateur : pas "juste téléportation et disparition") :
+   * tant que `attacker` a l'avantage de masse et chevauche `target`, lui transfère chaque tick une
+   * fraction de sa masse RESTANTE proportionnelle à la fraction de sa surface actuellement
+   * recouverte (`absorptionRatePerSec`, physics.ts) — la cible rétrécit visiblement à mesure
+   * qu'elle est mangée (et l'attaquant grossit en retour), au lieu de disparaître d'un coup une
+   * fois un seuil de recouvrement franchi. Remplace l'ancien comportement à seuil unique (aucune
+   * répulsion pendant l'approche — `onCollision` désactive la répulsion dès qu'un avantage de masse
+   * existe, voir plus bas — puis un transfert intégral instantané une fois 2/3 de la cible
+   * recouverts), qui laissait la cible interpénétrer librement l'attaquant sans aucun retour visuel
+   * jusqu'à ce "pop" soudain.
+   *
+   * Retourne `true` tant qu'un transfert a eu lieu ce tick (même partiel, cible pas encore
+   * entièrement consommée) — `onCollision` s'en sert pour savoir s'il doit à la place repousser
+   * les deux morceaux (aucun avantage de masse). */
+  function handleEatAttempt(world: World, attacker: Entity, target: Entity, dt: number): boolean {
+    if (!hasMassAdvantage(attacker, target)) return false;
 
-        if (attacker.ownerId && target.ownerId) {
-          const attackerPlayer = world.getPlayer(attacker.ownerId);
-          const targetPlayer = world.getPlayer(target.ownerId);
-          logEvent('player_eaten', {
-            attackerId: attacker.ownerId,
-            attackerNickname: attackerPlayer?.nickname ?? attacker.ownerId,
-            victimId: target.ownerId,
-            victimNickname: targetPlayer?.nickname ?? target.ownerId,
-            mass: Math.floor(gainedMass),
-          });
-          // Écran de mort personnalisé ("Éliminé par : X") — voir World.recordAttacker.
-          world.recordAttacker(target.ownerId, attacker.ownerId);
-        }
+    const dist = distance(attacker.position, target.position);
+    const overlap = circleOverlapArea(attacker.radius, target.radius, dist);
+    if (overlap <= 0) return false;
 
-        world.setMass(attacker, attacker.mass + gainedMass);
-        const attackerState = pieceState(attacker);
-        attackerState.timeSinceLastEatenS = 0;
-        world.removeEntity(target.id);
-        const now = performance.now();
-        creditMassEatenXp(world, attacker.ownerId, gainedMass, now);
-        creditPlayerEatenXp(world, attacker.ownerId, now);
-        return true;
+    // Même convention d'aire que `circleOverlapArea` (PI≈3, voir shared/geometry.ts) — les deux
+    // valeurs doivent partager la même unité pour que leur ratio soit une vraie fraction ∈ [0,1].
+    const targetArea = 3 * target.radius * target.radius;
+    const overlapFraction = targetArea > 0 ? clamp(overlap / targetArea, 0, 1) : 1;
+    const massToTransfer = Math.min(
+      target.mass,
+      target.mass * absorptionRatePerSec(config) * overlapFraction * dt,
+    );
+    if (massToTransfer <= 0) return false;
+
+    world.setMass(attacker, attacker.mass + massToTransfer);
+    const attackerState = pieceState(attacker);
+    attackerState.timeSinceLastEatenS = 0;
+    creditMassEatenXp(world, attacker.ownerId, massToTransfer, performance.now());
+
+    const remainingMass = target.mass - massToTransfer;
+    if (remainingMass <= ABSORPTION_REMOVE_FLOOR) {
+      if (attacker.ownerId && target.ownerId) {
+        const attackerPlayer = world.getPlayer(attacker.ownerId);
+        const targetPlayer = world.getPlayer(target.ownerId);
+        logEvent('player_eaten', {
+          attackerId: attacker.ownerId,
+          attackerNickname: attackerPlayer?.nickname ?? attacker.ownerId,
+          victimId: target.ownerId,
+          victimNickname: targetPlayer?.nickname ?? target.ownerId,
+          mass: Math.floor(target.mass), // masse de la cible au dernier tick d'absorption
+        });
+        // Écran de mort personnalisé ("Éliminé par : X") — voir World.recordAttacker.
+        world.recordAttacker(target.ownerId, attacker.ownerId);
       }
+      world.removeEntity(target.id);
+      if (attacker.ownerId) creditPlayerEatenXp(world, attacker.ownerId, performance.now());
+    } else {
+      world.setMass(target, remainingMass);
     }
-    return false;
+    return true;
   }
 
   let foodSpawnCredit = 0;
@@ -317,7 +367,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
       }
     },
 
-    onCollision(world: World, a: Entity, b: Entity) {
+    onCollision(world: World, a: Entity, b: Entity, dt: number) {
       if (a.kind === 'particle' && b.kind === 'particle') return;
 
       // Nourriture mangée par un morceau
@@ -337,19 +387,21 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         return;
       }
 
-      // Deux morceaux du même joueur : candidats à la fusion, jamais à l'absorption — mais tant
-      // que la fusion n'a pas lieu (cooldown post-split pas écoulé, ou chevauchement insuffisant),
-      // ils doivent quand même se repousser comme deux morceaux de joueurs différents, plutôt que
-      // de se chevaucher librement (correctif : "après un split, les entités se chevauchent au
-      // lieu de collisionner").
+      // Deux morceaux du MÊME joueur ("même équipe", demande utilisateur) : candidats à la
+      // fusion, jamais à l'absorption — mais tant que la fusion n'a pas lieu (cooldown post-split
+      // pas écoulé, ou chevauchement insuffisant), collision DURE, SANS REBOND (position +
+      // annulation de la vélocité de rapprochement, voir `applyRepulsion(hard=true)`) plutôt qu'un
+      // chevauchement libre ou une répulsion molle qui se refait repousser en boucle par l'input
+      // du joueur (perçu comme un rebond/tremblement).
       if (a.ownerId && a.ownerId === b.ownerId) {
-        if (!tryMerge(world, a, b)) applyRepulsion(a, b);
+        if (!tryMerge(world, a, b)) applyRepulsion(a, b, true);
         return;
       }
 
-      // Deux morceaux de joueurs différents : absorption si avantage de masse + 1/3 chevauchement,
-      // sinon répulsion uniquement si aucun des deux n'a d'avantage de masse (afin d'autoriser le chevauchement progressif).
-      const eaten = handleEatAttempt(world, a, b) || handleEatAttempt(world, b, a);
+      // Deux morceaux de joueurs différents : absorption PROGRESSIVE si avantage de masse (voir
+      // handleEatAttempt), sinon répulsion molle uniquement si aucun des deux n'a d'avantage de
+      // masse (afin d'autoriser le chevauchement progressif pendant une absorption en cours).
+      const eaten = handleEatAttempt(world, a, b, dt) || handleEatAttempt(world, b, a, dt);
       if (!eaten && !hasMassAdvantage(a, b) && !hasMassAdvantage(b, a)) {
         applyRepulsion(a, b);
       }

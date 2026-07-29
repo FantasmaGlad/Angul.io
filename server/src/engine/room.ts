@@ -188,7 +188,7 @@ export class Room {
     for (const [a, b] of this.world.findOverlappingPairs()) {
       // une collision précédente dans cette même passe a pu retirer l'une des deux entités
       if (this.world.getEntity(a.id) && this.world.getEntity(b.id)) {
-        this.mod.onCollision?.(this.world, a, b);
+        this.mod.onCollision?.(this.world, a, b, dt);
       }
     }
 

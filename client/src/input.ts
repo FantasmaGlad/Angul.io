@@ -39,8 +39,15 @@ export interface InputTracker {
 }
 
 /** Le joueur vise toujours depuis le centre de son écran — cohérent avec une caméra centrée
- * sur son propre joueur (render.ts). */
-export function attachInput(canvas: HTMLCanvasElement): InputTracker {
+ * sur son propre joueur (render.ts).
+ *
+ * `onSplitRequested` (optionnel) : appelé IMMÉDIATEMENT à chaque vraie pression de split (front
+ * montant clavier/manette), en plus de — jamais à la place de — `consumeSplit()` (qui reste le
+ * seul canal vers le réseau, lu au rythme de `scheduleInput`, voir GameView.tsx). Sert uniquement
+ * de retour visuel local instantané (effet de zoom au split, demande utilisateur) : attendre le
+ * prochain envoi réseau planifié (jusqu'à ~33ms à 30Hz) pour déclencher l'animation la ferait
+ * démarrer perceptiblement en retard sur la pression réelle. */
+export function attachInput(canvas: HTMLCanvasElement, onSplitRequested?: () => void): InputTracker {
   let mouseX = canvas.width / 2;
   let mouseY = canvas.height / 2;
   let splitRequested = false;
@@ -55,7 +62,10 @@ export function attachInput(canvas: HTMLCanvasElement): InputTracker {
     mouseY = event.clientY;
   };
   const onKeyDown = (event: KeyboardEvent): void => {
-    if (event.code === 'Space') splitRequested = true;
+    if (event.code === 'Space') {
+      splitRequested = true;
+      onSplitRequested?.();
+    }
   };
 
   // Interrogé indépendamment de `getTarget` (potentiellement appelé plusieurs fois par frame, à
@@ -64,7 +74,10 @@ export function attachInput(canvas: HTMLCanvasElement): InputTracker {
   function pollGamepad(): void {
     const pad = navigator.getGamepads?.().find((p) => p !== null) ?? null;
     const pressed = pad?.buttons[GAMEPAD_SPLIT_BUTTON_INDEX]?.pressed ?? false;
-    if (pressed && !gamepadSplitWasPressed) splitRequested = true;
+    if (pressed && !gamepadSplitWasPressed) {
+      splitRequested = true;
+      onSplitRequested?.();
+    }
     gamepadSplitWasPressed = pressed;
     gamepadRafId = requestAnimationFrame(pollGamepad);
   }

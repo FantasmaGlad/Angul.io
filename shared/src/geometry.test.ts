@@ -4,8 +4,10 @@ import { circleOverlapArea, massToRadius, PI } from './geometry.js';
 describe('massToRadius', () => {
   it('calculates particle radius for mass <= 24 and player blob radius for mass > 24', () => {
     expect(massToRadius(2)).toBeCloseTo(Math.sqrt(2), 10);
-    expect(massToRadius(50)).toBeCloseTo(63, 10);
-    expect(massToRadius(100)).toBeCloseTo(36 + 27 * Math.pow(2, 0.38), 10);
+    // Facteur 0.5 (demande utilisateur : taille de départ réduite de moitié par rapport à la
+    // masse) appliqué à toute la branche >24, pas seulement à startMass=50.
+    expect(massToRadius(50)).toBeCloseTo(31.5, 10);
+    expect(massToRadius(100)).toBeCloseTo((36 + 27 * Math.pow(2, 0.38)) * 0.5, 10);
   });
 });
 

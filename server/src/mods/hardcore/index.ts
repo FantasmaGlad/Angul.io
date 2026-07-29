@@ -1,4 +1,4 @@
-import { add, scale, type Vector2 } from '@angulio/shared';
+import { add, circleOverlapArea, clamp, distance, scale, type Vector2 } from '@angulio/shared';
 import type { GameMod } from '../../engine/mod.js';
 import { isGodPlayerId } from '../../engine/godmode.js';
 import type { Entity, PlayerId } from '../../engine/types.js';
@@ -6,8 +6,11 @@ import type { World } from '../../engine/world.js';
 import { creditMassEatenXp, creditPlayerEatenXp } from '../../engine/xp.js';
 import type { ParametricModConfig } from '../parametric/config.js';
 import { createParametricMod } from '../parametric/index.js';
-import { velocityForMass } from '../parametric/physics.js';
+import { absorptionRatePerSec, velocityForMass } from '../parametric/physics.js';
 import { pieceState } from '../parametric/pieceState.js';
+
+/** Voir son homologue dans mods/parametric/index.ts. */
+const ABSORPTION_REMOVE_FLOOR = 0.5;
 
 export interface HardcoreModConfig {
   /** Multiplicateur appliqué à la masse gagnée en mangeant un **autre joueur** (cahier des
@@ -34,9 +37,11 @@ export function createHardcoreMod(
 ): GameMod {
   const base = createParametricMod(config);
 
-  /** Identique à `handleEatAttempt` du mod paramétrique (même condition d'avantage de masse),
-   * sauf le montant gagné — c'est la seule différence de mécanique de ce mode avec Vanilla. */
-  function handleEatAttempt(world: World, attacker: Entity, target: Entity): boolean {
+  /** Identique à `handleEatAttempt` du mod paramétrique (même condition d'avantage de masse,
+   * même absorption PROGRESSIVE — voir son commentaire), sauf le montant gagné par l'attaquant
+   * (`massGainMultiplier`, x10 par défaut) — c'est la seule différence de mécanique de ce mode
+   * avec Vanilla. */
+  function handleEatAttempt(world: World, attacker: Entity, target: Entity, dt: number): boolean {
     // Blob Dieu (§4.5 cahier_des_charges_admin.md) : jamais mangeable, mange toujours — même
     // exemption que le mod paramétrique sous-jacent (voir `hasMassAdvantage`), dupliquée ici car
     // Hardcore réimplémente sa propre condition d'avantage de masse (gain x10) plutôt que de
@@ -45,23 +50,41 @@ export function createHardcoreMod(
     const hasAdvantage =
       isGodPlayerId(attacker.ownerId) ||
       attacker.mass >= target.mass * (1 + config.eating.massAdvantage);
-    if (hasAdvantage) {
-      const gainedMass = target.mass * hardcoreConfig.massGainMultiplier;
+    if (!hasAdvantage) return false;
+
+    const dist = distance(attacker.position, target.position);
+    const overlap = circleOverlapArea(attacker.radius, target.radius, dist);
+    if (overlap <= 0) return false;
+
+    // Même convention d'aire que `circleOverlapArea` (PI≈3, voir shared/geometry.ts).
+    const targetArea = 3 * target.radius * target.radius;
+    const overlapFraction = targetArea > 0 ? clamp(overlap / targetArea, 0, 1) : 1;
+    const massLostByTarget = Math.min(
+      target.mass,
+      target.mass * absorptionRatePerSec(config) * overlapFraction * dt,
+    );
+    if (massLostByTarget <= 0) return false;
+
+    const gainedMass = massLostByTarget * hardcoreConfig.massGainMultiplier;
+    world.setMass(attacker, attacker.mass + gainedMass);
+    // XP (engine/xp.ts) : la masse gagnée (déjà multipliée x10 par défaut) compte intégralement
+    // pour "1 masse mangée = 1xp" — cohérent avec un mode à haut risque/haute récompense ; de
+    // toute façon annulée à la mort/déconnexion par `transformScoreForAccount` ci-dessous.
+    const now = performance.now();
+    creditMassEatenXp(world, attacker.ownerId, gainedMass, now);
+
+    const remainingMass = target.mass - massLostByTarget;
+    if (remainingMass <= ABSORPTION_REMOVE_FLOOR) {
       if (attacker.ownerId && target.ownerId) {
         // Écran de mort personnalisé ("Éliminé par : X") — voir World.recordAttacker.
         world.recordAttacker(target.ownerId, attacker.ownerId);
       }
-      world.setMass(attacker, attacker.mass + gainedMass);
       world.removeEntity(target.id);
-      // XP (engine/xp.ts) : la masse gagnée (déjà multipliée x10 par défaut) compte intégralement
-      // pour "1 masse mangée = 1xp" — cohérent avec un mode à haut risque/haute récompense ; de
-      // toute façon annulée à la mort/déconnexion par `transformScoreForAccount` ci-dessous.
-      const now = performance.now();
-      creditMassEatenXp(world, attacker.ownerId, gainedMass, now);
-      creditPlayerEatenXp(world, attacker.ownerId, now);
-      return true;
+      if (attacker.ownerId) creditPlayerEatenXp(world, attacker.ownerId, now);
+    } else {
+      world.setMass(target, remainingMass);
     }
-    return false;
+    return true;
   }
 
   function splitPlayerMaxRadially(world: World, playerId: PlayerId): void {
@@ -147,24 +170,24 @@ export function createHardcoreMod(
       }
     },
 
-    onCollision(world: World, a: Entity, b: Entity) {
+    onCollision(world: World, a: Entity, b: Entity, dt: number) {
       if (a.kind === 'particle' && b.kind === 'particle') return;
 
-      // Nourriture et fusion entre morceaux du même joueur : comportement inchangé, délégué
-      // tel quel au mod paramétrique sous-jacent.
+      // Nourriture et fusion/collision dure entre morceaux du même joueur : comportement
+      // inchangé, délégué tel quel au mod paramétrique sous-jacent.
       if (
         a.kind === 'particle' ||
         b.kind === 'particle' ||
         (a.ownerId && a.ownerId === b.ownerId)
       ) {
-        base.onCollision?.(world, a, b);
+        base.onCollision?.(world, a, b, dt);
         return;
       }
 
       // Deux morceaux de joueurs différents : seule l'absorption change (multiplicateur) ; la
       // répulsion (aucun des deux n'a l'avantage) reste celle du mod paramétrique.
-      if (!handleEatAttempt(world, a, b) && !handleEatAttempt(world, b, a)) {
-        base.onCollision?.(world, a, b);
+      if (!handleEatAttempt(world, a, b, dt) && !handleEatAttempt(world, b, a, dt)) {
+        base.onCollision?.(world, a, b, dt);
       }
     },
 
