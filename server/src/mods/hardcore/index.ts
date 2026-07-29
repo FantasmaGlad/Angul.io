@@ -154,6 +154,7 @@ export function createHardcoreMod(
         maxCharges: HARDCORE_MAX_DASHES,
         canDash,
         rechargeProgress,
+        rechargeTimeSec: 4,
       };
     },
 

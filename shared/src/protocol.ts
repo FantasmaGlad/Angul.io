@@ -131,6 +131,7 @@ export interface WorldStateMessage {
       maxCharges: number;
       canDash: boolean;
       rechargeProgress: number;
+      rechargeTimeSec?: number;
     };
   };
 }

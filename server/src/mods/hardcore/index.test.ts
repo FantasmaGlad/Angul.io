@@ -153,8 +153,8 @@ describe('createHardcoreMod — hooks délégués au mod paramétrique sous-jace
   });
 });
 
-describe('createHardcoreMod — onTick (règle 2x leader split)', () => {
-  it('divise le leader au maximum possible s’il fait plus de 2x la masse du deuxième joueur', () => {
+describe('createHardcoreMod — Absence de malus/split punitif pour le leader', () => {
+  it('ne divise pas le leader s’il fait plus de 2x la masse du deuxième joueur', () => {
     const config = testConfig();
     const mod = createHardcoreMod(config);
     const world = freshWorld();
@@ -169,40 +169,10 @@ describe('createHardcoreMod — onTick (règle 2x leader split)', () => {
     mod.onTick?.(world, 0.05);
 
     const leaderPieces = world.getPiecesByOwner('p1');
-    expect(leaderPieces.length).toBe(config.player.maxSplits);
+    expect(leaderPieces.length).toBe(1);
 
     const runnerUpPieces = world.getPiecesByOwner('p2');
     expect(runnerUpPieces.length).toBe(1);
-  });
-
-  it('ne divise pas le leader si la masse est inférieure à 200 points (immunité tout début de partie)', () => {
-    const config = testConfig();
-    const mod = createHardcoreMod(config);
-    const world = freshWorld();
-    world.addPlayer('p1', 'SmallLeader');
-    world.addPlayer('p2', 'TinyRunnerUp');
-
-    world.spawnPiece('p1', { x: 500, y: 500 }, 150); // > 2x 50, mais < 200
-    world.spawnPiece('p2', { x: 2000, y: 2000 }, 50);
-
-    mod.onTick?.(world, 0.05);
-
-    expect(world.getPiecesByOwner('p1')).toHaveLength(1);
-  });
-
-  it('ne divise pas le leader si la masse est inférieure ou égale à 2x le deuxième', () => {
-    const config = testConfig();
-    const mod = createHardcoreMod(config);
-    const world = freshWorld();
-    world.addPlayer('p1', 'Leader');
-    world.addPlayer('p2', 'RunnerUp');
-
-    world.spawnPiece('p1', { x: 500, y: 500 }, 600);
-    world.spawnPiece('p2', { x: 2000, y: 2000 }, 350);
-
-    mod.onTick?.(world, 0.05);
-
-    expect(world.getPiecesByOwner('p1')).toHaveLength(1);
   });
 });
 

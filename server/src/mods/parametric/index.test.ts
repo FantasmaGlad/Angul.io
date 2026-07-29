@@ -553,8 +553,8 @@ describe('createParametricMod — intensité multi-morceaux', () => {
   });
 });
 
-describe('createParametricMod — Malus du leader Top 5 (punitive split)', () => {
-  it('se déclenche pour un joueur du Top 5 si sa masse est >= 200 et > 2x celle du rang immédiatement derrière lui', () => {
+describe('createParametricMod — Absence de malus/split punitif pour le leader', () => {
+  it('ne divise pas le leader s’il fait plus de 2x la masse du deuxième joueur', () => {
     const config = testConfig();
     const mod = createParametricMod(config);
     const world = freshWorld();
@@ -569,20 +569,5 @@ describe('createParametricMod — Malus du leader Top 5 (punitive split)', () =>
     mod.onTick?.(world, 0.05);
 
     const leaderPieces = world.getPiecesByOwner('p1');
-    expect(leaderPieces.length).toBe(config.player.maxSplits);
-  });
-
-  it('NE SE DÉCLENCHE PAS si le joueur est seul dans le salon (playerTotals.length === 1)', () => {
-    const config = testConfig();
-    const mod = createParametricMod(config);
-    const world = freshWorld();
-    world.addPlayer('p1', 'SoloPlayer');
-
-    world.spawnPiece('p1', { x: 500, y: 500 }, 5000);
-
-    mod.onTick?.(world, 0.05);
-
-    const soloPieces = world.getPiecesByOwner('p1');
-    expect(soloPieces).toHaveLength(1);
   });
 });

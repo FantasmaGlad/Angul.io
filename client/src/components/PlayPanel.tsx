@@ -35,7 +35,6 @@ export default function PlayPanel({
           alt="Angul.io Logo"
           className="hero-logo-img"
         />
-        <span className="version-pill-badge">v2.0</span>
         <div className="players-online-header">
           <span className="players-online-count">{playersOnline ?? '—'}</span>
           <span className="players-online-label">JOUEURS EN LIGNE</span>

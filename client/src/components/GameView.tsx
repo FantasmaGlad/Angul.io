@@ -142,6 +142,7 @@ export default function GameView({
     maxCharges: number;
     canDash: boolean;
     rechargeProgress: number;
+    rechargeTimeSec?: number;
   } | undefined>(undefined);
   // Touche de dash CONFIGURÉE (demande utilisateur : configuration dynamique, voir
   // keybinds.ts/KeybindSettings.tsx) — lue une fois au montage, affichée dans le HUD dash à la
@@ -740,7 +741,9 @@ export default function GameView({
             </div>
           </div>
           {!dashInfo.canDash && dashInfo.charges === 0 && (
-            <div className="dash-disabled-hint">Recharge en cours… (10s/charge)</div>
+            <div className="dash-disabled-hint">
+              Recharge en cours… ({dashInfo.rechargeTimeSec ?? 4}s/charge)
+            </div>
           )}
         </div>
       )}

@@ -398,59 +398,6 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
   }
 
   let foodSpawnCredit = 0;
-  const lastPunitiveSplitByPlayer = new Map<PlayerId, number>();
-
-  function splitPlayerMaxRadially(world: World, playerId: PlayerId): void {
-    let angleIndex = 0;
-    let iterationGuard = 0;
-    const MIN_PUNITIVE_SPLIT_MASS = 1;
-
-    while (
-      world.getPiecesByOwner(playerId).length < config.player.maxSplits &&
-      iterationGuard < 10
-    ) {
-      iterationGuard++;
-      const pieces = world.getPiecesByOwner(playerId);
-      const eligible = pieces.filter((p) => p.mass >= MIN_PUNITIVE_SPLIT_MASS);
-      if (eligible.length === 0) break;
-
-      let splitOccurred = false;
-      const count = eligible.length;
-      for (let i = 0; i < count; i++) {
-        if (world.getPiecesByOwner(playerId).length >= config.player.maxSplits) break;
-        const piece = eligible[i]!;
-        if (piece.mass < MIN_PUNITIVE_SPLIT_MASS) continue;
-
-        const angle = (angleIndex / 8) * (2 * Math.PI);
-        angleIndex++;
-        const dir: Vector2 = { x: Math.cos(angle), y: Math.sin(angle) };
-
-        const half = piece.mass / 2;
-        world.setMass(piece, half);
-        const originState = pieceState(piece);
-        originState.splitElapsedS = 0;
-        originState.massAtSplit = half;
-
-        const ejectedMass = half * config.split.ejectEfficiency;
-        const ejectedPosition = add(piece.position, scale(dir, piece.radius * 2));
-        const ejected = world.spawnPiece(playerId, ejectedPosition, ejectedMass);
-        ejected.velocity = scale(
-          dir,
-          velocityForMass(ejectedMass, config) * config.split.ejectSpeedFactor,
-        );
-
-        const ejectedState = pieceState(ejected);
-        ejectedState.inputTarget = { ...originState.inputTarget };
-        ejectedState.inputIntensity = originState.inputIntensity;
-        ejectedState.splitElapsedS = 0;
-        ejectedState.massAtSplit = ejectedMass;
-
-        splitOccurred = true;
-      }
-
-      if (!splitOccurred) break;
-    }
-  }
 
   return {
     id: config.id,
@@ -531,36 +478,6 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         foodSpawnCredit -= toSpawn;
         for (let i = 0; i < toSpawn; i++) {
           world.spawnParticle(randomFoodPosition(world, 1), randomFoodMass(config));
-        }
-      }
-
-      // Malus du leader étendu au Top 5 (mutualisé dans le mod paramétrique de base pour Vanilla + Hardcore)
-      const playerTotals: Array<{ playerId: PlayerId; totalMass: number }> = [];
-      for (const player of allPlayers) {
-        const pieces = world.getPiecesByOwner(player.id);
-        if (pieces.length === 0) continue;
-        const totalMass = pieces.reduce((sum, p) => sum + p.mass, 0);
-        if (totalMass > 0) {
-          playerTotals.push({ playerId: player.id, totalMass });
-        }
-      }
-
-      if (playerTotals.length >= 2) {
-        playerTotals.sort((a, b) => b.totalMass - a.totalMass);
-        const maxRankToCheck = Math.min(5, playerTotals.length - 1);
-        const nowMs = performance.now();
-        for (let i = 1; i <= maxRankToCheck; i++) {
-          const leader = playerTotals[i - 1]!;
-          const runnerUp = playerTotals[i]!;
-          const lastSplitMs = lastPunitiveSplitByPlayer.get(leader.playerId) ?? -10000;
-          if (
-            leader.totalMass >= 200 &&
-            leader.totalMass > runnerUp.totalMass * 2 &&
-            nowMs - lastSplitMs >= 10000
-          ) {
-            lastPunitiveSplitByPlayer.set(leader.playerId, nowMs);
-            splitPlayerMaxRadially(world, leader.playerId);
-          }
         }
       }
     },
