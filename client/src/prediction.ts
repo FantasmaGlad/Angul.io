@@ -293,6 +293,13 @@ export class LocalPrediction {
     this.pruneHistory(atMs);
   }
 
+  /** Applique localement une impulsion de Dash à toutes les pièces prédites du joueur pour éviter tout décalage entre la prédiction locale et le serveur. */
+  applyDash(direction: Vector2, speedImpulse = 2700): void {
+    for (const piece of this.pieces.values()) {
+      piece.velocity = add(piece.velocity, scale(direction, speedImpulse));
+    }
+  }
+
   /** Regroupe les échantillons fins de `step()` (pas `FIXED_STEP_SECONDS`, 1/240s) en blocs dont la
    * durée cumulée correspond au pas serveur (1/`serverTickRateHz`) avant rejeu — plutôt qu'un
    * `integrate()` par échantillon fin.

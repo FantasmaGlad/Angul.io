@@ -38,6 +38,25 @@ export async function fetchServerStats(): Promise<{ playersOnline: number }> {
   return (await response.json()) as { playersOnline: number };
 }
 
+/** Une ligne du classement public (page Classements) — voir `GET /api/leaderboard` côté serveur. */
+export interface LeaderboardEntry {
+  rank: number;
+  pseudo: string;
+  level: number;
+  avatarColor?: string;
+  score: number;
+}
+
+/** `mode` : `'global'` pour le classement par XP totale, ou un id de mode (`vanilla`/`hardcore`)
+ * pour le classement par meilleur score de ce mode. Public, pas de token requis. */
+export async function fetchLeaderboard(mode: string, limit = 50): Promise<LeaderboardEntry[]> {
+  const response = await fetch(
+    `/api/leaderboard?mode=${encodeURIComponent(mode)}&limit=${limit}`,
+  );
+  if (!response.ok) throw new Error('Impossible de récupérer le classement.');
+  return (await response.json()) as LeaderboardEntry[];
+}
+
 export interface CreateRoomOptions {
   /** "Nombre de Joueurs" (refonte UI/UX) — omis = capacité par défaut du serveur. */
   maxPlayers?: number;

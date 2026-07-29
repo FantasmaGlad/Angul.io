@@ -49,7 +49,11 @@ export interface InputTracker {
  * de retour visuel local instantané (effet de zoom au split, demande utilisateur) : attendre le
  * prochain envoi réseau planifié (jusqu'à ~33ms à 30Hz) pour déclencher l'animation la ferait
  * démarrer perceptiblement en retard sur la pression réelle. */
-export function attachInput(canvas: HTMLCanvasElement, onSplitRequested?: () => void): InputTracker {
+export function attachInput(
+  canvas: HTMLCanvasElement,
+  onSplitRequested?: () => void,
+  onDashRequested?: () => void,
+): InputTracker {
   let mouseX = canvas.width / 2;
   let mouseY = canvas.height / 2;
   let splitRequested = false;
@@ -72,6 +76,7 @@ export function attachInput(canvas: HTMLCanvasElement, onSplitRequested?: () => 
     } else if (event.code === 'KeyF' || event.key === 'f' || event.key === 'F') {
       event.preventDefault();
       dashRequested = true;
+      onDashRequested?.();
     }
   };
 

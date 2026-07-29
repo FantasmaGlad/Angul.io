@@ -119,4 +119,43 @@ describe.skipIf(!DATABASE_URL)('AccountsRepository (Postgres)', () => {
 
     expect(await repository.adminUpdateAccount(-1, { premium: true })).toBeUndefined();
   });
+
+  // Ne suppose PAS que nos comptes de test occupent le haut du classement (d'autres comptes
+  // réels/de test partagent la même base) : on récupère une tranche large et on vérifie l'ordre
+  // RELATIF entre nos propres comptes plutôt qu'un rang absolu.
+  it('getLeaderboard(global) trie par XP décroissante et exclut les comptes bannis', async () => {
+    const top = await repository.createAccount(uniquePseudo('lbtop'), 'hash');
+    const mid = await repository.createAccount(uniquePseudo('lbmid'), 'hash');
+    const banned = await repository.createAccount(uniquePseudo('lbbanned'), 'hash');
+    createdIds.push(top.id, mid.id, banned.id);
+
+    await repository.adminUpdateAccount(top.id, { xp: 5_000_000 });
+    await repository.adminUpdateAccount(mid.id, { xp: 1_000_000 });
+    await repository.adminUpdateAccount(banned.id, { xp: 9_000_000, banned: true });
+
+    const rows = await repository.getLeaderboard(undefined, 1000);
+    const ours = rows.filter((row) => [top.pseudo, mid.pseudo, banned.pseudo].includes(row.pseudo));
+
+    expect(ours.map((row) => row.pseudo)).toEqual([top.pseudo, mid.pseudo]);
+    expect(ours[0]).toMatchObject({ pseudo: top.pseudo, score: 5_000_000 });
+    expect(ours[1]).toMatchObject({ pseudo: mid.pseudo, score: 1_000_000 });
+  });
+
+  it('getLeaderboard(modeId) trie par meilleur score du mode, tous modes ne se mélangent pas', async () => {
+    const player = await repository.createAccount(uniquePseudo('lbmode'), 'hash');
+    const other = await repository.createAccount(uniquePseudo('lbmode'), 'hash');
+    createdIds.push(player.id, other.id);
+
+    await repository.recordGameResult(player.id, 'vanilla', 700, 0);
+    await repository.recordGameResult(other.id, 'vanilla', 300, 0);
+    await repository.recordGameResult(player.id, 'hardcore', 10, 0);
+
+    const vanillaRows = await repository.getLeaderboard('vanilla', 1000);
+    const ours = vanillaRows.filter((row) => [player.pseudo, other.pseudo].includes(row.pseudo));
+    expect(ours.map((row) => row.pseudo)).toEqual([player.pseudo, other.pseudo]);
+    expect(ours[0]).toMatchObject({ score: 700 });
+
+    const hardcoreRows = await repository.getLeaderboard('hardcore', 1000);
+    expect(hardcoreRows.some((row) => row.pseudo === other.pseudo)).toBe(false);
+  });
 });

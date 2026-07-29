@@ -4,6 +4,12 @@ import { logEvent } from '../../../log.js';
 import { RateLimiter } from '../../rateLimiter.js';
 import { getBearerToken, getClientIp, isRecord, readJsonBody, respondJson } from '../httpUtils.js';
 
+/** Plafond dédié à `handleUpdateDeathScreen` (une bannière personnalisée en data URL base64 peut
+ * dépasser de loin la limite JSON générique, voir httpUtils.ts) — couvre le fichier max accepté
+ * côté client (5 Mo, voir ProfilePage.tsx) une fois encodé en base64 (facteur ~4/3) avec de la
+ * marge pour l'enveloppe JSON. */
+const MAX_DEATH_SCREEN_BODY_BYTES = 8_000_000;
+
 export async function handleRegisterOrLogin(
   accounts: AccountsService | undefined,
   authRateLimiter: RateLimiter,
@@ -179,7 +185,7 @@ export async function handleUpdateDeathScreen(
 
   let body: unknown;
   try {
-    body = await readJsonBody(req);
+    body = await readJsonBody(req, MAX_DEATH_SCREEN_BODY_BYTES);
   } catch (error) {
     respondJson(res, 400, { error: (error as Error).message });
     return;

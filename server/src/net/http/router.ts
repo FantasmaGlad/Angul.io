@@ -29,6 +29,7 @@ import {
 } from './routes/auth.js';
 import {
   handleCreateRoom,
+  handleGetLeaderboard,
   handleGetModes,
   handleGetRooms,
   handleGetStats,
@@ -68,6 +69,11 @@ export async function handleHttpRequest(
 
   if (url.pathname === '/api/stats' && req.method === 'GET') {
     handleGetStats(roomManager, res);
+    return;
+  }
+
+  if (url.pathname === '/api/leaderboard' && req.method === 'GET') {
+    await handleGetLeaderboard(accounts, url, res);
     return;
   }
 

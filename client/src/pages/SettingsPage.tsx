@@ -1,14 +1,12 @@
-import FpsModeSelector from '../components/FpsModeSelector.js';
+import AudioSettings from '../components/AudioSettings.js';
 import PageLayout from './PageLayout.js';
 
-/** Paramètres client : réglages locaux à l'appareil, pas liés au compte joueur — pour l'instant
- * seulement le mode FPS du rendu en jeu (voir GameView.tsx/settings.ts), aussi proposé dans le
- * profil (ProfilePage.tsx, demande utilisateur) : les deux entrées partagent le même composant
- * et le même réglage persisté, pas de double source de vérité. */
+/** Paramètres client : réglages locaux à l'appareil, pas liés au compte joueur — sons/musique
+ * (demande utilisateur, remplace l'ancienne section FPS retirée d'ici). */
 export default function SettingsPage() {
   return (
     <PageLayout title="Paramètres">
-      <FpsModeSelector />
+      <AudioSettings />
     </PageLayout>
   );
 }

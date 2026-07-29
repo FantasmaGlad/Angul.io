@@ -106,3 +106,29 @@ export function handleGetStats(roomManager: RoomManager, res: ServerResponse): v
     .reduce((sum, managed) => sum + roomManager.playerCountOf(managed), 0);
   respondJson(res, 200, { playersOnline });
 }
+
+const DEFAULT_LEADERBOARD_LIMIT = 50;
+
+/** Classement public (Lot "Classements") — `?mode=` omis ou `global` renvoie le classement par
+ * XP totale, un id de mode (`vanilla`/`hardcore`/...) renvoie le classement par meilleur score de
+ * ce mode. Pas d'authentification requise (même esprit que `/api/rooms`) : c'est une vitrine
+ * publique. Tableau vide (pas d'erreur) si les comptes joueurs sont désactivés (pas de base de
+ * données configurée) — un classement vide reste un affichage valide, contrairement aux routes de
+ * compte qui, elles, ont vraiment besoin d'un compte pour répondre.
+ */
+export async function handleGetLeaderboard(
+  accounts: AccountsService | undefined,
+  url: URL,
+  res: ServerResponse,
+): Promise<void> {
+  if (!accounts) {
+    respondJson(res, 200, []);
+    return;
+  }
+  const modeParam = url.searchParams.get('mode');
+  const modeId = modeParam && modeParam !== 'global' ? modeParam : undefined;
+  const limitParam = Number(url.searchParams.get('limit'));
+  const limit = Number.isFinite(limitParam) && limitParam > 0 ? limitParam : DEFAULT_LEADERBOARD_LIMIT;
+  const entries = await accounts.getLeaderboard(modeId, limit);
+  respondJson(res, 200, entries);
+}

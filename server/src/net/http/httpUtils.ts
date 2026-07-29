@@ -6,12 +6,16 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-export function readJsonBody(req: IncomingMessage): Promise<unknown> {
+/** `maxBytes` par défaut (10 Ko) : largement suffisant pour toutes les routes JSON classiques
+ * (pseudo/mot de passe, actions admin...) — l'écran de mort personnalisé (bannière en data URL
+ * base64, voir handleUpdateDeathScreen) est la seule route qui a besoin d'un plafond bien plus
+ * généreux, passé explicitement par son appelant plutôt que de relâcher la limite globale. */
+export function readJsonBody(req: IncomingMessage, maxBytes = MAX_REQUEST_BODY_BYTES): Promise<unknown> {
   return new Promise((resolvePromise, rejectPromise) => {
     let data = '';
     req.on('data', (chunk: Buffer) => {
       data += chunk.toString();
-      if (data.length > MAX_REQUEST_BODY_BYTES) {
+      if (data.length > maxBytes) {
         rejectPromise(new Error('Corps de requête trop volumineux.'));
         req.destroy();
       }

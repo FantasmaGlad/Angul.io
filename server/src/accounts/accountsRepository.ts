@@ -77,6 +77,16 @@ export interface BestScoreRow {
   bestScore: number;
 }
 
+/** Une ligne du classement public (Lot "Classements") — `score` est l'XP totale pour l'onglet
+ * global (`modeId` omis), ou le meilleur score du mode demandé sinon. Jamais `id`/`lastIp`/etc,
+ * seulement ce qu'un classement public montre légitimement. */
+export interface LeaderboardRow {
+  pseudo: string;
+  level: number;
+  avatarColor: string | null;
+  score: number;
+}
+
 /** Levée par `createAccount` sur violation de la contrainte d'unicité (`players_pseudo_key`) —
  * distincte d'une erreur générique pour que la couche service puisse la traduire en message
  * utilisateur clair sans avoir à inspecter un code d'erreur PostgreSQL. */
@@ -347,6 +357,53 @@ export class AccountsRepository {
       [id],
     );
     return result.rows.map((row) => ({ modeId: row.mode_id, bestScore: row.best_score }));
+  }
+
+  /** Classement public (Lot "Classements") : top `limit` comptes non bannis, triés par XP totale
+   * (`modeId` omis, onglet "Global") ou par meilleur score pour un mode donné (jointure sur
+   * `player_best_scores`, un compte qui n'a jamais joué ce mode n'apparaît simplement pas). */
+  async getLeaderboard(modeId: string | undefined, limit: number): Promise<LeaderboardRow[]> {
+    if (modeId) {
+      const result = await this.pool.query<{
+        pseudo: string;
+        level: number;
+        avatar_color: string | null;
+        score: string;
+      }>(
+        `SELECT p.pseudo, p.level, p.avatar_color, pbs.best_score AS score
+         FROM player_best_scores pbs
+         JOIN players p ON p.id = pbs.player_id
+         WHERE pbs.mode_id = $1 AND p.banned = false
+         ORDER BY pbs.best_score DESC, p.id ASC
+         LIMIT $2`,
+        [modeId, limit],
+      );
+      return result.rows.map((row) => ({
+        pseudo: row.pseudo,
+        level: row.level,
+        avatarColor: row.avatar_color,
+        score: Number(row.score),
+      }));
+    }
+
+    const result = await this.pool.query<{
+      pseudo: string;
+      level: number;
+      avatar_color: string | null;
+      xp: number;
+    }>(
+      `SELECT pseudo, level, avatar_color, xp FROM players
+       WHERE banned = false
+       ORDER BY xp DESC, id ASC
+       LIMIT $1`,
+      [limit],
+    );
+    return result.rows.map((row) => ({
+      pseudo: row.pseudo,
+      level: row.level,
+      avatarColor: row.avatar_color,
+      score: row.xp,
+    }));
   }
 
   /**

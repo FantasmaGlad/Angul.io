@@ -94,7 +94,8 @@ export default function WikiPage({ onClose, modes }: WikiPageProps) {
 
         <div className="wiki-sidebar-footer">
           <button type="button" className="wiki-back-button" onClick={handleBack}>
-            &lt;- RETOUR ACCUEIL
+            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>arrow_back</span>
+            RETOUR ACCUEIL
           </button>
         </div>
       </aside>

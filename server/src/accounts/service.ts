@@ -31,6 +31,15 @@ export interface BestScore {
   bestScore: number;
 }
 
+/** Une ligne du classement public (Lot "Classements") — voir `AccountsService.getLeaderboard`. */
+export interface LeaderboardEntry {
+  rank: number;
+  pseudo: string;
+  level: number;
+  avatarColor?: string;
+  score: number;
+}
+
 export interface AccountProfile {
   pseudo: string;
   level: number;
@@ -281,6 +290,22 @@ export class AccountsService {
     if (accountId === undefined) return false;
     const account = await this.repository.findById(accountId);
     return account?.premium ?? false;
+  }
+
+  /** Classement public (Lot "Classements") — `modeId` omis pour le classement global (par XP
+   * totale), fourni pour le classement d'un mode précis (par meilleur score). `limit` est borné
+   * ici (pas seulement côté route) : point d'entrée unique, une future autre route ne doit pas
+   * pouvoir redemander un classement de 10 000 lignes par erreur. */
+  async getLeaderboard(modeId: string | undefined, limit: number): Promise<LeaderboardEntry[]> {
+    const boundedLimit = Math.min(Math.max(Math.trunc(limit) || 50, 1), 100);
+    const rows = await this.repository.getLeaderboard(modeId, boundedLimit);
+    return rows.map((row, index) => ({
+      rank: index + 1,
+      pseudo: row.pseudo,
+      level: row.level,
+      avatarColor: row.avatarColor ?? undefined,
+      score: row.score,
+    }));
   }
 
   // --- Interface admin (cahier_des_charges_admin.md §3.1-3.2) --------------------------------

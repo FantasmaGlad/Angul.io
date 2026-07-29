@@ -162,11 +162,6 @@ export default function App() {
 
   const enterGame = useCallback(
     (roomIdOrInviteCode: string, inviteCodeToShow?: string) => {
-      const musicUrl = roomIdOrInviteCode.toLowerCase().includes('hardcore')
-        ? '/assets/Sons/Musiques/Hardcore.m4a'
-        : '/assets/Sons/Musiques/vanilla.m4a';
-      audioManager.playMusic(musicUrl);
-
       setLeaving(true);
       const nicknameToUse = nickname.trim() || 'Joueur';
       // Laisse jouer la transition CSS (zoom out de l'UI, zoom in du fond spectateur, voir

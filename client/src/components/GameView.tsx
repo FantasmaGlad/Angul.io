@@ -249,24 +249,41 @@ export default function GameView({
     };
     window.addEventListener('mousemove', trackMouse);
 
-    const input = attachInput(canvas, () => {
-      if (!canvas) return;
-      const rect = canvas.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-      const dx = lastMouseX - centerX;
-      const dy = lastMouseY - centerY;
-      const dist = Math.hypot(dx, dy);
-      const dirX = dist > 0 ? dx / dist : 0;
-      const dirY = dist > 0 ? dy / dist : 0;
+    let dashZoomBonus = 0;
 
-      canvas.style.transformOrigin = `${50 + dirX * 18}% ${50 + dirY * 18}%`;
-      canvas.style.transition = 'none';
-      canvas.style.transform = 'scale(0.96)';
-      void canvas.offsetWidth;
-      canvas.style.transition = 'transform 0.22s cubic-bezier(0.1, 0.9, 0.2, 1)';
-      canvas.style.transform = 'scale(1)';
-    });
+    const input = attachInput(
+      canvas,
+      () => {
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        const dx = lastMouseX - centerX;
+        const dy = lastMouseY - centerY;
+        const dist = Math.hypot(dx, dy);
+        const dirX = dist > 0 ? dx / dist : 0;
+        const dirY = dist > 0 ? dy / dist : 0;
+
+        canvas.style.transformOrigin = `${50 + dirX * 18}% ${50 + dirY * 18}%`;
+        canvas.style.transition = 'none';
+        canvas.style.transform = 'scale(0.96)';
+        void canvas.offsetWidth;
+        canvas.style.transition = 'transform 0.22s cubic-bezier(0.1, 0.9, 0.2, 1)';
+        canvas.style.transform = 'scale(1)';
+      },
+      () => {
+        dashZoomBonus = 0.5;
+        if (selfPlayerId) {
+          const ownPosition = prediction.getOwnPosition() ?? latestCamera;
+          const { target: inputTarget } = input.getTarget({ ...latestCamera, ...ownPosition });
+          const dx = inputTarget.x - ownPosition.x;
+          const dy = inputTarget.y - ownPosition.y;
+          const len = Math.hypot(dx, dy);
+          const dir = len > 0 ? { x: dx / len, y: dy / len } : { x: 1, y: 0 };
+          prediction.applyDash(dir, 2700);
+        }
+      },
+    );
 
     const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
     const tokenParam = authToken ? `&token=${encodeURIComponent(authToken)}` : '';
@@ -340,6 +357,7 @@ export default function GameView({
         }
         lastComboLevel = comboLevel;
       } else if (message.type === 'died') {
+        audioManager.stopMusic();
         justDied = true;
         isDeadNow = true;
         setDeathState({
@@ -527,6 +545,10 @@ export default function GameView({
       // que cette duplication existait.
       const targetCamera = computeCamera(entities, selfPlayerId, { x: mapSize / 2, y: mapSize / 2 });
 
+      dashZoomBonus += (0 - dashZoomBonus) * (1 - Math.exp(-6 * (frameDt / 1000)));
+      const zoomMultiplier = 1 + dashZoomBonus;
+      const targetScale = targetCamera.scale * zoomMultiplier;
+
       // Suivi de caméra lissé et indépendant du framerate : pour le joueur local (selfPlayerId),
       // ancrer la position (x, y) directement sur la position prédite (targetCamera) annule 100%
       // du lag/tressautement relatif de la caméra par rapport à son propre blob. Seul le zoom (scale)
@@ -536,14 +558,14 @@ export default function GameView({
         latestCamera = {
           x: targetCamera.x,
           y: targetCamera.y,
-          scale: latestCamera.scale + (targetCamera.scale - latestCamera.scale) * cameraScaleLerp,
+          scale: latestCamera.scale + (targetScale - latestCamera.scale) * cameraScaleLerp,
         };
       } else {
         const cameraPosLerp = 1 - Math.exp(-15 * (frameDt / 1000));
         latestCamera = {
           x: latestCamera.x + (targetCamera.x - latestCamera.x) * cameraPosLerp,
           y: latestCamera.y + (targetCamera.y - latestCamera.y) * cameraPosLerp,
-          scale: latestCamera.scale + (targetCamera.scale - latestCamera.scale) * cameraScaleLerp,
+          scale: latestCamera.scale + (targetScale - latestCamera.scale) * cameraScaleLerp,
         };
       }
       // L'effet de "dash" au split est un pur transform CSS sur le canvas (voir attachInput

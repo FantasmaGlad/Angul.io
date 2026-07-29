@@ -1127,9 +1127,15 @@ select {
 /* --- Sous-pages (Compte/Profil/Paramètres/Classement/Soutenir/À Propos — refonte UI/UX) -------
    Remplacent les anciennes modales superposées (`Panel.tsx`/`ProfileModal.tsx`, supprimés) : une
    URL propre par page (voir router.ts) au lieu d'un empilement de calques `position: fixed`. */
+/* `position: fixed` + hauteur bornée (pas `height: auto`) : ce panneau devient son propre
+   conteneur de défilement indépendamment de `body { overflow: hidden }` (voulu pour le jeu en
+   plein écran, voir #game plus haut) — sans ça, `overflow-y: auto` ici était inerte (la boîte ne
+   débordait jamais d'elle-même en `height: auto`, elle grandissait juste au-delà du viewport et
+   se faisait rogner par `body`), ce qui coupait le bas des pages longues (ex. Profil). */
 .subpage {
-  min-height: 100vh;
-  height: auto;
+  position: fixed;
+  inset: 0;
+  height: 100vh;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -1147,6 +1153,9 @@ select {
 }
 .subpage-back {
   align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: transparent;
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
@@ -1432,6 +1441,95 @@ select {
   margin: 0;
 }
 
+/* --- Page Classements --------------------------------------------------------------- */
+.leaderboard-page-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.leaderboard-page-tab {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 9px 18px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-soft);
+}
+.leaderboard-page-tab:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.leaderboard-page-tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.leaderboard-page-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.leaderboard-page-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 16px;
+}
+.leaderboard-page-row.top3 {
+  border-color: var(--accent);
+}
+.leaderboard-page-rank {
+  width: 34px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-weight: 800;
+  color: var(--text-soft);
+}
+.leaderboard-page-row.top3 .leaderboard-page-rank {
+  color: var(--accent);
+}
+.leaderboard-page-avatar,
+.leaderboard-page-avatar-fallback {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.leaderboard-page-avatar {
+  object-fit: contain;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.leaderboard-page-avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-weight: 800;
+  color: var(--text-soft);
+}
+.leaderboard-page-pseudo {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.leaderboard-page-score {
+  font-family: var(--font-mono);
+  font-weight: 800;
+  color: var(--text);
+  white-space: nowrap;
+}
+
 a.btn-primary {
   display: block;
   text-align: center;
@@ -1520,43 +1618,6 @@ a.btn-primary {
   color: var(--text-faint);
   text-transform: none;
   letter-spacing: normal;
-}
-
-.fps-vsync-toggle {
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-soft);
-  background: var(--bg);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-pill);
-}
-.fps-vsync-toggle:hover {
-  background: var(--surface-hover);
-}
-.fps-vsync-toggle.enabled {
-  color: var(--bg);
-  background: var(--text);
-  border-color: var(--text);
-}
-
-.fps-slider-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.fps-slider-row[aria-disabled='true'] {
-  opacity: 0.5;
-}
-.fps-slider-row input[type='range'] {
-  flex: 1;
-}
-.fps-slider-value {
-  min-width: 72px;
-  text-align: right;
-  font-family: var(--font-mono);
-  font-weight: 700;
-  color: var(--text);
 }
 
 .death-banner-grid {
@@ -1924,6 +1985,10 @@ a.btn-primary {
 
 .wiki-back-button {
   width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   padding: 10px 14px;
   background: var(--bg);
   border: 1px solid var(--border-strong);
@@ -2385,34 +2450,30 @@ a.btn-primary {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: rgba(15, 23, 42, 0.75);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 2px solid #000000;
-  box-shadow: 0 0 0 1px #000000, 0 8px 32px rgba(0, 0, 0, 0.6);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-modal);
   padding: 8px 18px;
-  border-radius: 9999px;
+  border-radius: var(--radius-pill);
 }
 .dash-hud-label {
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 800;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: #ffffff;
-  text-shadow: 0 1px 2px #000000;
+  color: var(--text-soft);
   display: flex;
   align-items: center;
   gap: 5px;
 }
 .dash-hud-key {
-  background: rgba(255, 255, 255, 0.2);
-  color: #ffffff;
-  border: 1.5px solid #000000;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
   padding: 1px 6px;
   font-size: 10.5px;
   font-weight: 800;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.5);
 }
 .dash-segments-track {
   display: flex;
@@ -2423,33 +2484,30 @@ a.btn-primary {
   position: relative;
   width: 34px;
   height: 12px;
-  background: rgba(0, 0, 0, 0.5);
-  border: 2px solid #000000;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
   overflow: hidden;
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8);
 }
 .dash-segment-box.full {
-  background: linear-gradient(135deg, #ffffff, #cbd5e1);
-  border-color: #000000;
-  box-shadow: 0 0 8px rgba(255, 255, 255, 0.9), inset 0 0 2px #ffffff;
+  background: var(--accent);
+  border-color: var(--accent);
 }
 .dash-segment-fill {
   height: 100%;
-  background: linear-gradient(90deg, #ffffff, #94a3b8);
+  background: var(--accent);
   border-radius: 2px;
   transition: width 0.1s linear;
 }
 .dash-disabled-hint {
   font-size: 10.5px;
-  font-weight: 800;
-  color: #ffffff;
-  background: rgba(15, 23, 42, 0.85);
-  border: 1.5px solid #000000;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  font-weight: 700;
+  color: var(--text-soft);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-modal);
   padding: 3px 12px;
-  border-radius: 10px;
-  backdrop-filter: blur(8px);
+  border-radius: var(--radius-pill);
 }
 
 /* --- Audio Settings Panel (Profile) --- */
