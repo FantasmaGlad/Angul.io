@@ -163,10 +163,16 @@ export class LocalPrediction {
     // Zone morte : voir TARGET_DEAD_ZONE_PX et son homologue serveur (inputVectorOf,
     // mods/parametric/index.ts) — intensité effective nulle, direction sans importance.
     const direction = dist > 0 ? scale(offset, 1 / dist) : { x: 1, y: 0 };
-    const effectiveIntensity = dist < TARGET_DEAD_ZONE_PX ? 0 : intensity;
+    const inDeadZone = dist < TARGET_DEAD_ZONE_PX;
+    const effectiveIntensity = inDeadZone ? 0 : intensity;
+    // `accelIntensity` reste à 1 dans la zone morte (au lieu de suivre `effectiveIntensity`) :
+    // sinon `maxChange` tombe aussi à 0 et `moveToward` fige la vélocité résiduelle au lieu de la
+    // laisser décélérer vers 0 — c'était le tremblotement du blob (dérive à vitesse constante,
+    // ressort de la zone, y rentre, se fige à nouveau...). Voir le commentaire miroir côté serveur.
+    const accelIntensity = inDeadZone ? 1 : intensity;
 
     const targetVelocity = scale(direction, velocityForMass(piece.mass, movement) * effectiveIntensity);
-    const maxChange = accelerationForMass(piece.mass, movement) * effectiveIntensity * dtSeconds;
+    const maxChange = accelerationForMass(piece.mass, movement) * accelIntensity * dtSeconds;
     piece.velocity = moveToward(piece.velocity, targetVelocity, maxChange);
     piece.position = add(piece.position, scale(piece.velocity, dtSeconds));
   }

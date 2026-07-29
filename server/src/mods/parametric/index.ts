@@ -110,7 +110,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
    * curseur est positionné entre plusieurs morceaux, chacun s'en rapproche indépendamment
    * (regroupement), au lieu que tous partent dans la même direction relative.
    */
-  function inputVectorOf(piece: Entity): { direction: Vector2; intensity: number } {
+  function inputVectorOf(piece: Entity): { direction: Vector2; intensity: number; accelIntensity: number } {
     const state = pieceState(piece);
     const offset = sub(state.inputTarget, piece.position);
     const dist = length(offset);
@@ -120,13 +120,14 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     // serveur ne l'expose jamais visuellement à lui seul (dilué dans l'interpolation entre deux
     // ticks, voir renderEngine.ts), mais la prédiction locale du client (prediction.ts, qui
     // rejoue ce même calcul à chaque frame de rendu, jusqu'à 240 fois/seconde) l'expose telle
-    // quelle — c'était le tremblotement visible du blob du joueur, absent des robots/joueurs
-    // distants (toujours lissés par l'interpolation). Intensité à 0 (pas juste une direction de
-    // repli) : la vitesse cible devient nulle quelle que soit `direction`, donc AUCUNE force n'est
-    // appliquée tant que le morceau reste dans cette zone — il ralentit/dérive naturellement au
-    // lieu d'osciller, un comportement stable par construction.
-    if (dist < TARGET_DEAD_ZONE_PX) return { direction: FALLBACK_DIRECTION, intensity: 0 };
-    return { direction: scale(offset, 1 / dist), intensity: state.inputIntensity };
+    // quelle. `intensity` à 0 annule bien la vitesse CIBLE, mais `accelIntensity` reste à 1 (au
+    // lieu de suivre `intensity`) pour que `moveToward` (onTick) puisse toujours décélérer la
+    // vélocité résiduelle vers 0 dans cette zone — sinon `maxChange` tombe aussi à 0 et la
+    // vélocité reste figée telle quelle, ce qui faisait déraper le morceau hors zone puis
+    // ré-entrer, geler/dégeler en boucle : le tremblotement visible du blob (absent des robots/
+    // joueurs distants, toujours lissés par l'interpolation, jamais recalculés bruts par frame).
+    if (dist < TARGET_DEAD_ZONE_PX) return { direction: FALLBACK_DIRECTION, intensity: 0, accelIntensity: 1 };
+    return { direction: scale(offset, 1 / dist), intensity: state.inputIntensity, accelIntensity: state.inputIntensity };
   }
 
   /** Divise un morceau en deux (masse restante m/2, éjecté = m/2 * eta_W — metriques.md §9,
@@ -281,11 +282,13 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         state.timeSinceLastEatenS += dt;
         state.foodEatenThisTick = 0;
 
-        const { direction, intensity } = inputVectorOf(entity);
+        const { direction, intensity, accelIntensity } = inputVectorOf(entity);
         // Le curseur proche du centre donne un contrôle fin (faible intensité) ; loin, le
-        // plein régime — vitesse cible ET taux d'accélération sont tous deux réduits.
+        // plein régime — vitesse cible ET taux d'accélération sont réduits de concert, SAUF dans
+        // la zone morte (intensity=0, accelIntensity=1) où l'on garde l'accélération pleine pour
+        // décélérer réellement la vélocité résiduelle vers 0 (voir inputVectorOf).
         const targetVelocity = scale(direction, velocityForMass(entity.mass, config) * intensity);
-        const maxChange = accelerationForMass(entity.mass, config) * intensity * dt;
+        const maxChange = accelerationForMass(entity.mass, config) * accelIntensity * dt;
         entity.velocity = moveToward(entity.velocity, targetVelocity, maxChange);
 
         const decayedMass = applyPassiveDecay(entity.mass, dt, config, state.timeSinceLastEatenS);
