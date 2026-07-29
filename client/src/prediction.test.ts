@@ -61,7 +61,7 @@ describe('LocalPrediction — réconciliation par rejeu', () => {
     expect(entity!.y).toBeCloseTo(0, 5);
   });
 
-  it('lisse (au lieu de snapper d’un coup) un petit désaccord serveur non prédit (répulsion, croissance...)', () => {
+  it('absorbe un petit désaccord serveur non prédit (répulsion, croissance...) sans discontinuité immédiate', () => {
     const prediction = new LocalPrediction();
     const nowSpy = vi.spyOn(performance, 'now');
     const target = { x: 1000, y: 0 };
@@ -79,15 +79,51 @@ describe('LocalPrediction — réconciliation par rejeu', () => {
     // Cette fois, le serveur était réellement à (15,0) à t≈200 (ex. répulsion contre un bot) —
     // 5 unités de moins que ce que le client avait prédit. Rejouer le pas suivant (+10) par-dessus
     // cette vérité donne 25 (résidu de -5 par rapport aux 30 déjà prédits) — un petit résidu de ce
-    // type (répulsion routinière, très fréquente sur une carte peuplée de bots) est maintenant
-    // lissé progressivement plutôt qu'appliqué d'un coup (RECONCILE_BLEND_FACTOR = 0.35), pour
-    // éviter le tressautement constant que produisait un snap dur à chaque `state` reçu.
+    // type (répulsion routinière, très fréquente sur une carte peuplée de bots) est absorbé dans
+    // `visualOffset` (voir le commentaire d'en-tête) plutôt qu'appliqué d'un coup à la position
+    // affichée : à l'instant même de la réconciliation, AUCUN saut visible ne doit apparaître.
     nowSpy.mockReturnValueOnce(300);
     prediction.reconcile([ownSnapshot('1', 15, 0)], 'self', MOVEMENT, 100);
 
     const [entity] = prediction.applyTo([ownSnapshot('1', 999, 999)], 'self');
-    // 30 + (25-30)*0.35 = 28.25 : seule une fraction du résidu est appliquée, pas le résidu entier.
-    expect(entity!.x).toBeCloseTo(28.25, 5);
+    // Toujours 30 à l'instant T : la position SIMULÉE a bien sauté à 25 (voir le test suivant),
+    // mais l'affichage reste continu — le rattrapage se fera progressivement via `step()`.
+    expect(entity!.x).toBeCloseTo(30, 5);
+  });
+
+  it('résorbe le correctif visuel à vitesse plafonnée (pas d’un coup, pas instantané)', () => {
+    const prediction = new LocalPrediction();
+    const nowSpy = vi.spyOn(performance, 'now');
+    const target = { x: 1000, y: 0 };
+
+    nowSpy.mockReturnValueOnce(0);
+    prediction.reconcile([ownSnapshot('1', 0, 0)], 'self', MOVEMENT, 0);
+    nowSpy.mockReturnValueOnce(100);
+    prediction.step(0.1, target, 1, MOVEMENT);
+    nowSpy.mockReturnValueOnce(200);
+    prediction.step(0.1, target, 1, MOVEMENT);
+    nowSpy.mockReturnValueOnce(300);
+    prediction.step(0.1, target, 1, MOVEMENT);
+    nowSpy.mockReturnValueOnce(300);
+    prediction.reconcile([ownSnapshot('1', 15, 0)], 'self', MOVEMENT, 100);
+    // Position simulée désormais à 25, correctif visuel de +5 en attente (voir test précédent).
+
+    // Cible = position simulée courante (25) : zone morte, la simulation n'avance plus — isole la
+    // résorption du correctif visuel de tout mouvement. À VISUAL_CORRECTION_SPEED_PX_PER_S=600 et
+    // dt=0.001s, le pas maximal est de 0.6px — bien en-deçà des 5px de correctif restant.
+    nowSpy.mockReturnValueOnce(301);
+    prediction.step(0.001, { x: 25, y: 0 }, 1, MOVEMENT);
+
+    const [midway] = prediction.applyTo([ownSnapshot('1', 999, 999)], 'self');
+    // 25 + (5 - 0.6) = 29.4 : ni un saut instantané à 25, ni le correctif intact à 30.
+    expect(midway!.x).toBeCloseTo(29.4, 5);
+
+    // Un pas bien plus long (dt=1s, pas max 600px) épuise largement le reste du correctif.
+    nowSpy.mockReturnValueOnce(1301);
+    prediction.step(1, { x: 25, y: 0 }, 1, MOVEMENT);
+
+    const [resolved] = prediction.applyTo([ownSnapshot('1', 999, 999)], 'self');
+    expect(resolved!.x).toBeCloseTo(25, 5);
   });
 
   it('ignore un écart résiduel infime (bruit d’intégration dt variable/fixe, pas un vrai désaccord)', () => {

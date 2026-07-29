@@ -56,12 +56,29 @@ import {
  * exactement la position déjà prédite — l'écart résiduel est donc nul et ce lissage n'a aucun
  * effet, contrairement à l'ancien blend qui tirait le blob en arrière en continu proportionnellement
  * à la latence (le bug que e0ec331 corrigeait). Il ne s'active que quand le résidu est non nul,
- * c'est-à-dire précisément quand un événement non rejouable (répulsion, croissance) l'a produit. */
+ * c'est-à-dire précisément quand un événement non rejouable (répulsion, croissance) l'a produit.
+ *
+ * Le lissage lui-même NE corrige PAS la position simulée (`position`, utilisée pour la vélocité/
+ * l'intégration — elle doit rester exacte immédiatement, sinon la physique locale désynchronise) :
+ * il corrige uniquement l'AFFICHAGE, via un `visualOffset` séparé qui absorbe le saut et se résorbe
+ * ensuite à VITESSE PLAFONNÉE (`VISUAL_CORRECTION_SPEED_PX_PER_S`), frame de rendu après frame de
+ * rendu, plutôt qu'un pourcentage comblé en un seul `state` reçu (~30Hz). Un pourcentage fixe
+ * produit un bond proportionnellement plus grand pour un écart plus grand ("violent" à chaque vrai
+ * événement, en pratique dès qu'un bot pousse le joueur) ; une vitesse plafonnée étale la même
+ * correction sur autant de frames que nécessaire pour ne jamais dépasser un déplacement visuel
+ * confortable, quelle que soit l'ampleur de l'écart — technique standard ("network smoothing",
+ * Source engine/Unity Netcode) qui découple la position simulée (toujours exacte) de la position
+ * affichée (toujours continue). */
 
 interface PredictedPiece {
   position: Vector2;
   velocity: Vector2;
   mass: number;
+  /** Écart entre la position AFFICHÉE et `position` (simulée, exacte) — non nul juste après une
+   * réconciliation ayant absorbé un vrai événement, se résorbe ensuite vers {0,0} à vitesse
+   * plafonnée (voir `VISUAL_CORRECTION_SPEED_PX_PER_S`). Jamais utilisé par `integrate()`/la
+   * physique, uniquement par `applyTo()`/`getOwnPosition()` (l'affichage). */
+  visualOffset: Vector2;
 }
 
 /** Un échantillon d'input local déjà appliqué (`step`), horodaté — rejoué lors de la
@@ -92,10 +109,12 @@ const DEFAULT_LATENCY_MS = 60;
  * pas un nudge de répulsion routinier. Valeur reprise de l'ancienne réconciliation blend/snap
  * (pré-e0ec331), qui s'appliquait déjà au même ordre de grandeur d'écart. */
 const RECONCILE_SNAP_THRESHOLD_PX = 120;
-/** Fraction de l'écart résiduel comblée à chaque `state` reçu (~30Hz) en-dessous du seuil ci-dessus
- * — assez rapide pour rester imperceptible sur un nudge de répulsion typique (quelques px), assez
- * doux pour ne jamais recréer de micro-saut. */
-const RECONCILE_BLEND_FACTOR = 0.35;
+/** Vitesse maximale (px/s) à laquelle `visualOffset` se résorbe vers {0,0} — voir le commentaire
+ * d'en-tête ("network smoothing"). ~2x la vitesse de base typique (v0 ≈ 245-300px/s, voir
+ * server/configs/*.json) : assez rapide pour qu'une correction proche du seuil de snap
+ * (RECONCILE_SNAP_THRESHOLD_PX) se résorbe en ~200ms plutôt que de traîner, assez lent pour ne
+ * jamais ressembler à un second bond. */
+const VISUAL_CORRECTION_SPEED_PX_PER_S = 600;
 /** Écart résiduel (px) en-deçà duquel on n'applique AUCUNE correction, même lissée — le rejeu
  * client tourne à `dt` variable (vrai framerate, ex. 16.7/15.2/18ms) alors que le serveur simule à
  * `dt` fixe (1/30s) : ce sont deux intégrations numériques légèrement différentes de la même
@@ -143,7 +162,12 @@ export class LocalPrediction {
         // Morceau inconnu (premier `state` de la vie, ou apparu ce tick — ex. juste après un
         // split) : pas d'historique de CE morceau à rejouer, on part directement de la position
         // serveur (il rejoindra le rejeu normalement dès le `state` suivant).
-        this.pieces.set(entity.i, { position: authoritative, velocity: { x: 0, y: 0 }, mass: entity.m });
+        this.pieces.set(entity.i, {
+          position: authoritative,
+          velocity: { x: 0, y: 0 },
+          mass: entity.m,
+          visualOffset: { x: 0, y: 0 },
+        });
         continue;
       }
 
@@ -165,7 +189,14 @@ export class LocalPrediction {
       if (residualDist <= RECONCILE_IGNORE_THRESHOLD_PX) {
         predicted.position = beforeReconcile;
       } else if (residualDist <= RECONCILE_SNAP_THRESHOLD_PX) {
-        predicted.position = add(beforeReconcile, scale(residual, RECONCILE_BLEND_FACTOR));
+        // `predicted.position` reste la reconstruction exacte (la simulation ne doit jamais
+        // dévier) — le saut est absorbé dans `visualOffset`, résorbé à vitesse plafonnée par
+        // `step()`, pour que l'AFFICHAGE reste continu au lieu de sauter avec elle.
+        predicted.visualOffset = sub(predicted.visualOffset, residual);
+      } else {
+        // Vrai téléport (mort/respawn, nouveau morceau, bord de carte...) : aucun lissage visuel,
+        // l'affichage saute directement avec la simulation.
+        predicted.visualOffset = { x: 0, y: 0 };
       }
     }
 
@@ -186,8 +217,12 @@ export class LocalPrediction {
     this.pruneHistory(atMs);
 
     if (this.pieces.size === 0) return;
+    const maxOffsetStep = VISUAL_CORRECTION_SPEED_PX_PER_S * dtSeconds;
     for (const piece of this.pieces.values()) {
       this.integrate(piece, dtSeconds, target, intensity, movement);
+      // Résorption à vitesse plafonnée de l'écart d'affichage laissé par une réconciliation
+      // récente (voir `reconcile`) — indépendant du dt fixe serveur, tourne à la cadence de rendu.
+      piece.visualOffset = moveToward(piece.visualOffset, { x: 0, y: 0 }, maxOffsetStep);
     }
   }
 
@@ -228,15 +263,20 @@ export class LocalPrediction {
   }
 
   /** Remplace, dans `entities` (déjà interpolées/cullées côté serveur-distant), la position des
-   * morceaux du joueur par leur position prédite — ne touche à rien d'autre (rayon/masse/couleur
-   * restent ceux du pipeline serveur habituel, voir le commentaire d'en-tête). */
+   * morceaux du joueur par leur position AFFICHÉE (simulation + `visualOffset`, voir le
+   * commentaire d'en-tête) — ne touche à rien d'autre (rayon/masse/couleur restent ceux du
+   * pipeline serveur habituel). */
   applyTo(entities: EntitySnapshot[], selfPlayerId: string): EntitySnapshot[] {
     if (this.pieces.size === 0) return entities;
     return entities.map((entity) => {
       if (entity.k !== 'c' || entity.p !== selfPlayerId) return entity;
       const predicted = this.pieces.get(entity.i);
       if (!predicted) return entity;
-      return { ...entity, x: predicted.position.x, y: predicted.position.y };
+      return {
+        ...entity,
+        x: predicted.position.x + predicted.visualOffset.x,
+        y: predicted.position.y + predicted.visualOffset.y,
+      };
     });
   }
 
@@ -257,8 +297,11 @@ export class LocalPrediction {
     let y = 0;
     for (const piece of this.pieces.values()) {
       mass += piece.mass;
-      x += piece.position.x * piece.mass;
-      y += piece.position.y * piece.mass;
+      // Position AFFICHÉE (simulation + visualOffset, voir le commentaire d'en-tête) : la caméra
+      // et la référence de pilotage doivent suivre ce que le joueur voit réellement, pas la
+      // position simulée invisible pendant qu'un `visualOffset` résiduel se résorbe encore.
+      x += (piece.position.x + piece.visualOffset.x) * piece.mass;
+      y += (piece.position.y + piece.visualOffset.y) * piece.mass;
     }
     if (mass <= 0) return undefined;
     return { x: x / mass, y: y / mass };
