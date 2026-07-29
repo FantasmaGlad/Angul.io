@@ -2092,6 +2092,21 @@ a.btn-primary {
   font-size: 11px;
 }
 
+.version-pill-badge {
+  display: inline-block;
+  background: linear-gradient(135deg, rgba(79, 172, 254, 0.25), rgba(0, 242, 254, 0.25));
+  border: 1px solid rgba(0, 242, 254, 0.5);
+  color: #00f2fe;
+  font-family: var(--font-heading, sans-serif);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  padding: 3px 12px;
+  border-radius: 9999px;
+  box-shadow: 0 0 15px rgba(0, 242, 254, 0.3);
+  margin-top: 4px;
+}
+
 .wiki-doc-body {
   padding: 40px 48px;
   max-width: 960px;

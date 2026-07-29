@@ -92,7 +92,7 @@
   "areaConstant": 3,
   "bots": {
     "enabled": true,
-    "ambientTargetCount": 10,
+    "ambientTargetCount": 20,
     "updateFrequencyHz": 2,
     "proportions": {
       "fuis": 25,
