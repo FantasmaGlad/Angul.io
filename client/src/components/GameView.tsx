@@ -263,7 +263,20 @@ export default function GameView({
           // détermine depuis quel instant rejouer l'historique d'inputs local lors de la
           // réconciliation (voir prediction.ts).
           const estimatedLatencyMs = smoothedLatencyMs;
-          prediction.reconcile(message.entities, selfPlayerId, movementConfig, estimatedLatencyMs);
+          // Vélocité autoritaire par morceau (voir protocol.ts `self.pieces`) — permet à
+          // `reconcile()` de ré-ancrer `predicted.velocity` avant de rejouer l'historique, au lieu
+          // de repartir de la vélocité déjà avancée en direct (voir prediction.ts).
+          const authoritativeVelocities = message.self?.pieces
+            ? new Map(message.self.pieces.map((p) => [p.id, { x: p.vx, y: p.vy }]))
+            : undefined;
+          prediction.reconcile(
+            message.entities,
+            selfPlayerId,
+            movementConfig,
+            estimatedLatencyMs,
+            serverTickRateHz,
+            authoritativeVelocities,
+          );
         }
         renderEngine.pushSnapshot(message.entities, message.tick, serverTickRateHz);
         serverTpsCurrent = tickRateTracker.record(latestSnapshotAt);

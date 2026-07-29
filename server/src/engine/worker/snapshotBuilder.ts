@@ -151,9 +151,19 @@ export function buildStateMessage(
   const player = world.getPlayer(playerId);
   const comboLevel = player ? activeComboLevel(player.lifeStats.combo, performance.now()) : undefined;
 
-  const selfFields: { accelerationPerSec2?: number; combo?: { level: number } } = {};
+  const selfFields: {
+    accelerationPerSec2?: number;
+    combo?: { level: number };
+    pieces?: Array<{ id: string; vx: number; vy: number }>;
+  } = {};
   if (accelerationPerSec2 !== undefined) selfFields.accelerationPerSec2 = accelerationPerSec2;
   if (comboLevel !== undefined) selfFields.combo = { level: comboLevel };
+  // Vélocité autoritaire de chaque morceau (voir protocol.ts `self.pieces`) — `ownPieces` est déjà
+  // intégrée pour CE tick par `Room.tick()` avant que `buildStateMessage` ne soit appelé, jamais
+  // une valeur périmée.
+  if (ownPieces.length > 0) {
+    selfFields.pieces = ownPieces.map((p) => ({ id: p.id, vx: p.velocity.x, vy: p.velocity.y }));
+  }
   const self = Object.keys(selfFields).length > 0 ? selfFields : undefined;
 
   const leaderboard: LeaderboardEntry[] = topScores.map((entry, idx) => ({

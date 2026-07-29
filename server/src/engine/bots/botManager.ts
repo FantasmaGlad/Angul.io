@@ -1,4 +1,4 @@
-import { getRandomSkin, isBotId } from '@angulio/shared';
+import { distance, getRandomSkin, isBotId } from '@angulio/shared';
 import type { BotConfig } from '../../mods/parametric/config.js';
 import type { Room } from '../room.js';
 import type { PlayerId } from '../types.js';
@@ -67,13 +67,43 @@ export class BotManager {
 
     for (const bot of this.activeBots.values()) {
       bot.accumulatorMs += dtMs;
-      if (bot.accumulatorMs >= this.updateIntervalMs) {
+      const dueByAccumulator = bot.accumulatorMs >= this.updateIntervalMs;
+      // Réévaluation immédiate (sans attendre l'échéance de l'accumulateur, jusqu'à 500ms à 2Hz
+      // ambiant) dès qu'un morceau de ce bot touche un morceau d'un joueur HUMAIN — sinon un bot
+      // qui s'est mis à foncer vers/à travers un joueur ne corrige sa trajectoire qu'à sa prochaine
+      // échéance ambiante, poussant le joueur (répulsion, voir mods/parametric/index.ts
+      // `applyRepulsion`) pendant toute la durée du contact au lieu d'un seul tick — non prédit
+      // côté client (prediction.ts), donc visible comme un tremblement à chaque contact prolongé.
+      // Ne coûte rien pour les bots isolés (l'immense majorité du temps) : le hook ne s'active
+      // qu'au contact réel avec un humain, jamais entre bots (l'ambiant à 2Hz reste inchangé).
+      const dueByContact = !dueByAccumulator && this.isTouchingHuman(bot.id);
+      if (dueByAccumulator || dueByContact) {
         bot.accumulatorMs %= this.updateIntervalMs;
         const { input, memory } = computeBotInput(this.room.world, bot.id, bot.profile, bot.memory);
         bot.memory = memory;
         this.room.handleInput(bot.id, input);
       }
     }
+  }
+
+  /** `true` si un morceau de ce bot chevauche réellement (même critère que la narrow-phase de
+   * collision, voir `World.findOverlappingPairs`) un morceau d'un joueur qui n'est PAS un bot —
+   * voir `update()`. */
+  private isTouchingHuman(botId: PlayerId): boolean {
+    const world = this.room.world;
+    for (const piece of world.getPiecesByOwner(botId)) {
+      // Marge large côté broad-phase (spatiale, bon marché) : la narrow-phase ci-dessous (vraie
+      // distance vs somme des rayons) tranche seule sur le contact réel, cette marge n'a besoin
+      // que de couvrir le rayon plausible de l'autre morceau, pas d'être exacte.
+      const nearbyIds = world.queryNearby(piece.position, piece.radius + 300);
+      for (const nearbyId of nearbyIds) {
+        if (nearbyId === piece.id) continue;
+        const other = world.getEntity(nearbyId);
+        if (!other || !other.ownerId || this.isBot(other.ownerId)) continue;
+        if (distance(piece.position, other.position) < piece.radius + other.radius) return true;
+      }
+    }
+    return false;
   }
 
   /** Ajuste le nombre de bots actifs selon le nombre de joueurs humains et garantit qu'il reste toujours au moins 1 place disponible pour un humain. */

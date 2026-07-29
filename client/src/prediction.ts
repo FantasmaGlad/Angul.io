@@ -133,15 +133,13 @@ const RECONCILE_SNAP_THRESHOLD_PX = 120;
  * (RECONCILE_SNAP_THRESHOLD_PX) se résorbe en ~200ms plutôt que de traîner, assez lent pour ne
  * jamais ressembler à un second bond. */
 const VISUAL_CORRECTION_SPEED_PX_PER_S = 600;
-/** Écart résiduel (px) en-deçà duquel on n'applique AUCUNE correction, même lissée — le rejeu
- * client tourne à `dt` variable (vrai framerate, ex. 16.7/15.2/18ms) alors que le serveur simule à
- * `dt` fixe (1/30s) : ce sont deux intégrations numériques légèrement différentes de la même
- * formule, qui ne convergent jamais de façon rigoureusement identique même à l'arrêt/en pilotage
- * quasi immobile — juste à quelques px près en permanence. Lisser CET écart-là en continu (au lieu
- * de l'ignorer) revenait à appliquer un micro-correctif à ~30Hz pour toujours, perceptible comme un
- * tremblement propre au joueur (seul morceau rejoué localement — les robots/joueurs distants ne
- * sont qu'interpolés, jamais simulés deux fois). En-dessous de ce seuil, mieux vaut faire confiance
- * à la simulation locale telle quelle. */
+/** Écart résiduel (px) en-deçà duquel on n'applique AUCUNE correction, même lissée. Depuis que le
+ * rejeu (`reconcile`) regroupe l'historique par blocs de la taille d'un tick serveur plutôt que de
+ * rejouer chaque sous-pas fin de `step()` individuellement (voir `chunkHistoryForReplay`), les deux
+ * intégrations (client/serveur) utilisent la même discrétisation pour la même portion de temps —
+ * il ne reste plus qu'un bruit d'arrondi flottant résiduel (bien en-deçà du px), pas un biais
+ * systématique. Seuil conservé néanmoins pour absorber ce bruit plancher et éviter tout
+ * micro-correctif perpétuel à ~30Hz sans rapport avec un vrai désaccord. */
 const RECONCILE_IGNORE_THRESHOLD_PX = 1.5;
 /** Pas de temps interne FIXE auquel `step()` intègre la simulation locale (voir le commentaire
  * d'en-tête, "fix your timestep") — indépendant du `dt` réel de la frame de rendu. Assez fin pour
@@ -169,16 +167,33 @@ export class LocalPrediction {
    * GameView.tsx `lastPingMs`) — détermine à partir de quel instant du journal rejouer. Une
    * estimation imprécise ne casse rien (juste un peu plus/moins de rejeu que l'idéal), contrairement
    * à l'ancienne approche blend/snap qui accumulait une erreur systématique proportionnelle à la
-   * latence RÉELLE quelle que soit la précision de l'estimation. */
+   * latence RÉELLE quelle que soit la précision de l'estimation.
+   *
+   * `serverTickRateHz` : cadence de tick du salon (reçue dans `welcome`, voir GameView.tsx) —
+   * détermine la granularité à laquelle regrouper le rejeu (voir `chunkHistoryForReplay`).
+   * `undefined` (mod de test sans config connue) retombe sur un rejeu échantillon par échantillon,
+   * comme avant ce regroupement.
+   *
+   * `authoritativeVelocities` : vélocité autoritaire par morceau (`message.self?.pieces`, voir
+   * protocol.ts) — sans elle, le rejeu repart de `predicted.velocity` telle que `step()` l'a déjà
+   * fait progresser EN DIRECT pendant la fenêtre qu'on s'apprête à rejouer, et lui réapplique
+   * l'accélération une seconde fois sur ce même intervalle (double comptage, voir
+   * fix_vitesse_reseau.md) — un biais qui ne se voit qu'en accélération/décélération (vélocité pas
+   * encore saturée), jamais à l'arrêt ni à vitesse de croisière. `undefined` (ancien serveur, ou
+   * morceau absent de la map) : repli sur ce comportement pré-correctif pour ce morceau. */
   reconcile(
     entities: EntitySnapshot[],
     selfPlayerId: string,
     movement: MovementConfig,
     estimatedLatencyMs: number = DEFAULT_LATENCY_MS,
+    serverTickRateHz?: number,
+    authoritativeVelocities?: Map<string, Vector2>,
   ): void {
     const nowMs = performance.now();
     this.pruneHistory(nowMs);
     const sinceMs = nowMs - Math.max(0, estimatedLatencyMs);
+    const relevantSamples = this.history.filter((sample) => sample.atMs > sinceMs);
+    const replayChunks = this.chunkHistoryForReplay(relevantSamples, serverTickRateHz);
 
     const seenIds = new Set<string>();
     for (const entity of entities) {
@@ -203,9 +218,13 @@ export class LocalPrediction {
       const beforeReconcile = predicted.position;
       predicted.mass = entity.m;
       predicted.position = authoritative;
-      for (const sample of this.history) {
-        if (sample.atMs <= sinceMs) continue;
-        this.integrate(predicted, sample.dtSeconds, sample.target, sample.intensity, movement);
+      // Rembobine la vélocité sur la vérité serveur AVANT de rejouer (voir le commentaire de
+      // `authoritativeVelocities` ci-dessus) — sans ce reset, le rejeu repart de la vélocité déjà
+      // avancée en direct par `step()` et double-compte l'accélération sur la fenêtre rejouée.
+      const knownVelocity = authoritativeVelocities?.get(entity.i);
+      if (knownVelocity) predicted.velocity = { ...knownVelocity };
+      for (const chunk of replayChunks) {
+        this.integrate(predicted, chunk.dtSeconds, chunk.target, chunk.intensity, movement);
       }
 
       // Écart résiduel entre "où la prédiction en était déjà" et "où le rejeu vient de la
@@ -264,6 +283,71 @@ export class LocalPrediction {
       }
     }
     this.pruneHistory(atMs);
+  }
+
+  /** Regroupe les échantillons fins de `step()` (pas `FIXED_STEP_SECONDS`, 1/240s) en blocs dont la
+   * durée cumulée correspond au pas serveur (1/`serverTickRateHz`) avant rejeu — plutôt qu'un
+   * `integrate()` par échantillon fin.
+   *
+   * Pourquoi : `moveToward` (voir `integrate`) est une rampe linéaire clampée ; pour la MÊME rampe
+   * (direction/intensité constantes), l'intégrer en N pas fins ou en 1 pas grossier ne converge PAS
+   * vers la même position tant que la vélocité n'a pas saturé sa cible — l'intégration (semi-
+   * implicite, position += vélocité déjà mise à jour × dt) d'un pas grossier "dépasse" celle d'une
+   * intégration fine d'environ `accel·dt²/2` par pas de rampe. Le serveur (`Room.tick()`) intègre
+   * en 1 seul pas de `1/tickRateHz` ; rejouer avec ~8 pas de `1/240s` pour ce même intervalle
+   * introduisait donc un écart systématique de quelques px à CHAQUE accélération/changement de cap
+   * — soit en pilotage actif, en permanence — largement au-dessus de
+   * `RECONCILE_IGNORE_THRESHOLD_PX`, corrigé en boucle par le lissage visuel (le tremblement
+   * "dans tous les sens, en continu" du blob du joueur). Regrouper le rejeu à la même granularité
+   * que le serveur reproduit la même discrétisation pour le même intervalle de temps, éliminant ce
+   * biais à la source plutôt que de le lisser après coup.
+   *
+   * Le pas fin de `step()` lui-même n'a pas besoin de changer : c'est ce qui rend le rendu EN
+   * DIRECT fluide et indépendant du framerate, et il n'est comparé à rien — seul le REJEU doit
+   * matcher la discrétisation serveur. Un bloc peut donc regrouper plusieurs frames de rendu
+   * (target légèrement différent d'une frame à l'autre en pilotage actif) ; comme le serveur, qui
+   * n'applique qu'UNE cible par tick (celle du dernier `input` reçu), on retient la cible du DERNIER
+   * échantillon du bloc pour tout le bloc plutôt que de mélanger plusieurs cibles dans un seul
+   * `integrate()`. */
+  private chunkHistoryForReplay(
+    samples: InputSample[],
+    serverTickRateHz: number | undefined,
+  ): Array<{ dtSeconds: number; target: Vector2; intensity: number }> {
+    if (!serverTickRateHz || serverTickRateHz <= 0) {
+      // Cadence serveur inconnue (ex. mod de test) : repli sur l'ancien comportement, un bloc par
+      // échantillon fin — jamais le cas en production, où `welcome` fournit toujours `tickRateHz`.
+      return samples.map((sample) => ({
+        dtSeconds: sample.dtSeconds,
+        target: sample.target,
+        intensity: sample.intensity,
+      }));
+    }
+
+    const tickSeconds = 1 / serverTickRateHz;
+    const chunks: Array<{ dtSeconds: number; target: Vector2; intensity: number }> = [];
+    let accDtSeconds = 0;
+    let lastTarget: Vector2 | undefined;
+    let lastIntensity = 0;
+
+    for (const sample of samples) {
+      accDtSeconds += sample.dtSeconds;
+      lastTarget = sample.target;
+      lastIntensity = sample.intensity;
+      // Tolérance flottante : la somme de plusieurs `FIXED_STEP_SECONDS` peut manquer `tickSeconds`
+      // de quelques ulps même quand elle le couvre exactement (ex. 8×1/240s vs 1/30s).
+      if (accDtSeconds >= tickSeconds - 1e-9) {
+        chunks.push({ dtSeconds: accDtSeconds, target: lastTarget, intensity: lastIntensity });
+        accDtSeconds = 0;
+        lastTarget = undefined;
+      }
+    }
+    // Reliquat plus court qu'un tick plein (fin de fenêtre de rejeu) : rejoué tel quel, borné par
+    // construction à moins de `tickSeconds` — pas de biais significatif sur un intervalle aussi
+    // court.
+    if (accDtSeconds > 0 && lastTarget) {
+      chunks.push({ dtSeconds: accDtSeconds, target: lastTarget, intensity: lastIntensity });
+    }
+    return chunks;
   }
 
   /** Cœur du modèle de mouvement (identique à `onTick`/`inputVectorOf` du mod paramétrique côté

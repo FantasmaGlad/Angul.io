@@ -108,6 +108,16 @@ export interface WorldStateMessage {
      * multiplicateur d'XP décimal réel, plus lisible en gros texte à l'écran. Absent si aucun
      * combo n'est actif pour ce joueur. */
     combo?: { level: number };
+    /** Vélocité autoritaire courante de chaque morceau du joueur (voir snapshotBuilder.ts
+     * `buildStateMessage`) — utilisée uniquement par la réconciliation locale
+     * (client/src/prediction.ts `reconcile`) pour ré-ancrer `predicted.velocity` avant de rejouer
+     * l'historique d'inputs, plutôt que de repartir de la vélocité déjà avancée en direct (double
+     * comptage de l'accélération sur la fenêtre rejouée, voir fix_vitesse_reseau.md). Volontairement
+     * dans `self` (personnalisé par destinataire) et PAS dans `EntitySnapshot`/`entities` (diffusé à
+     * tous les viewers d'un salon) : la vélocité n'est utile qu'au client qui possède le morceau, l'ajouter
+     * à `entities` coûterait de la bande passante à tous les autres viewers pour rien. Absent si le
+     * joueur n'a aucun morceau. */
+    pieces?: Array<{ id: string; vx: number; vy: number }>;
   };
 }
 

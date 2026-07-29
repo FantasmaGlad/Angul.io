@@ -314,15 +314,21 @@ describe('startGameServer', () => {
     manager.getManagedRoom(summary.id)!.room.tick();
     await waitUntil(() => messages.some((m) => m.type === 'state'));
     const state = messages.find((m) => m.type === 'state') as {
-      self?: { accelerationPerSec2: number };
+      self?: { accelerationPerSec2: number; pieces?: Array<{ id: string; vx: number; vy: number }> };
     };
 
-    expect(state.self).toEqual({ accelerationPerSec2: 150 }); // masse 50 * 3
+    // `pieces` (voir fix_vitesse_reseau.md) : toujours présent dès que le joueur a un morceau,
+    // indépendamment de `getAccelerationForMass` — vx/vy à 0 ici, aucun tick de physique n'a
+    // encore fait bouger le morceau fraîchement spawné avant ce `state`.
+    expect(state.self).toEqual({
+      accelerationPerSec2: 150, // masse 50 * 3
+      pieces: [{ id: '1', vx: 0, vy: 0 }],
+    });
 
     socket.close();
   });
 
-  it('n’envoie pas `self` si le mod n’expose pas getAccelerationForMass', async () => {
+  it('n’envoie pas `self.accelerationPerSec2` si le mod n’expose pas getAccelerationForMass (mais envoie `self.pieces`)', async () => {
     const mod: GameMod = {
       id: 'test',
       onPlayerJoin: (world, playerId) => {
@@ -341,9 +347,15 @@ describe('startGameServer', () => {
 
     manager.getManagedRoom(summary.id)!.room.tick();
     await waitUntil(() => messages.some((m) => m.type === 'state'));
-    const state = messages.find((m) => m.type === 'state') as { self?: unknown };
+    const state = messages.find((m) => m.type === 'state') as {
+      self?: { accelerationPerSec2?: number; pieces?: unknown };
+    };
 
-    expect(state.self).toBeUndefined();
+    // `self` reste envoyé (le joueur a un morceau, donc `pieces` est peuplé — voir
+    // fix_vitesse_reseau.md) même si `accelerationPerSec2` est absent (mod sans
+    // getAccelerationForMass).
+    expect(state.self?.accelerationPerSec2).toBeUndefined();
+    expect(state.self?.pieces).toEqual([{ id: '1', vx: 0, vy: 0 }]);
 
     socket.close();
   });

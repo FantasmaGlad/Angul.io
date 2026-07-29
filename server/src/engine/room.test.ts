@@ -3,7 +3,11 @@ import type { GameMod } from './mod.js';
 import { Room } from './room.js';
 
 /** Room configurée pour un unique tick déterministe : start() (dt ignoré) puis stop(), puis un
- * seul tick() manuel avec un dt contrôlé via performance.now() mocké. */
+ * seul tick() manuel avec un ÉCART D'HORLOGE RÉEL contrôlé via performance.now() mocké —
+ * `dtSeconds` ne pilote plus la physique (pas de temps fixe, voir `Room.tick()`), seulement la
+ * détection de surcharge (`tickOverruns`). La plupart des tests ci-dessous passent 0.05 (== le
+ * nominal à tickRateHz=20) précisément pour ne déclencher aucun overrun sans rapport avec ce
+ * qu'ils testent. */
 function makeDeterministicRoom(mod: GameMod, dtSeconds: number): Room {
   vi.spyOn(performance, 'now').mockReturnValueOnce(0);
   const room = new Room(mod, { mapSize: 1000, tickRateHz: 20 });
@@ -44,13 +48,45 @@ describe('Room — cycle de vie des hooks', () => {
 
   it('intègre génériquement la position à partir de la vélocité (position += v * dt)', () => {
     const mod: GameMod = { id: 'test' };
-    const room = makeDeterministicRoom(mod, 0.1);
+    const room = makeDeterministicRoom(mod, 0.05); // == nominal (tickRateHz: 20), aucun overrun
     const entity = room.world.spawnParticle({ x: 0, y: 0 }, 10);
     entity.velocity = { x: 20, y: 0 };
 
     room.tick();
 
-    expect(entity.position.x).toBeCloseTo(2, 10); // 20 uc/s * 0.1s
+    expect(entity.position.x).toBeCloseTo(1, 10); // 20 uc/s * 0.05s (pas nominal)
+  });
+
+  it('utilise un dt PHYSIQUE fixe (1/tickRateHz), indépendant du temps réel réellement écoulé', () => {
+    // "Fix your timestep" côté serveur : un écart d'horloge réel de 0.1s (double du nominal
+    // 0.05s à tickRateHz=20, ex. gigue de `setTimeout`/charge d'un autre salon) ne doit PAS se
+    // répercuter dans la physique — sinon la position autoritaire elle-même porte du bruit de
+    // timing à chaque tick (voir le commentaire de `Room.tick()`).
+    const mod: GameMod = { id: 'test' };
+    const room = makeDeterministicRoom(mod, 0.1); // écart réel 0.1s, mais dt physique reste 0.05s
+    const entity = room.world.spawnParticle({ x: 0, y: 0 }, 10);
+    entity.velocity = { x: 20, y: 0 };
+
+    room.tick();
+
+    expect(entity.position.x).toBeCloseTo(1, 10); // 20 uc/s * 0.05s (nominal), PAS 0.1s (réel)
+  });
+
+  it('tickOverruns détecte, lui, un vrai retard d’horloge (diagnostic non affecté par le dt fixe)', () => {
+    const mod: GameMod = { id: 'test' };
+    // Premier tick() après start() : jamais compté comme overrun (garde `tickCount > 1`, voir
+    // Room.tick()), quel que soit l'écart réel — d'où un premier tick "neutre" (dtSeconds au
+    // nominal) avant celui qui doit réellement déclencher la détection.
+    const room = makeDeterministicRoom(mod, 0.05);
+    room.tick();
+    expect(room.tickMetrics().overruns).toBe(0);
+
+    // 0.1s réel > 1.5x le nominal (0.05s x 1.5 = 0.075s) : un overrun doit être compté, même si
+    // le dt physique injecté dans la physique reste fixe à 0.05s (voir le test précédent).
+    vi.spyOn(performance, 'now').mockReturnValueOnce(200);
+    room.tick();
+
+    expect(room.tickMetrics().overruns).toBe(1);
   });
 
   it('déclenche onPlayerDeath quand un joueur perd son dernier morceau', () => {

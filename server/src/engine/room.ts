@@ -152,13 +152,24 @@ export class Room {
   /** Exécute un seul tick manuellement (utile pour les tests, sans dépendre d'un vrai timer). */
   tick(): void {
     const now = performance.now();
-    const dt = (now - this.lastTickAt) / 1000;
+    // Temps réel écoulé depuis le tick précédent — jamais injecté dans la physique (voir `dt`
+    // fixe ci-dessous) : sert uniquement à détecter une surcharge (`tickOverruns`), un diagnostic
+    // qui doit refléter l'horloge murale réelle.
+    const realDt = (now - this.lastTickAt) / 1000;
     this.lastTickAt = now;
     this.tickCount += 1;
 
-    if (this.tickCount > 1 && dt > (this.tickIntervalMs / 1000) * TICK_OVERRUN_FACTOR) {
+    if (this.tickCount > 1 && realDt > (this.tickIntervalMs / 1000) * TICK_OVERRUN_FACTOR) {
       this.tickOverruns += 1;
     }
+
+    // Pas de temps FIXE (`tickIntervalMs`, jamais le temps réel écoulé) pour toute la physique —
+    // "fix your timestep" : sinon la moindre gigue de `setTimeout` (charge d'un autre salon dans
+    // le même process, GC, sérialisation réseau...) se traduit directement par du bruit dans la
+    // position AUTORITAIRE elle-même, tick après tick. Sous surcharge soutenue, la simulation
+    // prend du retard sur l'horloge murale (déjà visible via `tickOverruns`/le TPS annoncé au
+    // client) plutôt que de propager ce bruit de timing à tous les clients connectés.
+    const dt = this.tickIntervalMs / 1000;
 
     this.mod.onTick?.(this.world, dt);
     this.botManager?.update(dt);
