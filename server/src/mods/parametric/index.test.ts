@@ -266,7 +266,7 @@ describe('createParametricMod — manger', () => {
     expect(distance(piece1.position, piece2.position)).toBeGreaterThan(distanceBefore);
   });
 
-  it('absorbe un morceau de joueur si l’attaquant a l’avantage de masse', () => {
+  it('absorbe un morceau de joueur si l’attaquant a l’avantage de masse et recouvre au moins 2/3 du blob', () => {
     const config = testConfig();
     const mod = createParametricMod(config);
     const world = freshWorld();
@@ -279,6 +279,25 @@ describe('createParametricMod — manger', () => {
 
     expect(world.getEntity(target.id)).toBeUndefined();
     expect(attacker.mass).toBe(205);
+  });
+
+  it('ne mange PAS un morceau de joueur si le chevauchement est inférieur à 2/3 (les froler repousse)', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    world.addPlayer('p2', 'Bob');
+    // Attaquant à x:500 (r=77), cible à x:590 (r=44.5) — chevauchement partiel ~12% < 66.6%
+    const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 300);
+    const target = world.spawnPiece('p2', { x: 590, y: 500 }, 100);
+    const initialTargetPos = target.position.x;
+
+    mod.onCollision?.(world, attacker, target, 1 / 20);
+
+    // Cible TOUJOURS en vie (pas mangée)
+    expect(world.getEntity(target.id)).toBeDefined();
+    // Repoussement effectué
+    expect(target.position.x).toBeGreaterThan(initialTargetPos);
   });
 
 

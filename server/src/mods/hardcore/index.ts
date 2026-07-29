@@ -59,11 +59,12 @@ export function createHardcoreMod(
     // Même convention d'aire que `circleOverlapArea` (voir shared/geometry.ts).
     const targetArea = PI * target.radius * target.radius;
     const overlapFraction = targetArea > 0 ? clamp(overlap / targetArea, 0, 1) : 1;
-    const massLostByTarget =
-      overlapFraction >= 0.35 || dist < attacker.radius
-        ? target.mass
-        : Math.min(target.mass, target.mass * absorptionRatePerSec(config) * overlapFraction * dt * 4);
-    if (massLostByTarget <= 0) return false;
+
+    // Un blob de joueur ne se fait manger que s'il est recouvert à au moins 2/3 (66.6%) de sa surface visuelle.
+    // En-dessous de 2/3 de recouvrement, le blob ne se fait pas manger et les blobs se repoussent (froler sans être mangé).
+    if (overlapFraction < 2 / 3) return false;
+
+    const massLostByTarget = target.mass;
 
     const gainedMass = massLostByTarget * hardcoreConfig.massGainMultiplier;
     world.setMass(attacker, attacker.mass + gainedMass);
@@ -73,17 +74,12 @@ export function createHardcoreMod(
     const now = performance.now();
     creditMassEatenXp(world, attacker.ownerId, gainedMass, now);
 
-    const remainingMass = target.mass - massLostByTarget;
-    if (remainingMass <= ABSORPTION_REMOVE_FLOOR) {
-      if (attacker.ownerId && target.ownerId) {
-        // Écran de mort personnalisé ("Éliminé par : X") — voir World.recordAttacker.
-        world.recordAttacker(target.ownerId, attacker.ownerId);
-      }
-      world.removeEntity(target.id);
-      if (attacker.ownerId) creditPlayerEatenXp(world, attacker.ownerId, now);
-    } else {
-      world.setMass(target, remainingMass);
+    if (attacker.ownerId && target.ownerId) {
+      // Écran de mort personnalisé ("Éliminé par : X") — voir World.recordAttacker.
+      world.recordAttacker(target.ownerId, attacker.ownerId);
     }
+    world.removeEntity(target.id);
+    if (attacker.ownerId) creditPlayerEatenXp(world, attacker.ownerId, now);
     return true;
   }
 
@@ -320,9 +316,8 @@ export function createHardcoreMod(
         (!isGodPlayerId(a.ownerId) && b.mass >= a.mass * (1 + config.eating.massAdvantage));
 
       if (hasAdvA || hasAdvB) {
-        if (hasAdvA) handleEatAttempt(world, a, b, dt);
-        else handleEatAttempt(world, b, a, dt);
-        return;
+        const ate = hasAdvA ? handleEatAttempt(world, a, b, dt) : handleEatAttempt(world, b, a, dt);
+        if (ate) return;
       }
 
       applyRepulsion(a, b);

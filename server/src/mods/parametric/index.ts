@@ -279,38 +279,33 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     // valeurs doivent partager la même unité pour que leur ratio soit une vraie fraction ∈ [0,1].
     const targetArea = PI * target.radius * target.radius;
     const overlapFraction = targetArea > 0 ? clamp(overlap / targetArea, 0, 1) : 1;
-    // Dès la barrière des 2/3 (66.6%) de recouvrement dépassée, disparition/avalement instantané du blob
-    const massToTransfer =
-      overlapFraction >= (2 / 3) || dist < attacker.radius
-        ? target.mass
-        : target.mass * absorptionRatePerSec(config) * overlapFraction * dt * 4;
-    if (massToTransfer <= 0) return false;
+
+    // Un blob ne se fait manger que s'il est recouvert à au moins 2/3 (66.6%) de sa surface visuelle.
+    // En-dessous de 2/3 de recouvrement, le blob ne se fait pas manger et les blobs se repoussent (froler sans être mangé).
+    if (overlapFraction < 2 / 3) return false;
+
+    const massToTransfer = target.mass;
 
     world.setMass(attacker, attacker.mass + massToTransfer);
     const attackerState = pieceState(attacker);
     attackerState.timeSinceLastEatenS = 0;
     creditMassEatenXp(world, attacker.ownerId, massToTransfer, performance.now());
 
-    const remainingMass = target.mass - massToTransfer;
-    if (remainingMass <= ABSORPTION_REMOVE_FLOOR) {
-      if (attacker.ownerId && target.ownerId) {
-        const attackerPlayer = world.getPlayer(attacker.ownerId);
-        const targetPlayer = world.getPlayer(target.ownerId);
-        logEvent('player_eaten', {
-          attackerId: attacker.ownerId,
-          attackerNickname: attackerPlayer?.nickname ?? attacker.ownerId,
-          victimId: target.ownerId,
-          victimNickname: targetPlayer?.nickname ?? target.ownerId,
-          mass: Math.floor(target.mass), // masse de la cible au dernier tick d'absorption
-        });
-        // Écran de mort personnalisé ("Éliminé par : X") — voir World.recordAttacker.
-        world.recordAttacker(target.ownerId, attacker.ownerId);
-      }
-      world.removeEntity(target.id);
-      if (attacker.ownerId) creditPlayerEatenXp(world, attacker.ownerId, performance.now());
-    } else {
-      world.setMass(target, remainingMass);
+    if (attacker.ownerId && target.ownerId) {
+      const attackerPlayer = world.getPlayer(attacker.ownerId);
+      const targetPlayer = world.getPlayer(target.ownerId);
+      logEvent('player_eaten', {
+        attackerId: attacker.ownerId,
+        attackerNickname: attackerPlayer?.nickname ?? attacker.ownerId,
+        victimId: target.ownerId,
+        victimNickname: targetPlayer?.nickname ?? target.ownerId,
+        mass: Math.floor(target.mass), // masse de la cible au dernier tick d'absorption
+      });
+      // Écran de mort personnalisé ("Éliminé par : X") — voir World.recordAttacker.
+      world.recordAttacker(target.ownerId, attacker.ownerId);
     }
+    world.removeEntity(target.id);
+    if (attacker.ownerId) creditPlayerEatenXp(world, attacker.ownerId, performance.now());
     return true;
   }
 
@@ -428,9 +423,8 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
       const bCanEatA = hasMassAdvantage(b, a);
 
       if (aCanEatB || bCanEatA) {
-        if (aCanEatB) handleEatAttempt(world, a, b, dt);
-        else handleEatAttempt(world, b, a, dt);
-        return;
+        const ate = aCanEatB ? handleEatAttempt(world, a, b, dt) : handleEatAttempt(world, b, a, dt);
+        if (ate) return;
       }
 
       applyRepulsion(a, b);
