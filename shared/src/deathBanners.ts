@@ -8,7 +8,12 @@ export function isCustomImageBanner(id: string | undefined): boolean {
     id.startsWith('data:image/') ||
     id.startsWith('http://') ||
     id.startsWith('https://') ||
-    id.startsWith('url(')
+    id.startsWith('url(') ||
+    // Asset statique servi par le client (ex. GIF de victoire par bot, voir
+    // server/src/engine/botKillBanners.ts) — même convention que le reste de l'app pour référencer
+    // un fichier de `client/public` (skins, logo...), jamais un id de catalogue arbitraire (le seul
+    // autre id existant, `DEFAULT_DEATH_BANNER_ID`, est la chaîne vide, jamais `/...`).
+    id.startsWith('/')
   );
 }
 

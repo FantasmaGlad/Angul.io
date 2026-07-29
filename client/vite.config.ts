@@ -12,6 +12,14 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': 'http://localhost:8080',
+      // Musiques/logo : copiés dans `public/` par `prebuild` (voir package.json), pas dans
+      // `static/` (voir commentaire d'en-tête) — `publicDir: 'static'` ci-dessus fait que
+      // `vite dev` ne les sert jamais lui-même, contrairement au vrai serveur Node (`staticDir`
+      // = `client/public`, server/src/index.ts). Sans ce proxy, ces deux chemins retombaient
+      // silencieusement sur le fallback SPA (200, `text/html`) en dev — un <img>/<audio> qui
+      // semblait fonctionner (200 OK) mais ne chargeait jamais le bon contenu.
+      '/assets/Logos': 'http://localhost:8080',
+      '/assets/Sons': 'http://localhost:8080',
       '/': {
         target: 'ws://localhost:8080',
         ws: true,

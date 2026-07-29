@@ -46,6 +46,25 @@ const FOOD_GRAVITY_RANGE_PX = 60;
  * téléport. */
 const FOOD_GRAVITY_SPEED_PX_PER_S = 220;
 
+/** Éjection de masse (demande utilisateur, touche configurable — `config.eject.amount`) : un
+ * morceau ne peut éjecter que s'il pèse au moins CE multiple de la masse envoyée (demande
+ * utilisateur : "impossible d'envoyer de la masse si le joueur est plus petit de 4x la masse
+ * d'envoi") — jamais un pourcentage réglable par mode, une règle fixe indépendante de
+ * `config.eject.amount`. */
+const EJECT_MIN_MASS_MULTIPLIER = 4;
+/** Anti-spam (pas une mécanique de jeu réglable) : une touche maintenue/répétition clavier OS ne
+ * doit pas vider la masse d'un morceau en une fraction de seconde. */
+const EJECT_COOLDOWN_SECONDS = 0.15;
+/** Vitesse initiale (px/s) de la particule éjectée — assez pour un vrai "jet" visible, freiné
+ * ensuite par `EJECT_FRICTION_PER_SEC` (voir `onTick`) jusqu'à l'arrêt. */
+const EJECT_LAUNCH_SPEED_PX_PER_S = 900;
+/** Coefficient de frottement (1/s) appliqué UNIQUEMENT aux particules à vélocité non nulle (voir
+ * `onTick`) — la nourriture normale a toujours une vélocité nulle à son spawn, ce frottement n'a
+ * donc d'effet que sur les particules volontairement lancées (éjection de masse), qui doivent
+ * ralentir jusqu'à l'arrêt plutôt que dériver indéfiniment à vitesse constante (rien d'autre ne
+ * freine une particule). */
+const EJECT_FRICTION_PER_SEC = 4;
+
 /** Attire vers `piece` (jamais vers un AUTRE morceau de joueur, demande utilisateur : "pas les
 
 
@@ -64,9 +83,48 @@ const FOOD_GRAVITY_SPEED_PX_PER_S = 220;
  * plutôt que de dépendre d'un `base.onCollision?.()` délégué (qui, avec l'absorption progressive,
  * ré-exécuterait aussi `handleEatAttempt` — celui du mod PARAMÉTRIQUE, non multiplié — en plus de
  * celui, déjà exécuté, du mod Hardcore : un double transfert de masse). */
-export function applyRepulsion(a: Entity, b: Entity, hard = false): void {
+/** Distance de repos par défaut (séparation complète, chevauchement nul) — voir `restDistance`
+ * de `applyRepulsion`. */
+function fullSeparationDistance(a: Entity, b: Entity): number {
+  return a.radius + b.radius;
+}
+
+/** Inverse de `circleOverlapArea` (décroissante et continue sur [|rA-rB|, rA+rB], voir
+ * shared/geometry.ts) : distance entre centres pour laquelle l'aire de chevauchement vaut
+ * `targetOverlapArea` — recherche dichotomique (pas de forme fermée, l'aire de lentille
+ * circulaire mêle des `acos`). Bornée par construction : ne peut jamais renvoyer moins que
+ * `|rA-rB|` (chevauchement maximal, le plus petit cercle entièrement inclus dans l'autre) ni
+ * plus que `rA+rB` (tangence, chevauchement nul). Utilisée par `onCollision` pour que la
+ * répulsion "dure" entre morceaux d'un même joueur (cooldown de fusion pas encore écoulé) ne les
+ * sépare que jusqu'à CE chevauchement, plutôt que jusqu'à un contact nul — sans quoi ils ne
+ * pouvaient plus jamais atteindre le chevauchement minimal exigé par `tryMerge` une fois le
+ * cooldown écoulé (voir le commentaire de `tryMerge`, bug "fusion ne marche jamais"). */
+function restingDistanceForOverlap(rA: number, rB: number, targetOverlapArea: number): number {
+  let low = Math.max(0, Math.abs(rA - rB));
+  let high = rA + rB;
+  for (let i = 0; i < 30; i++) {
+    const mid = (low + high) / 2;
+    const overlapAtMid = circleOverlapArea(rA, rB, mid);
+    // `circleOverlapArea` décroît quand `mid` croît : trop de chevauchement -> il faut s'éloigner.
+    if (overlapAtMid > targetOverlapArea) low = mid;
+    else high = mid;
+  }
+  // `low` (jamais `high`, ni leur moyenne) : invariant de la boucle ci-dessus, son chevauchement
+  // est TOUJOURS >= `targetOverlapArea` — reposer pile sur la frontière (`(low+high)/2`) serait
+  // à la merci du moindre bruit flottant côté `tryMerge` (`overlap < target`), qui ne fusionnerait
+  // alors jamais une fois le cooldown écoulé (le chevauchement resterait figé à ce point de
+  // repos, rien d'autre ne le fait plus bouger une fois la pénétration résorbée).
+  return low;
+}
+
+export function applyRepulsion(
+  a: Entity,
+  b: Entity,
+  hard = false,
+  restDistance: number = fullSeparationDistance(a, b),
+): void {
   const d = distance(a.position, b.position);
-  const penetration = a.radius + b.radius - d;
+  const penetration = restDistance - d;
   if (penetration <= 0) return;
 
   const dir = d > 0 ? scale(sub(a.position, b.position), 1 / d) : FALLBACK_DIRECTION;
@@ -216,6 +274,30 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     ejectedState.massAtSplit = ejectedMass;
   }
 
+  /** Éjection de masse (demande utilisateur) : recrache une particule de masse fixe
+   * (`config.eject.amount`) dans la direction visée — une simple particule de nourriture
+   * (`world.spawnParticle`), mangeable par n'importe qui, y compris un adversaire, pas un morceau
+   * possédé comme le split. Refuse en silence (pas d'erreur envoyée au client) sous
+   * `EJECT_MIN_MASS_MULTIPLIER × amount` ou pendant le cooldown anti-spam — un input "eject" qui
+   * ne peut pas aboutir ce tick-ci est simplement ignoré, comme un split en-dessous de
+   * `minSplitMass`. */
+  function tryEjectMass(world: World, piece: Entity): void {
+    const state = pieceState(piece);
+    if (state.ejectCooldownS > 0) return;
+
+    const amount = config.eject.amount;
+    if (piece.mass < amount * EJECT_MIN_MASS_MULTIPLIER) return;
+
+    const { direction: dir } = inputVectorOf(piece); // l'éjection ignore l'intensité, toujours "pleine"
+
+    world.setMass(piece, piece.mass - amount);
+    state.ejectCooldownS = EJECT_COOLDOWN_SECONDS;
+
+    const ejectedPosition = add(piece.position, scale(dir, piece.radius + 5));
+    const ejected = world.spawnParticle(ejectedPosition, amount);
+    ejected.velocity = scale(dir, EJECT_LAUNCH_SPEED_PX_PER_S);
+  }
+
   /** Cooldown de fusion mass-dépendant : T(m) = Tbase + gamma_rec*m (par morceau, feuille
    * Excel — gamma_rec est 0 pour Vanilla à ce jour, donc un cooldown fixe en pratique).
    * Renvoie `true` si la fusion a eu lieu — l'appelant (`onCollision`) s'en sert pour savoir s'il
@@ -340,16 +422,31 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
           trySplitPiece(world, playerId, piece);
         }
       }
+
+      if (input.eject) {
+        for (const piece of pieces) tryEjectMass(world, piece);
+      }
     },
 
     onTick(world: World, dt: number) {
       for (const entity of world.allEntities()) {
-        if (entity.kind !== 'piece') continue;
+        if (entity.kind !== 'piece') {
+          // Frottement des particules éjectées (éjection de masse) — la nourriture normale a
+          // toujours une vélocité nulle à son spawn, ce frottement n'a donc d'effet que sur les
+          // particules volontairement lancées, qui doivent ralentir jusqu'à l'arrêt plutôt que
+          // dériver indéfiniment (voir `EJECT_FRICTION_PER_SEC`, rien d'autre ne freine une
+          // particule).
+          if (entity.velocity.x !== 0 || entity.velocity.y !== 0) {
+            entity.velocity = scale(entity.velocity, Math.max(0, 1 - EJECT_FRICTION_PER_SEC * dt));
+          }
+          continue;
+        }
 
         const state = pieceState(entity);
         state.splitElapsedS += dt;
         state.timeSinceLastEatenS += dt;
         state.foodEatenThisTick = 0;
+        state.ejectCooldownS = Math.max(0, state.ejectCooldownS - dt);
 
         const { direction, intensity, accelIntensity } = inputVectorOf(entity);
         // Le curseur proche du centre donne un contrôle fin (faible intensité) ; loin, le
@@ -410,8 +507,20 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
       // annulation de la vélocité de rapprochement, voir `applyRepulsion(hard=true)`) plutôt qu'un
       // chevauchement libre ou une répulsion molle qui se refait repousser en boucle par l'input
       // du joueur (perçu comme un rebond/tremblement).
+      //
+      // `restDistance` : la répulsion ne les sépare que jusqu'au chevauchement MINIMAL exigé par
+      // `tryMerge` (`config.merge.overlapMinFraction`), pas jusqu'à un contact nul — sans ce
+      // correctif, un contact nul ne peut plus jamais regagner le chevauchement requis une fois le
+      // cooldown écoulé (la répulsion le ramène à zéro à chaque tick avant que le cooldown expire),
+      // et la fusion ne se déclenche donc jamais en jeu réel (seuls des tests qui placent les deux
+      // morceaux DÉJÀ profondément chevauchés dès le départ le manquaient).
       if (a.ownerId && a.ownerId === b.ownerId) {
-        if (!tryMerge(world, a, b)) applyRepulsion(a, b, true);
+        if (!tryMerge(world, a, b)) {
+          const totalArea = PI * a.radius * a.radius + PI * b.radius * b.radius;
+          const targetOverlap = totalArea * config.merge.overlapMinFraction;
+          const restDistance = restingDistanceForOverlap(a.radius, b.radius, targetOverlap);
+          applyRepulsion(a, b, true, restDistance);
+        }
         return;
       }
 

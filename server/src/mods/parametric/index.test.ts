@@ -176,6 +176,74 @@ describe('createParametricMod — split', () => {
   });
 });
 
+describe('createParametricMod — éjection de masse', () => {
+  it('éjecte config.eject.amount de masse, mangeable par n’importe qui (une particule, pas un morceau possédé)', () => {
+    const config = testConfig({ eject: { amount: 5 } });
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    world.spawnPiece('p1', { x: 500, y: 500 }, 100); // 100 >= 5*4 (seuil minimal)
+
+    mod.onPlayerInput?.(world, 'p1', { target: { x: 600, y: 500 }, intensity: 1, split: false, eject: true });
+
+    const [piece] = world.getPiecesByOwner('p1');
+    expect(piece!.mass).toBeCloseTo(95, 6);
+
+    const particles = world.allEntities().filter((e) => e.kind === 'particle');
+    expect(particles).toHaveLength(1);
+    expect(particles[0]!.mass).toBeCloseTo(5, 6);
+    expect(particles[0]!.ownerId).toBeUndefined(); // mangeable par n'importe qui, pas un morceau possédé
+  });
+
+  it('refuse si la masse du morceau est sous 4x la masse envoyée (demande utilisateur)', () => {
+    const config = testConfig({ eject: { amount: 5 } });
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    world.spawnPiece('p1', { x: 500, y: 500 }, 19.999); // juste sous 5*4=20
+
+    mod.onPlayerInput?.(world, 'p1', { target: { x: 600, y: 500 }, intensity: 1, split: false, eject: true });
+
+    const [piece] = world.getPiecesByOwner('p1');
+    expect(piece!.mass).toBeCloseTo(19.999, 6); // inchangé
+    expect(world.allEntities().filter((e) => e.kind === 'particle')).toHaveLength(0);
+  });
+
+  it('respecte un cooldown anti-spam entre deux éjections (touche maintenue/répétition clavier)', () => {
+    const config = testConfig({ eject: { amount: 5 } });
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    world.spawnPiece('p1', { x: 500, y: 500 }, 100);
+
+    const input = { target: { x: 600, y: 500 }, intensity: 1, split: false, eject: true };
+    mod.onPlayerInput?.(world, 'p1', input);
+    mod.onPlayerInput?.(world, 'p1', input); // immédiat : cooldown pas écoulé, ignoré
+
+    const [piece] = world.getPiecesByOwner('p1');
+    expect(piece!.mass).toBeCloseTo(95, 6); // une seule éjection a eu lieu
+    expect(world.allEntities().filter((e) => e.kind === 'particle')).toHaveLength(1);
+  });
+
+  it('freine la particule éjectée jusqu’à l’arrêt (rien d’autre ne freine une particule)', () => {
+    const config = testConfig({ eject: { amount: 5 } });
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    world.spawnPiece('p1', { x: 500, y: 500 }, 100);
+
+    mod.onPlayerInput?.(world, 'p1', { target: { x: 600, y: 500 }, intensity: 1, split: false, eject: true });
+    const [particle] = world.allEntities().filter((e) => e.kind === 'particle');
+    const initialSpeed = Math.hypot(particle!.velocity.x, particle!.velocity.y);
+    expect(initialSpeed).toBeGreaterThan(0);
+
+    for (let i = 0; i < 400; i++) mod.onTick?.(world, 1 / 20); // 20s simulées
+
+    const finalSpeed = Math.hypot(particle!.velocity.x, particle!.velocity.y);
+    expect(finalSpeed).toBeLessThan(initialSpeed * 0.01);
+  });
+});
+
 describe('createParametricMod — fusion', () => {
   it('fusionne deux morceaux du même joueur après cooldown et chevauchement suffisant', () => {
     const config = testConfig();
@@ -244,6 +312,31 @@ describe('createParametricMod — fusion', () => {
     pieceState(b).splitElapsedS = config.merge.baseTimeSec;
 
     expect(() => mod.onCollision?.(world, a, b, 1 / 20)).not.toThrow();
+    expect(world.getPiecesByOwner('p1')).toHaveLength(1);
+  });
+
+  it('fusionne bien une fois le cooldown écoulé après avoir été maintenus en collision dure pendant tout le cooldown (régression : la répulsion dure ramenait le chevauchement à zéro à CHAQUE tick, empêchant la fusion pour toujours d’atteindre le chevauchement minimal requis une fois le cooldown écoulé — reproduit ici le scénario réel : le joueur pousse ses deux morceaux l’un vers l’autre pendant tout le cooldown)', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    const a = world.spawnPiece('p1', { x: 500, y: 500 }, 100);
+    const b = world.spawnPiece('p1', { x: 505, y: 500 }, 100); // le joueur les maintient l'un contre l'autre
+    pieceState(a).splitElapsedS = 0;
+    pieceState(b).splitElapsedS = 0;
+
+    // Simule le joueur qui maintient ses deux morceaux en collision pendant tout le cooldown :
+    // à chaque tick, la répulsion dure s'applique (fusion impossible, cooldown pas écoulé) et les
+    // repositionne — avec l'ANCIEN comportement (résolution à séparation complète), ils finiraient
+    // totalement séparés (chevauchement nul) ; avec le correctif, ils restent à un chevauchement
+    // suffisant pour fusionner dès que le cooldown expire.
+    for (let i = 0; i < config.merge.baseTimeSec * 20; i++) {
+      pieceState(a).splitElapsedS += 1 / 20;
+      pieceState(b).splitElapsedS += 1 / 20;
+      mod.onCollision?.(world, a, b, 1 / 20);
+      if (world.getPiecesByOwner('p1').length === 1) break; // fusionné : `a`/`b` retirés du monde
+    }
+
     expect(world.getPiecesByOwner('p1')).toHaveLength(1);
   });
 });

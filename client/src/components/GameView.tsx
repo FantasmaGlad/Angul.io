@@ -30,6 +30,7 @@ import {
 } from '../debugOverlay.js';
 import { audioManager } from '../audio.js';
 import { attachInput } from '../input.js';
+import { keyLabel, loadKeybinds } from '../keybinds.js';
 import { GameConnection } from '../net.js';
 import { LocalPrediction } from '../prediction.js';
 import {
@@ -142,6 +143,10 @@ export default function GameView({
     canDash: boolean;
     rechargeProgress: number;
   } | undefined>(undefined);
+  // Touche de dash CONFIGURÉE (demande utilisateur : configuration dynamique, voir
+  // keybinds.ts/KeybindSettings.tsx) — lue une fois au montage, affichée dans le HUD dash à la
+  // place de l'ancien "F" fixe.
+  const [dashKeyLabel] = useState(() => keyLabel(loadKeybinds().dash.key));
 
   useEffect(() => {
     const isHardcore = roomIdOrInviteCode.toLowerCase().includes('hardcore');
@@ -436,6 +441,7 @@ export default function GameView({
             intensity,
             split: input.consumeSplit(),
             dash: input.consumeDash(),
+            eject: input.consumeEject(),
           });
         }
         scheduleInput();
@@ -701,7 +707,7 @@ export default function GameView({
         <div className="dash-hud-wrapper">
           <div className="dash-hud-badge">
             <span className="dash-hud-label">
-              DASH <span className="dash-hud-key">F</span>
+              DASH <span className="dash-hud-key">{dashKeyLabel}</span>
             </span>
             <div className="dash-segments-track">
               {Array.from({ length: dashInfo.maxCharges }).map((_, i) => {

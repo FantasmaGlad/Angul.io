@@ -63,6 +63,15 @@ export interface ParametricModConfig {
     ejectSpeedFactor: number;
   };
 
+  /** Éjection de masse (demande utilisateur, touche configurable — pas dans la feuille Excel
+   * d'origine) : recrache une particule de masse fixe, mangeable par n'importe qui (y compris un
+   * adversaire), dans la direction visée. */
+  eject: {
+    /** Masse (fixe, pas un %) envoyée par éjection — 5 en Vanilla, 20 en Hardcore (valeurs
+     * fournies par l'utilisateur). */
+    amount: number;
+  };
+
   merge: {
     /** Tbase (s) — durée minimale avant qu'un morceau puisse fusionner avec un autre. */
     baseTimeSec: number;

@@ -255,6 +255,11 @@ export function handleWsConnection(
             mapSize: managed.handle.mapSize,
             tickRateHz: roomManager.tickRateHz,
             movement: managed.handle.movement,
+            // Absent ici jusqu'à ce correctif (contrairement au `welcome` du join initial,
+            // ci-dessus) : le client sélectionne la musique du mode à partir de CE champ (voir
+            // GameView.tsx, `message.modId === 'hardcore'`) — son absence faisait toujours
+            // retomber sur la musique Vanilla après un respawn, y compris en salon Hardcore.
+            modId: managed.modId,
           });
         }
       }
@@ -337,6 +342,7 @@ function validateInputMessage(message: ClientMessage & { type: 'input' }):
       intensity: number;
       split: boolean;
       dash?: boolean;
+      eject?: boolean;
     }
   | undefined {
   if (!message.target || typeof message.target !== 'object') return undefined;
@@ -350,11 +356,13 @@ function validateInputMessage(message: ClientMessage & { type: 'input' }):
 
   const split = Boolean(message.split);
   const dash = message.dash ? true : undefined;
+  const eject = message.eject ? true : undefined;
 
   return {
     target: { x: targetX, y: targetY },
     intensity,
     split,
     ...(dash ? { dash } : {}),
+    ...(eject ? { eject } : {}),
   };
 }

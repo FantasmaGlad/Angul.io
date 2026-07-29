@@ -1,4 +1,5 @@
 import {
+  BOT_KILL_MESSAGES,
   colorForNickname,
   DEFAULT_DEATH_BANNER_ID,
   DEFAULT_DEATH_MESSAGE,
@@ -12,6 +13,7 @@ import type { AccountsService } from '../../accounts/service.js';
 import type { ManagedRoom } from '../../engine/roomManager.js';
 import type { PlayerId } from '../../engine/types.js';
 import { logEvent } from '../../log.js';
+import { botKillGifPath } from '../botKillGif.js';
 
 const DEFAULT_CUSTOM_CARD: DeathCustomCard = {
   message: DEFAULT_DEATH_MESSAGE,
@@ -117,13 +119,29 @@ export function wireRoom(
     void (async () => {
       const card =
         accountId !== undefined ? await accountsService?.getDeathScreenCard(accountId) : undefined;
+      // Réplique de bot (demande utilisateur) : un bot nommé (BOT_IDENTITIES) a sa propre punchline
+      // de victoire, affichée à la place de l'écran de mort personnalisé du joueur — celui-ci reste
+      // utilisé pour toute autre cause de mort (joueur humain, reset de salon). `botKillGifPath`
+      // ne renvoie une bannière que si un GIF a réellement été déposé pour CE bot (voir son
+      // commentaire) ; sinon la bannière retombe sur celle du joueur/le dégradé par défaut plutôt
+      // que de référencer un fichier inexistant.
+      const botMessage = info.killerNickname ? BOT_KILL_MESSAGES[info.killerNickname] : undefined;
+      const customCard: DeathCustomCard = botMessage
+        ? {
+            message: botMessage,
+            bannerId:
+              botKillGifPath(info.killerNickname!) ?? card?.bannerId ?? DEFAULT_DEATH_BANNER_ID,
+          }
+        : card
+          ? { message: card.message, bannerId: card.bannerId }
+          : DEFAULT_CUSTOM_CARD;
       send(socket, {
         type: 'died',
         killerNickname: info.killerNickname,
         finalScore: info.finalScore,
         survivalTimeSec: info.survivalTimeSec,
         xpEarned: info.xpEarned,
-        customCard: card ? { message: card.message, bannerId: card.bannerId } : DEFAULT_CUSTOM_CARD,
+        customCard,
       });
     })();
   });

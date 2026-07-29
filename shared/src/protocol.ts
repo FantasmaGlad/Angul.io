@@ -47,6 +47,9 @@ export interface ClientInputMessage {
   split: boolean;
   /** true uniquement sur le tick où le dash est demandé (touche F). */
   dash?: boolean;
+  /** true uniquement sur le tick où l'éjection de masse est demandée (demande utilisateur,
+   * touche configurable) — voir `config.eject` (server/src/mods/parametric/config.ts). */
+  eject?: boolean;
 }
 
 /** Mesure de latence réelle (aller-retour), pour l'écran de debug F3 — le serveur renvoie `t`

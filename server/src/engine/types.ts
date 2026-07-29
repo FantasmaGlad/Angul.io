@@ -43,4 +43,5 @@ export interface PlayerInput {
   intensity: number;
   split: boolean;
   dash?: boolean;
+  eject?: boolean;
 }

@@ -17,6 +17,9 @@
     "ejectEfficiency": 1.0,
     "ejectSpeedFactor": 4.5
   },
+  "eject": {
+    "amount": 5
+  },
   "merge": {
     "baseTimeSec": 30,
     "massFactor": 0,

@@ -19,6 +19,10 @@ export interface ParametricPieceState {
   timeSinceLastEatenS: number;
   /** Cumul de masse de nourriture mangée durant le tick courant pour plafonner le gavage. */
   foodEatenThisTick?: number;
+  /** Secondes restantes avant la prochaine éjection de masse possible pour CE morceau (demande
+   * utilisateur) — anti-spam (une touche maintenue/répétition clavier OS ne doit pas vider la
+   * masse instantanément), pas une vraie mécanique de jeu réglable par mode. */
+  ejectCooldownS: number;
 }
 
 const KEY = 'parametric';
@@ -32,6 +36,7 @@ function defaultState(mass: number): ParametricPieceState {
     splitElapsedS: Number.POSITIVE_INFINITY,
     massAtSplit: mass,
     timeSinceLastEatenS: 0,
+    ejectCooldownS: 0,
   };
 }
 

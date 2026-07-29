@@ -595,7 +595,7 @@ select {
 }
 
 .hero-logo-img {
-  width: 240px;
+  width: 480px;
   max-width: 85%;
   height: auto;
   object-fit: contain;
@@ -2634,5 +2634,54 @@ a.btn-primary {
   background: var(--surface-hover);
   color: var(--text);
   border-color: var(--accent);
+}
+
+/* --- Configuration des touches / manette (Paramètres) -------------------------------- */
+.keybind-table {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.keybind-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+}
+.keybind-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 140px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.keybind-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-soft);
+  min-width: 100px;
+  justify-content: center;
+}
+.keybind-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.keybind-btn.capturing {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
 }
 

@@ -769,6 +769,86 @@ describe('startGameServer', () => {
 
     socket.close();
   });
+
+  it('renvoie modId dans le `welcome` de RESPAWN, pas seulement celui du join initial (régression : la musique retombait toujours sur Vanilla après un respawn en salon Hardcore, ce champ manquait dans ce second welcome)', async () => {
+    const mod: GameMod = {
+      id: 'test',
+      onPlayerJoin: (world, playerId) => {
+        world.spawnPiece(playerId, { x: 0, y: 0 }, 50);
+      },
+    };
+    const manager = makeManager(() => ({ mod, mapSize: 1000 }));
+    const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
+    const port = await handle.whenReady;
+
+    const socket = await connectedClient(port, summary.id);
+    const messages = collectMessages(socket);
+    socket.send(JSON.stringify({ type: 'join', nickname: 'Test' }));
+    await waitUntil(() => messages.some((m) => m.type === 'welcome'));
+    const firstWelcome = messages.find((m) => m.type === 'welcome')!;
+    expect(firstWelcome.modId).toBe('test');
+
+    // Simule la mort : retire tous les morceaux du joueur (comme le ferait le moteur de jeu),
+    // sans attendre un vrai `onCollision`/absorption — seul l'état "plus aucun morceau" compte
+    // pour `RoomInstance.respawn`.
+    const world = manager.getManagedRoom(summary.id)!.room.world;
+    const player = world.getPlayer(String(firstWelcome.playerId));
+    for (const pieceId of [...(player?.pieceIds ?? [])]) world.removeEntity(pieceId);
+
+    socket.send(JSON.stringify({ type: 'join', nickname: 'Test' }));
+    await waitUntil(() => messages.filter((m) => m.type === 'welcome').length >= 2);
+    const respawnWelcome = messages.filter((m) => m.type === 'welcome')[1]!;
+
+    expect(respawnWelcome.modId).toBe('test');
+
+    socket.close();
+  });
+
+  it('affiche la réplique du bot tueur sur l’écran de mort (demande utilisateur) plutôt que le message personnalisé du joueur', async () => {
+    const mod: GameMod = {
+      id: 'test',
+      onPlayerJoin: (world, playerId) => {
+        world.spawnPiece(playerId, { x: 0, y: 0 }, 50);
+      },
+    };
+    const manager = makeManager(() => ({ mod, mapSize: 1000 }));
+    const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
+    const port = await handle.whenReady;
+
+    const socket = await connectedClient(port, summary.id);
+    const messages = collectMessages(socket);
+    socket.send(JSON.stringify({ type: 'join', nickname: 'Victime' }));
+    await waitUntil(() => messages.some((m) => m.type === 'welcome'));
+    const welcome = messages.find((m) => m.type === 'welcome')!;
+
+    const room = manager.getManagedRoom(summary.id)!.room;
+    const world = room.world;
+    // Un premier tick avec le morceau encore présent est nécessaire pour que `player.alive` passe
+    // à `true` (voir room.ts `tick()`) — la détection de mort ne déclenche `onPlayerDeath` que sur
+    // la transition `alive -> !alive`, jamais sur un joueur déjà `alive: false` par défaut
+    // (`world.addPlayer`).
+    room.tick();
+
+    // "Bot" tueur : seul le pseudo compte pour la réplique (voir BOT_KILL_MESSAGES, indexé par
+    // nom) — pas besoin de passer par le vrai `BotManager` pour ce test.
+    world.addPlayer('bot-1', 'Cobalt');
+    world.recordAttacker(String(welcome.playerId), 'bot-1');
+    const victim = world.getPlayer(String(welcome.playerId))!;
+    for (const pieceId of [...victim.pieceIds]) world.removeEntity(pieceId);
+
+    room.tick();
+    await waitUntil(() => messages.some((m) => m.type === 'died'));
+    const died = messages.find((m) => m.type === 'died')!;
+
+    expect(died.killerNickname).toBe('Cobalt');
+    expect(died.customCard).toMatchObject({
+      message: "Mon magnétisme t'a attiré direct dans ma gueule, pauvre cloche !",
+    });
+
+    socket.close();
+  });
 });
 
 // Tests d'intégration réels contre PostgreSQL (même principe que accountsRepository.test.ts) :
