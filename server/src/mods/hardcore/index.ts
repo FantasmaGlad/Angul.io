@@ -237,11 +237,8 @@ export function createHardcoreMod(
         (!isGodPlayerId(a.ownerId) && b.mass >= a.mass * (1 + config.eating.massAdvantage));
 
       if (hasAdvA || hasAdvB) {
-        const ate = hasAdvA ? handleEatAttempt(world, a, b, dt) : handleEatAttempt(world, b, a, dt);
-        if (!ate) {
-          const [attacker, victim] = hasAdvA ? [a, b] : [b, a];
-          applyRepulsion(attacker, victim, false);
-        }
+        if (hasAdvA) handleEatAttempt(world, a, b, dt);
+        else handleEatAttempt(world, b, a, dt);
         return;
       }
 

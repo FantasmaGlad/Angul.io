@@ -344,19 +344,19 @@ describe('createParametricMod — fusion', () => {
 describe('createParametricMod — manger', () => {
 
 
-  it('repousse deux morceaux de masse équivalente (aucun n’a l’avantage de masse)', () => {
+  it('laisse croiser librement deux morceaux de masse équivalente (différence <= 5%)', () => {
     const config = testConfig();
     const mod = createParametricMod(config);
     const world = freshWorld();
     world.addPlayer('p1', 'Alice');
     world.addPlayer('p2', 'Bob');
-    const piece1 = world.spawnPiece('p1', { x: 500, y: 500 }, 120);
-    const piece2 = world.spawnPiece('p2', { x: 550, y: 500 }, 100);
+    const piece1 = world.spawnPiece('p1', { x: 500, y: 500 }, 100);
+    const piece2 = world.spawnPiece('p2', { x: 505, y: 500 }, 100);
     const distanceBefore = distance(piece1.position, piece2.position);
 
     mod.onCollision?.(world, piece1, piece2, 1 / 20);
 
-    expect(distance(piece1.position, piece2.position)).toBeGreaterThan(distanceBefore);
+    expect(distance(piece1.position, piece2.position)).toBe(distanceBefore);
   });
 
   it('absorbe un morceau de joueur si l’attaquant a l’avantage de masse et recouvre au moins 2/3 du blob', () => {

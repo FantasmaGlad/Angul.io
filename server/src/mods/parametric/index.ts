@@ -627,14 +627,13 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
       }
 
       // 2. Si la masse diffère de plus de 5%, le plus gros tente de manger le plus petit s'il atteint au moins 70% de chevauchement.
-      // Tant que le chevauchement est < 70%, appliquer une répulsion pour matérialiser le contact physique et éviter la disparition subite à distance.
       const [attacker, victim] = a.mass > b.mass ? [a, b] : [b, a];
       if (hasMassAdvantage(attacker, victim)) {
-        const ate = handleEatAttempt(world, attacker, victim, dt);
-        if (!ate) {
-          applyRepulsion(attacker, victim, false);
-        }
+        handleEatAttempt(world, attacker, victim, dt);
+        return;
       }
+
+      applyRepulsion(a, b);
     },
   };
 }

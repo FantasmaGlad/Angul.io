@@ -281,7 +281,7 @@ export default function GameView({
       },
       () => {
         if (currentModId !== 'hardcore') return;
-        dashZoomBonus = 0.5;
+        dashZoomBonus = 0.10;
         if (!canvas) return;
         const rect = canvas.getBoundingClientRect();
         const centerX = rect.left + rect.width / 2;
@@ -555,29 +555,22 @@ export default function GameView({
       // que cette duplication existait.
       const targetCamera = computeCamera(entities, selfPlayerId, { x: mapSize / 2, y: mapSize / 2 });
 
-      dashZoomBonus += (0 - dashZoomBonus) * (1 - Math.exp(-6 * (frameDt / 1000)));
+      dashZoomBonus += (0 - dashZoomBonus) * (1 - Math.exp(-8 * (frameDt / 1000)));
       const zoomMultiplier = 1 + dashZoomBonus;
       const targetScale = targetCamera.scale * zoomMultiplier;
 
-      // Suivi de caméra lissé et indépendant du framerate : pour le joueur local (selfPlayerId),
-      // ancrer la position (x, y) directement sur la position prédite (targetCamera) annule 100%
-      // du lag/tressautement relatif de la caméra par rapport à son propre blob. Seul le zoom (scale)
-      // conserve un lissage très doux. En spectateur, la position reste lissée doucement.
-      const cameraScaleLerp = 1 - Math.exp(-3.5 * (frameDt / 1000));
-      if (selfPlayerId) {
-        latestCamera = {
-          x: targetCamera.x,
-          y: targetCamera.y,
-          scale: latestCamera.scale + (targetScale - latestCamera.scale) * cameraScaleLerp,
-        };
-      } else {
-        const cameraPosLerp = 1 - Math.exp(-15 * (frameDt / 1000));
-        latestCamera = {
-          x: latestCamera.x + (targetCamera.x - latestCamera.x) * cameraPosLerp,
-          y: latestCamera.y + (targetCamera.y - latestCamera.y) * cameraPosLerp,
-          scale: latestCamera.scale + (targetScale - latestCamera.scale) * cameraScaleLerp,
-        };
-      }
+      // Suivi de caméra ultra-fluide et indépendant du framerate :
+      // - cameraPosLerp (k = 30) : suit le joueur immédiatement tout en absorbant les téléportations
+      //   brutales du centre de masse lors des splits et dashes.
+      // - cameraScaleLerp (k = 12) : ajuste le zoom lors de la prise de masse (manger) en ~150ms
+      //   sans micro-freeze ni à-coup.
+      const cameraScaleLerp = 1 - Math.exp(-12 * (frameDt / 1000));
+      const cameraPosLerp = 1 - Math.exp(-30 * (frameDt / 1000));
+      latestCamera = {
+        x: latestCamera.x + (targetCamera.x - latestCamera.x) * cameraPosLerp,
+        y: latestCamera.y + (targetCamera.y - latestCamera.y) * cameraPosLerp,
+        scale: latestCamera.scale + (targetScale - latestCamera.scale) * cameraScaleLerp,
+      };
       // L'effet de "dash" au split est un pur transform CSS sur le canvas (voir attachInput
       // plus haut et styles.css `#game.split-punch`) — jamais mélangé à cette caméra LOGIQUE, qui
       // reste le seul repère utilisé par le rendu ET par la conversion écran->monde (input.ts).

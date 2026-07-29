@@ -45,7 +45,7 @@
   },
   "food": {
     "density": 10,
-    "respawnRatePerSecond": 200,
+    "respawnRatePerSecond": 250,
     "pelletTypes": [
       {
         "color": "vert",

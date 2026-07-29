@@ -99,8 +99,6 @@ export function attachInput(
 
   let smoothedMouseX = canvas.width / 2;
   let smoothedMouseY = canvas.height / 2;
-  let smoothedStickX = 0;
-  let smoothedStickY = 0;
   let lastFrameTickTime = performance.now();
 
   function findActiveGamepad(): Gamepad | null {
@@ -131,8 +129,6 @@ export function attachInput(
     const pad = findActiveGamepad();
     const rawStickX = pad?.axes[0] ?? 0;
     const rawStickY = pad?.axes[1] ?? 0;
-    smoothedStickX += (rawStickX - smoothedStickX) * lerpFactor;
-    smoothedStickY += (rawStickY - smoothedStickY) * lerpFactor;
 
     const hasStickInput = Math.hypot(rawStickX, rawStickY) > GAMEPAD_STICK_DEAD_ZONE;
     const hasAnyButtonPressed = pad?.buttons.some((b) => b.pressed) ?? false;
@@ -179,12 +175,16 @@ export function attachInput(
       // potentiellement resté loin du centre ou hors canvas, imposer une commande parasite dès
       // que le stick se recentre.
       if (gamepadActive) {
-        const stickX = smoothedStickX;
-        const stickY = smoothedStickY;
-        const magnitude = Math.hypot(stickX, stickY);
-        const intensity = magnitude >= GAMEPAD_STICK_DEAD_ZONE ? Math.min(1, magnitude) : 0;
+        const pad = findActiveGamepad();
+        const rawStickX = pad?.axes[0] ?? 0;
+        const rawStickY = pad?.axes[1] ?? 0;
+        const magnitude = Math.hypot(rawStickX, rawStickY);
+        let intensity = 0;
+        if (magnitude > GAMEPAD_STICK_DEAD_ZONE) {
+          intensity = Math.min(1, (magnitude - GAMEPAD_STICK_DEAD_ZONE) / (1 - GAMEPAD_STICK_DEAD_ZONE));
+        }
         const direction: Vector2 =
-          magnitude > 0 ? { x: stickX / magnitude, y: stickY / magnitude } : { x: 1, y: 0 };
+          magnitude > 0 ? { x: rawStickX / magnitude, y: rawStickY / magnitude } : { x: 1, y: 0 };
         return {
           target: {
             x: camera.x + direction.x * GAMEPAD_TARGET_OFFSET_WORLD_PX,
