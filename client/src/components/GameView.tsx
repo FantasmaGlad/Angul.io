@@ -55,6 +55,13 @@ import Minimap from './Minimap.js';
 const DEFAULT_INPUT_INTERVAL_MS = 1000 / 30;
 const SERVER_STATE_INTERVAL_MS = 50;
 const PING_INTERVAL_MS = 1000;
+/** Réactivité de l'EMA de latence (voir `smoothedLatencyMs`) — assez lent pour amortir un pic bas
+ * isolé (un seul échantillon/s), assez réactif pour suivre une vraie dégradation en quelques
+ * secondes. */
+const LATENCY_EMA_ALPHA = 0.25;
+/** Marge de sécurité (ms) ajoutée à l'estimation lissée — biaise délibérément vers une latence
+ * surestimée plutôt que sous-estimée (voir le commentaire sur `smoothedLatencyMs`). */
+const LATENCY_SAFETY_MARGIN_MS = 15;
 const MAP_UNITS_TO_METERS = 0.01;
 
 interface DeathState {
@@ -162,6 +169,19 @@ export default function GameView({
     // `undefined` tant qu'aucun `pong` n'est encore arrivé (écran F3, RTT) — distinct de `0`, qui
     // afficherait une latence mesurée alors qu'aucune mesure n'a encore eu lieu.
     let lastPingMs: number | undefined;
+    /** Latence aller simple lissée (EMA) + marge de sécurité — utilisée UNIQUEMENT pour le rejeu
+     * de réconciliation (prediction.ts), jamais pour l'affichage (`lastPingMs` brut reste
+     * inchangé, voir écran F3/rapport admin). Un seul échantillon de ping brut (mesuré 1x/s,
+     * PING_INTERVAL_MS) peut ponctuellement sous-estimer la vraie latence par simple gigue réseau
+     * — et sous-estimer fait rejouer TROP PEU de l'historique local : la position reconstruite au
+     * rejeu se retrouve alors légèrement en retard sur la position réellement prédite pendant un
+     * déplacement, et la réconciliation la tire en arrière à chaque `state` avant que le
+     * déplacement suivant la ramène en avant — un aller-retour visible ("avant/arrière") en
+     * mouvement, invisible à l'arrêt (résidu nul). Sur-estimer, à l'inverse, ne fait rejouer qu'un
+     * peu plus que nécessaire — un simple surplus d'avance déjà toléré par construction (voir
+     * l'en-tête de prediction.ts). D'où le lissage (amorti les pics bas isolés) et la marge fixe
+     * (biaise délibérément vers l'estimation la moins risquée des deux). */
+    let smoothedLatencyMs: number | undefined;
     let lastComboLevel: number | undefined;
     let comboHideTimer: ReturnType<typeof setTimeout> | undefined;
     let announcementHideTimer: ReturnType<typeof setTimeout> | undefined;
@@ -239,10 +259,10 @@ export default function GameView({
         latestSnapshot = message.entities;
         latestSnapshotAt = performance.now();
         if (selfPlayerId && movementConfig) {
-          // Latence aller simple estimée à partir du dernier round-trip mesuré (voir
-          // `lastPingMs`, ping/pong toutes les PING_INTERVAL_MS) — détermine depuis quel instant
-          // rejouer l'historique d'inputs local lors de la réconciliation (voir prediction.ts).
-          const estimatedLatencyMs = lastPingMs !== undefined ? lastPingMs / 2 : undefined;
+          // Latence aller simple estimée, lissée + marge de sécurité (voir `smoothedLatencyMs`) —
+          // détermine depuis quel instant rejouer l'historique d'inputs local lors de la
+          // réconciliation (voir prediction.ts).
+          const estimatedLatencyMs = smoothedLatencyMs;
           prediction.reconcile(message.entities, selfPlayerId, movementConfig, estimatedLatencyMs);
         }
         renderEngine.pushSnapshot(message.entities, message.tick, serverTickRateHz);
@@ -271,6 +291,11 @@ export default function GameView({
         }, 1500);
       } else if (message.type === 'pong') {
         lastPingMs = performance.now() - message.t;
+        const oneWayMs = lastPingMs / 2 + LATENCY_SAFETY_MARGIN_MS;
+        smoothedLatencyMs =
+          smoothedLatencyMs === undefined
+            ? oneWayMs
+            : smoothedLatencyMs + (oneWayMs - smoothedLatencyMs) * LATENCY_EMA_ALPHA;
         // Rapporté au serveur pour affichage dans l'interface admin ("Salons & Écrans") — le
         // client est seul à mesurer sa propre latence (voir ClientLatencyMessage).
         connection.send({ type: 'latency', ms: Math.round(lastPingMs) });
