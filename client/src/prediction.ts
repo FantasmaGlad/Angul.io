@@ -162,6 +162,7 @@ const MAX_FRAME_SECONDS = 0.25;
 export class LocalPrediction {
   private readonly pieces = new Map<string, PredictedPiece>();
   private readonly history: InputSample[] = [];
+  private pendingDashes: Array<{ atMs: number; impulse: Vector2 }> = [];
   /** Reliquat de temps non encore intégré en pas fixe (voir `step()`). */
   private accumulatorSeconds = 0;
 
@@ -231,8 +232,14 @@ export class LocalPrediction {
       // avancée en direct par `step()` et double-compte l'accélération sur la fenêtre rejouée.
       const knownVelocity = authoritativeVelocities?.get(entity.i);
       if (knownVelocity) predicted.velocity = { ...knownVelocity };
+
+      const activeDashes = this.pendingDashes.filter((d) => d.atMs >= sinceMs);
+
       for (const chunk of replayChunks) {
         this.integrate(predicted, chunk.dtSeconds, chunk.target, chunk.intensity, movement);
+        for (const dash of activeDashes) {
+          predicted.velocity = add(predicted.velocity, dash.impulse);
+        }
       }
 
       // Écart résiduel entre "où la prédiction en était déjà" et "où le rejeu vient de la

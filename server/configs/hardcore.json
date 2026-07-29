@@ -18,9 +18,9 @@
     "ejectSpeedFactor": 4.5
   },
   "merge": {
-    "baseTimeSec": 30,
+    "baseTimeSec": 5,
     "massFactor": 0,
-    "overlapMinFraction": 0.3333333333333333
+    "overlapMinFraction": 0.3
   },
   "eating": {
     "massAdvantage": 0.05,

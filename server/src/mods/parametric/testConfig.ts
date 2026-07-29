@@ -16,7 +16,7 @@ export function testConfig(overrides: Partial<ParametricModConfig> = {}): Parame
       accelerationMassExponent: 0.7,
     },
     split: { ejectEfficiency: 1, ejectSpeedFactor: 2 },
-    merge: { baseTimeSec: 30, massFactor: 0, overlapMinFraction: 1 / 3 },
+    merge: { baseTimeSec: 30, massFactor: 0, overlapMinFraction: 0.3 },
     eating: { massAdvantage: 0.05, minMassToEatFood: 2 },
     decay: {
       threshold: 100,

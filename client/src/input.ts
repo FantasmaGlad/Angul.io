@@ -98,8 +98,22 @@ export function attachInput(
   canvas.addEventListener('mousemove', onMouseMove);
   window.addEventListener('keydown', onKeyDown);
 
+  let smoothedMouseX = canvas.width / 2;
+  let smoothedMouseY = canvas.height / 2;
+  let lastTargetTime = performance.now();
+
   return {
     getTarget(camera: Camera): { target: Vector2; intensity: number } {
+      const now = performance.now();
+      const dtSec = Math.min(0.05, Math.max(0.001, (now - lastTargetTime) / 1000));
+      lastTargetTime = now;
+
+      // Lissage exponentiel très réactif (k = 32) : crée une trajectoire en "cloche" fluide lors
+      // des virages serrés/flicks de la souris, supprimant les sauts de direction brutaux et le tressautement.
+      const lerpFactor = 1 - Math.exp(-32 * dtSec);
+      smoothedMouseX += (mouseX - smoothedMouseX) * lerpFactor;
+      smoothedMouseY += (mouseY - smoothedMouseY) * lerpFactor;
+
       // Manette connectée (détectée par le navigateur dès qu'un bouton/axe a été actionné une
       // première fois) : priorité totale sur la souris, y compris au repos (stick centré ->
       // cible = position actuelle, zone morte de pilotage) — un retour silencieux sur la souris
@@ -122,8 +136,8 @@ export function attachInput(
         };
       }
 
-      const dx = mouseX - canvas.width / 2;
-      const dy = mouseY - canvas.height / 2;
+      const dx = smoothedMouseX - canvas.width / 2;
+      const dy = smoothedMouseY - canvas.height / 2;
       const intensity = Math.min(1, Math.hypot(dx, dy) / CONTROL_RADIUS_PX);
       // Écran -> monde : inverse de `toScreenX`/`toScreenY` (render.ts) — le curseur au centre
       // de l'écran correspond au centre de la caméra (grossièrement la position du joueur).

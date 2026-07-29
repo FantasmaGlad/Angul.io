@@ -20,7 +20,7 @@
   "merge": {
     "baseTimeSec": 30,
     "massFactor": 0,
-    "overlapMinFraction": 0.3333333333333333
+    "overlapMinFraction": 0.3
   },
   "eating": {
     "massAdvantage": 0.05,

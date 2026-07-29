@@ -267,9 +267,11 @@ export default function GameView({
         canvas.style.transformOrigin = `${50 + dirX * 18}% ${50 + dirY * 18}%`;
         canvas.style.transition = 'none';
         canvas.style.transform = 'scale(0.96)';
-        void canvas.offsetWidth;
-        canvas.style.transition = 'transform 0.22s cubic-bezier(0.1, 0.9, 0.2, 1)';
-        canvas.style.transform = 'scale(1)';
+        requestAnimationFrame(() => {
+          if (!canvas) return;
+          canvas.style.transition = 'transform 0.22s cubic-bezier(0.1, 0.9, 0.2, 1)';
+          canvas.style.transform = 'scale(1)';
+        });
       },
       () => {
         dashZoomBonus = 0.5;

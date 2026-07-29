@@ -28,10 +28,10 @@ function calculateXpProgress(totalXp: number) {
   while (remaining >= cost && level < 1000) {
     remaining -= cost;
     level += 1;
-    cost = Math.round(cost * 1.2 - 150);
+    cost = cost * 1.2 - 150;
   }
   const pct = Math.min(100, Math.max(0, Math.floor((remaining / cost) * 100)));
-  return { level, currentXpInLevel: remaining, costForNextLevel: cost, pct };
+  return { level, currentXpInLevel: Math.floor(remaining), costForNextLevel: Math.floor(cost), pct };
 }
 
 interface AvatarSwiperProps {

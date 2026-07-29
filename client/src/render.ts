@@ -292,46 +292,55 @@ export function renderFrame(
     return true;
   });
 
+  const foodEntities = visibleEntities.filter((e) => e.k === 'f');
   const foodPathsByColor = new Map<string, Path2D>();
 
-  for (const entity of visibleEntities) {
+  // Couche 1 : Rendu de la nourriture (sous les joueurs)
+  for (const entity of foodEntities) {
     const screenX = toScreenX(entity.x);
     const screenY = toScreenY(entity.y);
-    // Rayon écran dérivé directement du rayon PHYSIQUE réel (`entity.r`, voir
-    // shared/geometry.ts `massToRadius`) pour toutes les entités, nourriture comprise — un ancien
-    // grossissement purement cosmétique côté client (sans toucher au rayon physique réel, bien
-    // plus petit) faisait paraître les pastilles bien plus grosses que leur véritable cercle de
-    // collision, donnant l'impression de pouvoir "sauter par-dessus" (régression corrigée en
-    // agrandissant directement le rayon physique lui-même — rendu et collision restent ainsi
-    // TOUJOURS cohérents entre eux, par construction).
     const screenRadius = entity.r * camera.scale;
 
     if (screenX + screenRadius < 0 || screenX - screenRadius > canvas.width) continue;
     if (screenY + screenRadius < 0 || screenY - screenRadius > canvas.height) continue;
 
-    if (entity.k === 'f') {
-      const foodRadius = Math.max(1, screenRadius);
-      if (entity.m === MULTICOLOR_FOOD_MASS) {
-        drawMulticolorFood(ctx, screenX, screenY, foodRadius);
-        drawCalls++;
-        continue;
-      }
-      const color = foodColorForMass(entity.m);
-      let path = foodPathsByColor.get(color);
-      if (!path) {
-        path = new Path2D();
-        foodPathsByColor.set(color, path);
-      }
-      path.moveTo(screenX + foodRadius, screenY);
-      path.arc(screenX, screenY, foodRadius, 0, Math.PI * 2);
+    const foodRadius = Math.max(1, screenRadius);
+    if (entity.m === MULTICOLOR_FOOD_MASS) {
+      drawMulticolorFood(ctx, screenX, screenY, foodRadius);
+      drawCalls++;
       continue;
     }
+    const color = foodColorForMass(entity.m);
+    let path = foodPathsByColor.get(color);
+    if (!path) {
+      path = new Path2D();
+      foodPathsByColor.set(color, path);
+    }
+    path.moveTo(screenX + foodRadius, screenY);
+    path.arc(screenX, screenY, foodRadius, 0, Math.PI * 2);
+  }
+
+  for (const [color, path] of foodPathsByColor) {
+    ctx.fillStyle = color;
+    ctx.fill(path);
+    drawCalls++;
+  }
+
+  // Couche 2 : Rendu des créatures/joueurs triés par masse CROISSANTE (le plus gros au-dessus)
+  const sortedCreatures = visibleEntities
+    .filter((e) => e.k === 'c')
+    .sort((a, b) => a.m - b.m);
+
+  for (const entity of sortedCreatures) {
+    const screenX = toScreenX(entity.x);
+    const screenY = toScreenY(entity.y);
+    const screenRadius = entity.r * camera.scale;
+
+    if (screenX + screenRadius < 0 || screenX - screenRadius > canvas.width) continue;
+    if (screenY + screenRadius < 0 || screenY - screenRadius > canvas.height) continue;
 
     const skinId = colorFor(entity, nicknames, colors);
     const radius = Math.max(1, screenRadius);
-    // Sprite déjà détouré en cercle (voir getCircularSkinImage) : un simple `drawImage`, sans
-    // `save()`/`clip()`/`restore()` par entité — clipper à chaque frame pour chaque joueur/bot
-    // visible était l'opération Canvas2D la plus coûteuse de cette boucle (voir son commentaire).
     const circularImg = getCircularSkinImage(skinId);
 
     if (circularImg) {
@@ -364,9 +373,6 @@ export function renderFrame(
       ctx.fillText(nickname, screenX, screenY);
       drawCalls++;
 
-      // Masse affichée sous le pseudo, uniquement sur le(s) morceau(x) du joueur local — demande
-      // utilisateur, pour suivre sa propre masse directement sur le blob plutôt que dans le
-      // panneau de stats (coin d'écran, moins visible en plein jeu).
       if (selfPlayerId && entity.p === selfPlayerId) {
         const massFontSize = Math.max(9, fontSize * 0.7);
         ctx.font = `normal ${massFontSize}px sans-serif`;
@@ -374,12 +380,6 @@ export function renderFrame(
         drawCalls++;
       }
     }
-  }
-
-  for (const [color, path] of foodPathsByColor) {
-    ctx.fillStyle = color;
-    ctx.fill(path);
-    drawCalls++;
   }
 
   return {
