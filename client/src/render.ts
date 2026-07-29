@@ -118,25 +118,6 @@ export function foodColorForMass(mass: number): string {
   return FOOD_COLORS_BY_MASS[mass] ?? FOOD_COLOR_FALLBACK;
 }
 
-/** Amplification du rayon MONDE (`entity.r`, physique — voir shared/geometry.ts `massToRadius`)
- * appliquée avant conversion écran, purement pour l'affichage (demande utilisateur : "plus une
- * pastille rapporte, plus elle est grosse") — sans toucher au rayon physique lui-même (collision/
- * ramassage côté serveur), volontairement minuscule pour les pastilles (quelques px monde) et pas
- * du tout ce qui rend la différence de taille lisible à l'écran une fois dézoomé. */
-const FOOD_VISUAL_SCALE = 2.5;
-
-/** Rayon ÉCRAN d'une pastille de nourriture — `Math.max(1, entity.r * camera.scale)` seul
- * s'effondrait au même 1px pour TOUTES les pastilles dès que `camera.scale` descend sous ~0.2-0.3
- * (dézoom courant en jeu, un gros joueur y passe le plus clair de son temps) : `entity.r` va de
- * ~1.4 (masse 1) à ~4.9px MONDE (masse 24, Multicolor), un écart déjà réduit à néant par ce
- * plancher plat AVANT même le dézoom. `massFloorPx` (plancher ÉCRAN, pas monde) croît lui aussi
- * avec la masse — la hiérarchie de taille reste lisible même complètement dézoomé, jamais un tas
- * de points identiques. */
-function foodScreenRadius(mass: number, worldRadius: number, cameraScale: number): number {
-  const scaled = worldRadius * cameraScale * FOOD_VISUAL_SCALE;
-  const massFloorPx = 2 + Math.sqrt(Math.max(0, mass));
-  return Math.max(massFloorPx, scaled);
-}
 /** Espacement de la grille en pixels *monde* (donc fixe quel que soit le zoom, comme des
  * carreaux de papier millimétré vus de plus ou moins loin). */
 const GRID_SPACING_WORLD_PX = 100;
@@ -236,20 +217,22 @@ export function renderFrame(
   for (const entity of entities) {
     const screenX = toScreenX(entity.x);
     const screenY = toScreenY(entity.y);
-    // Rayon utilisé pour le test de culling ET le dessin — pour la nourriture, le rayon VISUEL
-    // amplifié (voir `foodScreenRadius`), jamais le rayon physique brut seul (sinon une pastille
-    // culée "juste avant" son bord visuel réel, plus grand, disparaîtrait quelques px trop tôt).
-    const screenRadius =
-      entity.k === 'f'
-        ? foodScreenRadius(entity.m, entity.r, camera.scale)
-        : entity.r * camera.scale;
+    // Rayon écran dérivé directement du rayon PHYSIQUE réel (`entity.r`, voir
+    // shared/geometry.ts `massToRadius`) pour toutes les entités, nourriture comprise — un ancien
+    // grossissement purement cosmétique côté client (sans toucher au rayon physique réel, bien
+    // plus petit) faisait paraître les pastilles bien plus grosses que leur véritable cercle de
+    // collision, donnant l'impression de pouvoir "sauter par-dessus" (régression corrigée en
+    // agrandissant directement le rayon physique lui-même — rendu et collision restent ainsi
+    // TOUJOURS cohérents entre eux, par construction).
+    const screenRadius = entity.r * camera.scale;
 
     if (screenX + screenRadius < 0 || screenX - screenRadius > canvas.width) continue;
     if (screenY + screenRadius < 0 || screenY - screenRadius > canvas.height) continue;
 
     if (entity.k === 'f') {
+      const foodRadius = Math.max(1, screenRadius);
       if (entity.m === MULTICOLOR_FOOD_MASS) {
-        drawMulticolorFood(ctx, screenX, screenY, screenRadius);
+        drawMulticolorFood(ctx, screenX, screenY, foodRadius);
         drawCalls++;
         continue;
       }
@@ -259,8 +242,8 @@ export function renderFrame(
         path = new Path2D();
         foodPathsByColor.set(color, path);
       }
-      path.moveTo(screenX + screenRadius, screenY);
-      path.arc(screenX, screenY, screenRadius, 0, Math.PI * 2);
+      path.moveTo(screenX + foodRadius, screenY);
+      path.arc(screenX, screenY, foodRadius, 0, Math.PI * 2);
       continue;
     }
 

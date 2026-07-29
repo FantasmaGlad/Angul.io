@@ -6,8 +6,8 @@ import {
   dot,
   isBotId,
   length,
-  massToArea,
   moveToward,
+  PI,
   scale,
   sub,
   type Vector2,
@@ -36,6 +36,78 @@ const FALLBACK_DIRECTION: Vector2 = { x: 1, y: 0 };
  * aucune force de pilotage — voir son commentaire (élimine l'instabilité de normalisation d'un
  * vecteur quasi nul, seule vraiment visible via la prédiction locale du client). */
 const TARGET_DEAD_ZONE_PX = 3;
+
+/** Portée SUPPLÉMENTAIRE (au-delà du rayon du morceau lui-même) du halo de gravité (demande
+ * utilisateur : "léger halo autour du joueur où les particules sont absorbées, comme par une
+ * gravité") — volontairement modeste ("léger"), pas un aimant qui viderait toute une zone. */
+const FOOD_GRAVITY_RANGE_PX = 60;
+/** Vitesse d'attraction (px/s) de la nourriture dans le halo — assez rapide pour se sentir comme
+ * une vraie aspiration sur la courte portée du halo, jamais assez pour ressembler à un
+ * téléport. */
+const FOOD_GRAVITY_SPEED_PX_PER_S = 220;
+
+/** Attire vers `piece` (jamais vers un AUTRE morceau de joueur, demande utilisateur : "pas les
+ * joueurs") toute particule de nourriture à portée du halo — un simple déplacement direct de
+ * position (la nourriture n'a pas de vélocité propre en dehors de cet effet), borné à
+ * `FOOD_GRAVITY_SPEED_PX_PER_S * dt` par tick pour ne jamais dépasser la distance réelle qui
+ * sépare la particule du morceau (évite un dépassement/tremblement si la particule est déjà
+ * quasiment au contact). `world.queryNearby` : mêmes positions que le tick précédent, la grille
+ * spatiale n'étant reconstruite qu'après `onTick` (voir Room.tick()) — même décalage d'un tick
+ * que l'utilise déjà `BotManager.isTouchingHuman`, imperceptible pour un effet de cette nature. */
+function applyFoodGravity(world: World, piece: Entity, dt: number): void {
+  const range = piece.radius + FOOD_GRAVITY_RANGE_PX;
+  const maxStep = FOOD_GRAVITY_SPEED_PX_PER_S * dt;
+  for (const nearbyId of world.queryNearby(piece.position, range)) {
+    const particle = world.getEntity(nearbyId);
+    if (!particle || particle.kind !== 'particle') continue;
+    const offset = sub(piece.position, particle.position);
+    const dist = length(offset);
+    if (dist <= 0 || dist > range) continue;
+    particle.position = add(particle.position, scale(offset, Math.min(maxStep, dist) / dist));
+  }
+}
+
+/** Repousse deux morceaux hors de leur pénétration mutuelle — correction de POSITION (résout
+ * 100% du chevauchement en un seul appel, mass-weighted), commune aux deux variantes. `hard`
+ * (réservé aux morceaux d'un MÊME joueur, voir `onCollision` — demande utilisateur : "collisions
+ * d'une même équipe dures, sans rebond") ajoute une correction de VÉLOCITÉ : annule la
+ * composante de la vélocité relative dirigée le long de la normale de contact, pour un contact
+ * SOLIDE qui ne se refait pas repousser en boucle par sa propre vélocité résiduelle à la frame
+ * suivante — contrairement à la répulsion molle entre adversaires (jamais `hard`), qui laisse
+ * volontairement les deux morceaux libres de se rapprocher à nouveau au tick suivant (permet le
+ * chevauchement progressif pendant une absorption, voir `handleEatAttempt`).
+ *
+ * Fonction de niveau module (pas de dépendance à `config`) plutôt qu'interne à
+ * `createParametricMod` : exportée pour que `mods/hardcore/index.ts` puisse l'appeler directement
+ * plutôt que de dépendre d'un `base.onCollision?.()` délégué (qui, avec l'absorption progressive,
+ * ré-exécuterait aussi `handleEatAttempt` — celui du mod PARAMÉTRIQUE, non multiplié — en plus de
+ * celui, déjà exécuté, du mod Hardcore : un double transfert de masse). */
+export function applyRepulsion(a: Entity, b: Entity, hard = false): void {
+  const d = distance(a.position, b.position);
+  const penetration = a.radius + b.radius - d;
+  if (penetration <= 0) return;
+
+  const dir = d > 0 ? scale(sub(a.position, b.position), 1 / d) : FALLBACK_DIRECTION;
+  const totalMass = a.mass + b.mass;
+  const moveA = penetration * (b.mass / totalMass);
+  const moveB = penetration * (a.mass / totalMass);
+
+  a.position = add(a.position, scale(dir, moveA));
+  b.position = sub(b.position, scale(dir, moveB));
+
+  if (hard) {
+    // `dir` pointe de b vers a : une vélocité relative (a-b) dont la projection sur `dir` est
+    // négative signifie que les deux morceaux se rapprochent encore le long de la normale de
+    // contact malgré la correction de position ci-dessus — on annule CETTE composante (mass-
+    // weighted, même répartition que la correction de position), sans toucher la composante
+    // tangentielle (le joueur garde le contrôle du mouvement le long du contact).
+    const closingSpeed = dot(sub(a.velocity, b.velocity), dir);
+    if (closingSpeed < 0) {
+      a.velocity = sub(a.velocity, scale(dir, closingSpeed * (b.mass / totalMass)));
+      b.velocity = add(b.velocity, scale(dir, closingSpeed * (a.mass / totalMass)));
+    }
+  }
+}
 
 /**
  * Construit un mode de jeu entièrement défini par `config` (voir config.ts). Aucune règle de
@@ -162,42 +234,6 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     ejectedState.massAtSplit = ejectedMass;
   }
 
-  /** Repousse deux morceaux hors de leur pénétration mutuelle — correction de POSITION (résout
-   * 100% du chevauchement en un seul appel, mass-weighted), commune aux deux variantes. `hard`
-   * (réservé aux morceaux d'un MÊME joueur, voir `onCollision` — demande utilisateur : "collisions
-   * d'une même équipe dures, sans rebond") ajoute une correction de VÉLOCITÉ : annule la
-   * composante de la vélocité relative dirigée le long de la normale de contact, pour un contact
-   * SOLIDE qui ne se refait pas repousser en boucle par sa propre vélocité résiduelle à la frame
-   * suivante — contrairement à la répulsion molle entre adversaires (jamais `hard`), qui laisse
-   * volontairement les deux morceaux libres de se rapprocher à nouveau au tick suivant (permet le
-   * chevauchement progressif pendant une absorption, voir `handleEatAttempt`). */
-  function applyRepulsion(a: Entity, b: Entity, hard = false): void {
-    const d = distance(a.position, b.position);
-    const penetration = a.radius + b.radius - d;
-    if (penetration <= 0) return;
-
-    const dir = d > 0 ? scale(sub(a.position, b.position), 1 / d) : FALLBACK_DIRECTION;
-    const totalMass = a.mass + b.mass;
-    const moveA = penetration * (b.mass / totalMass);
-    const moveB = penetration * (a.mass / totalMass);
-
-    a.position = add(a.position, scale(dir, moveA));
-    b.position = sub(b.position, scale(dir, moveB));
-
-    if (hard) {
-      // `dir` pointe de b vers a : une vélocité relative (a-b) dont la projection sur `dir` est
-      // négative signifie que les deux morceaux se rapprochent encore le long de la normale de
-      // contact malgré la correction de position ci-dessus — on annule CETTE composante (mass-
-      // weighted, même répartition que la correction de position), sans toucher la composante
-      // tangentielle (le joueur garde le contrôle du mouvement le long du contact).
-      const closingSpeed = dot(sub(a.velocity, b.velocity), dir);
-      if (closingSpeed < 0) {
-        a.velocity = sub(a.velocity, scale(dir, closingSpeed * (b.mass / totalMass)));
-        b.velocity = add(b.velocity, scale(dir, closingSpeed * (a.mass / totalMass)));
-      }
-    }
-  }
-
   /** Cooldown de fusion mass-dépendant : T(m) = Tbase + gamma_rec*m (par morceau, feuille
    * Excel — gamma_rec est 0 pour Vanilla à ce jour, donc un cooldown fixe en pratique).
    * Renvoie `true` si la fusion a eu lieu — l'appelant (`onCollision`) s'en sert pour savoir s'il
@@ -210,8 +246,12 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     if (stateA.splitElapsedS < requiredA || stateB.splitElapsedS < requiredB) return false;
 
     const overlap = circleOverlapArea(a.radius, b.radius, distance(a.position, b.position));
-    const totalArea =
-      massToArea(a.mass, config.areaConstant) + massToArea(b.mass, config.areaConstant);
+    // Aire RÉELLE (dérivée du rayon effectif, voir shared/geometry.ts `massToRadius`), pas
+    // `massToArea`/kArea — les deux formules ont divergé (le rayon des morceaux de joueur n'est
+    // plus fonction de kArea du tout, voir `massToRadius`), comparer `overlap` à un total dérivé
+    // de kArea faussait le seuil de fusion (chevauchement requis trop petit ou trop grand selon
+    // le mode, jusqu'à rendre la fusion imperceptible ou au contraire quasi immédiate).
+    const totalArea = PI * a.radius * a.radius + PI * b.radius * b.radius;
     if (overlap < totalArea * config.merge.overlapMinFraction) return false;
 
     world.mergeEntities(a, b);
@@ -253,9 +293,9 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     const overlap = circleOverlapArea(attacker.radius, target.radius, dist);
     if (overlap <= 0) return false;
 
-    // Même convention d'aire que `circleOverlapArea` (PI≈3, voir shared/geometry.ts) — les deux
+    // Même convention d'aire que `circleOverlapArea` (voir shared/geometry.ts) — les deux
     // valeurs doivent partager la même unité pour que leur ratio soit une vraie fraction ∈ [0,1].
-    const targetArea = 3 * target.radius * target.radius;
+    const targetArea = PI * target.radius * target.radius;
     const overlapFraction = targetArea > 0 ? clamp(overlap / targetArea, 0, 1) : 1;
     const massToTransfer = Math.min(
       target.mass,
@@ -345,6 +385,8 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
 
         const decayedMass = applyPassiveDecay(entity.mass, dt, config, state.timeSinceLastEatenS);
         if (decayedMass !== entity.mass) world.setMass(entity, decayedMass);
+
+        applyFoodGravity(world, entity, dt);
       }
 
       const allPlayers = world.allPlayers();
@@ -399,12 +441,16 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
       }
 
       // Deux morceaux de joueurs différents : absorption PROGRESSIVE si avantage de masse (voir
-      // handleEatAttempt), sinon répulsion molle uniquement si aucun des deux n'a d'avantage de
-      // masse (afin d'autoriser le chevauchement progressif pendant une absorption en cours).
-      const eaten = handleEatAttempt(world, a, b, dt) || handleEatAttempt(world, b, a, dt);
-      if (!eaten && !hasMassAdvantage(a, b) && !hasMassAdvantage(b, a)) {
-        applyRepulsion(a, b);
-      }
+      // handleEatAttempt), TOUJOURS combinée à une répulsion molle — correctif d'une régression :
+      // la répulsion était auparavant désactivée dès qu'un avantage de masse existait (même
+      // infime), pour toute la durée (désormais longue, "progressive") de l'absorption ; sans
+      // aucune force de séparation pendant tout ce temps, deux joueurs de masse différente (le cas
+      // quasi général) pouvaient se traverser librement (régression signalée : "on peut passer à
+      // travers les joueurs"). La répulsion continue de séparer les deux morceaux chaque tick — le
+      // chevauchement qui alimente l'absorption ne vient donc que du rattrapage réel de
+      // l'attaquant (une vraie poursuite), jamais d'un contact figé sans résistance.
+      if (!handleEatAttempt(world, a, b, dt)) handleEatAttempt(world, b, a, dt);
+      applyRepulsion(a, b);
     },
   };
 }

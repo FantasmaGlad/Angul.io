@@ -11,15 +11,47 @@ export function massToArea(mass: number, kArea: number = PI): number {
   return kArea * mass;
 }
 
+/** Masse de référence pour l'ancrage de la courbe ci-dessous (= `player.startMass` dans tous les
+ * modes actuels, voir server/configs/*.json) — codée en dur, comme le reste de cette formule
+ * (déjà le cas avant ce correctif, ex. l'ancien exposant appliqué à `mass/50`) : aucun mode n'a
+ * besoin d'une masse de départ différente à ce jour, et `World` reste ainsi indépendant de toute
+ * règle de jeu ("aucune masse de départ" par conception, voir engine/world.ts) plutôt que d'avoir
+ * à faire transiter cette valeur depuis la config du mod. */
+const REFERENCE_MASS = 50;
+/** Rayon à la masse de référence (px monde) — ancre toute la courbe. Continue l'ajustement
+ * précédent (demande utilisateur : taille de départ réduite de moitié par rapport à l'ancienne
+ * courbe, qui donnait 63 à cette masse). */
+const SPAWN_RADIUS = 31.5;
+/** Rayon minimal, quelle que soit la masse (demande utilisateur : "taille minimale de 2/3 de la
+ * taille de spawn") — la masse elle-même a son propre plancher côté mod
+ * (`player.minMass`/decay.floor, voir server/configs/*.json), mais ce plancher géométrique reste
+ * la garantie ultime, y compris pour un mode qui n'imposerait aucun plancher de masse. */
+const MIN_RADIUS_FRACTION = 2 / 3;
+
+/**
+ * Rayon(masse) = SPAWN_RADIUS · √(masse / REFERENCE_MASS), plancher à SPAWN_RADIUS · 2/3.
+ *
+ * Formule UNIQUE (remplace l'ancien branchement mass<=24/mass>24, qui produisait une
+ * discontinuité brutale à la frontière — ~4.9px à mass=24, ~55px à mass=25 avant le correctif
+ * précédent) : Rayon ∝ √masse (Aire ∝ masse) est la relation standard de ce genre de jeu
+ * (agar.io...), qui remplace une courbe bien plus plate (exposant 0.38) rendant la croissance en
+ * mangeant presque imperceptible (x10 en masse ne donnait qu'~1.6x en rayon — demande
+ * utilisateur : "même en faisant x10 sur notre taille on grossit très peu"). Avec cette formule,
+ * x10 en masse donne √10≈3.16x en rayon.
+ *
+ * Sert AUSSI aux pastilles de nourriture (masses 1-24, kArea inutilisé dans les deux cas — voir
+ * `massToArea` pour son seul usage restant, indépendant du rayon) : leur ancien rayon (√masse
+ * seul, sans ancrage — ~1 à 5px MONDE) était bien en-deçà du rayon de collision réellement
+ * nécessaire à l'échelle des cartes actuelles (jusqu'à 20000px) — le vrai rayon physique
+ * (`entity.r`, utilisé pour la collision serveur ET envoyé tel quel au client pour le rendu)
+ * était invisible/imperceptible au zoom courant, donnant l'impression de "sauter par-dessus" des
+ * pastilles dont le cercle de collision réel ne correspondait à rien de visible. Cette même
+ * formule leur donne désormais un rayon RÉEL (physique ET visuel, les deux restant ainsi toujours
+ * cohérents entre eux) proportionnel à leur masse — ~4.5px à masse 1, ~22px à masse 24.
+ */
 export function massToRadius(mass: number, kArea: number = PI): number {
-  if (mass <= 24) {
-    return Math.sqrt(mass);
-  }
-  // Facteur 0.5 (demande utilisateur) : rayon de départ (mass=startMass, typiquement 50) réduit
-  // de moitié par rapport à la masse — courbe entière divisée par 2 (pas seulement le point de
-  // départ) pour rester cohérente à toute masse > 24, combiné au dézoom de caméra de base accru
-  // (client/src/render.ts BASE_SCALE) pour une carte perçue plus grande/spacieuse.
-  return (36 + 27 * Math.pow(mass / 50, 0.38)) * 0.5;
+  const natural = SPAWN_RADIUS * Math.sqrt(Math.max(0, mass) / REFERENCE_MASS);
+  return Math.max(SPAWN_RADIUS * MIN_RADIUS_FRACTION, natural);
 }
 
 /**

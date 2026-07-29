@@ -18,13 +18,6 @@ import type {
 } from './protocol.js';
 import { RoomInstance } from './roomInstance.js';
 
-/** Rayon d'intérêt réseau par défaut (voir net/ws/broadcast.ts historique) — désormais porté par
- * le host plutôt que par `GameServerOptions` (`startGameServer`) : la construction d'un salon
- * (donc de son `SpatialHash` d'intérêt, voir RoomInstance) doit connaître ce rayon dès sa
- * création, qui peut précéder `startGameServer` (voir index.ts, salons de base créés avant le
- * démarrage du serveur réseau). */
-export const DEFAULT_INTEREST_RADIUS_PX = 2500;
-
 export interface RoomHandle {
   readonly id: string;
   /** Connue synchroniquement dès la création, quel que soit l'hébergement (voir
@@ -143,13 +136,10 @@ class LocalRoomHandle implements RoomHandle {
  * pouvoir un jour cohabiter avec `WorkerRoomHost` sans toucher à `RoomManager`/`broadcast.ts`/
  * `connectionHandler.ts`. Défaut (`ROOM_WORKERS=0`, voir index.ts) : aucun changement de
  * comportement observable par rapport à avant ce refactor. */
-export function createLocalRoomHost(
-  resolveMod: ModResolver = defaultResolveMod,
-  interestRadiusPx: number = DEFAULT_INTEREST_RADIUS_PX,
-): RoomHost {
+export function createLocalRoomHost(resolveMod: ModResolver = defaultResolveMod): RoomHost {
   return {
     createRoom(spec: RoomSpec): RoomHandle {
-      const instance = new RoomInstance(spec, resolveMod, interestRadiusPx);
+      const instance = new RoomInstance(spec, resolveMod);
       return new LocalRoomHandle(instance);
     },
   };

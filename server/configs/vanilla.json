@@ -3,7 +3,7 @@
   "player": {
     "startMass": 50,
     "maxSplits": 16,
-    "minSplitMass": 100
+    "minSplitMass": 50
   },
   "physics": {
     "v0": 300,
@@ -33,7 +33,7 @@
     "intervalAboveThresholdSec": 5,
     "rateBelowThreshold": 0.01,
     "intervalBelowThresholdSec": 5,
-    "floor": 2
+    "floor": 20
   },
   "arena": {
     "width": 20000,
@@ -41,7 +41,7 @@
     "borderType": "STRICT_WALL"
   },
   "food": {
-    "density": 35,
+    "density": 9,
     "respawnRatePerSecond": 300,
     "pelletTypes": [
       { "color": "vert", "mass": 1, "weight": 100 }

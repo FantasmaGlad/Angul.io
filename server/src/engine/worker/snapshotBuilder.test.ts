@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { Room } from '../room.js';
-import { SpatialHash } from '../spatialHash.js';
 import {
   buildStateMessage,
+  buildVisibleEntitySnapshots,
   centroidOf,
   computeTopScores,
   isVisibleToSpectator,
@@ -110,68 +110,89 @@ describe('computeTopScores', () => {
   });
 });
 
-describe('buildStateMessage', () => {
-  it('filtre les entités par rayon d’intérêt pour un joueur, renvoie totalMass et le classement', () => {
+describe('buildVisibleEntitySnapshots', () => {
+  it('renvoie TOUTES les entités pour un joueur (chargement dynamique par intérêt retiré, demande utilisateur)', () => {
     const room = makeRoom();
     room.addPlayer('p1', 'Alice');
     room.addPlayer('p2', 'Bob');
     const ownPiece = room.world.spawnPiece('p1', { x: 0, y: 0 }, 50);
     const nearby = room.world.spawnParticle({ x: 100, y: 0 }, 1);
+    // Bien plus loin que l'ancien rayon d'intérêt (quelques milliers de px) : doit désormais
+    // rester inclus, contrairement au comportement avant ce correctif.
     const farAway = room.world.spawnParticle({ x: 10_000, y: 10_000 }, 1);
     room.world.spawnPiece('p2', { x: 0, y: 0 }, 20);
 
-    const interestHash = new SpatialHash(200);
     const allEntities = room.world.allEntities();
-    for (const entity of allEntities) interestHash.insert(entity);
+    const entities = buildVisibleEntitySnapshots(allEntities, false);
+    const ids = entities.map((e) => e.i);
+
+    expect(ids).toContain(ownPiece.id);
+    expect(ids).toContain(nearby.id);
+    expect(ids).toContain(farAway.id);
+    expect(entities).toHaveLength(allEntities.length);
+  });
+
+  it('échantillonne la nourriture pour un spectateur (jamais les morceaux de joueurs), quelle que soit la distance', () => {
+    const room = makeRoom();
+    room.addPlayer('p1', 'Alice');
+    const ownPiece = room.world.spawnPiece('p1', { x: 0, y: 0 }, 50);
+    room.world.spawnParticle({ x: 10_000, y: 10_000 }, 1);
+
+    const allEntities = room.world.allEntities();
+    const entities = buildVisibleEntitySnapshots(allEntities, true);
+
+    // Le morceau du joueur (kind 'c') doit être présent, quelle que soit la distance — seule la
+    // nourriture est échantillonnée pour un spectateur (voir isVisibleToSpectator).
+    expect(entities.some((e) => e.i === ownPiece.id)).toBe(true);
+    expect(entities.length).toBeLessThan(allEntities.length); // au moins une particule filtrée
+  });
+});
+
+describe('buildStateMessage', () => {
+  it('construit `self`/le classement pour un joueur à partir d’un snapshot déjà prêt, renvoie totalMass', () => {
+    const room = makeRoom();
+    room.addPlayer('p1', 'Alice');
+    room.addPlayer('p2', 'Bob');
+    room.world.spawnPiece('p1', { x: 0, y: 0 }, 50);
+    room.world.spawnPiece('p2', { x: 0, y: 0 }, 20);
+
+    const allEntities = room.world.allEntities();
+    const entities = buildVisibleEntitySnapshots(allEntities, false);
     const topScores = computeTopScores(room.world, Array.from(room.world.allPlayers()));
 
     const { message, totalMass } = buildStateMessage({
       room,
       playerId: 'p1',
-      isSpectator: false,
       tick: 1,
-      allEntities,
+      entities,
       topScores,
-      interestHash,
-      interestRadiusPx: 200,
     });
 
     expect(totalMass).toBe(50);
     expect(message.type).toBe('state');
     if (message.type !== 'state') throw new Error('unreachable');
-    const ids = message.entities.map((e) => e.i);
-    expect(ids).toContain(ownPiece.id);
-    expect(ids).toContain(nearby.id);
-    expect(ids).not.toContain(farAway.id);
+    expect(message.entities).toBe(entities); // partagé tel quel, jamais recopié/refiltré
     expect(message.leaderboard.find((entry) => entry.isSelf)?.nickname).toBe('Alice');
   });
 
-  it('renvoie toutes les entités (nourriture échantillonnée) pour un spectateur, sans filtre de rayon', () => {
+  it('n’attribue aucun `self` à un spectateur (aucun morceau ne lui appartient)', () => {
     const room = makeRoom();
     room.addPlayer('p1', 'Alice');
     room.world.spawnPiece('p1', { x: 0, y: 0 }, 50);
-    room.world.spawnParticle({ x: 10_000, y: 10_000 }, 1);
 
-    const interestHash = new SpatialHash(200);
     const allEntities = room.world.allEntities();
-    for (const entity of allEntities) interestHash.insert(entity);
+    const entities = buildVisibleEntitySnapshots(allEntities, true);
     const topScores = computeTopScores(room.world, Array.from(room.world.allPlayers()));
 
     const { message } = buildStateMessage({
       room,
       playerId: 'spectator-1',
-      isSpectator: true,
       tick: 1,
-      allEntities,
+      entities,
       topScores,
-      interestHash,
-      interestRadiusPx: 200,
     });
 
     if (message.type !== 'state') throw new Error('unreachable');
-    // Le morceau du joueur (kind 'c') doit être présent, quelle que soit la distance — seule la
-    // nourriture est échantillonnée pour un spectateur (voir isVisibleToSpectator).
-    expect(message.entities.some((e) => e.k === 'c')).toBe(true);
-    expect(message.self).toBeUndefined(); // un spectateur n'a aucun morceau à soi
+    expect(message.self).toBeUndefined();
   });
 });

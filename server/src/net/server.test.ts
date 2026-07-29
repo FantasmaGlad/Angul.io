@@ -7,7 +7,7 @@ import { AccountsService } from '../accounts/service.js';
 import { AdminAuth } from '../admin/adminAuth.js';
 import type { GameMod } from '../engine/mod.js';
 import { RoomManager, type ModResolver } from '../engine/roomManager.js';
-import { createLocalRoomHost, DEFAULT_INTEREST_RADIUS_PX } from '../engine/worker/roomHost.js';
+import { createLocalRoomHost } from '../engine/worker/roomHost.js';
 import { startGameServer, type GameServerHandle } from './server.js';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -53,12 +53,8 @@ describe('startGameServer', () => {
   // Chaque RoomManager démarre désormais aussi un timer de nettoyage des salons vides (voir
   // roomManager.ts) — grâce très longue ici pour ne jamais interférer avec ces tests, qui ne
   // testent pas ce comportement (couvert par roomManager.test.ts).
-  function makeManager(
-    resolver: ModResolver,
-    tickRateHz = 20,
-    interestRadiusPx = DEFAULT_INTEREST_RADIUS_PX,
-  ): RoomManager {
-    const host = createLocalRoomHost(resolver, interestRadiusPx);
+  function makeManager(resolver: ModResolver, tickRateHz = 20): RoomManager {
+    const host = createLocalRoomHost(resolver);
     const manager = new RoomManager(host, tickRateHz, { emptyRoomGraceMs: 10_000_000 });
     managers.push(manager);
     return manager;
@@ -421,14 +417,14 @@ describe('startGameServer', () => {
     socket.close();
   });
 
-  it('ne diffuse à un client que les entités proches de sa propre caméra (interest management)', async () => {
+  it('diffuse à un client TOUTES les entités du salon, y compris très loin de sa propre caméra (chargement dynamique par intérêt retiré, demande utilisateur)', async () => {
     const mod: GameMod = {
       id: 'test',
       onPlayerJoin: (world, playerId) => {
         world.spawnPiece(playerId, { x: 0, y: 0 }, 50);
       },
     };
-    const manager = makeManager(() => ({ mod, mapSize: 100_000 }), 20, 500);
+    const manager = makeManager(() => ({ mod, mapSize: 100_000 }));
     const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
     handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
     const port = await handle.whenReady;
@@ -439,7 +435,8 @@ describe('startGameServer', () => {
     socket.send(JSON.stringify({ type: 'join', nickname: 'Test' }));
     await waitUntil(() => messages.some((m) => m.type === 'welcome'));
 
-    // Une particule proche (dans le rayon) et une très loin (hors rayon)
+    // Une particule proche et une très loin (l'ancien rayon d'intérêt, ~2500px par défaut,
+    // aurait exclu cette dernière) — les deux doivent désormais être diffusées.
     room.world.spawnParticle({ x: 100, y: 0 }, 1);
     room.world.spawnParticle({ x: 50_000, y: 50_000 }, 1);
 
@@ -450,7 +447,7 @@ describe('startGameServer', () => {
     };
 
     expect(state.entities.some((e) => e.x === 100 && e.y === 0)).toBe(true);
-    expect(state.entities.some((e) => e.x === 50_000)).toBe(false);
+    expect(state.entities.some((e) => e.x === 50_000)).toBe(true);
     expect(state.entities.some((e) => e.x === 0 && e.y === 0)).toBe(true); // son propre morceau
 
     socket.close();

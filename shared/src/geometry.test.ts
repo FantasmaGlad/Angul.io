@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { circleOverlapArea, massToRadius, PI } from './geometry.js';
 
 describe('massToRadius', () => {
-  it('calculates particle radius for mass <= 24 and player blob radius for mass > 24', () => {
-    expect(massToRadius(2)).toBeCloseTo(Math.sqrt(2), 10);
-    // Facteur 0.5 (demande utilisateur : taille de départ réduite de moitié par rapport à la
-    // masse) appliqué à toute la branche >24, pas seulement à startMass=50.
+  it('rayon = SPAWN_RADIUS·√(masse/50), plancher à SPAWN_RADIUS·2/3 (formule unique, plus de branche mass<=24)', () => {
+    // Masse de référence (50) : ancre exacte de la courbe.
     expect(massToRadius(50)).toBeCloseTo(31.5, 10);
-    expect(massToRadius(100)).toBeCloseTo((36 + 27 * Math.pow(2, 0.38)) * 0.5, 10);
+    // x10 en masse -> √10 en rayon (remplace l'ancienne courbe quasi plate, exposant 0.38).
+    expect(massToRadius(500)).toBeCloseTo(31.5 * Math.sqrt(10), 10);
+    // Masse minuscule (pastille) : le plancher (2/3 du rayon de spawn) domine, jamais un rayon
+    // proche de 0 même à masse quasi nulle.
+    expect(massToRadius(2)).toBeCloseTo(31.5 * (2 / 3), 10);
+    expect(massToRadius(0)).toBeCloseTo(31.5 * (2 / 3), 10);
   });
 });
 

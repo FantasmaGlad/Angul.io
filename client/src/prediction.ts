@@ -137,10 +137,18 @@ const VISUAL_CORRECTION_SPEED_PX_PER_S = 600;
  * rejeu (`reconcile`) regroupe l'historique par blocs de la taille d'un tick serveur plutôt que de
  * rejouer chaque sous-pas fin de `step()` individuellement (voir `chunkHistoryForReplay`), les deux
  * intégrations (client/serveur) utilisent la même discrétisation pour la même portion de temps —
- * il ne reste plus qu'un bruit d'arrondi flottant résiduel (bien en-deçà du px), pas un biais
- * systématique. Seuil conservé néanmoins pour absorber ce bruit plancher et éviter tout
- * micro-correctif perpétuel à ~30Hz sans rapport avec un vrai désaccord. */
-const RECONCILE_IGNORE_THRESHOLD_PX = 1.5;
+ * il ne reste plus qu'un biais résiduel de l'ordre de `accel·dt²/2` par bloc (voir le commentaire
+ * de `chunkHistoryForReplay`), pas un vrai désaccord.
+ *
+ * 2.5 (pas 1.5) : `accelerationBase` a été augmenté de 50% et `accelerationMassExponent` réduit de
+ * moitié (server/configs/*.json, demande utilisateur "plus de réactivité") — l'accélération
+ * effective a donc augmenté pour toute masse, et avec elle ce biais résiduel (proportionnel à
+ * `accel`) ; à 1.5 (ancien seuil, calibré sur l'ancienne accélération), le résidu dépassait le
+ * seuil plus souvent, déclenchant un lissage visuel superflu perçu comme un léger tremblement à
+ * chaque accélération/décélération (signalé en Hardcore, dont l'accélération de base — v0 plus
+ * bas, speedMultiplier plus élevé — sature sa vitesse cible plus vite, donc accélère plus souvent
+ * "à fond"). */
+const RECONCILE_IGNORE_THRESHOLD_PX = 2.5;
 /** Pas de temps interne FIXE auquel `step()` intègre la simulation locale (voir le commentaire
  * d'en-tête, "fix your timestep") — indépendant du `dt` réel de la frame de rendu. Assez fin pour
  * qu'aucun sous-pas ne soit perceptible individuellement, même sur un écran très haut

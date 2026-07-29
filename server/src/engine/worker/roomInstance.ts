@@ -1,9 +1,13 @@
 import { DEFAULT_MOVEMENT_CONFIG, type MovementConfig, type ServerMessage } from '@angulio/shared';
 import { Room } from '../room.js';
 import type { ModResolver } from '../roomManager.js';
-import { SpatialHash } from '../spatialHash.js';
 import type { PlayerId, PlayerInput } from '../types.js';
-import { buildStateMessage, computeTopScores, SPECTATOR_TICK_DIVISOR } from './snapshotBuilder.js';
+import {
+  buildStateMessage,
+  buildVisibleEntitySnapshots,
+  computeTopScores,
+  SPECTATOR_TICK_DIVISOR,
+} from './snapshotBuilder.js';
 import type {
   AdminActionResult,
   AdminPlayerInfo,
@@ -37,8 +41,6 @@ export class RoomInstance {
    * `engine/modRegistry.ts`). */
   readonly movement: MovementConfig;
   private readonly maxPlayers: number;
-  private readonly interestRadiusPx: number;
-  private readonly interestHash: SpatialHash;
   private nextPlayerId = 1;
   private readonly viewerIds = new Set<PlayerId>();
   private readonly spectatorIds = new Set<PlayerId>();
@@ -54,12 +56,9 @@ export class RoomInstance {
   constructor(
     spec: RoomSpec,
     private readonly resolveMod: ModResolver,
-    interestRadiusPx: number,
   ) {
     this.id = spec.id;
     this.maxPlayers = spec.maxPlayers;
-    this.interestRadiusPx = interestRadiusPx;
-    this.interestHash = new SpatialHash(interestRadiusPx);
 
     const { mod, mapSize, kArea, bots, movement } = resolveMod(spec.modId);
     this.movement = movement ?? DEFAULT_MOVEMENT_CONFIG;
@@ -280,42 +279,43 @@ export class RoomInstance {
     const allEntities = world.allEntities();
     const topScores = computeTopScores(world, Array.from(world.allPlayers()));
 
-    this.interestHash.clear();
-    for (const entity of allEntities) this.interestHash.insert(entity);
-
     const payloads: TickPayload[] = [];
     let sharedSpectatorMessage: ServerMessage | undefined;
     const shouldSendSpectatorTick = tick % SPECTATOR_TICK_DIVISOR === 0;
+
+    // Snapshot des entités construit UNE SEULE FOIS par tick pour chaque catégorie de
+    // destinataire (voir `buildVisibleEntitySnapshots`) — chargement dynamique par intérêt retiré
+    // (demande utilisateur, tout le salon est désormais envoyé à chaque joueur, comme aux
+    // spectateurs) : sans ce partage, refaire ce travail par joueur individuellement aurait
+    // multiplié un coût désormais identique pour tous par le nombre de viewers connectés.
+    let playerEntities: ReturnType<typeof buildVisibleEntitySnapshots> | undefined;
+    let spectatorEntities: ReturnType<typeof buildVisibleEntitySnapshots> | undefined;
 
     for (const playerId of this.viewerIds) {
       const isSpectator = this.spectatorIds.has(playerId);
       if (isSpectator) {
         if (!shouldSendSpectatorTick) continue;
         if (!sharedSpectatorMessage) {
+          spectatorEntities ??= buildVisibleEntitySnapshots(allEntities, true);
           sharedSpectatorMessage = buildStateMessage({
             room: this.room,
             playerId: 'spectator',
-            isSpectator: true,
             tick,
-            allEntities,
+            entities: spectatorEntities,
             topScores,
-            interestHash: this.interestHash,
-            interestRadiusPx: this.interestRadiusPx,
           }).message;
         }
         payloads.push({ playerId, message: sharedSpectatorMessage });
         continue;
       }
 
+      playerEntities ??= buildVisibleEntitySnapshots(allEntities, false);
       const { message, totalMass } = buildStateMessage({
         room: this.room,
         playerId,
-        isSpectator: false,
         tick,
-        allEntities,
+        entities: playerEntities,
         topScores,
-        interestHash: this.interestHash,
-        interestRadiusPx: this.interestRadiusPx,
       });
       payloads.push({ playerId, message });
 

@@ -3,7 +3,7 @@
   "player": {
     "startMass": 50,
     "maxSplits": 32,
-    "minSplitMass": 100
+    "minSplitMass": 50
   },
   "physics": {
     "v0": 245,
@@ -33,7 +33,7 @@
     "intervalAboveThresholdSec": 5,
     "rateBelowThreshold": 0.01,
     "intervalBelowThresholdSec": 5,
-    "floor": 2
+    "floor": 20
   },
   "arena": {
     "width": 10000,

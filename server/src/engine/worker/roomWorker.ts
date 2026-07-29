@@ -1,6 +1,5 @@
-import { parentPort, workerData } from 'node:worker_threads';
+import { parentPort } from 'node:worker_threads';
 import { resolveMod } from '../modRegistry.js';
-import { DEFAULT_INTEREST_RADIUS_PX } from './roomHost.js';
 import { RoomInstance } from './roomInstance.js';
 import type {
   AdminActionResult,
@@ -24,10 +23,6 @@ if (!parentPort) {
   throw new Error('roomWorker.ts doit être lancé comme worker_thread (parentPort absent).');
 }
 const port = parentPort;
-
-const interestRadiusPx: number =
-  (workerData as { interestRadiusPx?: number } | undefined)?.interestRadiusPx ??
-  DEFAULT_INTEREST_RADIUS_PX;
 
 const instances = new Map<string, RoomInstance>();
 
@@ -59,7 +54,7 @@ port.on('message', (command: RoomCommand) => {
   try {
     switch (command.type) {
       case 'createRoom': {
-        const instance = new RoomInstance(command, resolveMod, interestRadiusPx);
+        const instance = new RoomInstance(command, resolveMod);
         instances.set(command.id, instance);
         wireInstance(instance);
         break;

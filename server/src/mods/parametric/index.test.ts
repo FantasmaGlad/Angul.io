@@ -110,6 +110,65 @@ describe('createParametricMod — onTick (vitesse/accélération)', () => {
   });
 });
 
+describe('createParametricMod — halo de gravité (demande utilisateur)', () => {
+  it('attire une particule de nourriture dans le halo, jamais un autre morceau de joueur', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    world.addPlayer('p2', 'Bob');
+    const piece = world.spawnPiece('p1', { x: 500, y: 500 }, 50); // rayon ~31.5 (voir massToRadius)
+
+    // Dans le halo (rayon + 60px), mais pas encore au contact.
+    const particle = world.spawnParticle({ x: 570, y: 500 }, 1);
+    // Un autre morceau de JOUEUR, à la même distance : ne doit JAMAIS être attiré (demande
+    // utilisateur : "pas les joueurs").
+    const otherPiece = world.spawnPiece('p2', { x: 500, y: 570 }, 50);
+
+    world.rebuildSpatialHash(); // le halo interroge la grille spatiale (voir applyFoodGravity)
+    const particleDistBefore = distance(piece.position, particle.position);
+    const otherPieceDistBefore = distance(piece.position, otherPiece.position);
+
+    mod.onTick?.(world, 0.05);
+
+    expect(distance(piece.position, particle.position)).toBeLessThan(particleDistBefore);
+    expect(distance(piece.position, otherPiece.position)).toBeCloseTo(otherPieceDistBefore, 6);
+  });
+
+  it("n'attire pas une particule hors de la portée du halo", () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    const piece = world.spawnPiece('p1', { x: 500, y: 500 }, 50);
+    const farParticle = world.spawnParticle({ x: 500 + 31.5 + 200, y: 500 }, 1); // bien au-delà du halo (+60px)
+
+    world.rebuildSpatialHash();
+    const distBefore = distance(piece.position, farParticle.position);
+
+    mod.onTick?.(world, 0.05);
+
+    expect(distance(piece.position, farParticle.position)).toBeCloseTo(distBefore, 6);
+  });
+
+  it('ne dépasse jamais la particule (pas de tremblement en overshoot au contact)', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    const piece = world.spawnPiece('p1', { x: 500, y: 500 }, 50);
+    // Très proche du bord du morceau : un grand dt donnerait un pas d'attraction largement
+    // supérieur à la distance réelle restante sans le clamp `Math.min(maxStep, dist)`.
+    const particle = world.spawnParticle({ x: 500 + piece.radius + 1, y: 500 }, 1);
+
+    world.rebuildSpatialHash();
+    mod.onTick?.(world, 1); // dt volontairement énorme
+
+    // La particule s'arrête AU maximum sur le morceau, ne le dépasse jamais de l'autre côté.
+    expect(distance(piece.position, particle.position)).toBeCloseTo(0, 6);
+  });
+});
+
 describe('createParametricMod — split', () => {
   it('divise un morceau en 2, avec une vitesse d’éjection initiale', () => {
     const config = testConfig();
@@ -248,6 +307,30 @@ describe('createParametricMod — manger', () => {
     expect(attacker.mass).toBeCloseTo(205, 6);
   });
 
+  it('répousse TOUJOURS deux morceaux de joueurs différents, même en cours d’absorption (régression : "on peut passer à travers les joueurs")', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    world.addPlayer('p2', 'Bob');
+    // Avantage de masse net (105 vs 100, > 1.05x) mais chevauchement PARTIEL (pas à la même
+    // position) : avant le correctif, dès qu'un avantage de masse existait, la répulsion était
+    // désactivée pour toute la durée de l'absorption progressive — les deux morceaux pouvaient
+    // alors s'interpénétrer librement sans jamais se séparer (le bug rapporté).
+    const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 105);
+    const target = world.spawnPiece('p2', { x: 510, y: 500 }, 100);
+    const distanceBefore = distance(attacker.position, target.position);
+
+    mod.onCollision?.(world, attacker, target, 1 / 20);
+
+    // La répulsion a bien séparé les deux morceaux (position modifiée), EN PLUS d'un transfert de
+    // masse — les deux mécaniques coexistent désormais, ni la traversée libre ni la répulsion
+    // seule.
+    expect(distance(attacker.position, target.position)).toBeGreaterThan(distanceBefore);
+    expect(target.mass).toBeLessThan(100);
+    expect(attacker.mass).toBeGreaterThan(105);
+  });
+
   it('absorbe PROGRESSIVEMENT (pas d’un coup) : un petit dt ne transfère qu’une fraction de la masse, la cible rétrécit sans disparaître (fix_vitesse_reseau — demande utilisateur : "pas juste téléportation et disparition")', () => {
     const config = testConfig();
     const mod = createParametricMod(config);
@@ -270,6 +353,12 @@ describe('createParametricMod — manger', () => {
     // continue, jamais un saut) — la masse totale gagnée par l'attaquant converge vers celle
     // perdue par la cible (à ABSORPTION_REMOVE_FLOOR près, négligeable).
     for (let i = 0; i < 200 && world.getEntity(target.id); i++) {
+      // Simule une poursuite continue : `onCollision` applique désormais TOUJOURS une répulsion
+      // en plus de l'absorption (correctif de régression "on peut passer à travers les joueurs",
+      // voir onCollision) — sans repositionnement, cette répulsion écarterait les deux morceaux
+      // au fil des itérations et ralentirait/stopperait l'absorption avant la fin de la boucle.
+      // Recoller la cible sur l'attaquant à chaque tick isole ici la seule décroissance de masse.
+      target.position = { ...attacker.position };
       mod.onCollision?.(world, attacker, target, 1 / 20);
     }
     expect(world.getEntity(target.id)).toBeUndefined();

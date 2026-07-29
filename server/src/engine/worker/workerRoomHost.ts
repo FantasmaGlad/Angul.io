@@ -3,7 +3,7 @@ import { DEFAULT_MOVEMENT_CONFIG, type MovementConfig } from '@angulio/shared';
 import { resolveMod } from '../modRegistry.js';
 import type { PlayerId, PlayerInput } from '../types.js';
 import { logEvent } from '../../log.js';
-import { DEFAULT_INTEREST_RADIUS_PX, type RoomHandle, type RoomHost } from './roomHost.js';
+import type { RoomHandle, RoomHost } from './roomHost.js';
 import type {
   AdminActionResult,
   AdminPlayerInfo,
@@ -184,10 +184,7 @@ class WorkerRoomHandle implements RoomHandle {
  * `/api/admin/health`, server/src/net/metrics.ts, pour repérer une charge anormale AVANT qu'un
  * crash ne survienne).
  */
-export function createWorkerRoomHost(
-  workerCount: number,
-  interestRadiusPx: number = DEFAULT_INTEREST_RADIUS_PX,
-): RoomHost {
+export function createWorkerRoomHost(workerCount: number): RoomHost {
   const count = Math.max(1, workerCount);
   const workers: WorkerEntry[] = [];
   const pending = new Map<number, PendingRequest>();
@@ -196,7 +193,7 @@ export function createWorkerRoomHost(
   const nextReqId = (): number => ++reqCounter;
 
   for (let i = 0; i < count; i++) {
-    const worker = new Worker(ROOM_WORKER_URL, { workerData: { interestRadiusPx } });
+    const worker = new Worker(ROOM_WORKER_URL);
 
     worker.on('message', (event: RoomWorkerEvent) => {
       if (event.type === 'workerError') {

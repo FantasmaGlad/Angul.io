@@ -1,11 +1,11 @@
-import { add, circleOverlapArea, clamp, distance, scale, type Vector2 } from '@angulio/shared';
+import { add, circleOverlapArea, clamp, distance, PI, scale, type Vector2 } from '@angulio/shared';
 import type { GameMod } from '../../engine/mod.js';
 import { isGodPlayerId } from '../../engine/godmode.js';
 import type { Entity, PlayerId } from '../../engine/types.js';
 import type { World } from '../../engine/world.js';
 import { creditMassEatenXp, creditPlayerEatenXp } from '../../engine/xp.js';
 import type { ParametricModConfig } from '../parametric/config.js';
-import { createParametricMod } from '../parametric/index.js';
+import { applyRepulsion, createParametricMod } from '../parametric/index.js';
 import { absorptionRatePerSec, velocityForMass } from '../parametric/physics.js';
 import { pieceState } from '../parametric/pieceState.js';
 
@@ -56,8 +56,8 @@ export function createHardcoreMod(
     const overlap = circleOverlapArea(attacker.radius, target.radius, dist);
     if (overlap <= 0) return false;
 
-    // Même convention d'aire que `circleOverlapArea` (PI≈3, voir shared/geometry.ts).
-    const targetArea = 3 * target.radius * target.radius;
+    // Même convention d'aire que `circleOverlapArea` (voir shared/geometry.ts).
+    const targetArea = PI * target.radius * target.radius;
     const overlapFraction = targetArea > 0 ? clamp(overlap / targetArea, 0, 1) : 1;
     const massLostByTarget = Math.min(
       target.mass,
@@ -108,7 +108,9 @@ export function createHardcoreMod(
         const piece = eligible[i]!;
         if (piece.mass < MIN_PUNITIVE_SPLIT_MASS) continue;
 
-        const angle = (angleIndex / 8) * 6;
+        // `2*Math.PI` (tour complet), pas `6` : l'approximation littérale laissait un secteur
+        // d'environ 16° jamais couvert par aucune direction d'éjection.
+        const angle = (angleIndex / 8) * (2 * Math.PI);
         angleIndex++;
         const dir: Vector2 = { x: Math.cos(angle), y: Math.sin(angle) };
 
@@ -146,8 +148,13 @@ export function createHardcoreMod(
     onTick(world: World, dt: number) {
       base.onTick?.(world, dt);
 
-      // Règle Hardcore : Si un joueur devient trop gros (> 10x la taille du deuxième),
-      // le diviser au maximum possible dans toutes les directions.
+      // Règle Hardcore : si un joueur devient trop gros (seuil exact ci-dessous, >= 200 de masse
+      // ET > 2x le deuxième — l'ancien commentaire ici parlait de "10x", désynchronisé du seuil
+      // réellement appliqué plus bas depuis un ajustement antérieur), le diviser au maximum
+      // possible dans toutes les directions. Nul effet visible si le meneur est déjà à
+      // `maxSplits` (ex. via ses propres splits manuels) : rien à diviser de plus — voir
+      // `splitPlayerMaxRadially`, qui ne fait alors rien (boucle immédiatement à sa condition
+      // d'arrêt), ce n'est pas un bug mais l'absence de morceau supplémentaire à créer.
       const playerTotals: Array<{ playerId: PlayerId; totalMass: number }> = [];
       for (const player of world.allPlayers()) {
         const pieces = world.getPiecesByOwner(player.id);
@@ -184,11 +191,14 @@ export function createHardcoreMod(
         return;
       }
 
-      // Deux morceaux de joueurs différents : seule l'absorption change (multiplicateur) ; la
-      // répulsion (aucun des deux n'a l'avantage) reste celle du mod paramétrique.
-      if (!handleEatAttempt(world, a, b, dt) && !handleEatAttempt(world, b, a, dt)) {
-        base.onCollision?.(world, a, b, dt);
-      }
+      // Deux morceaux de joueurs différents : absorption (multiplicateur propre à Hardcore),
+      // TOUJOURS combinée à une répulsion molle — appelée directement (pas via
+      // `base.onCollision`, qui ré-exécuterait AUSSI le `handleEatAttempt` du mod paramétrique,
+      // non multiplié, en plus de celui-ci : un double transfert de masse). Même correctif de
+      // régression que le mod paramétrique sous-jacent (voir son commentaire) : sans répulsion
+      // pendant toute la durée de l'absorption progressive, les joueurs se traversaient.
+      if (!handleEatAttempt(world, a, b, dt)) handleEatAttempt(world, b, a, dt);
+      applyRepulsion(a, b);
     },
 
     transformScoreForAccount() {

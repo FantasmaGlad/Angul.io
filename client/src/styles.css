@@ -91,6 +91,15 @@ canvas {
   height: 100vh;
   z-index: 0;
   background: var(--game-bg);
+  /* Effet de "dash" au split (demande utilisateur) : PUR transform CSS post-rendu, jamais une
+     position/échelle de caméra logique (voir GameView.tsx) — un décalage de caméra JS déplaçait le
+     blob du joueur hors du centre écran pendant l'effet, perçu comme un "lag" (le joueur semblait
+     traîner derrière la caméra). Un transform CSS, lui, ne peut par construction affecter ni la
+     simulation ni la conversion écran->monde (input.ts) : il s'applique sur l'image DÉJÀ dessinée,
+     après coup, exactement comme `.spectator-background.zooming` ci-dessous. GameView.tsx pose le
+     transform de pic directement en style inline (transition désactivée le temps du saut), puis le
+     retire — c'est CETTE transition qui anime alors le retour à `scale(1)`. */
+  transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .spectator-background {

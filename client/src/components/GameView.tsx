@@ -191,19 +191,6 @@ export default function GameView({
      * que la partie n'est pas figée, juste en train de se rattacher. */
     let isReconnecting = false;
 
-    /** Effet de zoom "punch" au split (demande utilisateur : "zoom véloce en direction du split,
-     * qui revient à sa position initiale à la fin de l'accélération du split, pour donner une
-     * sensation de vitesse") — durée fixe plutôt qu'asservie à la vraie décélération serveur du
-     * morceau éjecté (dépendrait de sa masse, voir server/configs/*.json split.ejectSpeedFactor) :
-     * assez courte pour se sentir comme "la poussée" du split, sans jamais traîner. Indépendant du
-     * lissage de caméra habituel (`cameraLerp` ci-dessous, plus lent) : décroît sur sa propre durée
-     * courte pour un coup de zoom net, appliqué APRÈS le lissage plutôt que d'y être mélangé. */
-    const SPLIT_ZOOM_DURATION_MS = 450;
-    const SPLIT_ZOOM_PUNCH = 0.18; // +18% de zoom-avant au pic (t=0)
-    const SPLIT_ZOOM_PUSH_WORLD_PX = 220; // décalage caméra max dans la direction du split
-    let splitZoomStartMs: number | undefined;
-    let splitZoomDirection: { x: number; y: number } = { x: 0, y: 0 };
-
     function respawn(): void {
       isDeadNow = false;
       setDeathState(DEFAULT_DEATH_STATE);
@@ -237,15 +224,32 @@ export default function GameView({
     }
 
     const input = attachInput(canvas, () => {
-      // Retour visuel local IMMÉDIAT (voir le commentaire d'en-tête d'`attachInput` — pas le
-      // canal réseau, `consumeSplit()`, lu à part par `scheduleInput` plus bas).
-      splitZoomStartMs = performance.now();
+      // Retour visuel local IMMÉDIAT (voir le commentaire d'en-tête d'`attachInput`) — un pur
+      // transform CSS sur le canvas (voir styles.css `#game`), jamais la caméra logique : un
+      // décalage de la caméra suivie faisait "traîner" le blob du joueur derrière elle pendant
+      // l'effet, perçu comme du lag (demande utilisateur : "juste visuel... anime la carte").
       const ownPosition = prediction.getOwnPosition() ?? latestCamera;
       const { target } = input.getTarget({ ...latestCamera, ...ownPosition });
       const dx = target.x - ownPosition.x;
       const dy = target.y - ownPosition.y;
       const dist = Math.hypot(dx, dy);
-      splitZoomDirection = dist > 0 ? { x: dx / dist, y: dy / dist } : { x: 0, y: 0 };
+      const dirX = dist > 0 ? dx / dist : 0;
+      const dirY = dist > 0 ? dy / dist : 0;
+      // Origine du zoom décalée vers la direction du split (±18% de l'écran) : le canvas zoome
+      // "depuis" ce point plutôt que depuis le centre, ce qui donne l'impression d'un zoom DANS
+      // cette direction sans jamais toucher à la caméra/simulation.
+      canvas.style.transformOrigin = `${50 + dirX * 18}% ${50 + dirY * 18}%`;
+      // Saut instantané à l'échelle de pic (transition désactivée le temps du saut, sinon la
+      // transition CSS de `#game` l'animerait aussi À L'ALLER, rendant le "punch" mou) puis retrait
+      // immédiat — c'est CE retrait, transition réactivée, que `#game` anime en douceur vers
+      // scale(1) (voir styles.css). `offsetWidth` force un reflow entre les deux étapes : sans lui,
+      // le navigateur peut fusionner les deux changements de style consécutifs en une seule passe
+      // de rendu et ne jamais afficher le saut instantané (ni animer le retour).
+      canvas.style.transition = 'none';
+      canvas.style.transform = 'scale(1.18)';
+      void canvas.offsetWidth;
+      canvas.style.transition = '';
+      canvas.style.transform = '';
     });
 
     const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -492,27 +496,10 @@ export default function GameView({
         y: latestCamera.y + (targetCamera.y - latestCamera.y) * cameraLerp,
         scale: latestCamera.scale + (targetCamera.scale - latestCamera.scale) * cameraLerp,
       };
-
-      // Effet de zoom "punch" au split (voir attachInput plus haut) — décroissance QUADRATIQUE
-      // (ease-out) sur sa propre durée courte, appliquée APRÈS le lissage de caméra habituel
-      // (plus lent, pas adapté à un "coup" net) : la caméra RENDUE ce frame reçoit le coup de zoom
-      // + un léger décalage dans la direction du split, mais `latestCamera` (l'état lissé porté à
-      // la frame suivante) reste propre, non pollué par cet effet transitoire.
-      let camera = latestCamera;
-      if (splitZoomStartMs !== undefined) {
-        const elapsedMs = now - splitZoomStartMs;
-        if (elapsedMs >= SPLIT_ZOOM_DURATION_MS) {
-          splitZoomStartMs = undefined;
-        } else {
-          const progress = elapsedMs / SPLIT_ZOOM_DURATION_MS;
-          const decay = (1 - progress) * (1 - progress);
-          camera = {
-            x: latestCamera.x + splitZoomDirection.x * SPLIT_ZOOM_PUSH_WORLD_PX * decay,
-            y: latestCamera.y + splitZoomDirection.y * SPLIT_ZOOM_PUSH_WORLD_PX * decay,
-            scale: latestCamera.scale * (1 + SPLIT_ZOOM_PUNCH * decay),
-          };
-        }
-      }
+      // L'effet de "dash" au split est un pur transform CSS sur le canvas (voir attachInput
+      // plus haut et styles.css `#game.split-punch`) — jamais mélangé à cette caméra LOGIQUE, qui
+      // reste le seul repère utilisé par le rendu ET par la conversion écran->monde (input.ts).
+      const camera = latestCamera;
       const logicStepMs = performance.now() - logicStart;
 
       const drawStart = performance.now();

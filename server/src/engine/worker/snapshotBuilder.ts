@@ -1,12 +1,6 @@
-import {
-  distance,
-  type EntitySnapshot,
-  type LeaderboardEntry,
-  type ServerMessage,
-} from '@angulio/shared';
+import { type EntitySnapshot, type LeaderboardEntry, type ServerMessage } from '@angulio/shared';
 import { isGodPlayerId } from '../godmode.js';
 import type { Room } from '../room.js';
-import type { SpatialHash } from '../spatialHash.js';
 import type { Entity, PlayerId, PlayerState } from '../types.js';
 import type { World } from '../world.js';
 import { activeComboLevel } from '../xp.js';
@@ -90,18 +84,35 @@ export function centroidOf(pieces: Entity[]): { x: number; y: number } | undefin
   return { x: x / totalMass, y: y / totalMass };
 }
 
+/** Snapshot des entités visibles pour une CATÉGORIE de destinataire (joueurs vs spectateurs) —
+ * calculé une seule fois par tick et PARTAGÉ par tous les viewers de cette catégorie (voir
+ * roomInstance.ts `handleTick`), plutôt que refiltré/remappé à chaque destinataire individuel.
+ * Chargement dynamique par intérêt retiré (demande utilisateur) : un joueur reçoit désormais le
+ * salon ENTIER, comme un spectateur — l'ancien filtrage par rayon autour de la caméra
+ * (`interestHash`/rayon effectif) supposait un volume d'entités que ce jeu n'atteint jamais en
+ * pratique (quelques dizaines de joueurs/bots, quelques milliers de pastilles), un coût de
+ * filtrage (+ une grille spatiale d'intérêt reconstruite à chaque tick) pour un bénéfice de bande
+ * passante non justifié ici. Seul le fond spectateur de l'accueil garde un allègement dédié
+ * (`isVisibleToSpectator`, échantillonnage de la nourriture) : lui est consulté par N visiteurs
+ * simultanés du lobby, pas juste les joueurs d'un salon. */
+export function buildVisibleEntitySnapshots(
+  allEntities: Entity[],
+  isSpectator: boolean,
+): EntitySnapshot[] {
+  const visible = isSpectator ? allEntities.filter(isVisibleToSpectator) : allEntities;
+  return visible.map(toSnapshot);
+}
+
 export interface BuildStateMessageParams {
   room: Room;
   playerId: PlayerId;
-  isSpectator: boolean;
   tick: number;
-  /** Entités du salon, calculées une seule fois par tick (voir wireRoom, broadcast.ts) — reconstruire
-   * cette liste par socket coûterait O(P²) par tick sur un salon chargé. */
-  allEntities: Entity[];
+  /** Snapshot déjà construit pour CE tick (voir `buildVisibleEntitySnapshots`), partagé entre
+   * tous les destinataires de la même catégorie (joueurs ou spectateurs) — ni refiltré ni
+   * remappé ici : `playerId` ne sert plus qu'à calculer les champs `self` (propres au
+   * destinataire), jamais à sélectionner un sous-ensemble d'entités. */
+  entities: EntitySnapshot[];
   topScores: TopScoreEntry[];
-  /** Grille d'intérêt du salon, déjà reconstruite pour ce tick (voir wireRoom). */
-  interestHash: SpatialHash;
-  interestRadiusPx: number;
 }
 
 /** Construit le message `state` d'un seul destinataire (joueur ou spectateur) — logique
@@ -112,39 +123,10 @@ export interface BuildStateMessageParams {
 export function buildStateMessage(
   params: BuildStateMessageParams,
 ): { message: ServerMessage; totalMass: number } {
-  const { room, playerId, isSpectator, tick, allEntities, topScores, interestHash, interestRadiusPx } =
-    params;
+  const { room, playerId, tick, entities, topScores } = params;
   const world = room.world;
 
   const ownPieces = world.getPiecesByOwner(playerId);
-  const center = centroidOf(ownPieces) ?? { x: world.mapSize / 2, y: world.mapSize / 2 };
-
-  const visible = new Map<string, Entity>();
-  for (const piece of ownPieces) visible.set(piece.id, piece);
-
-  const ownMass = ownPieces.reduce((sum, p) => sum + p.mass, 0);
-  const cameraScale = ownMass > 0 ? Math.max(0.08, 1.2 / Math.sqrt(ownMass / 50)) : 1.2;
-  const requiredViewportRadius = Math.ceil(1500 / cameraScale) + 1000;
-  const effectiveRadius =
-    ownMass > 0
-      ? Math.min(world.mapSize, Math.max(interestRadiusPx, requiredViewportRadius))
-      : interestRadiusPx;
-
-  if (isSpectator) {
-    for (const entity of allEntities) {
-      if (isVisibleToSpectator(entity)) visible.set(entity.id, entity);
-    }
-  } else {
-    for (const id of interestHash.queryNearby(center)) {
-      const entity = world.getEntity(id);
-      if (entity && distance(entity.position, center) <= effectiveRadius) {
-        visible.set(entity.id, entity);
-      }
-    }
-  }
-
-  const entities: EntitySnapshot[] = [...visible.values()].map(toSnapshot);
-
   const totalMass = ownPieces.reduce((sum, piece) => sum + piece.mass, 0);
   const accelerationPerSec2 = totalMass > 0 ? room.getAccelerationForMass(totalMass) : undefined;
 
