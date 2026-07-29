@@ -156,6 +156,8 @@ export function applyRepulsion(
  * Vanilla est une instance de cette même fonction (server/configs/*.json).
  */
 export function createParametricMod(config: ParametricModConfig): GameMod {
+  let modTickCounter = 0;
+
   function randomPositionInMap(margin: number): Vector2 {
     return {
       x: margin + Math.random() * (config.arena.width - 2 * margin),
@@ -481,8 +483,9 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         }
       }
 
+      modTickCounter++;
       // Punition diviseur pour le Top 5 si le leader a au moins 200 de masse et qu'il est 2x plus gros que le joueur suivant
-      if (world.tickCount % 20 === 0) {
+      if (modTickCounter % 20 === 0) {
         const playersByMass = allPlayers
           .filter((p) => !isGodPlayerId(p.id))
           .map((p) => ({

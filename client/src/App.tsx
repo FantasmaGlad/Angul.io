@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { getRandomSkin } from '@angulio/shared';
-import { fetchProfile, loadSession, type AuthResult } from './auth.js';
+import { clearSession, fetchProfile, loadSession, type AuthResult } from './auth.js';
 import { audioManager } from './audio.js';
 import AssetPreloader from './components/AssetPreloader.js';
 import Home from './components/Home.js';
