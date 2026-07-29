@@ -9,6 +9,8 @@ const ASSETS_TO_PRELOAD = [
   '/assets/Radiateur.png',
   '/assets/Sons/Musiques/Hardcore.m4a',
   '/assets/Sons/Musiques/vanilla.m4a',
+  '/assets/Sons/Musiques/lobby.mp3',
+  '/assets/Logos/logoangulionobg.png',
 ];
 
 interface AssetPreloaderProps {

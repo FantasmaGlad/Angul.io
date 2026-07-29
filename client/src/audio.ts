@@ -74,8 +74,10 @@ class AudioManager {
     audio.volume = this.musicVol;
 
     const tryPlay = () => {
+      // Annuler si la musique a changé entre-temps
+      if (this.currentMusicUrl !== url) return;
       audio.play().catch(() => {
-        // Fallback en minuscule si casse différente sur Linux
+        if (this.currentMusicUrl !== url) return;
         const altUrl = url.toLowerCase();
         if (altUrl !== url) {
           audio.src = altUrl;
@@ -90,9 +92,13 @@ class AudioManager {
 
   public stopMusic(): void {
     if (this.musicAudio) {
-      this.musicAudio.pause();
-      this.musicAudio.currentTime = 0;
+      const audio = this.musicAudio;
       this.musicAudio = null;
+      try {
+        audio.pause();
+        audio.currentTime = 0;
+        audio.src = '';
+      } catch {}
     }
     this.currentMusicUrl = null;
   }

@@ -60,9 +60,8 @@ export function createHardcoreMod(
     const targetArea = PI * target.radius * target.radius;
     const overlapFraction = targetArea > 0 ? clamp(overlap / targetArea, 0, 1) : 1;
 
-    // Un blob de joueur ne se fait manger que s'il est recouvert à au moins 2/3 (66.6%) de sa surface visuelle.
-    // En-dessous de 2/3 de recouvrement, le blob ne se fait pas manger et les blobs se repoussent (froler sans être mangé).
-    if (overlapFraction < 2 / 3) return false;
+    // Dès 60% (0.6) de la surface du blob recouverte, la cible est immédiatement dévorée.
+    if (overlapFraction < 0.6) return false;
 
     const massLostByTarget = target.mass;
 
@@ -316,8 +315,9 @@ export function createHardcoreMod(
         (!isGodPlayerId(a.ownerId) && b.mass >= a.mass * (1 + config.eating.massAdvantage));
 
       if (hasAdvA || hasAdvB) {
-        const ate = hasAdvA ? handleEatAttempt(world, a, b, dt) : handleEatAttempt(world, b, a, dt);
-        if (ate) return;
+        if (hasAdvA) handleEatAttempt(world, a, b, dt);
+        else handleEatAttempt(world, b, a, dt);
+        return;
       }
 
       applyRepulsion(a, b);

@@ -577,9 +577,56 @@ select {
   box-shadow: 0 12px 36px rgba(46, 49, 51, 0.1);
 }
 
-.play-panel {
+.play-panel-wrapper {
   width: 100%;
   max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.hero-logo-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  background: transparent;
+}
+
+.hero-logo-img {
+  width: 240px;
+  max-width: 85%;
+  height: auto;
+  object-fit: contain;
+  animation: logo-pulse 3.5s ease-in-out infinite;
+  filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.15));
+}
+
+@keyframes logo-pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.07);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.play-panel-card {
+  width: 100%;
+  background: rgba(241, 241, 243, 0.82);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(46, 49, 51, 0.18);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 12px 36px rgba(46, 49, 51, 0.1);
 }
 
 /* --- Handles & Tiroirs Latéraux --- */
@@ -797,9 +844,9 @@ select {
 /* --- Play Panel (Colonne 2) --- */
 .players-online-header {
   text-align: center;
-  padding: 12px 0 20px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 20px;
+  padding: 4px 0 8px;
+  border-bottom: none;
+  margin-bottom: 4px;
 }
 
 .players-online-count {
@@ -1832,25 +1879,31 @@ a.btn-primary {
   color: var(--text);
 }
 
-/* Bannière de mort personnalisée (cahier des charges fourni) — dégradé + icône choisis en
-   Profil (voir ProfilePage.tsx, même catalogue shared/src/deathBanners.ts). */
+/* Bannière de mort personnalisée (cahier des charges fourni) — image/GIF ou dégradé choisis en
+   Profil (voir ProfilePage.tsx). Sans `min-height`, cette boîte se contentait de la hauteur de son
+   seul contenu (le message, une ligne de texte + padding, ~54px) : une bannière image/GIF y
+   passait presque entièrement hors cadre avec `background-size: cover`, ne laissant plus qu'une
+   fine tranche illisible de l'image personnalisée — ce que le joueur voit après avoir été mangé ne
+   ressemblait à rien de ce qu'il avait choisi en Profil. `min-height` (alignée sur l'aperçu du
+   Profil, voir `.death-preview-banner`) + centrage flex redonnent à l'image assez de place pour
+   être reconnaissable, quelle que soit la longueur du message affiché par-dessus. */
 .death-banner {
+  min-height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: var(--radius-md);
   padding: 18px;
   margin-bottom: 20px;
   color: #ffffff;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
-.death-banner-icon {
-  font-size: 28px;
-  display: block;
-  margin-bottom: 6px;
-}
 .death-banner-message {
   margin: 0;
   font-size: 14px;
   font-style: italic;
   font-weight: 600;
+  text-align: center;
 }
 
 .death-stats-grid {

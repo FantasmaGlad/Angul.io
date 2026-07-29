@@ -148,7 +148,7 @@ const VISUAL_CORRECTION_SPEED_PX_PER_S = 600;
  * chaque accélération/décélération (signalé en Hardcore, dont l'accélération de base — v0 plus
  * bas, speedMultiplier plus élevé — sature sa vitesse cible plus vite, donc accélère plus souvent
  * "à fond"). */
-const RECONCILE_IGNORE_THRESHOLD_PX = 2.5;
+const RECONCILE_IGNORE_THRESHOLD_PX = 3.0;
 /** Pas de temps interne FIXE auquel `step()` intègre la simulation locale (voir le commentaire
  * d'en-tête, "fix your timestep") — indépendant du `dt` réel de la frame de rendu. Assez fin pour
  * qu'aucun sous-pas ne soit perceptible individuellement, même sur un écran très haut

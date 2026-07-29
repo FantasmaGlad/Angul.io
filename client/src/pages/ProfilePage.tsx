@@ -393,7 +393,7 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
                       background: isCustomImageBanner(deathBannerDraft)
                         ? `url("${deathBannerDraft}") center/cover no-repeat`
                         : 'linear-gradient(135deg, rgba(30, 32, 34, 0.95), rgba(20, 22, 24, 0.95))',
-                      minHeight: 100,
+                      minHeight: 140,
                       position: 'relative',
                       overflow: 'hidden',
                       borderRadius: 'var(--radius-md)',

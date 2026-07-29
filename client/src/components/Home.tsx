@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { audioManager } from '../audio.js';
 import type { RoomSummary } from '../lobby.js';
 import BottomBar from './BottomBar.js';
 import CreateRoomPanel from './CreateRoomPanel.js';
@@ -63,6 +64,10 @@ export default function Home({
   const [activeSpectatorRoomId, setActiveSpectatorRoomId] = useState<string | undefined>(
     defaultRoomId,
   );
+
+  useEffect(() => {
+    audioManager.playMusic('/assets/Sons/Musiques/lobby.mp3');
+  }, []);
 
   // Hystérésis sur la sélection du salon spectateur : évite les bascules/reconnexions intempestives
   // de la WebSocket du fond spectateur lors des rafraîchissements réguliers (10s) du lobby
