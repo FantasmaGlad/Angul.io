@@ -63,7 +63,7 @@ describe('createParametricMod — onTick (vitesse/accélération)', () => {
     expect(piece.velocity.x).toBeCloseTo(15, 6);
   });
 
-  it('réduit la vitesse cible ET le taux d’accélération proportionnellement à l’intensité du curseur', () => {
+  it('réduit la vitesse cible proportionnellement à l’intensité du curseur', () => {
     const config = testConfig({ decay: { floor: 100 } });
     const mod = createParametricMod(config);
     const world = freshWorld();
@@ -72,11 +72,11 @@ describe('createParametricMod — onTick (vitesse/accélération)', () => {
 
     // intensité 50% (curseur à mi-chemin du rayon de contrôle), direction +x
     mod.onPlayerInput?.(world, 'p1', { target: { x: 600, y: 500 }, intensity: 0.5, split: false });
-    mod.onTick?.(world, 0.1); // 1500*0.1*0.5 = 75 px/s de changement max, sous la cible réduite (150)
+    mod.onTick?.(world, 0.1); // 1500*0.1 = 150 px/s de changement max, réactivité immédiate vers la cible (150)
 
-    expect(piece.velocity.x).toBeCloseTo(75, 6);
+    expect(piece.velocity.x).toBeCloseTo(150, 6);
 
-    mod.onTick?.(world, 1); // largement assez pour converger vers la cible réduite
+    mod.onTick?.(world, 1); // toujours à la cible réduite
     expect(piece.velocity.x).toBeCloseTo(velocityForMass(50, config) * 0.5, 5);
   });
 

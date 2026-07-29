@@ -47,6 +47,17 @@ export async function serveStatic(
     const insensitivePath = await findCaseInsensitiveFile(rootDir, requestedPath);
     if (insensitivePath) {
       filePath = insensitivePath;
+    } else if (requestedPath.startsWith('/assets/')) {
+      const rootAssetsDir = resolve(rootDir, '../../assets');
+      const rootAssetPath = requestedPath.slice('/assets'.length);
+      const rootInsensitive = await findCaseInsensitiveFile(rootAssetsDir, rootAssetPath);
+      if (rootInsensitive) {
+        filePath = rootInsensitive;
+      } else {
+        res.writeHead(404);
+        res.end();
+        return;
+      }
     } else if (!extname(requestedPath)) {
       filePath = join(rootDir, 'index.html');
       try {

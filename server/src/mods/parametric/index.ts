@@ -184,7 +184,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     // ré-entrer, geler/dégeler en boucle : le tremblotement visible du blob (absent des robots/
     // joueurs distants, toujours lissés par l'interpolation, jamais recalculés bruts par frame).
     if (dist < TARGET_DEAD_ZONE_PX) return { direction: FALLBACK_DIRECTION, intensity: 0, accelIntensity: 1 };
-    return { direction: scale(offset, 1 / dist), intensity: state.inputIntensity, accelIntensity: state.inputIntensity };
+    return { direction: scale(offset, 1 / dist), intensity: state.inputIntensity, accelIntensity: 1 };
   }
 
   /** Divise un morceau en deux (masse restante m/2, éjecté = m/2 * eta_W — metriques.md §9,
