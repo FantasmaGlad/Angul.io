@@ -1,4 +1,4 @@
-import { add, circleOverlapArea, clamp, distance, PI, scale, type Vector2 } from '@angulio/shared';
+import { add, circleOverlapArea, clamp, distance, isBotId, PI, scale, type Vector2 } from '@angulio/shared';
 import type { GameMod } from '../../engine/mod.js';
 import { isGodPlayerId } from '../../engine/godmode.js';
 import type { Entity, PlayerId, PlayerInput } from '../../engine/types.js';
@@ -227,6 +227,47 @@ export function createHardcoreMod(
             state.charges += 1;
             state.rechargeProgressMs = state.charges < 3 ? state.rechargeProgressMs - 10000 : 0;
           }
+        }
+      }
+      // Intelligence Artificielle Hardcore : Les bots utilisent le Dash pour attaquer ou fuir
+      const now = performance.now();
+      for (const player of world.allPlayers()) {
+        if (!isBotId(player.id)) continue;
+        const pieces = world.getPiecesByOwner(player.id);
+        if (pieces.length !== 1) continue;
+        const piece = pieces[0]!;
+        const dashState = getOrCreateDashState(player.id);
+        if (dashState.charges <= 0 || now - dashState.lastDashTimeMs < 3000) continue;
+
+        let dashTarget: Vector2 | undefined;
+        for (const other of world.allEntities()) {
+          if (!other.ownerId || other.ownerId === player.id) continue;
+          const dist = distance(piece.position, other.position);
+          if (dist > 500) continue;
+
+          if (piece.mass >= other.mass * 1.25) {
+            dashTarget = other.position; // Attaque
+            break;
+          } else if (other.mass >= piece.mass * 1.25) {
+            const dx = piece.position.x - other.position.x;
+            const dy = piece.position.y - other.position.y;
+            const len = Math.hypot(dx, dy);
+            if (len > 0) {
+              dashTarget = { x: piece.position.x + (dx / len) * 500, y: piece.position.y + (dy / len) * 500 }; // Fuite
+            }
+            break;
+          }
+        }
+
+        if (dashTarget) {
+          dashState.charges -= 1;
+          dashState.lastDashTimeMs = now;
+          const dx = dashTarget.x - piece.position.x;
+          const dy = dashTarget.y - piece.position.y;
+          const len = Math.hypot(dx, dy);
+          const dir: Vector2 = len > 0 ? { x: dx / len, y: dy / len } : { x: 1, y: 0 };
+          const DASH_IMPULSE_SPEED = 2700;
+          piece.velocity = add(piece.velocity, scale(dir, DASH_IMPULSE_SPEED));
         }
       }
 

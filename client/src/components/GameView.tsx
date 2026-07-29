@@ -436,15 +436,19 @@ export default function GameView({
     // chiffrée dans ce cas (voir debugOverlay.ts, RenderStats.targetHz).
     const targetHz =
       minFrameIntervalMs > 0 ? Math.round(1000 / minFrameIntervalMs) : undefined;
+    const musicUrl = roomIdOrInviteCode.toLowerCase().includes('hardcore')
+      ? '/assets/Sons/Musiques/Hardcore.m4a'
+      : '/assets/Sons/Musiques/vanilla.m4a';
+    audioManager.playMusic(musicUrl);
+
     let lastFrameAt = 0;
 
     function onKeyDown(event: KeyboardEvent): void {
-      // Respawn rapide (cahier des charges fourni, écran de mort) : Espace ne fait rien tant
-      // qu'on est vivant (évite un split accidentel si le joueur a mappé une autre touche par
-      // habitude — de toute façon Espace ne déclenche aucune action en jeu aujourd'hui).
       if (event.key === ' ' || event.code === 'Space') {
-        event.preventDefault();
-        if (isDeadNow) respawn();
+        if (isDeadNow) {
+          event.preventDefault();
+          respawn();
+        }
         return;
       }
       if (event.key === 'Escape') {
@@ -455,6 +459,9 @@ export default function GameView({
       if (event.key !== 'F3') return;
       event.preventDefault();
       debugVisible = !debugVisible;
+      if (debugOverlayRef.current) {
+        debugOverlayRef.current.style.display = debugVisible ? 'block' : 'none';
+      }
       debugOverlayRef.current?.classList.toggle('visible', debugVisible);
       if (debugVisible) {
         gpuInfo ??= detectGpuInfo();
@@ -635,6 +642,7 @@ export default function GameView({
       window.removeEventListener('resize', resizeCanvas);
       window.removeEventListener('keydown', onKeyDown);
       input.detach();
+      audioManager.stopMusic();
       if (inputTimer) clearTimeout(inputTimer);
       clearInterval(pingInterval);
       if (comboHideTimer) clearTimeout(comboHideTimer);

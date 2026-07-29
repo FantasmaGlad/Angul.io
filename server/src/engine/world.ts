@@ -59,7 +59,7 @@ export class World {
       position: { ...position },
       velocity: velocity ? { ...velocity } : { x: 0, y: 0 },
       mass,
-      radius: massToRadius(mass, this.kArea),
+      radius: massToRadius(mass, this.kArea, kind === 'particle'),
       data: {},
     };
     this.entities.set(entity.id, entity);
@@ -119,7 +119,7 @@ export class World {
   /** Recalcule le rayon après une modification manuelle de la masse d'une entité (ex: manger, decay). */
   setMass(entity: Entity, mass: number): void {
     entity.mass = mass;
-    entity.radius = massToRadius(mass, this.kArea);
+    entity.radius = massToRadius(mass, this.kArea, entity.kind === 'particle');
   }
 
   // --- Joueurs -----------------------------------------------------------

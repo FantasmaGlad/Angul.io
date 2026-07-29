@@ -49,8 +49,11 @@ const MIN_RADIUS_FRACTION = 2 / 3;
  * formule leur donne désormais un rayon RÉEL (physique ET visuel, les deux restant ainsi toujours
  * cohérents entre eux) proportionnel à leur masse — ~4.5px à masse 1, ~22px à masse 24.
  */
-export function massToRadius(mass: number, kArea: number = PI): number {
+export function massToRadius(mass: number, kArea: number = PI, isParticle: boolean = false): number {
   const natural = SPAWN_RADIUS * Math.sqrt(Math.max(0, mass) / REFERENCE_MASS);
+  if (isParticle) {
+    return Math.max(2.0, natural);
+  }
   return Math.max(SPAWN_RADIUS * MIN_RADIUS_FRACTION, natural);
 }
 
