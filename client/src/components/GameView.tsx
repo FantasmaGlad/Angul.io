@@ -317,7 +317,10 @@ export default function GameView({
       const intervalMs = serverTickRateHz ? 1000 / serverTickRateHz : DEFAULT_INPUT_INTERVAL_MS;
       inputTimer = setTimeout(() => {
         if (selfPlayerId) {
-          const { target, intensity } = input.getTarget(latestCamera);
+          // Référence de conversion écran->monde : la position prédite locale, pas la caméra
+          // (lissée/en retard) — voir `LocalPrediction.getOwnPosition`.
+          const ownPosition = prediction.getOwnPosition() ?? latestCamera;
+          const { target, intensity } = input.getTarget({ ...latestCamera, ...ownPosition });
           connection.send({ type: 'input', target, intensity, split: input.consumeSplit() });
         }
         scheduleInput();
@@ -397,7 +400,10 @@ export default function GameView({
       // inconnu) ou hors partie (`selfPlayerId` inconnu) : le blob suit alors simplement le
       // pipeline serveur habituel.
       if (movementConfig && selfPlayerId) {
-        const { target, intensity } = input.getTarget(latestCamera);
+        // Référence de conversion écran->monde : la position prédite locale, pas la caméra
+        // (lissée/en retard) — voir `LocalPrediction.getOwnPosition`.
+        const ownPosition = prediction.getOwnPosition() ?? latestCamera;
+        const { target, intensity } = input.getTarget({ ...latestCamera, ...ownPosition });
         prediction.step(frameDt / 1000, target, intensity, movementConfig);
       }
 

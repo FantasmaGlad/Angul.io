@@ -227,6 +227,30 @@ export class LocalPrediction {
     });
   }
 
+  /** Barycentre (pondéré par la masse) des morceaux prédits du joueur — à utiliser comme
+   * référence pour convertir la position écran du curseur en coordonnées monde (voir
+   * `input.ts`/`GameView.tsx`), PLUTÔT QUE la position de la caméra. La caméra est lissée
+   * (`cameraLerp`, GameView.tsx) donc en retard de quelques frames à ~150ms sur la vraie position
+   * dès qu'un événement non prédit la déplace (répulsion contre un bot, etc. — voir `reconcile`) ;
+   * l'utiliser comme référence de pilotage couplerait la précision du contrôle à la vitesse de
+   * convergence du suivi caméra, réintroduisant un tremblement (le curseur au centre de l'écran ne
+   * correspondrait plus exactement à "aucune commande" tant que la caméra n'a pas rattrapé la vraie
+   * position). `undefined` hors partie ou avant le premier `reconcile` (fallback caméra, voir
+   * l'appelant). */
+  getOwnPosition(): Vector2 | undefined {
+    if (this.pieces.size === 0) return undefined;
+    let mass = 0;
+    let x = 0;
+    let y = 0;
+    for (const piece of this.pieces.values()) {
+      mass += piece.mass;
+      x += piece.position.x * piece.mass;
+      y += piece.position.y * piece.mass;
+    }
+    if (mass <= 0) return undefined;
+    return { x: x / mass, y: y / mass };
+  }
+
   /** À appeler à chaque nouvelle vie (message `welcome`) — un id de morceau ne se réutilise
    * jamais d'une vie à l'autre (compteur global côté serveur, voir World.spawnEntity), donc rien
    * ne serait techniquement faux sans ce reset, mais il évite de conserver inutilement une entrée
