@@ -78,10 +78,7 @@ export function attachInput(
    * désactiver la souris"), y compris visuellement (curseur masqué sur le canvas). */
   let gamepadActive = false;
 
-  const onMouseMove = (event: MouseEvent): void => {
-    mouseX = event.clientX;
-    mouseY = event.clientY;
-  };
+
   const onKeyDown = (event: KeyboardEvent): void => {
     if (event.code === keybinds.split.key) {
       event.preventDefault();
