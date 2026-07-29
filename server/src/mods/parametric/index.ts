@@ -208,8 +208,10 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
       const overlap = circleOverlapArea(attacker.radius, target.radius, dist);
       const targetArea = 3 * target.radius * target.radius;
 
-      // Exige un chevauchement d'au moins 1/3 (33.3%) de la surface de la cible pour l'absorber
-      if (overlap >= targetArea / 3) {
+      // Exige un chevauchement d'au moins 2/3 (66.7%) de la surface de la cible pour l'absorber
+      // (relevé depuis 1/3 : trop permissif, une cible pouvait se faire manger alors qu'elle
+      // n'était que légèrement chevauchée, perçu comme une absorption à distance injustifiée).
+      if (overlap >= (targetArea * 2) / 3) {
         const gainedMass = target.mass;
 
         if (attacker.ownerId && target.ownerId) {
