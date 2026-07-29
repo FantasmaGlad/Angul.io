@@ -175,6 +175,14 @@ export class LocalPrediction {
   private pendingDashes: Array<{ atMs: number; impulse: Vector2 }> = [];
   /** Reliquat de temps non encore intégré en pas fixe (voir `step()`). */
   private accumulatorSeconds = 0;
+  private activeTarget: Vector2 | undefined;
+  private activeIntensity = 0;
+
+  /** Enregistre l'input exact transmis au serveur pour aligner à 100% la prédiction locale. */
+  recordSentInput(target: Vector2, intensity: number): void {
+    this.activeTarget = target;
+    this.activeIntensity = intensity;
+  }
 
   /** À appeler à chaque `state` reçu, avec les entités BRUTES du message (pas interpolées) — met
    * à jour/crée/retire les morceaux prédits du joueur pour rester cohérent avec ce que le serveur
@@ -244,12 +252,12 @@ export class LocalPrediction {
       if (knownVelocity) predicted.velocity = { ...knownVelocity };
 
       const activeDashes = this.pendingDashes.filter((d) => d.atMs >= sinceMs);
+      for (const dash of activeDashes) {
+        predicted.velocity = add(predicted.velocity, dash.impulse);
+      }
 
       for (const chunk of replayChunks) {
         this.integrate(predicted, chunk.dtSeconds, chunk.target, chunk.intensity, movement);
-      }
-      for (const dash of activeDashes) {
-        predicted.velocity = add(predicted.velocity, dash.impulse);
       }
 
       // Écart résiduel entre "où la prédiction en était déjà" et "où le rejeu vient de la
@@ -293,6 +301,9 @@ export class LocalPrediction {
   step(dtSeconds: number, target: Vector2, intensity: number, movement: MovementConfig): void {
     if (dtSeconds <= 0) return;
 
+    const effTarget = this.activeTarget ?? target;
+    const effIntensity = this.activeTarget ? this.activeIntensity : intensity;
+
     // Accumulateur (voir le commentaire d'en-tête, "fix your timestep") : le `dt` réel de la frame
     // de rendu ne sert qu'à savoir COMBIEN de pas fixes exécuter, jamais comme pas d'intégration
     // lui-même — la simulation locale reste ainsi déterministe, indépendante du framerate réel.
@@ -306,10 +317,10 @@ export class LocalPrediction {
     while (this.accumulatorSeconds >= FIXED_STEP_SECONDS) {
       this.accumulatorSeconds -= FIXED_STEP_SECONDS;
 
-      this.history.push({ atMs, dtSeconds: FIXED_STEP_SECONDS, target, intensity });
+      this.history.push({ atMs, dtSeconds: FIXED_STEP_SECONDS, target: effTarget, intensity: effIntensity });
 
       for (const piece of this.pieces.values()) {
-        this.integrate(piece, FIXED_STEP_SECONDS, target, intensity, movement);
+        this.integrate(piece, FIXED_STEP_SECONDS, effTarget, effIntensity, movement);
         // Résorption à vitesse plafonnée de l'écart d'affichage laissé par une réconciliation
         // récente (voir `reconcile`), au même pas fixe que le reste de la simulation locale.
         piece.visualOffset = moveToward(piece.visualOffset, { x: 0, y: 0 }, maxOffsetStep);
@@ -515,5 +526,7 @@ export class LocalPrediction {
   reset(): void {
     this.pieces.clear();
     this.history.length = 0;
+    this.activeTarget = undefined;
+    this.activeIntensity = 0;
   }
 }

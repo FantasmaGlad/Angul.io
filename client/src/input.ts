@@ -120,15 +120,19 @@ export function attachInput(
     const dtSec = Math.min(0.05, Math.max(0.001, (now - lastFrameTickTime) / 1000));
     lastFrameTickTime = now;
 
-    // Lissage exponentiel très réactif (k = 32) : crée une trajectoire en "cloche" fluide lors
-    // des virages serrés/flicks de la souris et de la manette.
-    const lerpFactor = 1 - Math.exp(-32 * dtSec);
-    smoothedMouseX += (mouseX - smoothedMouseX) * lerpFactor;
-    smoothedMouseY += (mouseY - smoothedMouseY) * lerpFactor;
+    // Lissage exponentiel ultra-réactif (k = 120) pour la souris : réponse instantanée sans impression de lourdeur
+    const mouseLerp = 1 - Math.exp(-120 * dtSec);
+    smoothedMouseX += (mouseX - smoothedMouseX) * mouseLerp;
+    smoothedMouseY += (mouseY - smoothedMouseY) * mouseLerp;
 
     const pad = findActiveGamepad();
     const rawStickX = pad?.axes[0] ?? 0;
     const rawStickY = pad?.axes[1] ?? 0;
+
+    // Lissage exponentiel fluide (k = 60) pour le joystick : absorbe le bruit d'échantillonnage pour un effet "dash and react" ultra-lisse
+    const stickLerp = 1 - Math.exp(-60 * dtSec);
+    smoothedStickX += (rawStickX - smoothedStickX) * stickLerp;
+    smoothedStickY += (rawStickY - smoothedStickY) * stickLerp;
 
     const hasStickInput = Math.hypot(rawStickX, rawStickY) > GAMEPAD_STICK_DEAD_ZONE;
     const hasAnyButtonPressed = pad?.buttons.some((b) => b.pressed) ?? false;
@@ -175,9 +179,8 @@ export function attachInput(
       // potentiellement resté loin du centre ou hors canvas, imposer une commande parasite dès
       // que le stick se recentre.
       if (gamepadActive) {
-        const pad = findActiveGamepad();
-        const rawStickX = pad?.axes[0] ?? 0;
-        const rawStickY = pad?.axes[1] ?? 0;
+        const rawStickX = smoothedStickX;
+        const rawStickY = smoothedStickY;
         const magnitude = Math.hypot(rawStickX, rawStickY);
         let intensity = 0;
         if (magnitude > GAMEPAD_STICK_DEAD_ZONE) {

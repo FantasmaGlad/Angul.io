@@ -39,8 +39,8 @@
     "floor": 20
   },
   "arena": {
-    "width": 10000,
-    "height": 10000,
+    "width": 20000,
+    "height": 20000,
     "borderType": "STRICT_WALL"
   },
   "food": {

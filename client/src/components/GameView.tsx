@@ -438,6 +438,7 @@ export default function GameView({
           // (lissée/en retard) — voir `LocalPrediction.getOwnPosition`.
           const ownPosition = prediction.getOwnPosition() ?? latestCamera;
           const { target, intensity } = input.getTarget({ ...latestCamera, ...ownPosition });
+          prediction.recordSentInput(target, intensity);
           connection.send({
             type: 'input',
             target,
@@ -581,8 +582,8 @@ export default function GameView({
       //   brutales du centre de masse lors des splits et dashes.
       // - cameraScaleLerp (k = 12) : ajuste le zoom lors de la prise de masse (manger) en ~150ms
       //   sans micro-freeze ni à-coup.
-      const cameraScaleLerp = 1 - Math.exp(-12 * (frameDt / 1000));
-      const cameraPosLerp = 1 - Math.exp(-30 * (frameDt / 1000));
+      const cameraScaleLerp = 1 - Math.exp(-18 * (frameDt / 1000));
+      const cameraPosLerp = 1 - Math.exp(-60 * (frameDt / 1000));
       latestCamera = {
         x: latestCamera.x + (targetCamera.x - latestCamera.x) * cameraPosLerp,
         y: latestCamera.y + (targetCamera.y - latestCamera.y) * cameraPosLerp,
