@@ -99,6 +99,8 @@ export function attachInput(
 
   let smoothedMouseX = canvas.width / 2;
   let smoothedMouseY = canvas.height / 2;
+  let smoothedStickX = 0;
+  let smoothedStickY = 0;
   let lastFrameTickTime = performance.now();
 
   function findActiveGamepad(): Gamepad | null {
