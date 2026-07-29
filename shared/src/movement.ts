@@ -26,6 +26,8 @@ export interface MovementConfig {
   accelerationMassExponent: number;
   /** M0 — masse de référence du mode (`player.startMass`), utilisée par les deux formules. */
   startMass: number;
+  /** Taille de la carte en pixels monde (ex: 10000). */
+  mapSize?: number;
 }
 
 /** Repli utilisé uniquement quand un `ModResolver` ne fournit pas de config de mouvement (ex.
