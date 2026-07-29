@@ -241,33 +241,31 @@ export default function GameView({
       }, durationMs);
     }
 
+    let lastMouseX = window.innerWidth / 2;
+    let lastMouseY = window.innerHeight / 2;
+    const trackMouse = (e: MouseEvent) => {
+      lastMouseX = e.clientX;
+      lastMouseY = e.clientY;
+    };
+    window.addEventListener('mousemove', trackMouse);
+
     const input = attachInput(canvas, () => {
-      // Retour visuel local IMMÉDIAT (voir le commentaire d'en-tête d'`attachInput`) — un pur
-      // transform CSS sur le canvas (voir styles.css `#game`), jamais la caméra logique : un
-      // décalage de la caméra suivie faisait "traîner" le blob du joueur derrière elle pendant
-      // l'effet, perçu comme du lag (demande utilisateur : "juste visuel... anime la carte").
-      const ownPosition = prediction.getOwnPosition() ?? latestCamera;
-      const { target } = input.getTarget({ ...latestCamera, ...ownPosition });
-      const dx = target.x - ownPosition.x;
-      const dy = target.y - ownPosition.y;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const dx = lastMouseX - centerX;
+      const dy = lastMouseY - centerY;
       const dist = Math.hypot(dx, dy);
       const dirX = dist > 0 ? dx / dist : 0;
       const dirY = dist > 0 ? dy / dist : 0;
-      // Origine du zoom décalée vers la direction du split (±18% de l'écran) : le canvas zoome
-      // "depuis" ce point plutôt que depuis le centre, ce qui donne l'impression d'un zoom DANS
-      // cette direction sans jamais toucher à la caméra/simulation.
+
       canvas.style.transformOrigin = `${50 + dirX * 18}% ${50 + dirY * 18}%`;
-      // Saut instantané à l'échelle de pic (transition désactivée le temps du saut, sinon la
-      // transition CSS de `#game` l'animerait aussi À L'ALLER, rendant le "punch" mou) puis retrait
-      // immédiat — c'est CE retrait, transition réactivée, que `#game` anime en douceur vers
-      // scale(1) (voir styles.css). `offsetWidth` force un reflow entre les deux étapes : sans lui,
-      // le navigateur peut fusionner les deux changements de style consécutifs en une seule passe
-      // de rendu et ne jamais afficher le saut instantané (ni animer le retour).
       canvas.style.transition = 'none';
-      canvas.style.transform = 'scale(1.18)';
+      canvas.style.transform = 'scale(0.96)';
       void canvas.offsetWidth;
-      canvas.style.transition = '';
-      canvas.style.transform = '';
+      canvas.style.transition = 'transform 0.22s cubic-bezier(0.1, 0.9, 0.2, 1)';
+      canvas.style.transform = 'scale(1)';
     });
 
     const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -655,7 +653,7 @@ export default function GameView({
         <div className="dash-hud-wrapper">
           <div className="dash-hud-badge">
             <span className="dash-hud-label">
-              ⚡ DASH <span className="dash-hud-key">F</span>
+              DASH <span className="dash-hud-key">F</span>
             </span>
             <div className="dash-segments-track">
               {Array.from({ length: dashInfo.maxCharges }).map((_, i) => {

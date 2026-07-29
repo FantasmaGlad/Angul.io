@@ -2384,31 +2384,33 @@ a.btn-primary {
 .dash-hud-badge {
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: rgba(15, 23, 42, 0.85);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  padding: 8px 16px;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  padding: 8px 18px;
   border-radius: 9999px;
 }
 .dash-hud-label {
   font-size: 11px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
+  font-weight: 800;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: #a855f7;
+  color: #ffffff;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
 }
 .dash-hud-key {
-  background: rgba(168, 85, 247, 0.25);
-  color: #e9d5ff;
-  border: 1px solid rgba(168, 85, 247, 0.4);
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 4px;
-  padding: 1px 5px;
-  font-size: 10px;
+  padding: 1px 6px;
+  font-size: 10.5px;
+  font-weight: 800;
 }
 .dash-segments-track {
   display: flex;
@@ -2417,32 +2419,33 @@ a.btn-primary {
 }
 .dash-segment-box {
   position: relative;
-  width: 32px;
+  width: 34px;
   height: 10px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 4px;
   overflow: hidden;
 }
 .dash-segment-box.full {
-  background: linear-gradient(135deg, #a855f7, #ec4899);
-  border-color: #f472b6;
-  box-shadow: 0 0 10px rgba(168, 85, 247, 0.6);
+  background: linear-gradient(135deg, #ffffff, #e2e8f0);
+  border-color: #ffffff;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.75);
 }
 .dash-segment-fill {
   height: 100%;
-  background: linear-gradient(90deg, #8b5cf6, #d946ef);
+  background: linear-gradient(90deg, #ffffff, #cbd5e1);
   border-radius: 3px;
   transition: width 0.1s linear;
 }
 .dash-disabled-hint {
   font-size: 10px;
   font-weight: 700;
-  color: rgba(239, 68, 68, 0.9);
-  background: rgba(15, 23, 42, 0.8);
-  padding: 2px 8px;
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 2px 10px;
   border-radius: 10px;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(8px);
 }
 
 /* --- Audio Settings Panel (Profile) --- */

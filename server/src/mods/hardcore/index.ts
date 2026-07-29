@@ -142,6 +142,7 @@ export function createHardcoreMod(
   }
 
   const dashStates = new Map<PlayerId, PlayerDashState>();
+  const lastPunitiveSplitByPlayer = new Map<PlayerId, number>();
 
   interface PlayerDashState {
     charges: number;
@@ -194,7 +195,7 @@ export function createHardcoreMod(
             const dy = input.target.y - piece.position.y;
             const len = Math.hypot(dx, dy);
             const dir: Vector2 = len > 0 ? { x: dx / len, y: dy / len } : { x: 1, y: 0 };
-            const DASH_IMPULSE_SPEED = 900;
+            const DASH_IMPULSE_SPEED = 2700;
             piece.velocity = add(piece.velocity, scale(dir, DASH_IMPULSE_SPEED));
           }
         }
@@ -229,13 +230,6 @@ export function createHardcoreMod(
         }
       }
 
-      // Règle Hardcore : si un joueur devient trop gros (seuil exact ci-dessous, >= 200 de masse
-      // ET > 2x le deuxième — l'ancien commentaire ici parlait de "10x", désynchronisé du seuil
-      // réellement appliqué plus bas depuis un ajustement antérieur), le diviser au maximum
-      // possible dans toutes les directions. Nul effet visible si le meneur est déjà à
-      // `maxSplits` (ex. via ses propres splits manuels) : rien à diviser de plus — voir
-      // `splitPlayerMaxRadially`, qui ne fait alors rien (boucle immédiatement à sa condition
-      // d'arrêt), ce n'est pas un bug mais l'absence de morceau supplémentaire à créer.
       const playerTotals: Array<{ playerId: PlayerId; totalMass: number }> = [];
       for (const player of world.allPlayers()) {
         const pieces = world.getPiecesByOwner(player.id);
@@ -251,8 +245,11 @@ export function createHardcoreMod(
         const leader = playerTotals[0]!;
         const runnerUp = playerTotals[1] ?? { playerId: '', totalMass: config.player.startMass };
         // Règle Hardcore : Si le 1er joueur a au moins 200 de masse et qu'il fait plus de 2x la masse du N-1,
-        // déclencher l'explosion punitive radiale.
-        if (leader.totalMass >= 200 && leader.totalMass > runnerUp.totalMass * 2) {
+        // déclencher l'explosion punitive radiale (au maximum une fois toutes les 10s pour éviter la boucle 20Hz créatrice de lag).
+        const lastSplitMs = lastPunitiveSplitByPlayer.get(leader.playerId) ?? -10000;
+        const nowMs = performance.now();
+        if (leader.totalMass >= 200 && leader.totalMass > runnerUp.totalMass * 2 && nowMs - lastSplitMs >= 10000) {
+          lastPunitiveSplitByPlayer.set(leader.playerId, nowMs);
           splitPlayerMaxRadially(world, leader.playerId);
         }
       }

@@ -62,7 +62,16 @@ class AudioManager {
     audio.volume = this.musicVol;
 
     audio.play().catch(() => {
-      // Audio playback autostart can be blocked by browser policy before user interaction
+      // Autoplay restreint par le navigateur : déverrouillage automatique au premier clic/touche
+      const unlock = () => {
+        if (this.musicAudio === audio && audio.paused) {
+          void audio.play().catch(() => {});
+        }
+        window.removeEventListener('pointerdown', unlock);
+        window.removeEventListener('keydown', unlock);
+      };
+      window.addEventListener('pointerdown', unlock, { once: true });
+      window.addEventListener('keydown', unlock, { once: true });
     });
 
     this.musicAudio = audio;
