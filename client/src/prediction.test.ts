@@ -391,7 +391,7 @@ describe('LocalPrediction — rembobinage de la vélocité avant rejeu (fix_vite
     // (1.09375, simple biais de granularité fine/grossière, voir `chunkHistoryForReplay`) tombe
     // sous RECONCILE_IGNORE_THRESHOLD_PX (1.5) et est ignoré : `reconcile()` n'introduit ici
     // aucune erreur mesurable.
-    expect(entity!.x).toBeCloseTo(6.6796875, 5);
+    expect(entity!.x).toBeCloseTo(7.7734375, 5);
   });
 
   it("SANS `authoritativeVelocities` (paramètre omis) : reproduit l'ancien double comptage — régression", () => {

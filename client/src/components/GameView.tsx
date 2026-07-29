@@ -377,7 +377,7 @@ export default function GameView({
           survivalTimeSec: message.survivalTimeSec,
           xpEarned: message.xpEarned,
           killerNickname: message.killerNickname,
-          customCard: message.customCard,
+          customCard: message.customCard ?? { bannerId: '', message: DEFAULT_DEATH_MESSAGE },
         });
         setTimeout(() => {
           justDied = false;
@@ -826,19 +826,19 @@ export default function GameView({
             <div
               className="death-banner"
               style={{
-                background: isCustomImageBanner(deathState.customCard.bannerId)
-                  ? `url("${deathState.customCard.bannerId}") center/cover no-repeat`
+                background: isCustomImageBanner(deathState.customCard?.bannerId ?? '')
+                  ? `url("${deathState.customCard?.bannerId}") center/cover no-repeat`
                   : 'linear-gradient(135deg, rgba(30, 32, 34, 0.95), rgba(20, 22, 24, 0.95))',
                 position: 'relative',
                 overflow: 'hidden',
                 border: '1px solid var(--border-strong)',
               }}
             >
-              {isCustomImageBanner(deathState.customCard.bannerId) && (
+              {isCustomImageBanner(deathState.customCard?.bannerId ?? '') && (
                 <div style={{ position: 'absolute', inset: 0, background: 'rgba(0, 0, 0, 0.45)' }} />
               )}
               <div style={{ position: 'relative', zIndex: 1 }}>
-                <p className="death-banner-message">"{deathState.customCard.message || DEFAULT_DEATH_MESSAGE}"</p>
+                <p className="death-banner-message">"{deathState.customCard?.message || DEFAULT_DEATH_MESSAGE}"</p>
               </div>
             </div>
 

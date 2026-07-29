@@ -104,25 +104,47 @@ export function attachInput(
   let lastFrameTickTime = performance.now();
 
   function findActiveGamepad(): Gamepad | null {
-    return navigator.getGamepads?.().find((p) => p !== null) ?? null;
+    if (!navigator.getGamepads) return null;
+    const gamepads = Array.from(navigator.getGamepads());
+    return gamepads.find((p) => p !== null && p.connected) ?? null;
   }
 
-  // Boucle interne dédiée, cadencée sur une vraie frame d'affichage (`requestAnimationFrame`) —
-  // fait à la fois avancer le lissage souris et interroger la manette, TOUS DEUX indépendamment
-  // de `getTarget()` (appelé à des cadences DIFFÉRENTES et non synchronisées par ses différents
-  // appelants : la boucle de rendu ET la boucle d'envoi réseau, voir GameView.tsx). Faire avancer
-  // le lissage exponentiel DANS `getTarget()` lui-même (comme avant ce correctif) le faisait
-  // intégrer deux fois par "vraie" frame, à deux cadences concurrentes et un dt à chaque fois
-  // faux (le temps écoulé depuis le dernier appel, quel qu'ait été SON appelant) — exactement le
-  // bruit/tressautement que le lissage était censé supprimer. `getTarget()` ne fait plus
-  // qu'une LECTURE pure de `smoothedMouseX/Y`, sans effet de bord : n'importe quel appelant peut
-  // l'invoquer aussi souvent que nécessaire sans perturber les autres.
+  const onGamepadConnected = (e: GamepadEvent) => {
+    if (e.gamepad) {
+      gamepadActive = true;
+      canvas.style.cursor = 'none';
+    }
+  };
+  const onGamepadDisconnected = () => {
+    const pad = findActiveGamepad();
+    if (!pad) {
+      gamepadActive = false;
+      canvas.style.cursor = 'default';
+    }
+  };
+  window.addEventListener('gamepadconnected', onGamepadConnected);
+  window.addEventListener('gamepaddisconnected', onGamepadDisconnected);
+
+  function onMouseMove(e: MouseEvent): void {
+    const pad = findActiveGamepad();
+    const rawStickX = pad?.axes[0] ?? 0;
+    const rawStickY = pad?.axes[1] ?? 0;
+    const hasStickInput = Math.hypot(rawStickX, rawStickY) > GAMEPAD_STICK_DEAD_ZONE;
+    if (!hasStickInput) {
+      gamepadActive = false;
+      canvas.style.cursor = 'default';
+    }
+    mouseX = e.clientX;
+    mouseY = e.clientY;
+  }
+
+  // Boucle interne dédiée, cadencée sur une vraie frame d'affichage (`requestAnimationFrame`)
   function frameTick(): void {
     const now = performance.now();
     const dtSec = Math.min(0.05, Math.max(0.001, (now - lastFrameTickTime) / 1000));
     lastFrameTickTime = now;
 
-    // Lissage exponentiel ultra-réactif (k = 120) pour la souris : réponse instantanée sans impression de lourdeur
+    // Lissage exponentiel ultra-réactif (k = 120) pour la souris
     const mouseLerp = 1 - Math.exp(-120 * dtSec);
     smoothedMouseX += (mouseX - smoothedMouseX) * mouseLerp;
     smoothedMouseY += (mouseY - smoothedMouseY) * mouseLerp;
@@ -131,7 +153,7 @@ export function attachInput(
     const rawStickX = pad?.axes[0] ?? 0;
     const rawStickY = pad?.axes[1] ?? 0;
 
-    // Lissage exponentiel fluide (k = 60) pour le joystick : absorbe le bruit d'échantillonnage pour un effet "dash and react" ultra-lisse
+    // Lissage exponentiel fluide (k = 60) pour le joystick : absorbe le bruit d'échantillonnage
     const stickLerp = 1 - Math.exp(-60 * dtSec);
     smoothedStickX += (rawStickX - smoothedStickX) * stickLerp;
     smoothedStickY += (rawStickY - smoothedStickY) * stickLerp;
@@ -239,6 +261,8 @@ export function attachInput(
     detach(): void {
       canvas.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('gamepadconnected', onGamepadConnected);
+      window.removeEventListener('gamepaddisconnected', onGamepadDisconnected);
       canvas.style.cursor = '';
       if (gamepadRafId !== undefined) cancelAnimationFrame(gamepadRafId);
     },

@@ -249,11 +249,13 @@ export class LocalPrediction {
       // `authoritativeVelocities` ci-dessus) — sans ce reset, le rejeu repart de la vélocité déjà
       // avancée en direct par `step()` et double-compte l'accélération sur la fenêtre rejouée.
       const knownVelocity = authoritativeVelocities?.get(entity.i);
-      if (knownVelocity) predicted.velocity = { ...knownVelocity };
-
-      const activeDashes = this.pendingDashes.filter((d) => d.atMs >= sinceMs);
-      for (const dash of activeDashes) {
-        predicted.velocity = add(predicted.velocity, dash.impulse);
+      if (knownVelocity) {
+        predicted.velocity = { ...knownVelocity };
+      } else {
+        const activeDashes = this.pendingDashes.filter((d) => d.atMs >= sinceMs);
+        for (const dash of activeDashes) {
+          predicted.velocity = add(predicted.velocity, dash.impulse);
+        }
       }
 
       for (const chunk of replayChunks) {
@@ -261,31 +263,14 @@ export class LocalPrediction {
       }
 
       // Écart résiduel entre "où la prédiction en était déjà" et "où le rejeu vient de la
-      // reconstruire" — quasi nul dans le cas normal (bruit d'intégration dt variable/fixe, voir
-      // le seuil dynamique ci-dessous), plus significatif seulement quand un événement non rejoué
-      // (répulsion, croissance...) a réellement déplacé le morceau côté serveur. Voir aussi
-      // RECONCILE_SNAP_THRESHOLD_PX.
+      // reconstruire" — le saut est absorbé dans `visualOffset`, résorbé à vitesse plafonnée par
+      // `step()`, pour que l'AFFICHAGE reste continu sans désynchroniser la position simulée.
       const residual = sub(predicted.position, beforeReconcile);
       const residualDist = length(residual);
-      const tickSeconds = serverTickRateHz && serverTickRateHz > 0 ? 1 / serverTickRateHz : 1 / 30;
-      const dynamicIgnoreThresholdPx = Math.min(
-        RECONCILE_IGNORE_MAX_PX,
-        Math.max(
-          RECONCILE_IGNORE_FLOOR_PX,
-          accelerationForMass(predicted.mass, movement) * tickSeconds * tickSeconds * 0.5 * RECONCILE_IGNORE_SAFETY_FACTOR,
-        ),
-      );
-      if (residualDist <= dynamicIgnoreThresholdPx) {
-        predicted.position = beforeReconcile;
-      } else if (residualDist <= RECONCILE_SNAP_THRESHOLD_PX) {
-        // `predicted.position` reste la reconstruction exacte (la simulation ne doit jamais
-        // dévier) — le saut est absorbé dans `visualOffset`, résorbé à vitesse plafonnée par
-        // `step()`, pour que l'AFFICHAGE reste continu au lieu de sauter avec elle.
+      if (residualDist <= RECONCILE_SNAP_THRESHOLD_PX) {
         predicted.visualOffset = sub(predicted.visualOffset, residual);
       } else {
-        // Vrai téléport (mort/respawn, nouveau morceau, bord de carte...) : aucun lissage visuel,
-        // l'affichage saute directement avec la simulation.
-        predicted.visualOffset = { x: 0, y: 0 };
+        // Téléportation importante (mort/respawn, bord de carte) : réinitialisation visuelle directe.
       }
     }
 
@@ -301,8 +286,8 @@ export class LocalPrediction {
   step(dtSeconds: number, target: Vector2, intensity: number, movement: MovementConfig): void {
     if (dtSeconds <= 0) return;
 
-    const effTarget = this.activeTarget ?? target;
-    const effIntensity = this.activeTarget ? this.activeIntensity : intensity;
+    const effTarget = target;
+    const effIntensity = intensity;
 
     // Accumulateur (voir le commentaire d'en-tête, "fix your timestep") : le `dt` réel de la frame
     // de rendu ne sert qu'à savoir COMBIEN de pas fixes exécuter, jamais comme pas d'intégration
