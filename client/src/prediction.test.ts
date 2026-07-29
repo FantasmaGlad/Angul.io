@@ -90,6 +90,33 @@ describe('LocalPrediction — réconciliation par rejeu', () => {
     expect(entity!.x).toBeCloseTo(28.25, 5);
   });
 
+  it('ignore un écart résiduel infime (bruit d’intégration dt variable/fixe, pas un vrai désaccord)', () => {
+    const prediction = new LocalPrediction();
+    const nowSpy = vi.spyOn(performance, 'now');
+    const target = { x: 1000, y: 0 };
+
+    nowSpy.mockReturnValueOnce(0);
+    prediction.reconcile([ownSnapshot('1', 0, 0)], 'self', MOVEMENT, 0);
+
+    nowSpy.mockReturnValueOnce(100);
+    prediction.step(0.1, target, 1, MOVEMENT);
+    nowSpy.mockReturnValueOnce(200);
+    prediction.step(0.1, target, 1, MOVEMENT);
+    nowSpy.mockReturnValueOnce(300);
+    prediction.step(0.1, target, 1, MOVEMENT);
+
+    // Rejouer le dernier pas (+10) par-dessus cette vérité (21) donne 31 — un résidu de 1 unité
+    // par rapport aux 30 déjà prédits, sous RECONCILE_IGNORE_THRESHOLD_PX (1.5) : c'est le genre
+    // d'écart minuscule et permanent produit par deux intégrations légèrement différentes de la
+    // même formule (dt variable côté client, dt fixe côté serveur), pas un vrai désaccord — il ne
+    // doit provoquer AUCUNE correction, pour ne pas créer un tremblement continu.
+    nowSpy.mockReturnValueOnce(300);
+    prediction.reconcile([ownSnapshot('1', 21, 0)], 'self', MOVEMENT, 100);
+
+    const [entity] = prediction.applyTo([ownSnapshot('1', 999, 999)], 'self');
+    expect(entity!.x).toBeCloseTo(30, 5);
+  });
+
   it('snap immédiatement sur un vrai désaccord massif (téléportation, mort/respawn, nouveau morceau)', () => {
     const prediction = new LocalPrediction();
     const nowSpy = vi.spyOn(performance, 'now');

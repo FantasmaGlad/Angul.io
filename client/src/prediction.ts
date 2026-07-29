@@ -96,6 +96,16 @@ const RECONCILE_SNAP_THRESHOLD_PX = 120;
  * — assez rapide pour rester imperceptible sur un nudge de répulsion typique (quelques px), assez
  * doux pour ne jamais recréer de micro-saut. */
 const RECONCILE_BLEND_FACTOR = 0.35;
+/** Écart résiduel (px) en-deçà duquel on n'applique AUCUNE correction, même lissée — le rejeu
+ * client tourne à `dt` variable (vrai framerate, ex. 16.7/15.2/18ms) alors que le serveur simule à
+ * `dt` fixe (1/30s) : ce sont deux intégrations numériques légèrement différentes de la même
+ * formule, qui ne convergent jamais de façon rigoureusement identique même à l'arrêt/en pilotage
+ * quasi immobile — juste à quelques px près en permanence. Lisser CET écart-là en continu (au lieu
+ * de l'ignorer) revenait à appliquer un micro-correctif à ~30Hz pour toujours, perceptible comme un
+ * tremblement propre au joueur (seul morceau rejoué localement — les robots/joueurs distants ne
+ * sont qu'interpolés, jamais simulés deux fois). En-dessous de ce seuil, mieux vaut faire confiance
+ * à la simulation locale telle quelle. */
+const RECONCILE_IGNORE_THRESHOLD_PX = 1.5;
 
 export class LocalPrediction {
   private readonly pieces = new Map<string, PredictedPiece>();
@@ -146,12 +156,15 @@ export class LocalPrediction {
       }
 
       // Écart résiduel entre "où la prédiction en était déjà" et "où le rejeu vient de la
-      // reconstruire" — nul dans le cas normal (rien à lisser), non nul seulement quand un
-      // événement non rejoué (répulsion, croissance...) a réellement déplacé le morceau côté
-      // serveur depuis le dernier `state` connu. Voir RECONCILE_SNAP_THRESHOLD_PX.
+      // reconstruire" — quasi nul dans le cas normal (bruit d'intégration dt variable/fixe, voir
+      // RECONCILE_IGNORE_THRESHOLD_PX), plus significatif seulement quand un événement non rejoué
+      // (répulsion, croissance...) a réellement déplacé le morceau côté serveur. Voir aussi
+      // RECONCILE_SNAP_THRESHOLD_PX.
       const residual = sub(predicted.position, beforeReconcile);
       const residualDist = length(residual);
-      if (residualDist > 0 && residualDist <= RECONCILE_SNAP_THRESHOLD_PX) {
+      if (residualDist <= RECONCILE_IGNORE_THRESHOLD_PX) {
+        predicted.position = beforeReconcile;
+      } else if (residualDist <= RECONCILE_SNAP_THRESHOLD_PX) {
         predicted.position = add(beforeReconcile, scale(residual, RECONCILE_BLEND_FACTOR));
       }
     }
