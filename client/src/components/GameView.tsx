@@ -475,13 +475,16 @@ export default function GameView({
       ? '/assets/Sons/Musiques/Hardcore.m4a'
       : '/assets/Sons/Musiques/vanilla.m4a';
     audioManager.playMusic(musicUrl);
-    let lastFrameAt = 0;
+    function doRespawn(): void {
+      setDeathState(DEFAULT_DEATH_STATE);
+      connection.send({ type: 'join', nickname });
+    }
 
     function onKeyDown(event: KeyboardEvent): void {
       if (event.key === ' ' || event.code === 'Space') {
         if (isDeadNow && !justDied) {
           event.preventDefault();
-          respawn();
+          doRespawn();
         }
         return;
       }
@@ -506,9 +509,23 @@ export default function GameView({
     window.addEventListener('keydown', onKeyDown);
 
     let rafId = 0;
+    let gamepadRespawnWasPressed = false;
 
     function frame(): void {
       const now = performance.now();
+
+      if (isDeadNow && !justDied) {
+        const pad = navigator.getGamepads?.().find((p) => p !== null);
+        const anyButtonPressed = pad?.buttons.some((b) => b.pressed) ?? false;
+        if (anyButtonPressed) {
+          if (!gamepadRespawnWasPressed) {
+            gamepadRespawnWasPressed = true;
+            doRespawn();
+          }
+        } else {
+          gamepadRespawnWasPressed = false;
+        }
+      }
       // Le pipeline de rendu (culling viewport, nourriture groupée en Path2D, sprites de skin
       // pré-détourés en cache) est assez léger pour tourner à la cadence normale même pendant
       // l'écran de mort — l'ancien plafond dédié à 10 FPS (`DEAD_FRAME_INTERVAL_MS`) créait une
@@ -847,7 +864,7 @@ export default function GameView({
                   connectionRef.current?.send({ type: 'join', nickname });
                 }}
               >
-                Rejouer (Espace)
+                Rejouer (Espace / Manette)
               </button>
               <button className="btn-secondary-action" type="button" onClick={() => onExit()}>
                 Menu Principal
