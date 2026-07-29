@@ -196,6 +196,7 @@ export function renderFrame(
   camera: Camera,
   nicknames: ReadonlyMap<string, string>,
   colors?: ReadonlyMap<string, string>,
+  selfPlayerId?: string,
 ): RenderFrameResult {
   let drawCalls = 0;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -269,6 +270,16 @@ export function renderFrame(
       ctx.shadowBlur = 0;
       ctx.fillText(nickname, screenX, screenY);
       drawCalls++;
+
+      // Masse affichée sous le pseudo, uniquement sur le(s) morceau(x) du joueur local — demande
+      // utilisateur, pour suivre sa propre masse directement sur le blob plutôt que dans le
+      // panneau de stats (coin d'écran, moins visible en plein jeu).
+      if (selfPlayerId && entity.p === selfPlayerId) {
+        const massFontSize = Math.max(9, fontSize * 0.7);
+        ctx.font = `normal ${massFontSize}px sans-serif`;
+        ctx.fillText(String(Math.floor(entity.m)), screenX, screenY + fontSize * 0.85);
+        drawCalls++;
+      }
     }
   }
 

@@ -459,7 +459,7 @@ export default function GameView({
       const logicStepMs = performance.now() - logicStart;
 
       const drawStart = performance.now();
-      const renderInfo = renderFrame(ctx!, canvas!, entities, camera, nicknames, colors);
+      const renderInfo = renderFrame(ctx!, canvas!, entities, camera, nicknames, colors, selfPlayerId);
       const drawTimeMs = performance.now() - drawStart;
 
       if (hudRef.current) {
