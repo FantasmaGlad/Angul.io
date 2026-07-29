@@ -474,7 +474,7 @@ export default function GameView({
     const musicUrl = roomIdOrInviteCode.toLowerCase().includes('hardcore')
       ? '/assets/Sons/Musiques/Hardcore.m4a'
       : '/assets/Sons/Musiques/vanilla.m4a';
-    audioManager.playMusic(musicUrl);
+    let lastFrameAt = 0;
     function doRespawn(): void {
       setDeathState(DEFAULT_DEATH_STATE);
       connection.send({ type: 'join', nickname });
