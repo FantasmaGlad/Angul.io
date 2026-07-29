@@ -46,6 +46,8 @@ export default function AssetPreloader({ onComplete }: AssetPreloaderProps) {
         audio.src = url;
         audio.preload = 'auto';
         audio.addEventListener('canplaythrough', onItemLoaded, { once: true });
+        audio.addEventListener('canplay', onItemLoaded, { once: true });
+        audio.addEventListener('loadeddata', onItemLoaded, { once: true });
         audio.addEventListener('error', onItemLoaded, { once: true });
         audio.load();
       } else {

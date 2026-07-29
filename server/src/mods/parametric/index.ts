@@ -279,10 +279,11 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     // valeurs doivent partager la même unité pour que leur ratio soit une vraie fraction ∈ [0,1].
     const targetArea = PI * target.radius * target.radius;
     const overlapFraction = targetArea > 0 ? clamp(overlap / targetArea, 0, 1) : 1;
+    // Dès la barrière des 2/3 (66.6%) de recouvrement dépassée, disparition/avalement instantané du blob
     const massToTransfer =
-      overlapFraction >= 0.35 || dist < attacker.radius
+      overlapFraction >= (2 / 3) || dist < attacker.radius
         ? target.mass
-        : Math.min(target.mass, target.mass * absorptionRatePerSec(config) * overlapFraction * dt * 4);
+        : target.mass * absorptionRatePerSec(config) * overlapFraction * dt * 4;
     if (massToTransfer <= 0) return false;
 
     world.setMass(attacker, attacker.mass + massToTransfer);

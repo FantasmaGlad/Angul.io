@@ -141,19 +141,19 @@ export function createHardcoreMod(
     }
   }
 
-  const dashStates = new Map<PlayerId, PlayerDashState>();
-  const lastPunitiveSplitByPlayer = new Map<PlayerId, number>();
-
-  interface PlayerDashState {
+  interface DashState {
     charges: number;
     lastDashTimeMs: number;
     rechargeProgressMs: number;
   }
 
-  function getOrCreateDashState(playerId: PlayerId): PlayerDashState {
+  const dashStates = new Map<PlayerId, DashState>();
+  const lastPunitiveSplitByPlayer = new Map<PlayerId, number>();
+
+  function getOrCreateDashState(playerId: PlayerId): DashState {
     let state = dashStates.get(playerId);
     if (!state) {
-      state = { charges: 3, lastDashTimeMs: 0, rechargeProgressMs: 0 };
+      state = { charges: 3, lastDashTimeMs: -10000, rechargeProgressMs: 0 };
       dashStates.set(playerId, state);
     }
     return state;
@@ -164,7 +164,7 @@ export function createHardcoreMod(
     id: config.id,
 
     onPlayerJoin(world: World, playerId: PlayerId) {
-      dashStates.set(playerId, { charges: 3, lastDashTimeMs: 0, rechargeProgressMs: 0 });
+      dashStates.set(playerId, { charges: 3, lastDashTimeMs: -10000, rechargeProgressMs: 0 });
       base.onPlayerJoin?.(world, playerId);
     },
 
