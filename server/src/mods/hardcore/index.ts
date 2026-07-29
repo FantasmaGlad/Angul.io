@@ -60,8 +60,8 @@ export function createHardcoreMod(
     const targetArea = PI * target.radius * target.radius;
     const overlapFraction = targetArea > 0 ? clamp(overlap / targetArea, 0, 1) : 1;
 
-    // Dès 60% (0.6) de la surface du blob recouverte, la cible est immédiatement dévorée.
-    if (overlapFraction < 0.6) return false;
+    // Dès 70% (0.7) de la surface du blob recouverte, la cible est immédiatement dévorée.
+    if (overlapFraction < 0.7) return false;
 
     const massLostByTarget = target.mass;
 
@@ -237,8 +237,11 @@ export function createHardcoreMod(
         (!isGodPlayerId(a.ownerId) && b.mass >= a.mass * (1 + config.eating.massAdvantage));
 
       if (hasAdvA || hasAdvB) {
-        if (hasAdvA) handleEatAttempt(world, a, b, dt);
-        else handleEatAttempt(world, b, a, dt);
+        const ate = hasAdvA ? handleEatAttempt(world, a, b, dt) : handleEatAttempt(world, b, a, dt);
+        if (!ate) {
+          const [attacker, victim] = hasAdvA ? [a, b] : [b, a];
+          applyRepulsion(attacker, victim, false);
+        }
         return;
       }
 

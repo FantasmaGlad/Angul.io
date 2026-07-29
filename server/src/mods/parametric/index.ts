@@ -321,17 +321,12 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     const requiredB = config.merge.baseTimeSec + config.merge.massFactor * stateB.massAtSplit;
     if (stateA.splitElapsedS < requiredA || stateB.splitElapsedS < requiredB) return false;
 
-    const overlap = circleOverlapArea(a.radius, b.radius, distance(a.position, b.position));
-    // Aire RÉELLE (dérivée du rayon effectif, voir shared/geometry.ts `massToRadius`), pas
-    // `massToArea`/kArea — les deux formules ont divergé (le rayon des morceaux de joueur n'est
-    // plus fonction de kArea du tout, voir `massToRadius`), comparer `overlap` à un total dérivé
-    // de kArea faussait le seuil de fusion (chevauchement requis trop petit ou trop grand selon
-    // le mode, jusqu'à rendre la fusion imperceptible ou au contraire quasi immédiate).
-    const totalArea = PI * a.radius * a.radius + PI * b.radius * b.radius;
-    if (overlap < totalArea * config.merge.overlapMinFraction) return false;
-
-    world.mergeEntities(a, b);
-    return true;
+    const dist = distance(a.position, b.position);
+    if (dist <= a.radius + b.radius + 1.0) {
+      world.mergeEntities(a, b);
+      return true;
+    }
+    return false;
   }
 
   /** Blob Dieu (§4.5 cahier_des_charges_admin.md) : invincibilité + "manger n'importe quelle
@@ -611,10 +606,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
       // morceaux DÉJÀ profondément chevauchés dès le départ le manquaient).
       if (a.ownerId && a.ownerId === b.ownerId) {
         if (!tryMerge(world, a, b)) {
-          const totalArea = PI * a.radius * a.radius + PI * b.radius * b.radius;
-          const targetOverlap = totalArea * config.merge.overlapMinFraction;
-          const restDistance = restingDistanceForOverlap(a.radius, b.radius, targetOverlap);
-          applyRepulsion(a, b, true, restDistance);
+          applyRepulsion(a, b, true, fullSeparationDistance(a, b));
         }
         return;
       }

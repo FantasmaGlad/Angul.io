@@ -196,12 +196,23 @@ export function attachInput(
 
       const dx = smoothedMouseX - canvas.width / 2;
       const dy = smoothedMouseY - canvas.height / 2;
-      const intensity = Math.min(1, Math.hypot(dx, dy) / CONTROL_RADIUS_PX);
-      // Écran -> monde : inverse de `toScreenX`/`toScreenY` (render.ts) — le curseur au centre
-      // de l'écran correspond au centre de la caméra (grossièrement la position du joueur).
+      const distPx = Math.hypot(dx, dy);
+      const MOUSE_DEADZONE_PX = 10;
+
+      if (distPx < MOUSE_DEADZONE_PX) {
+        return { target: { x: camera.x, y: camera.y }, intensity: 0 };
+      }
+
+      const intensity = Math.min(1, (distPx - MOUSE_DEADZONE_PX) / (CONTROL_RADIUS_PX - MOUSE_DEADZONE_PX));
+      const dirX = dx / distPx;
+      const dirY = dy / distPx;
+      // Projeter la cible suffisamment loin devant le blob dans la direction de la souris pour que
+      // la position simulée ne dépasse jamais la cible en une seule frame (ce qui inverserait la
+      // direction à 180° et causait des saccades/tressautements près du centre).
+      const projectedDistWorld = Math.max(300, distPx / camera.scale);
       const target: Vector2 = {
-        x: camera.x + dx / camera.scale,
-        y: camera.y + dy / camera.scale,
+        x: camera.x + dirX * projectedDistWorld,
+        y: camera.y + dirY * projectedDistWorld,
       };
       return { target, intensity };
     },

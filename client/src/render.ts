@@ -75,11 +75,11 @@ export function colorForSkinFallback(skinId: string): string {
  * d'origine (1.44) — combinée à la taille de départ des morceaux réduite de moitié
  * (shared/geometry.ts `massToRadius`), la carte perçue est plus vaste/spacieuse dès le début
  * d'une partie. */
-export const BASE_SCALE = 1.44 / 1.5;
+export const BASE_SCALE = 1.44 / 2.25;
 const MIN_SCALE = 0.1;
 /** Légèrement au-dessus de `BASE_SCALE` : laisse un peu de marge de zoom supplémentaire pour
  * les morceaux plus petits que la référence (ex. juste après un split). */
-const MAX_SCALE = 1.76 / 1.5;
+const MAX_SCALE = 1.76 / 2.25;
 /** Le client n'a pas besoin de connaître M_START du mod actif : cette référence ne sert
  * qu'à calibrer le zoom, pas la simulation elle-même. */
 const REFERENCE_MASS = 50;

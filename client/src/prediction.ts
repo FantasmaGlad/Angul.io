@@ -2,6 +2,7 @@ import {
   accelerationForMass,
   add,
   length,
+  massToRadius,
   moveToward,
   scale,
   sub,
@@ -426,6 +427,28 @@ export class LocalPrediction {
     const maxChange = accelerationForMass(piece.mass, movement) * accelIntensity * dtSeconds;
     piece.velocity = moveToward(piece.velocity, targetVelocity, maxChange);
     piece.position = add(piece.position, scale(piece.velocity, dtSeconds));
+
+    if (movement.mapSize && movement.mapSize > 0) {
+      const r = massToRadius(piece.mass);
+      const minX = r;
+      const maxX = movement.mapSize - r;
+      const minY = r;
+      const maxY = movement.mapSize - r;
+      if (piece.position.x < minX) {
+        piece.position.x = minX;
+        piece.velocity.x = 0;
+      } else if (piece.position.x > maxX) {
+        piece.position.x = maxX;
+        piece.velocity.x = 0;
+      }
+      if (piece.position.y < minY) {
+        piece.position.y = minY;
+        piece.velocity.y = 0;
+      } else if (piece.position.y > maxY) {
+        piece.position.y = maxY;
+        piece.velocity.y = 0;
+      }
+    }
   }
 
   private pruneHistory(nowMs: number): void {
