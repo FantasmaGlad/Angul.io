@@ -62,7 +62,8 @@ export function attachInput(canvas: HTMLCanvasElement, onSplitRequested?: () => 
     mouseY = event.clientY;
   };
   const onKeyDown = (event: KeyboardEvent): void => {
-    if (event.code === 'Space') {
+    if (event.code === 'Space' || event.key === ' ') {
+      event.preventDefault();
       splitRequested = true;
       onSplitRequested?.();
     }

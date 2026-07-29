@@ -47,25 +47,7 @@ const FOOD_GRAVITY_RANGE_PX = 60;
 const FOOD_GRAVITY_SPEED_PX_PER_S = 220;
 
 /** Attire vers `piece` (jamais vers un AUTRE morceau de joueur, demande utilisateur : "pas les
- * joueurs") toute particule de nourriture à portée du halo — un simple déplacement direct de
- * position (la nourriture n'a pas de vélocité propre en dehors de cet effet), borné à
- * `FOOD_GRAVITY_SPEED_PX_PER_S * dt` par tick pour ne jamais dépasser la distance réelle qui
- * sépare la particule du morceau (évite un dépassement/tremblement si la particule est déjà
- * quasiment au contact). `world.queryNearby` : mêmes positions que le tick précédent, la grille
- * spatiale n'étant reconstruite qu'après `onTick` (voir Room.tick()) — même décalage d'un tick
- * que l'utilise déjà `BotManager.isTouchingHuman`, imperceptible pour un effet de cette nature. */
-function applyFoodGravity(world: World, piece: Entity, dt: number): void {
-  const range = piece.radius + FOOD_GRAVITY_RANGE_PX;
-  const maxStep = FOOD_GRAVITY_SPEED_PX_PER_S * dt;
-  for (const nearbyId of world.queryNearby(piece.position, range)) {
-    const particle = world.getEntity(nearbyId);
-    if (!particle || particle.kind !== 'particle') continue;
-    const offset = sub(piece.position, particle.position);
-    const dist = length(offset);
-    if (dist <= 0 || dist > range) continue;
-    particle.position = add(particle.position, scale(offset, Math.min(maxStep, dist) / dist));
-  }
-}
+
 
 /** Repousse deux morceaux hors de leur pénétration mutuelle — correction de POSITION (résout
  * 100% du chevauchement en un seul appel, mass-weighted), commune aux deux variantes. `hard`
@@ -297,10 +279,10 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     // valeurs doivent partager la même unité pour que leur ratio soit une vraie fraction ∈ [0,1].
     const targetArea = PI * target.radius * target.radius;
     const overlapFraction = targetArea > 0 ? clamp(overlap / targetArea, 0, 1) : 1;
-    const massToTransfer = Math.min(
-      target.mass,
-      target.mass * absorptionRatePerSec(config) * overlapFraction * dt,
-    );
+    const massToTransfer =
+      overlapFraction >= 0.35 || dist < attacker.radius
+        ? target.mass
+        : Math.min(target.mass, target.mass * absorptionRatePerSec(config) * overlapFraction * dt * 4);
     if (massToTransfer <= 0) return false;
 
     world.setMass(attacker, attacker.mass + massToTransfer);
@@ -385,8 +367,6 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
 
         const decayedMass = applyPassiveDecay(entity.mass, dt, config, state.timeSinceLastEatenS);
         if (decayedMass !== entity.mass) world.setMass(entity, decayedMass);
-
-        applyFoodGravity(world, entity, dt);
       }
 
       const allPlayers = world.allPlayers();
@@ -440,16 +420,18 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         return;
       }
 
-      // Deux morceaux de joueurs différents : absorption PROGRESSIVE si avantage de masse (voir
-      // handleEatAttempt), TOUJOURS combinée à une répulsion molle — correctif d'une régression :
-      // la répulsion était auparavant désactivée dès qu'un avantage de masse existait (même
-      // infime), pour toute la durée (désormais longue, "progressive") de l'absorption ; sans
-      // aucune force de séparation pendant tout ce temps, deux joueurs de masse différente (le cas
-      // quasi général) pouvaient se traverser librement (régression signalée : "on peut passer à
-      // travers les joueurs"). La répulsion continue de séparer les deux morceaux chaque tick — le
-      // chevauchement qui alimente l'absorption ne vient donc que du rattrapage réel de
-      // l'attaquant (une vraie poursuite), jamais d'un contact figé sans résistance.
-      if (!handleEatAttempt(world, a, b, dt)) handleEatAttempt(world, b, a, dt);
+      // Deux morceaux de joueurs différents : absorption s'il y a un avantage de masse
+      // (sans répulsion pour permettre à l'attaquant de dévorer sa cible), ou répulsion
+      // si aucune entité n'a l'avantage (masses équivalentes) afin de bloquer le chevauchement.
+      const aCanEatB = hasMassAdvantage(a, b);
+      const bCanEatA = hasMassAdvantage(b, a);
+
+      if (aCanEatB || bCanEatA) {
+        if (aCanEatB) handleEatAttempt(world, a, b, dt);
+        else handleEatAttempt(world, b, a, dt);
+        return;
+      }
+
       applyRepulsion(a, b);
     },
   };

@@ -253,6 +253,7 @@ describe('BotManager', () => {
 
   it('ne réévalue PAS un bot au contact d’un autre bot (pas d’humain)', () => {
     const config = testConfig({
+      food: { ...testConfig().food, density: 0, respawnRatePerSecond: 0 },
       bots: {
         enabled: true,
         targetRatio: 0,
@@ -264,17 +265,18 @@ describe('BotManager', () => {
     const mod = createParametricMod(config);
     const room = new Room(mod, { mapSize: 2000, tickRateHz: 20, maxPlayers: 10, bots: config.bots });
 
-    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0);
-    room.tick(); // spawn des 2 bots ambiants, accumulateurs à 0 (déterministe, voir test précédent)
-    randomSpy.mockRestore();
+    room.tick(); // spawn des 2 bots ambiants
 
     const botIds = room.world.allPlayers().map((p) => p.id).filter((id) => id.startsWith('bot-'));
     expect(botIds.length).toBe(2);
     const [firstId, secondId] = botIds as [string, string];
     const firstPiece = room.world.getPiecesByOwner(firstId)[0]!;
     const secondPiece = room.world.getPiecesByOwner(secondId)[0]!;
+    firstPiece.mass = 50;
+    secondPiece.mass = 50;
     // Force le chevauchement des deux bots entre eux (positions aléatoires sinon).
     secondPiece.position = { ...firstPiece.position };
+    room.world.rebuildSpatialHash();
 
     const handleInputSpy = vi.spyOn(room, 'handleInput');
     room.tick();

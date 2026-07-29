@@ -34,15 +34,11 @@ describe('createHardcoreMod — onCollision (absorption entre joueurs)', () => {
     const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 105);
     const target = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
 
-    // Même tick fin (1/20s) que le test équivalent du mod paramétrique : la CIBLE perd 15 de
-    // masse (100*3*1*0.05, absorptionRatePerSec par défaut), mais l'ATTAQUANT en gagne 30
-    // (x2, massGainMultiplier par défaut) — le multiplicateur s'applique à la tranche transférée,
-    // pas seulement à un total final.
+    // Attaquant avec avantage de masse absorbe la cible et gagne sa masse multipliée par massGainMultiplier (x2 par défaut)
     mod.onCollision?.(world, attacker, target, 1 / 20);
 
-    expect(world.getEntity(target.id)).toBeDefined();
-    expect(target.mass).toBeCloseTo(85, 6);
-    expect(attacker.mass).toBeCloseTo(135, 6); // 105 + 15*2
+    expect(world.getEntity(target.id)).toBeUndefined();
+    expect(attacker.mass).toBe(105 + 100 * 2); // 105 + 200
   });
 
   it('respecte un multiplicateur personnalisé', () => {
@@ -56,7 +52,7 @@ describe('createHardcoreMod — onCollision (absorption entre joueurs)', () => {
 
     mod.onCollision?.(world, attacker, target, 1);
 
-    expect(attacker.mass).toBeCloseTo(105 + 100 * 3, 6);
+    expect(attacker.mass).toBe(105 + 100 * 3);
   });
 
   it("crédite l'XP sur la masse gagnée déjà multipliée (x2), pas la masse brute de la cible", () => {

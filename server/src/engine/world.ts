@@ -194,7 +194,9 @@ export class World {
         if (seen.has(pairKey)) continue;
         seen.add(pairKey);
 
-        if (distance(entity.position, other.position) < entity.radius + other.radius) {
+        const radEntity = entity.kind === 'piece' && other.kind === 'particle' ? entity.radius * 1.05 : entity.radius;
+        const radOther = other.kind === 'piece' && entity.kind === 'particle' ? other.radius * 1.05 : other.radius;
+        if (distance(entity.position, other.position) < radEntity + radOther) {
           pairs.push([entity, other]);
         }
       }

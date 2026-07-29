@@ -417,9 +417,9 @@ export default function GameView({
       // Respawn rapide (cahier des charges fourni, écran de mort) : Espace ne fait rien tant
       // qu'on est vivant (évite un split accidentel si le joueur a mappé une autre touche par
       // habitude — de toute façon Espace ne déclenche aucune action en jeu aujourd'hui).
-      if (event.key === ' ' && isDeadNow) {
+      if (event.key === ' ' || event.code === 'Space') {
         event.preventDefault();
-        respawn();
+        if (isDeadNow) respawn();
         return;
       }
       if (event.key === 'Escape') {
@@ -489,12 +489,14 @@ export default function GameView({
       // que cette duplication existait.
       const targetCamera = computeCamera(entities, selfPlayerId, { x: mapSize / 2, y: mapSize / 2 });
 
-      // Suivi de caméra lissé et indépendant du framerate
-      const cameraLerp = 1 - Math.exp(-15 * (frameDt / 1000));
+      // Suivi de caméra lissé et indépendant du framerate : la position reste réactive,
+      // l'échelle (zoom) utilise un lissage très doux pour éviter les saccades/à-coups au ramassage.
+      const cameraPosLerp = 1 - Math.exp(-15 * (frameDt / 1000));
+      const cameraScaleLerp = 1 - Math.exp(-3.5 * (frameDt / 1000));
       latestCamera = {
-        x: latestCamera.x + (targetCamera.x - latestCamera.x) * cameraLerp,
-        y: latestCamera.y + (targetCamera.y - latestCamera.y) * cameraLerp,
-        scale: latestCamera.scale + (targetCamera.scale - latestCamera.scale) * cameraLerp,
+        x: latestCamera.x + (targetCamera.x - latestCamera.x) * cameraPosLerp,
+        y: latestCamera.y + (targetCamera.y - latestCamera.y) * cameraPosLerp,
+        scale: latestCamera.scale + (targetCamera.scale - latestCamera.scale) * cameraScaleLerp,
       };
       // L'effet de "dash" au split est un pur transform CSS sur le canvas (voir attachInput
       // plus haut et styles.css `#game.split-punch`) — jamais mélangé à cette caméra LOGIQUE, qui

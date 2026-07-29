@@ -59,10 +59,10 @@ export function createHardcoreMod(
     // Même convention d'aire que `circleOverlapArea` (voir shared/geometry.ts).
     const targetArea = PI * target.radius * target.radius;
     const overlapFraction = targetArea > 0 ? clamp(overlap / targetArea, 0, 1) : 1;
-    const massLostByTarget = Math.min(
-      target.mass,
-      target.mass * absorptionRatePerSec(config) * overlapFraction * dt,
-    );
+    const massLostByTarget =
+      overlapFraction >= 0.35 || dist < attacker.radius
+        ? target.mass
+        : Math.min(target.mass, target.mass * absorptionRatePerSec(config) * overlapFraction * dt * 4);
     if (massLostByTarget <= 0) return false;
 
     const gainedMass = massLostByTarget * hardcoreConfig.massGainMultiplier;
@@ -191,13 +191,21 @@ export function createHardcoreMod(
         return;
       }
 
-      // Deux morceaux de joueurs différents : absorption (multiplicateur propre à Hardcore),
-      // TOUJOURS combinée à une répulsion molle — appelée directement (pas via
-      // `base.onCollision`, qui ré-exécuterait AUSSI le `handleEatAttempt` du mod paramétrique,
-      // non multiplié, en plus de celui-ci : un double transfert de masse). Même correctif de
-      // régression que le mod paramétrique sous-jacent (voir son commentaire) : sans répulsion
-      // pendant toute la durée de l'absorption progressive, les joueurs se traversaient.
-      if (!handleEatAttempt(world, a, b, dt)) handleEatAttempt(world, b, a, dt);
+      // Deux morceaux de joueurs différents : absorption s'il y a un avantage de masse,
+      // ou répulsion si aucune entité n'a l'avantage (masses équivalentes).
+      const hasAdvA =
+        isGodPlayerId(a.ownerId) ||
+        (!isGodPlayerId(b.ownerId) && a.mass >= b.mass * (1 + config.eating.massAdvantage));
+      const hasAdvB =
+        isGodPlayerId(b.ownerId) ||
+        (!isGodPlayerId(a.ownerId) && b.mass >= a.mass * (1 + config.eating.massAdvantage));
+
+      if (hasAdvA || hasAdvB) {
+        if (hasAdvA) handleEatAttempt(world, a, b, dt);
+        else handleEatAttempt(world, b, a, dt);
+        return;
+      }
+
       applyRepulsion(a, b);
     },
 
