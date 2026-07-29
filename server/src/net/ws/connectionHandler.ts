@@ -142,6 +142,7 @@ export function handleWsConnection(
       mapSize: managed.handle.mapSize,
       tickRateHz: roomManager.tickRateHz,
       movement: managed.handle.movement,
+      modId: managed.modId,
     });
     socket.on('close', () => {
       runtime.sockets.delete(spectatorId);
@@ -221,6 +222,7 @@ export function handleWsConnection(
           mapSize: managed.handle.mapSize,
           tickRateHz: roomManager.tickRateHz,
           movement: managed.handle.movement,
+          modId: managed.modId,
         });
 
         for (const existingPlayer of result.existingPlayers) {

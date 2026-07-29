@@ -207,7 +207,7 @@ export function createHardcoreMod(
       const state = getOrCreateDashState(playerId);
       const now = performance.now();
       const canDash = pieces.length === 1 && state.charges > 0 && now - state.lastDashTimeMs >= 1000;
-      const rechargeProgress = state.charges < 3 ? clamp(state.rechargeProgressMs / 10000, 0, 1) : 1;
+      const rechargeProgress = state.charges < 3 ? clamp(state.rechargeProgressMs / 4000, 0, 1) : 1;
       return {
         charges: state.charges,
         maxCharges: 3,
@@ -219,13 +219,13 @@ export function createHardcoreMod(
     onTick(world: World, dt: number) {
       base.onTick?.(world, dt);
 
-      // Mise à jour de la recharge des dashs (10s par charge)
+      // Mise à jour de la recharge des dashs (4s par charge)
       for (const [playerId, state] of dashStates.entries()) {
         if (state.charges < 3) {
           state.rechargeProgressMs += dt * 1000;
-          if (state.rechargeProgressMs >= 10000) {
+          if (state.rechargeProgressMs >= 4000) {
             state.charges += 1;
-            state.rechargeProgressMs = state.charges < 3 ? state.rechargeProgressMs - 10000 : 0;
+            state.rechargeProgressMs = state.charges < 3 ? state.rechargeProgressMs - 4000 : 0;
           }
         }
       }

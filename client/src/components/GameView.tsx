@@ -293,6 +293,12 @@ export default function GameView({
         isDeadNow = false;
         setDeathState(DEFAULT_DEATH_STATE);
         if (statNicknameRef.current) statNicknameRef.current.textContent = nickname;
+
+        const isHardcore = message.modId === 'hardcore';
+        const musicUrl = isHardcore
+          ? '/assets/Sons/Musiques/Hardcore.m4a'
+          : '/assets/Sons/Musiques/vanilla.m4a';
+        audioManager.playMusic(musicUrl);
       } else if (message.type === 'player') {
         nicknames.set(message.playerId, message.nickname);
         if (message.color) colors.set(message.playerId, message.color);

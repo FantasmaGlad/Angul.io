@@ -247,7 +247,7 @@ describe('createHardcoreMod — Dash (touche F)', () => {
     expect(dashState.canDash).toBe(false);
   });
 
-  it('recharge 1 charge au bout de 10 secondes', () => {
+  it('recharge 1 charge au bout de 4 secondes', () => {
     const config = testConfig();
     const mod = createHardcoreMod(config);
     const world = freshWorld();
@@ -264,8 +264,8 @@ describe('createHardcoreMod — Dash (touche F)', () => {
 
     expect((mod as any).getDashState(world, 'p1').charges).toBe(2);
 
-    // Écoulement de 10 secondes (200 ticks de 0.05s)
-    for (let i = 0; i < 200; i++) {
+    // Écoulement de 4 secondes (80 ticks de 0.05s)
+    for (let i = 0; i < 80; i++) {
       mod.onTick?.(world, 0.05);
     }
 

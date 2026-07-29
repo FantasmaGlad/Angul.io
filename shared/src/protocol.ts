@@ -84,6 +84,8 @@ export interface WelcomeMessage {
    * réseau (client/src/prediction.ts, plan_performance_reseau.md Phase 1). Envoyé une fois par
    * connexion (join/respawn), pas à chaque tick. */
   movement: MovementConfig;
+  /** Identifiant du mode de jeu actif (ex: 'hardcore', 'vanilla') pour la musique et l'UI. */
+  modId?: string;
 }
 
 export interface LeaderboardEntry {
