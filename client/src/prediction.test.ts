@@ -109,18 +109,19 @@ describe('LocalPrediction — réconciliation par rejeu', () => {
     // Position simulée désormais à 25, correctif visuel de +5 en attente (voir test précédent).
 
     // Cible = position simulée courante (25) : zone morte, la simulation n'avance plus — isole la
-    // résorption du correctif visuel de tout mouvement. À VISUAL_CORRECTION_SPEED_PX_PER_S=600 et
-    // dt=0.001s, le pas maximal est de 0.6px — bien en-deçà des 5px de correctif restant.
+    // résorption du correctif visuel de tout mouvement. dt = exactement UN pas fixe interne
+    // (1/240s, voir FIXED_STEP_SECONDS) : à VISUAL_CORRECTION_SPEED_PX_PER_S=600, le pas maximal
+    // par sous-pas est de 600/240 = 2.5px — bien en-deçà des 5px de correctif restant.
     nowSpy.mockReturnValueOnce(301);
-    prediction.step(0.001, { x: 25, y: 0 }, 1, MOVEMENT);
+    prediction.step(1 / 240, { x: 25, y: 0 }, 1, MOVEMENT);
 
     const [midway] = prediction.applyTo([ownSnapshot('1', 999, 999)], 'self');
-    // 25 + (5 - 0.6) = 29.4 : ni un saut instantané à 25, ni le correctif intact à 30.
-    expect(midway!.x).toBeCloseTo(29.4, 5);
+    // 25 + (5 - 2.5) = 27.5 : ni un saut instantané à 25, ni le correctif intact à 30.
+    expect(midway!.x).toBeCloseTo(27.5, 5);
 
-    // Un pas bien plus long (dt=1s, pas max 600px) épuise largement le reste du correctif.
-    nowSpy.mockReturnValueOnce(1301);
-    prediction.step(1, { x: 25, y: 0 }, 1, MOVEMENT);
+    // Un second pas fixe épuise exactement le reste du correctif (2.5px restants, pas max 2.5px).
+    nowSpy.mockReturnValueOnce(302);
+    prediction.step(1 / 240, { x: 25, y: 0 }, 1, MOVEMENT);
 
     const [resolved] = prediction.applyTo([ownSnapshot('1', 999, 999)], 'self');
     expect(resolved!.x).toBeCloseTo(25, 5);

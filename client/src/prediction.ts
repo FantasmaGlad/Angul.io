@@ -68,7 +68,25 @@ import {
  * correction sur autant de frames que nécessaire pour ne jamais dépasser un déplacement visuel
  * confortable, quelle que soit l'ampleur de l'écart — technique standard ("network smoothing",
  * Source engine/Unity Netcode) qui découple la position simulée (toujours exacte) de la position
- * affichée (toujours continue). */
+ * affichée (toujours continue).
+ *
+ * `step()` intègre à un PAS DE TEMPS FIXE (`FIXED_STEP_SECONDS`), jamais au `dt` variable de la
+ * frame de rendu (accumulateur ci-dessous, pattern "fix your timestep" classique) : c'est ce qui
+ * manquait pour que le joueur bénéficie de la même immunité à la gigue de timing des frames que
+ * les robots/joueurs distants. Ces derniers sont dessinés par simple ÉVALUATION d'une fonction
+ * d'interpolation entre deux points serveur fixes à l'instant `t` de la frame courante — quelle que
+ * soit l'irrégularité réelle des timestamps `requestAnimationFrame` (compositeur, charge machine,
+ * moniteur haut rafraîchissement...), le résultat est mathématiquement le même point sur la même
+ * courbe, donc lisse par construction. Le joueur, à l'inverse, était intégré pas à pas avec le `dt`
+ * RÉEL de chaque frame : la moindre irrégularité de ce `dt` (même quelques dixièmes de ms, réels et
+ * mesurables sur n'importe quel navigateur) perturbait directement la position accumulée d'une
+ * frame à l'autre — la seule vraie raison pour laquelle "seul le joueur tressaute, jamais les
+ * robots" même une fois la réconciliation parfaitement lissée. Un pas fixe assez petit
+ * (`FIXED_STEP_SECONDS`) pour qu'aucun sous-pas ne soit individuellement perceptible restaure cette
+ * même immunité : la simulation locale redevient déterministe, indépendante du framerate réel —
+ * PAS besoin de forcer artificiellement les FPS sur un multiple du tick serveur (impossible à
+ * garantir de toute façon : un navigateur ne fournit aucune garantie de cadence rAF exacte, et la
+ * question n'a plus lieu d'être une fois la simulation locale elle-même indépendante du framerate). */
 
 interface PredictedPiece {
   position: Vector2;
@@ -125,10 +143,21 @@ const VISUAL_CORRECTION_SPEED_PX_PER_S = 600;
  * sont qu'interpolés, jamais simulés deux fois). En-dessous de ce seuil, mieux vaut faire confiance
  * à la simulation locale telle quelle. */
 const RECONCILE_IGNORE_THRESHOLD_PX = 1.5;
+/** Pas de temps interne FIXE auquel `step()` intègre la simulation locale (voir le commentaire
+ * d'en-tête, "fix your timestep") — indépendant du `dt` réel de la frame de rendu. Assez fin pour
+ * qu'aucun sous-pas ne soit perceptible individuellement, même sur un écran très haut
+ * rafraîchissement (jusqu'à 240Hz). */
+const FIXED_STEP_SECONDS = 1 / 240;
+/** Plafond de rattrapage par appel à `step()` — au-delà (onglet mis en arrière-plan, point d'arrêt
+ * debugger, gros GC...), mieux vaut perdre un peu de précision temporelle que d'exécuter des
+ * dizaines de sous-pas d'un coup au retour au premier plan. */
+const MAX_FRAME_SECONDS = 0.25;
 
 export class LocalPrediction {
   private readonly pieces = new Map<string, PredictedPiece>();
   private readonly history: InputSample[] = [];
+  /** Reliquat de temps non encore intégré en pas fixe (voir `step()`). */
+  private accumulatorSeconds = 0;
 
   /** À appeler à chaque `state` reçu, avec les entités BRUTES du message (pas interpolées) — met
    * à jour/crée/retire les morceaux prédits du joueur pour rester cohérent avec ce que le serveur
@@ -212,18 +241,29 @@ export class LocalPrediction {
   step(dtSeconds: number, target: Vector2, intensity: number, movement: MovementConfig): void {
     if (dtSeconds <= 0) return;
 
+    // Accumulateur (voir le commentaire d'en-tête, "fix your timestep") : le `dt` réel de la frame
+    // de rendu ne sert qu'à savoir COMBIEN de pas fixes exécuter, jamais comme pas d'intégration
+    // lui-même — la simulation locale reste ainsi déterministe, indépendante du framerate réel.
+    this.accumulatorSeconds = Math.min(this.accumulatorSeconds + dtSeconds, MAX_FRAME_SECONDS);
+    const maxOffsetStep = VISUAL_CORRECTION_SPEED_PX_PER_S * FIXED_STEP_SECONDS;
+    // Un seul horodatage pour tous les sous-pas de CET appel — largement assez précis pour le
+    // découpage `sinceMs` de `reconcile()` (granularité de plusieurs ms), et évite un appel
+    // `performance.now()` par sous-pas (jusqu'à des dizaines par frame sur un gros ralentissement).
     const atMs = performance.now();
-    this.history.push({ atMs, dtSeconds, target, intensity });
-    this.pruneHistory(atMs);
 
-    if (this.pieces.size === 0) return;
-    const maxOffsetStep = VISUAL_CORRECTION_SPEED_PX_PER_S * dtSeconds;
-    for (const piece of this.pieces.values()) {
-      this.integrate(piece, dtSeconds, target, intensity, movement);
-      // Résorption à vitesse plafonnée de l'écart d'affichage laissé par une réconciliation
-      // récente (voir `reconcile`) — indépendant du dt fixe serveur, tourne à la cadence de rendu.
-      piece.visualOffset = moveToward(piece.visualOffset, { x: 0, y: 0 }, maxOffsetStep);
+    while (this.accumulatorSeconds >= FIXED_STEP_SECONDS) {
+      this.accumulatorSeconds -= FIXED_STEP_SECONDS;
+
+      this.history.push({ atMs, dtSeconds: FIXED_STEP_SECONDS, target, intensity });
+
+      for (const piece of this.pieces.values()) {
+        this.integrate(piece, FIXED_STEP_SECONDS, target, intensity, movement);
+        // Résorption à vitesse plafonnée de l'écart d'affichage laissé par une réconciliation
+        // récente (voir `reconcile`), au même pas fixe que le reste de la simulation locale.
+        piece.visualOffset = moveToward(piece.visualOffset, { x: 0, y: 0 }, maxOffsetStep);
+      }
     }
+    this.pruneHistory(atMs);
   }
 
   /** Cœur du modèle de mouvement (identique à `onTick`/`inputVectorOf` du mod paramétrique côté
