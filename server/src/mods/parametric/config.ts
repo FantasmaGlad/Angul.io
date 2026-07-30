@@ -1,3 +1,5 @@
+import type { RoomResetSchedule } from '../../engine/resetSchedule.js';
+
 /**
  * Schéma de configuration d'un mod "paramétrique" : un mode de jeu défini uniquement par des
  * valeurs numériques (pas de nouvelle logique de jeu), lisible depuis un fichier JSON externe
@@ -91,14 +93,12 @@ export interface ParametricModConfig {
     minMassToEatFood: number;
     /** Multiplicateur de masse gagnée par la nourriture (1.5 = +50% de grossissement). */
     foodEfficiency?: number;
-    /** Fraction de la masse restante de la cible transférée par seconde À CHEVAUCHEMENT PLEIN
-     * (100% de sa surface recouverte) — l'absorption entre joueurs (avantage de masse) est
-     * désormais PROGRESSIVE (transfert continu proportionnel au chevauchement réel, tick après
-     * tick) plutôt qu'un seul événement instantané une fois un seuil de recouvrement franchi (qui
-     * donnait l'impression d'une "téléportation" : la cible n'était ni repoussée ni visiblement
-     * grignotée avant de disparaître d'un coup, voir `handleEatAttempt`). Absent = repli sur
-     * `DEFAULT_ABSORPTION_RATE_PER_SEC` (physics.ts). */
-    absorptionRatePerSec?: number;
+    /** Fraction (0-1) de la surface de la cible qui doit être recouverte pour qu'elle soit
+     * immédiatement dévorée en entier (voir `handleEatAttempt`, mods/parametric/index.ts et
+     * mods/hardcore/index.ts) — un seul événement de transfert par avantage de masse, pas un
+     * drain progressif tick après tick. Absent = repli sur `DEFAULT_EAT_OVERLAP_FRACTION`
+     * (physics.ts). */
+    eatOverlapFraction?: number;
   };
 
   /** Perte de masse passive — Mm (`floor`) et Ml (les taux/seuil) de la feuille Excel,
@@ -146,6 +146,41 @@ export interface ParametricModConfig {
   areaConstant: number;
 
   bots?: BotConfig;
+
+  /** Punition du Top 5 (mécanique commune à tout mode paramétrique, voir
+   * mods/parametric/index.ts `onTick`) : force un split sur le morceau le plus lourd d'un joueur
+   * en tête si son avance sur le suivant devient trop confortable — évite qu'un seul joueur ne
+   * devienne intouchable en fin de partie. Absent = repli sur les valeurs par défaut ci-dessous
+   * (`DEFAULT_LEADER_PUNISHMENT`, index.ts), identiques au comportement d'origine. */
+  leaderPunishment?: {
+    /** `false` désactive entièrement la mécanique pour ce mode. */
+    enabled: boolean;
+    /** Nombre de joueurs les mieux classés examinés à chaque vérification (5 = "Top 5"). */
+    topN: number;
+    /** Masse totale minimale du joueur en tête avant que la mécanique ne puisse se déclencher. */
+    minMassThreshold: number;
+    /** Ratio d'avance (masse du joueur / masse du suivant) au-delà duquel le split est déclenché. */
+    leadRatio: number;
+    /** Délai minimal (ms) entre deux déclenchements pour un même joueur. */
+    cooldownMs: number;
+    /** Fréquence de vérification, en nombre de ticks du mod (pas de tick serveur) entre deux
+     * passages — 20 = une fois toutes les 20 exécutions de `onTick`. */
+    checkIntervalTicks: number;
+  };
+
+  /** Réglages de salon par défaut pour ce mode — utilisés par `server/src/index.ts` pour les
+   * salons de base créés au démarrage ; un salon créé depuis le lobby peut les redéfinir
+   * individuellement (voir `CreateRoomOptions`, engine/roomManager.ts). Absents = repli sur les
+   * valeurs par défaut historiques (voir `server/src/index.ts`). */
+  room?: {
+    /** Nombre maximal de joueurs simultanés pour un salon de base de ce mode. */
+    maxPlayers?: number;
+    /** Planification du reset automatique — même format que `RoomOptions.resetSchedule`
+     * (engine/resetSchedule.ts) : `{ type: 'dailyAt', hour, minute, timeZone }`,
+     * `{ type: 'everyNMinutes', minutes, timeZone }`, `{ type: 'interval', intervalMs }`, ou
+     * `null` pour désactiver tout reset automatique. */
+    resetSchedule?: RoomResetSchedule | null;
+  };
 }
 
 export interface BotConfig {

@@ -26,17 +26,17 @@ export function accelerationForMass(mass: number, config: ParametricModConfig): 
   return sharedAccelerationForMass(mass, toMovementConfig(config));
 }
 
-/** Repli si `config.eating.absorptionRatePerSec` est absent (mode non mis à jour, ou fixture de
- * test) — 3 : à chevauchement plein et soutenu, une cible perd ~95% de sa masse en ~1s
- * (exp(-3)≈0.05), assez rapide pour rester satisfaisant, assez lent pour être visiblement
- * "grignoté" plutôt qu'instantané (voir `handleEatAttempt`). */
-const DEFAULT_ABSORPTION_RATE_PER_SEC = 3;
+/** Repli si `config.eating.eatOverlapFraction` est absent — 0.7 (70%, arrondi de 2/3) : valeur
+ * d'origine du seuil, reprise telle quelle (voir historique de `handleEatAttempt`,
+ * mods/parametric/index.ts et mods/hardcore/index.ts). */
+const DEFAULT_EAT_OVERLAP_FRACTION = 0.7;
 
-/** Fraction de la masse RESTANTE de la cible transférée par seconde, à 100% de chevauchement de
- * sa surface — voir `ParametricModConfig['eating']['absorptionRatePerSec']` et
- * `mods/parametric/index.ts` `handleEatAttempt`. */
-export function absorptionRatePerSec(config: ParametricModConfig): number {
-  return config.eating.absorptionRatePerSec ?? DEFAULT_ABSORPTION_RATE_PER_SEC;
+/** Fraction (0-1) de la surface de la cible qui doit être recouverte pour qu'un attaquant en
+ * position d'avantage de masse la dévore intégralement d'un coup — seuil unique, partagé par
+ * Vanilla et Hardcore (qui composent tous deux `handleEatAttempt` sur ce même seuil plutôt que de
+ * le dupliquer en dur chacun de leur côté). */
+export function eatOverlapFraction(config: ParametricModConfig): number {
+  return config.eating.eatOverlapFraction ?? DEFAULT_EAT_OVERLAP_FRACTION;
 }
 
 function decayLambda(mass: number, config: ParametricModConfig, timeSinceLastEatenS = 10): number {

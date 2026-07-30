@@ -2,7 +2,6 @@ import {
   accelerationForMass,
   add,
   distance,
-  dot,
   length,
   massToRadius,
   moveToward,
@@ -177,14 +176,6 @@ export class LocalPrediction {
   private pendingDashes: Array<{ atMs: number; impulse: Vector2 }> = [];
   /** Reliquat de temps non encore intégré en pas fixe (voir `step()`). */
   private accumulatorSeconds = 0;
-  private activeTarget: Vector2 | undefined;
-  private activeIntensity = 0;
-
-  /** Enregistre l'input exact transmis au serveur pour aligner à 100% la prédiction locale. */
-  recordSentInput(target: Vector2, intensity: number): void {
-    this.activeTarget = target;
-    this.activeIntensity = intensity;
-  }
 
   /** À appeler à chaque `state` reçu, avec les entités BRUTES du message (pas interpolées) — met
    * à jour/crée/retire les morceaux prédits du joueur pour rester cohérent avec ce que le serveur
@@ -269,7 +260,26 @@ export class LocalPrediction {
       // `step()`, pour que l'AFFICHAGE reste continu sans désynchroniser la position simulée.
       const residual = sub(predicted.position, beforeReconcile);
       const residualDist = length(residual);
-      if (residualDist <= RECONCILE_SNAP_THRESHOLD_PX) {
+      // Seuil dynamique en-deçà duquel le résidu est pur bruit de discrétisation (intégration
+      // fine côté client vs. un seul pas par tick côté serveur, voir `chunkHistoryForReplay`) —
+      // proportionnel à l'accélération EFFECTIVE du morceau (dépend de sa masse ET du mod actif,
+      // voir RECONCILE_IGNORE_SAFETY_FACTOR). En-dessous, on ignore purement et simplement : la
+      // position simulée reprend `beforeReconcile` (aucun événement réel à refléter), sans quoi
+      // CE bruit résiduel, non nul à quasiment chaque `state` reçu, se traduirait en une
+      // correction visuelle perceptible à la cadence du tick serveur — le tremblement du blob du
+      // joueur (absent des robots/joueurs distants, jamais réconciliés).
+      const tickSeconds = serverTickRateHz && serverTickRateHz > 0 ? 1 / serverTickRateHz : 1 / 30;
+      const dynamicIgnoreThresholdPx = Math.min(
+        RECONCILE_IGNORE_MAX_PX,
+        Math.max(
+          RECONCILE_IGNORE_FLOOR_PX,
+          accelerationForMass(predicted.mass, movement) * tickSeconds * tickSeconds * 0.5 *
+            RECONCILE_IGNORE_SAFETY_FACTOR,
+        ),
+      );
+      if (residualDist <= dynamicIgnoreThresholdPx) {
+        predicted.position = beforeReconcile;
+      } else if (residualDist <= RECONCILE_SNAP_THRESHOLD_PX) {
         predicted.visualOffset = sub(predicted.visualOffset, residual);
       } else {
         // Téléportation importante (mort/respawn, bord de carte) : réinitialisation visuelle directe.
@@ -282,10 +292,12 @@ export class LocalPrediction {
     }
   }
 
-  /** À appeler à chaque frame de rendu (`requestAnimationFrame`), avec l'input courant — avance
-   * la simulation locale des morceaux du joueur exactement comme `onTick`/`onPlayerInput` du mod
-   * paramétrique (server/src/mods/parametric/index.ts) le font côté serveur, et journalise
-   * l'échantillon pour un rejeu ultérieur (voir `reconcile`). */
+  /** Répulsion entre les propres morceaux du joueur (post-split) — miroir de la même règle
+   * appliquée côté serveur (`applyRepulsion`, server/src/mods/parametric/index.ts), pour que les
+   * morceaux prédits localement ne s'inter-pénètrent jamais visuellement en attendant le prochain
+   * `state` qui appliquerait la même correction. Appelée après `step()`/`reconcile()`, jamais à
+   * l'intérieur de la boucle de sous-pas fixes de `step()` (correction géométrique instantanée,
+   * pas une intégration temporelle). */
   private applySelfRepulsion(): void {
     if (this.pieces.size <= 1) return;
     const pieceList = Array.from(this.pieces.values());
@@ -310,20 +322,41 @@ export class LocalPrediction {
     }
   }
 
+  /** À appeler à chaque frame de rendu (`requestAnimationFrame`), avec l'input LIVE de cette
+   * frame — avance la simulation locale des morceaux du joueur à pas fixe (voir l'accumulateur
+   * ci-dessous) exactement comme `onTick`/`onPlayerInput` du mod paramétrique
+   * (server/src/mods/parametric/index.ts) le font côté serveur, et journalise chaque sous-pas
+   * pour un rejeu ultérieur (voir `reconcile`). */
   step(dtSeconds: number, target: Vector2, intensity: number, movement: MovementConfig): void {
     if (dtSeconds <= 0) return;
 
     const effTarget = target;
     const effIntensity = intensity;
+    // Accumulateur (voir le commentaire d'en-tête, "fix your timestep") : le `dt` réel de la frame
+    // de rendu ne sert qu'à savoir COMBIEN de pas fixes exécuter, jamais comme pas d'intégration
+    // lui-même — la simulation locale reste ainsi déterministe, indépendante du framerate réel.
+    this.accumulatorSeconds = Math.min(this.accumulatorSeconds + dtSeconds, MAX_FRAME_SECONDS);
+    // Un seul horodatage pour tous les sous-pas de CET appel — largement assez précis pour le
+    // découpage `sinceMs` de `reconcile()` (granularité de plusieurs ms), et évite un appel
+    // `performance.now()` par sous-pas (jusqu'à des dizaines par frame sur un gros ralentissement).
     const atMs = performance.now();
+    const maxOffsetStep = VISUAL_CORRECTION_SPEED_PX_PER_S * FIXED_STEP_SECONDS;
 
-    this.history.push({ atMs, dtSeconds, target: effTarget, intensity: effIntensity });
+    while (this.accumulatorSeconds >= FIXED_STEP_SECONDS) {
+      this.accumulatorSeconds -= FIXED_STEP_SECONDS;
 
-    const maxOffsetStep = VISUAL_CORRECTION_SPEED_PX_PER_S * dtSeconds;
-    for (const piece of this.pieces.values()) {
-      this.integrate(piece, dtSeconds, effTarget, effIntensity, movement);
-      piece.visualOffset = moveToward(piece.visualOffset, { x: 0, y: 0 }, maxOffsetStep);
+      this.history.push({ atMs, dtSeconds: FIXED_STEP_SECONDS, target: effTarget, intensity: effIntensity });
+
+      for (const piece of this.pieces.values()) {
+        this.integrate(piece, FIXED_STEP_SECONDS, effTarget, effIntensity, movement);
+        // Résorption à vitesse plafonnée de l'écart d'affichage laissé par une réconciliation
+        // récente (voir `reconcile`), au même pas fixe que le reste de la simulation locale.
+        piece.visualOffset = moveToward(piece.visualOffset, { x: 0, y: 0 }, maxOffsetStep);
+      }
     }
+    // Collisions/répulsion entre les propres morceaux du joueur (voir son commentaire) — une
+    // correction géométrique de position, pas une intégration temporelle : appliquée une seule
+    // fois par frame de rendu, après tous les sous-pas fixes, jamais à l'intérieur de la boucle.
     this.applySelfRepulsion();
     this.pruneHistory(atMs);
   }
@@ -354,8 +387,8 @@ export class LocalPrediction {
    * intégration fine d'environ `accel·dt²/2` par pas de rampe. Le serveur (`Room.tick()`) intègre
    * en 1 seul pas de `1/tickRateHz` ; rejouer avec ~8 pas de `1/240s` pour ce même intervalle
    * introduisait donc un écart systématique de quelques px à CHAQUE accélération/changement de cap
-   * — soit en pilotage actif, en permanence — largement au-dessus de
-   * `RECONCILE_IGNORE_THRESHOLD_PX`, corrigé en boucle par le lissage visuel (le tremblement
+   * — soit en pilotage actif, en permanence — largement au-dessus du seuil dynamique d'ignorance
+   * (voir `RECONCILE_IGNORE_MAX_PX`), corrigé en boucle par le lissage visuel (le tremblement
    * "dans tous les sens, en continu" du blob du joueur). Regrouper le rejeu à la même granularité
    * que le serveur reproduit la même discrétisation pour le même intervalle de temps, éliminant ce
    * biais à la source plutôt que de le lisser après coup.
@@ -525,7 +558,5 @@ export class LocalPrediction {
   reset(): void {
     this.pieces.clear();
     this.history.length = 0;
-    this.activeTarget = undefined;
-    this.activeIntensity = 0;
   }
 }

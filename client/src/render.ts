@@ -1,4 +1,4 @@
-import { BOT_COLORS, clamp, isBotId, SKIN_IMAGE_MAP, skinForNickname, type EntitySnapshot } from '@angulio/shared';
+import { clamp, isBotId, SKIN_IMAGE_MAP, skinForNickname, type EntitySnapshot } from '@angulio/shared';
 import { ownAggregate } from './stats.js';
 
 const skinImageCache = new Map<string, HTMLImageElement>();

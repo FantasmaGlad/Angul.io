@@ -389,9 +389,10 @@ describe('LocalPrediction — rembobinage de la vélocité avant rejeu (fix_vite
     // réconciliation) aurait atteinte après le même temps total écoulé (18 sous-pas depuis le
     // repos) — la vélocité rembobinée élimine tout double comptage ; le résidu de rejeu restant
     // (1.09375, simple biais de granularité fine/grossière, voir `chunkHistoryForReplay`) tombe
-    // sous RECONCILE_IGNORE_THRESHOLD_PX (1.5) et est ignoré : `reconcile()` n'introduit ici
-    // aucune erreur mesurable.
-    expect(entity!.x).toBeCloseTo(7.7734375, 5);
+    // sous le seuil dynamique d'ignorance (~1.875px ici : accel 2250 × tickSeconds² × 0.5 × 1.5,
+    // voir RECONCILE_IGNORE_SAFETY_FACTOR) et est ignoré : `reconcile()` n'introduit ici aucune
+    // erreur mesurable.
+    expect(entity!.x).toBeCloseTo(6.6796875, 5);
   });
 
   it("SANS `authoritativeVelocities` (paramètre omis) : reproduit l'ancien double comptage — régression", () => {

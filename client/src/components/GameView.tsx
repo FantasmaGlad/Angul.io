@@ -36,8 +36,6 @@ import { LocalPrediction } from '../prediction.js';
 import {
   BASE_SCALE,
   computeCamera,
-  cullEntitiesForViewport,
-  interpolateEntities,
   renderFrame,
   type Camera,
 } from '../render.js';
@@ -214,12 +212,6 @@ export default function GameView({
      * qui confirme la reconnexion (voir net.ts) — purement pour informer le joueur (statut HUD)
      * que la partie n'est pas figée, juste en train de se rattacher. */
     let isReconnecting = false;
-
-    function respawn(): void {
-      isDeadNow = false;
-      setDeathState(DEFAULT_DEATH_STATE);
-      connection.send({ type: 'join', nickname });
-    }
 
     function showComboBanner(level: number): void {
       const banner = comboBannerRef.current;
@@ -439,7 +431,6 @@ export default function GameView({
           // (lissée/en retard) — voir `LocalPrediction.getOwnPosition`.
           const ownPosition = prediction.getOwnPosition() ?? latestCamera;
           const { target, intensity } = input.getTarget({ ...latestCamera, ...ownPosition });
-          prediction.recordSentInput(target, intensity);
           connection.send({
             type: 'input',
             target,
@@ -473,9 +464,6 @@ export default function GameView({
     // chiffrée dans ce cas (voir debugOverlay.ts, RenderStats.targetHz).
     const targetHz =
       minFrameIntervalMs > 0 ? Math.round(1000 / minFrameIntervalMs) : undefined;
-    const musicUrl = roomIdOrInviteCode.toLowerCase().includes('hardcore')
-      ? '/assets/Sons/Musiques/Hardcore.m4a'
-      : '/assets/Sons/Musiques/vanilla.m4a';
     let lastFrameAt = 0;
     function doRespawn(): void {
       setDeathState(DEFAULT_DEATH_STATE);

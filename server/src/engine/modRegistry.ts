@@ -34,6 +34,7 @@ export const resolveMod: ModResolver = (modId) => {
     // sur `ParametricModConfig` (parametric ET hardcore, qui hérite du mouvement du mod
     // paramétrique sous-jacent sans le modifier, voir mods/hardcore/index.ts).
     movement: toMovementConfig(config),
+    room: config.room,
   };
 };
 

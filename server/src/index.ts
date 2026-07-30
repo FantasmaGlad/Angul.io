@@ -7,7 +7,7 @@ import { AccountsService } from './accounts/service.js';
 import { AdminAuth } from './admin/adminAuth.js';
 import { AdminUsersRepository } from './admin/adminUsersRepository.js';
 import { getPool } from './db/pool.js';
-import { listAvailableModIds } from './engine/modRegistry.js';
+import { listAvailableModIds, resolveMod } from './engine/modRegistry.js';
 import { TWO_HOUR_RESET_SCHEDULE } from './engine/resetSchedule.js';
 import { RoomManager } from './engine/roomManager.js';
 import { createLocalRoomHost } from './engine/worker/roomHost.js';
@@ -32,27 +32,32 @@ const roomHost = ROOM_WORKERS > 0 ? createWorkerRoomHost(ROOM_WORKERS) : createL
 const roomManager = new RoomManager(roomHost, TICK_RATE_HZ);
 
 // Deux salons publics de base toujours présents (demande utilisateur), un par mode disponible
-// (Vanilla, Hardcore — Folie retiré) : 30 joueurs max, remplis à 10-20% de bots (ratio fluctuant,
-// voir BotManager.updateFluctuatingRatio — `targetRatio` volontairement absent des configs pour
+// (Vanilla, Hardcore — Folie retiré), remplis à 10-20% de bots (ratio fluctuant, voir
+// BotManager.updateFluctuatingRatio — `targetRatio` volontairement absent des configs pour
 // laisser ce ratio s'appliquer ; `BotManager.adjustPopulation` fait respawner les bots
-// automatiquement dès que leur nombre baisse), reset toutes les 2h heure de Paris. Jamais
-// supprimés par le nettoyage automatique des salons vides (durcissement avant exposition
-// publique) : contrairement aux salons créés depuis le lobby, ils doivent toujours exister, même
-// si personne n'y joue jamais.
+// automatiquement dès que leur nombre baisse). Jamais supprimés par le nettoyage automatique des
+// salons vides (durcissement avant exposition publique) : contrairement aux salons créés depuis
+// le lobby, ils doivent toujours exister, même si personne n'y joue jamais.
+//
+// Capacité et cadence de reset lues depuis `ParametricModConfig['room']` (server/configs/*.json,
+// voir mods/parametric/config.ts) — modifiables par un modder sans toucher ce fichier ; repli sur
+// `BASE_ROOM_MAX_PLAYERS`/`TWO_HOUR_RESET_SCHEDULE` uniquement pour un mod dont la config JSON
+// omet cette section.
 const BASE_ROOMS: Array<{ name: string; modId: string }> = [
   { name: 'Vanilla', modId: 'vanilla' },
   { name: 'Hardcore', modId: 'hardcore' },
 ];
-const baseRooms = BASE_ROOMS.map((base) =>
-  roomManager.createRoom({
+const baseRooms = BASE_ROOMS.map((base) => {
+  const { room } = resolveMod(base.modId);
+  return roomManager.createRoom({
     name: base.name,
     modId: base.modId,
     visibility: 'public',
     permanent: true,
-    maxPlayers: BASE_ROOM_MAX_PLAYERS,
-    resetSchedule: TWO_HOUR_RESET_SCHEDULE,
-  }),
-);
+    maxPlayers: room?.maxPlayers ?? BASE_ROOM_MAX_PLAYERS,
+    resetSchedule: room?.resetSchedule ?? TWO_HOUR_RESET_SCHEDULE,
+  });
+});
 
 // Comptes joueurs (Lot 3.2-3.6) : optionnels — sans `DATABASE_URL`, le serveur tourne comme
 // avant (parties anonymes uniquement), pas de plantage au démarrage pour un dev/CI qui n'a pas

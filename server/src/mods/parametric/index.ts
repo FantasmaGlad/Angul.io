@@ -22,9 +22,9 @@ import { applyBorder } from './border.js';
 
 import type { ParametricModConfig } from './config.js';
 import {
-  absorptionRatePerSec,
   applyPassiveDecay,
   accelerationForMass,
+  eatOverlapFraction,
   foodTargetCount,
   randomFoodMass,
   velocityForMass,
@@ -37,14 +37,16 @@ const FALLBACK_DIRECTION: Vector2 = { x: 1, y: 0 };
  * vecteur quasi nul, seule vraiment visible via la prédiction locale du client). */
 const TARGET_DEAD_ZONE_PX = 3;
 
-/** Portée SUPPLÉMENTAIRE (au-delà du rayon du morceau lui-même) du halo de gravité (demande
- * utilisateur : "léger halo autour du joueur où les particules sont absorbées, comme par une
- * gravité") — volontairement modeste ("léger"), pas un aimant qui viderait toute une zone. */
-const FOOD_GRAVITY_RANGE_PX = 60;
-/** Vitesse d'attraction (px/s) de la nourriture dans le halo — assez rapide pour se sentir comme
- * une vraie aspiration sur la courte portée du halo, jamais assez pour ressembler à un
- * téléport. */
-const FOOD_GRAVITY_SPEED_PX_PER_S = 220;
+/** Repli si `config.leaderPunishment` est absent — reprend telles quelles les valeurs d'origine
+ * de cette mécanique (voir `ParametricModConfig['leaderPunishment']`, config.ts). */
+const DEFAULT_LEADER_PUNISHMENT: Required<NonNullable<ParametricModConfig['leaderPunishment']>> = {
+  enabled: true,
+  topN: 5,
+  minMassThreshold: 200,
+  leadRatio: 2,
+  cooldownMs: 10000,
+  checkIntervalTicks: 20,
+};
 
 /** Éjection de masse (demande utilisateur, touche configurable — `config.eject.amount`) : un
  * morceau ne peut éjecter que s'il pèse au moins CE multiple de la masse envoyée (demande
@@ -157,6 +159,7 @@ export function applyRepulsion(
  */
 export function createParametricMod(config: ParametricModConfig): GameMod {
   let modTickCounter = 0;
+  const leaderPunishment = { ...DEFAULT_LEADER_PUNISHMENT, ...config.leaderPunishment };
 
   function randomPositionInMap(margin: number): Vector2 {
     return {
@@ -340,26 +343,15 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     return attacker.mass > target.mass;
   }
 
-  /** Masse minimale sous laquelle une cible en cours d'absorption est retirée entièrement plutôt
-   * que de laisser traîner indéfiniment un reliquat quasi nul (la décroissance appliquée par
-   * `handleEatAttempt` est exponentielle, elle n'atteint jamais exactement 0). */
-  const ABSORPTION_REMOVE_FLOOR = 0.5;
-
-  /** Absorption PROGRESSIVE (demande utilisateur : pas "juste téléportation et disparition") :
-   * tant que `attacker` a l'avantage de masse et chevauche `target`, lui transfère chaque tick une
-   * fraction de sa masse RESTANTE proportionnelle à la fraction de sa surface actuellement
-   * recouverte (`absorptionRatePerSec`, physics.ts) — la cible rétrécit visiblement à mesure
-   * qu'elle est mangée (et l'attaquant grossit en retour), au lieu de disparaître d'un coup une
-   * fois un seuil de recouvrement franchi. Remplace l'ancien comportement à seuil unique (aucune
-   * répulsion pendant l'approche — `onCollision` désactive la répulsion dès qu'un avantage de masse
-   * existe, voir plus bas — puis un transfert intégral instantané une fois 2/3 de la cible
-   * recouverts), qui laissait la cible interpénétrer librement l'attaquant sans aucun retour visuel
-   * jusqu'à ce "pop" soudain.
+  /** Absorption À SEUIL (avantage de masse + chevauchement suffisant, voir
+   * `config.eating.eatOverlapFraction`/`eatOverlapFraction()`, physics.ts) : un seul transfert
+   * intégral de la masse de `target` vers `attacker` dès que le seuil est franchi — pas de drain
+   * progressif tick après tick (voir mods/hardcore/index.ts pour la même mécanique, avec un
+   * multiplicateur de gain différent).
    *
-   * Retourne `true` tant qu'un transfert a eu lieu ce tick (même partiel, cible pas encore
-   * entièrement consommée) — `onCollision` s'en sert pour savoir s'il doit à la place repousser
-   * les deux morceaux (aucun avantage de masse). */
-  function handleEatAttempt(world: World, attacker: Entity, target: Entity, dt: number): boolean {
+   * Retourne `true` si un transfert a eu lieu ce tick — `onCollision` s'en sert pour savoir s'il
+   * doit à la place repousser les deux morceaux (aucun avantage de masse). */
+  function handleEatAttempt(world: World, attacker: Entity, target: Entity): boolean {
     if (!hasMassAdvantage(attacker, target)) return false;
 
     const dist = distance(attacker.position, target.position);
@@ -371,8 +363,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     const targetArea = PI * target.radius * target.radius;
     const overlapFraction = targetArea > 0 ? clamp(overlap / targetArea, 0, 1) : 1;
 
-    // Dès 70% (0.7, arrondi de 2/3) de la surface du blob recouverte, la cible est immédiatement dévorée.
-    if (overlapFraction < 0.7) return false;
+    if (overlapFraction < eatOverlapFraction(config)) return false;
 
     const massToTransfer = target.mass;
 
@@ -484,8 +475,10 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
       }
 
       modTickCounter++;
-      // Punition diviseur pour le Top 5 si le leader a au moins 200 de masse et qu'il est 2x plus gros que le joueur suivant
-      if (modTickCounter % 20 === 0) {
+      // Punition du Top N (voir `config.leaderPunishment`) : force un split sur le joueur en tête
+      // si son avance sur le suivant devient trop confortable — évite qu'un seul joueur ne
+      // devienne intouchable en fin de partie.
+      if (leaderPunishment.enabled && modTickCounter % leaderPunishment.checkIntervalTicks === 0) {
         const playersByMass = allPlayers
           .filter((p) => !isGodPlayerId(p.id))
           .map((p) => ({
@@ -494,24 +487,27 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
           }))
           .sort((a, b) => b.totalMass - a.totalMass);
 
-        for (let rank = 0; rank < Math.min(5, playersByMass.length); rank++) {
+        for (let rank = 0; rank < Math.min(leaderPunishment.topN, playersByMass.length); rank++) {
           const current = playersByMass[rank]!;
           const next = playersByMass[rank + 1];
           const nextMass = next ? next.totalMass : 0;
 
-          if (current.totalMass >= 200 && (nextMass === 0 || current.totalMass >= 2 * nextMass)) {
-            const stateKey = `punitive_split_${current.player.id}`;
-            const lastPunish = (current.player as any)[stateKey] ?? 0;
-            const now = performance.now();
-            if (now - lastPunish >= 10000) {
-              (current.player as any)[stateKey] = now;
-              const pieces = world.getPiecesByOwner(current.player.id);
-              if (pieces.length > 0) {
-                const biggest = pieces.reduce((max, p) => (p.mass > max.mass ? p : max), pieces[0]!);
-                if (biggest.mass >= config.player.minSplitMass) {
-                  trySplitPiece(world, current.player.id, biggest);
-                }
-              }
+          const hasCommandingLead =
+            current.totalMass >= leaderPunishment.minMassThreshold &&
+            (nextMass === 0 || current.totalMass >= leaderPunishment.leadRatio * nextMass);
+          if (!hasCommandingLead) continue;
+
+          const stateKey = `punitive_split_${current.player.id}`;
+          const lastPunish = (current.player as any)[stateKey] ?? 0;
+          const now = performance.now();
+          if (now - lastPunish < leaderPunishment.cooldownMs) continue;
+
+          (current.player as any)[stateKey] = now;
+          const pieces = world.getPiecesByOwner(current.player.id);
+          if (pieces.length > 0) {
+            const biggest = pieces.reduce((max, p) => (p.mass > max.mass ? p : max), pieces[0]!);
+            if (biggest.mass >= config.player.minSplitMass) {
+              trySplitPiece(world, current.player.id, biggest);
             }
           }
         }
@@ -556,16 +552,17 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
 
       // Blob Dieu (§4.5 cahier_des_charges_admin.md) : mange n'importe quelle entité immédiatement sans condition de masse.
       if (isGodPlayerId(a.ownerId) || isGodPlayerId(b.ownerId)) {
-        if (hasMassAdvantage(a, b)) handleEatAttempt(world, a, b, dt);
-        else if (hasMassAdvantage(b, a)) handleEatAttempt(world, b, a, dt);
+        if (hasMassAdvantage(a, b)) handleEatAttempt(world, a, b);
+        else if (hasMassAdvantage(b, a)) handleEatAttempt(world, b, a);
         return;
       }
 
-      // Deux morceaux de joueurs différents : le plus gros tente de manger le plus petit s'il atteint au moins 70% de chevauchement. Aucune répulsion entre joueurs.
+      // Deux morceaux de joueurs différents : le plus gros tente de manger le plus petit dès
+      // `config.eating.eatOverlapFraction` de chevauchement. Aucune répulsion entre joueurs.
       if (a.mass > b.mass) {
-        handleEatAttempt(world, a, b, dt);
+        handleEatAttempt(world, a, b);
       } else if (b.mass > a.mass) {
-        handleEatAttempt(world, b, a, dt);
+        handleEatAttempt(world, b, a);
       }
     },
   };

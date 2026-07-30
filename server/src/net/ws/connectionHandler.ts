@@ -1,6 +1,5 @@
 import type { IncomingMessage } from 'node:http';
 import {
-  colorForNickname,
   getRandomSkin,
   skinForNickname,
   WS_CLOSE_NICKNAME_TAKEN,

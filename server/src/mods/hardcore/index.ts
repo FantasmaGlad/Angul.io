@@ -5,12 +5,8 @@ import type { Entity, PlayerId, PlayerInput } from '../../engine/types.js';
 import type { World } from '../../engine/world.js';
 import { creditMassEatenXp, creditPlayerEatenXp } from '../../engine/xp.js';
 import type { ParametricModConfig } from '../parametric/config.js';
-import { applyRepulsion, createParametricMod } from '../parametric/index.js';
-import { absorptionRatePerSec, velocityForMass } from '../parametric/physics.js';
-import { pieceState } from '../parametric/pieceState.js';
-
-/** Voir son homologue dans mods/parametric/index.ts. */
-const ABSORPTION_REMOVE_FLOOR = 0.5;
+import { createParametricMod } from '../parametric/index.js';
+import { eatOverlapFraction } from '../parametric/physics.js';
 
 export interface HardcoreModConfig {
   /** Multiplicateur appliqué à la masse gagnée en mangeant un **autre joueur** (cahier des
@@ -28,8 +24,12 @@ const DEFAULT_HARDCORE_CONFIG: HardcoreModConfig = { massGainMultiplier: 2 };
  * n'est PAS réductible à un fichier de config : un mod peut être écrit en **composant** un mod
  * existant plutôt qu'en dupliquant tout son mouvement/split/fusion/bords/decay (identiques ici
  * à Vanilla, cf. cahier des charges §3.4 #2 — rien à y changer) — ne réécrit que ce qui diffère
- * réellement : l'absorption entre joueurs (`onCollision`), la conséquence d'une mort
- * (`transformScoreForAccount`), et le split punitif du leader > 10x le second (`onTick`).
+ * réellement : le gain de masse multiplié à l'absorption d'un autre joueur (`onCollision`), la
+ * conséquence d'une mort (`transformScoreForAccount`), et le Dash (`onPlayerInput`/`onTick`/
+ * `getDashState`, absent de Vanilla). Le split punitif du Top 5 (`onTick`) N'EST PAS spécifique à
+ * Hardcore : il vit dans le mod paramétrique de BASE (mods/parametric/index.ts), donc s'applique
+ * identiquement à tout mode qui en hérite (Vanilla compris) — Hardcore ne fait que le relayer via
+ * `base.onTick?.(world, dt)` ci-dessous, comme le reste du mouvement/decay/nourriture.
  */
 export function createHardcoreMod(
   config: ParametricModConfig,
@@ -37,15 +37,15 @@ export function createHardcoreMod(
 ): GameMod {
   const base = createParametricMod(config);
 
-  /** Identique à `handleEatAttempt` du mod paramétrique (même condition d'avantage de masse,
-   * même absorption PROGRESSIVE — voir son commentaire), sauf le montant gagné par l'attaquant
-   * (`massGainMultiplier`, x10 par défaut) — c'est la seule différence de mécanique de ce mode
-   * avec Vanilla. */
-  function handleEatAttempt(world: World, attacker: Entity, target: Entity, dt: number): boolean {
+  /** Identique à `handleEatAttempt` du mod paramétrique (même condition de seuil de
+   * chevauchement — `config.eating.eatOverlapFraction`, transfert intégral en un seul coup),
+   * sauf le montant gagné par l'attaquant (`massGainMultiplier`, x2 par défaut) — c'est la seule
+   * différence de mécanique de ce mode avec Vanilla. */
+  function handleEatAttempt(world: World, attacker: Entity, target: Entity): boolean {
     // Blob Dieu (§4.5 cahier_des_charges_admin.md) : jamais mangeable, mange toujours — même
     // exemption que le mod paramétrique sous-jacent (voir `hasMassAdvantage`), dupliquée ici car
-    // Hardcore réimplémente sa propre condition d'avantage de masse (gain x10) plutôt que de
-    // réutiliser celle du mod de base.
+    // Hardcore réimplémente sa propre condition d'avantage de masse (gain de masse multiplié,
+    // `massGainMultiplier`) plutôt que de réutiliser celle du mod de base.
     if (isGodPlayerId(target.ownerId)) return false;
     const hasAdvantage =
       isGodPlayerId(attacker.ownerId) ||
@@ -60,14 +60,13 @@ export function createHardcoreMod(
     const targetArea = PI * target.radius * target.radius;
     const overlapFraction = targetArea > 0 ? clamp(overlap / targetArea, 0, 1) : 1;
 
-    // Dès 70% (0.7) de la surface du blob recouverte, la cible est immédiatement dévorée.
-    if (overlapFraction < 0.7) return false;
+    if (overlapFraction < eatOverlapFraction(config)) return false;
 
     const massLostByTarget = target.mass;
 
     const gainedMass = massLostByTarget * hardcoreConfig.massGainMultiplier;
     world.setMass(attacker, attacker.mass + gainedMass);
-    // XP (engine/xp.ts) : la masse gagnée (déjà multipliée x10 par défaut) compte intégralement
+    // XP (engine/xp.ts) : la masse gagnée (déjà multipliée par `massGainMultiplier`) compte intégralement
     // pour "1 masse mangée = 1xp" — cohérent avec un mode à haut risque/haute récompense ; de
     // toute façon annulée à la mort/déconnexion par `transformScoreForAccount` ci-dessous.
     const now = performance.now();
@@ -162,7 +161,7 @@ export function createHardcoreMod(
       base.onTick?.(world, dt);
 
       // Mise à jour de la recharge des dashs (4s par charge)
-      for (const [playerId, state] of dashStates.entries()) {
+      for (const state of dashStates.values()) {
         if (state.charges < HARDCORE_MAX_DASHES) {
           state.rechargeProgressMs += dt * 1000;
           if (state.rechargeProgressMs >= 4000) {
@@ -228,11 +227,12 @@ export function createHardcoreMod(
         return;
       }
 
-      // Deux morceaux de joueurs différents : le plus gros tente de manger le plus petit s'il atteint au moins 70% de chevauchement. Aucune répulsion entre joueurs.
+      // Deux morceaux de joueurs différents : le plus gros tente de manger le plus petit dès
+      // `config.eating.eatOverlapFraction` de chevauchement. Aucune répulsion entre joueurs.
       if (a.mass > b.mass) {
-        handleEatAttempt(world, a, b, dt);
+        handleEatAttempt(world, a, b);
       } else if (b.mass > a.mass) {
-        handleEatAttempt(world, b, a, dt);
+        handleEatAttempt(world, b, a);
       }
     },
 

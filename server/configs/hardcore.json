@@ -28,7 +28,7 @@
   "eating": {
     "massAdvantage": 0.05,
     "minMassToEatFood": 2,
-    "absorptionRatePerSec": 3
+    "eatOverlapFraction": 0.7
   },
   "decay": {
     "threshold": 100,
@@ -99,6 +99,22 @@
       "neutre": 30,
       "agressif": 30,
       "fou": 15
+    }
+  },
+  "leaderPunishment": {
+    "enabled": true,
+    "topN": 5,
+    "minMassThreshold": 200,
+    "leadRatio": 2,
+    "cooldownMs": 10000,
+    "checkIntervalTicks": 20
+  },
+  "room": {
+    "maxPlayers": 30,
+    "resetSchedule": {
+      "type": "everyNMinutes",
+      "minutes": 120,
+      "timeZone": "Europe/Paris"
     }
   }
 }

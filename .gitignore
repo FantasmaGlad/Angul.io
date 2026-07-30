@@ -22,8 +22,9 @@ coverage/
 .cursor/
 .windsurf/
 
-# Markdown files (except README.md)
+# Markdown files (except README.md et structure.md)
 *.md
 !README.md
+!structure.md
 Claude.md
 cahier_des_charges*.md

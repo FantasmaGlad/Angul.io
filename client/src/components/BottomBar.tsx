@@ -1,12 +1,13 @@
 import { navigate } from '../router.js';
 
-/** Pied de page de l'accueil (refonte UI/UX, mockup fourni). "Version 1.1" est un texte d'affichage
- * volontairement indépendant de `package.json` (resté à `0.0.0` en interne, pas encore pensé
- * comme un numéro affiché aux joueurs). */
+/** Pied de page de l'accueil (refonte UI/UX, mockup fourni). Le numéro de version affiché est un
+ * texte volontairement indépendant de `package.json` (resté à `0.0.0` en interne, pas encore
+ * pensé comme un numéro affiché aux joueurs) — à incrémenter manuellement ici à chaque version
+ * livrée. */
 export default function BottomBar() {
   return (
     <footer className="bottom-bar">
-      <span>Version 2.4</span>
+      <span>Version 3.0</span>
       <span>Angul.io 2026</span>
       <button
         type="button"

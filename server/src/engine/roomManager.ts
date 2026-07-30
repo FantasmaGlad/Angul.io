@@ -26,6 +26,11 @@ export type ModResolver = (modId: string) => {
    * les résolveurs factices des tests existants (roomManager.test.ts/server.test.ts) qui ne s'en
    * servent pas — `DEFAULT_MOVEMENT_CONFIG` comble l'absence, voir roomHost.ts/workerRoomHost.ts. */
   movement?: MovementConfig;
+  /** Réglages de salon par défaut de ce mode (voir `ParametricModConfig['room']`,
+   * mods/parametric/config.ts) — utilisés par `server/src/index.ts` pour les salons de base,
+   * jamais imposés à un salon créé depuis le lobby (qui passe toujours ses propres
+   * `CreateRoomOptions`). Optionnel : un résolveur factice de test peut ne rien renseigner ici. */
+  room?: { maxPlayers?: number; resetSchedule?: RoomResetSchedule | null };
 };
 
 export interface CreateRoomOptions {
