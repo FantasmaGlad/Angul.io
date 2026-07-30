@@ -194,19 +194,6 @@ export function cullEntitiesForViewport(
  * par joueur plutôt que répétés sur chaque entité à chaque tick — voir plan Lot 1.8). `colors` :
  * couleur d'avatar par id de joueur (refonte UI/UX), appris de la même façon — absent pour un
  * appelant qui ne s'en sert pas (SpectatorBackground.tsx, fond décoratif anonyme). */
-interface EatenParticle {
-  x: number;
-  y: number;
-  radius: number;
-  color: string;
-  skinId?: string;
-  startTime: number;
-  durationMs: number;
-}
-
-const eatenParticles: EatenParticle[] = [];
-let prevEntityMap = new Map<string, EntitySnapshot>();
-
 export function renderFrame(
   ctx: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
@@ -219,62 +206,11 @@ export function renderFrame(
   let drawCalls = 0;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  const nowMs = performance.now();
-  const currentEntityMap = new Map<string, EntitySnapshot>();
-
-  for (const entity of entities) {
-    currentEntityMap.set(entity.i, entity);
-  }
-
-  // Détection des créatures mangées/disparues pour animer leur aspiration (les pastilles de nourriture disparaissent instantanément)
-  if (prevEntityMap.size > 0) {
-    for (const [id, prev] of prevEntityMap.entries()) {
-      if (!currentEntityMap.has(id) && prev.k === 'c') {
-        const color = colorFor(prev, nicknames, colors);
-        eatenParticles.push({
-          x: prev.x,
-          y: prev.y,
-          radius: prev.r,
-          color,
-          skinId: color,
-          startTime: nowMs,
-          durationMs: 200,
-        });
-      }
-    }
-  }
-  prevEntityMap = currentEntityMap;
-
   const toScreenX = (x: number) => (x - camera.x) * camera.scale + canvas.width / 2;
   const toScreenY = (y: number) => (y - camera.y) * camera.scale + canvas.height / 2;
 
   drawGrid(ctx, canvas, camera, toScreenX, toScreenY);
   drawCalls++;
-
-  // Rendu des particules en cours d'aspiration (animation CSS/Canvas d'absorption)
-  for (let i = eatenParticles.length - 1; i >= 0; i--) {
-    const p = eatenParticles[i]!;
-    const progress = (nowMs - p.startTime) / p.durationMs;
-    if (progress >= 1) {
-      eatenParticles.splice(i, 1);
-      continue;
-    }
-
-    const currentRadius = p.radius * (1 - progress) * camera.scale;
-    if (currentRadius <= 0.5) continue;
-
-    const screenX = toScreenX(p.x);
-    const screenY = toScreenY(p.y);
-
-    ctx.save();
-    ctx.globalAlpha = Math.max(0, 1 - progress);
-    ctx.beginPath();
-    ctx.arc(screenX, screenY, currentRadius, 0, Math.PI * 2);
-    ctx.fillStyle = p.skinId ? colorForSkinFallback(p.skinId) : p.color;
-    ctx.fill();
-    ctx.restore();
-    drawCalls++;
-  }
 
   // Récupération des créatures pour la disparition instantanée des pastilles dès la collision à 5%
   const creatures = entities.filter((e) => e.k === 'c');

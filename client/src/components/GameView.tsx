@@ -80,6 +80,16 @@ const DEFAULT_DEATH_STATE: DeathState = {
   customCard: { message: DEFAULT_DEATH_MESSAGE, bannerId: DEFAULT_DEATH_BANNER_ID },
 };
 
+/** Piste de musique pour le mode actif — `modId` autoritaire (connu dès le premier `welcome`)
+ * prioritaire sur l'heuristique de secours (nom de salon contenant "hardcore"), utilisée avant
+ * que `welcome` ne soit jamais arrivé. Factorisée pour être appelée aussi bien de façon
+ * SYNCHRONE au clic sur "Rejouer"/à l'appui d'Espace (voir `doRespawn`) que dans le handler
+ * `welcome` lui-même (voir son commentaire sur l'autoplay). */
+function musicUrlForMod(modId: string | undefined, roomIdOrInviteCode: string): string {
+  const isHardcore = modId === 'hardcore' || (modId === undefined && roomIdOrInviteCode.toLowerCase().includes('hardcore'));
+  return isHardcore ? '/assets/Sons/Musiques/Hardcore.m4a' : '/assets/Sons/Musiques/vanilla.m4a';
+}
+
 /** "04m 12s" (cahier des charges fourni, maquette de l'écran de mort) plutôt qu'un nombre brut
  * de secondes — plus lisible pour une partie qui peut durer plusieurs minutes. */
 function formatSurvivalTime(totalSeconds: number): string {
@@ -129,6 +139,11 @@ export default function GameView({
   });
 
   const connectionRef = useRef<GameConnection | null>(null);
+  /** `modId` du salon courant, appris au premier `welcome` — nécessaire hors de la boucle
+   * d'effet (voir bouton "Rejouer" ci-dessous, `musicUrlForMod`) pour relancer la musique
+   * SYNCHRONEMENT au clic plutôt que d'attendre le prochain `welcome` (round-trip réseau qui
+   * casse le geste utilisateur requis par certains navigateurs pour l'autoplay avec son). */
+  const modIdRef = useRef<string | undefined>(undefined);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [deathState, setDeathState] = useState<DeathState>(DEFAULT_DEATH_STATE);
   const [playerPos, setPlayerPos] = useState<{ x: number; y: number } | undefined>(undefined);
@@ -302,6 +317,7 @@ export default function GameView({
     connection.onMessage((message: ServerMessage) => {
       if (message.type === 'welcome') {
         currentModId = message.modId;
+        modIdRef.current = message.modId;
         selfPlayerId = message.playerId;
         mapSize = message.mapSize;
         serverTickRateHz = message.tickRateHz;
@@ -314,11 +330,12 @@ export default function GameView({
         setDeathState(DEFAULT_DEATH_STATE);
         if (statNicknameRef.current) statNicknameRef.current.textContent = nickname;
 
-        const isHardcore = message.modId === 'hardcore';
-        const musicUrl = isHardcore
-          ? '/assets/Sons/Musiques/Hardcore.m4a'
-          : '/assets/Sons/Musiques/vanilla.m4a';
-        audioManager.playMusic(musicUrl);
+        // Filet de sécurité : `doRespawn`/le bouton "Rejouer" ont déjà relancé la musique de
+        // façon synchrone au geste utilisateur (voir `musicUrlForMod`) — cet appel est un no-op
+        // dans ce cas (même URL déjà en lecture, voir le garde en tête de `playMusic`). Reste
+        // nécessaire pour le tout premier `join` (aucun clic "Rejouer" impliqué) et pour un
+        // changement de mode forcé côté serveur.
+        audioManager.playMusic(musicUrlForMod(message.modId, roomIdOrInviteCode));
       } else if (message.type === 'player') {
         nicknames.set(message.playerId, message.nickname);
         if (message.color) colors.set(message.playerId, message.color);
@@ -467,6 +484,10 @@ export default function GameView({
     let lastFrameAt = 0;
     function doRespawn(): void {
       setDeathState(DEFAULT_DEATH_STATE);
+      // Relance la musique ICI, synchrone au geste utilisateur (touche Espace/bouton manette),
+      // plutôt que d'attendre le `welcome` qui suivra (round-trip réseau) — voir le commentaire
+      // de `musicUrlForMod`/`modIdRef`.
+      audioManager.playMusic(musicUrlForMod(modIdRef.current, roomIdOrInviteCode));
       connection.send({ type: 'join', nickname });
     }
 
@@ -853,6 +874,9 @@ export default function GameView({
                 type="button"
                 onClick={() => {
                   setDeathState(DEFAULT_DEATH_STATE);
+                  // Voir `doRespawn`/`musicUrlForMod` dans l'effet ci-dessus : relance synchrone
+                  // au clic plutôt que d'attendre le `welcome` réseau.
+                  audioManager.playMusic(musicUrlForMod(modIdRef.current, roomIdOrInviteCode));
                   connectionRef.current?.send({ type: 'join', nickname });
                 }}
               >

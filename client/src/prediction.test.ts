@@ -243,8 +243,12 @@ describe('LocalPrediction — réconciliation par rejeu', () => {
 
     // Ancre autoritaire arbitraire (isolée de toute estimation de latence réaliste — seul le
     // regroupement du rejeu est sous test ici) ; `estimatedLatencyMs` place `sinceMs` avant tous
-    // les échantillons (rejoue les 8 en entier) dans les deux cas.
-    const authoritative = ownSnapshot('1', 5, 0);
+    // les échantillons (rejoue les 8 en entier) dans les deux cas. Décalée à 15 (pas 5) : le résidu
+    // qui en résulte doit dépasser nettement le seuil dynamique d'ignorance de `reconcile()`
+    // (désormais aussi dimensionné sur la tolérance à la gigue réseau, voir
+    // RECONCILE_JITTER_TOLERANCE_TICKS dans prediction.ts) pour que ce test continue à observer le
+    // lissage (`visualOffset`) plutôt qu'un résidu ignoré comme du bruit.
+    const authoritative = ownSnapshot('1', 15, 0);
     const nowAtReconcileMs = 1000 / 30;
     const hugeLatencyMs = nowAtReconcileMs + 1;
 
@@ -261,16 +265,18 @@ describe('LocalPrediction — réconciliation par rejeu', () => {
     vi.spyOn(performance, 'now').mockReturnValueOnce(nowAtReconcileMs);
     chunked.reconcile([authoritative], 'self', RAMP_MOVEMENT, hugeLatencyMs, SERVER_TICK_RATE_HZ);
 
-    // Les deux résidus dépassent RECONCILE_SNAP_THRESHOLD_PX... non, restent dans la bande
-    // lissée (< 120px) : `applyTo` juste après reconcile affiche encore `beforeReconcile` des
-    // deux côtés (le saut est absorbé dans `visualOffset`, pas visible instantanément). On avance
-    // ensuite de 6 sous-pas fins supplémentaires avec la MÊME cible lointaine (vélocité déjà
-    // saturée à 300 des deux côtés depuis le rejeu : `moveToward` ne fait plus rien, la position
-    // avance donc de EXACTEMENT 300/240=1.25 par sous-pas, sans interférence de la zone morte) —
-    // largement assez pour résorber entièrement le correctif visuel résiduel des deux côtés
-    // (10px/2.5px-par-sous-pas et 12.1875px/2.5px-par-sous-pas, soit 4 et 5 sous-pas), et lire
-    // ainsi la position SIMULÉE (post-rejeu) une fois `visualOffset` revenu à {0,0}.
-    for (let i = 0; i < 6; i++) {
+    // Les deux résidus dépassent le seuil dynamique d'ignorance de `reconcile()` (voir le
+    // commentaire sur `authoritative` ci-dessus) mais restent dans la bande lissée
+    // (< RECONCILE_SNAP_THRESHOLD_PX = 120) : `applyTo` juste après reconcile affiche encore
+    // `beforeReconcile` des deux côtés (le saut est absorbé dans `visualOffset`, pas visible
+    // instantanément). On avance ensuite de 16 sous-pas fins supplémentaires avec la MÊME cible
+    // lointaine (vélocité déjà saturée à 300 des deux côtés depuis le rejeu : `moveToward` ne fait
+    // plus rien, la position avance donc de EXACTEMENT 300/240=1.25 par sous-pas, sans interférence
+    // de la zone morte) — largement assez pour résorber entièrement le correctif visuel résiduel
+    // des deux côtés (20px/2.5px-par-sous-pas et 22.1875px/2.5px-par-sous-pas, soit 8 et ~9
+    // sous-pas), et lire ainsi la position SIMULÉE (post-rejeu) une fois `visualOffset` revenu à
+    // {0,0}.
+    for (let i = 0; i < 16; i++) {
       vi.spyOn(performance, 'now').mockReturnValueOnce(nowAtReconcileMs + (i + 1) * (1000 / 240));
       unchunked.step(1 / 240, FAR_TARGET, 1, RAMP_MOVEMENT);
       chunked.step(1 / 240, FAR_TARGET, 1, RAMP_MOVEMENT);
@@ -279,10 +285,10 @@ describe('LocalPrediction — réconciliation par rejeu', () => {
     const [unchunkedResult] = unchunked.applyTo([ownSnapshot('1', 999, 999)], 'self');
     const [chunkedResult] = chunked.applyTo([ownSnapshot('1', 999, 999)], 'self');
 
-    // Rejeu fin : 12.8125 (position simulée post-rejeu) + 6×1.25 = 20.3125.
-    expect(unchunkedResult!.x).toBeCloseTo(20.3125, 5);
-    // Rejeu par bloc de tick serveur : 15 (== un seul pas serveur de dt=1/30s) + 6×1.25 = 22.5.
-    expect(chunkedResult!.x).toBeCloseTo(22.5, 5);
+    // Rejeu fin : 22.8125 (position simulée post-rejeu) + 16×1.25 = 42.8125.
+    expect(unchunkedResult!.x).toBeCloseTo(42.8125, 5);
+    // Rejeu par bloc de tick serveur : 25 (== un seul pas serveur de dt=1/30s) + 16×1.25 = 45.
+    expect(chunkedResult!.x).toBeCloseTo(45, 5);
     // Écart mesurable (>2px) entre les deux stratégies de rejeu pour la MÊME rampe — c'est
     // précisément le biais que corrige le regroupement.
     expect(chunkedResult!.x - unchunkedResult!.x).toBeGreaterThan(2);
@@ -319,26 +325,31 @@ const REWIND_MOVEMENT: MovementConfig = {
 const REWIND_STEP_MS = 1000 / 240;
 const REWIND_FAR_TARGET = { x: 1000, y: 0 };
 
-/** Amorce un morceau au repos puis rejoue 16 sous-pas fins CONTINUS (2 ticks serveur à 30Hz,
+/** Amorce un morceau au repos puis rejoue 31 sous-pas fins CONTINUS (~3.875 ticks serveur à 30Hz,
  * jamais interrompus par un `reconcile()`) — point de départ commun aux deux tests ci-dessous
  * (fix_vitesse_reseau.md), avant que leur unique appel à `reconcile()` sous test ne diverge selon
- * que `authoritativeVelocities` est fourni ou non.
+ * que `authoritativeVelocities` est fourni ou non. 31 (pas 16) : le résidu de rejeu introduit par
+ * le double comptage (voir le test de régression ci-dessous) doit dépasser nettement le seuil
+ * dynamique d'ignorance de `reconcile()` — désormais dimensionné aussi sur la tolérance à la
+ * gigue réseau (`RECONCILE_JITTER_TOLERANCE_TICKS`, voir prediction.ts), bien plus large que
+ * l'ancien plafond fixe (3px) pour lequel une fenêtre de 16 sous-pas suffisait.
  *
  * Piège volontairement évité ici (voir fix_vitesse_reseau.md, "Piège à éviter en écrivant les
- * tests") : les 16 sous-pas sont RÉELLEMENT rejoués en direct via `step()`, jamais simulés "à la
+ * tests") : les 31 sous-pas sont RÉELLEMENT rejoués en direct via `step()`, jamais simulés "à la
  * main" par un autre chemin — sinon `predicted.velocity` ne refléterait pas fidèlement ce que
  * `step()` a réellement accumulé, et le test mesurerait autre chose que le vrai bug.
  *
- * Après les 8 premiers sous-pas (confirmés par le "serveur" dans les tests ci-dessous, jamais
- * rejoués) : vélocité 0->75px/s, position 0->1.40625 (calculé à la main : rampe clampée par
- * `moveToward`, accélération 2250px/s² constante, jamais saturée). Après les 8 suivants (LA
- * fenêtre de rejeu des deux tests) : vélocité 75->150px/s, position 1.40625->5.3125. */
+ * Après les 31 sous-pas : vélocité 0->290.625px/s (rampe clampée par `moveToward`, accélération
+ * 2250px/s² constante, JAMAIS saturée — plafond v0=300px/s). Les deux tests ci-dessous rejouent
+ * la fenêtre ENTIÈRE (ancre autoritaire au repos, t=0) plutôt qu'une simple fin de fenêtre : la
+ * vélocité au repos (0) élimine tout calcul intermédiaire, l'ancre reste triviale à vérifier à la
+ * main. */
 function buildPreReplayWindowPrediction(): LocalPrediction {
   const prediction = new LocalPrediction();
   const nowSpy = vi.spyOn(performance, 'now');
   nowSpy.mockReturnValueOnce(0);
   prediction.reconcile([ownSnapshot('1', 0, 0)], 'self', REWIND_MOVEMENT, 0);
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < 31; i++) {
     nowSpy.mockReturnValueOnce((i + 1) * REWIND_STEP_MS);
     prediction.step(1 / 240, REWIND_FAR_TARGET, 1, REWIND_MOVEMENT);
   }
@@ -353,74 +364,73 @@ describe('LocalPrediction — rembobinage de la vélocité avant rejeu (fix_vite
   it('avec `authoritativeVelocities` fourni : résidu de rejeu négligeable, aucune erreur mesurable introduite', () => {
     const prediction = buildPreReplayWindowPrediction();
 
-    // Fenêtre de rejeu = les 8 DERNIERS sous-pas seulement. Coupure `sinceMs` volontairement
-    // placée à MI-CHEMIN entre le 8e et le 9e sous-pas fin (marge d'un demi-pas de part et
-    // d'autre) — pas exactement sur la frontière des 8 sous-pas, pour ne jamais dépendre d'une
-    // égalité flottante exacte sur le filtre strict `sample.atMs > sinceMs` de `reconcile()`.
-    const nowAtReconcile = 16 * REWIND_STEP_MS;
-    const sinceCutoff = 8.5 * REWIND_STEP_MS;
+    // Fenêtre de rejeu = la fenêtre ENTIÈRE (31 sous-pas) : ancre autoritaire au repos, `sinceMs`
+    // placé juste après t=0 (jamais exactement 0, pour ne jamais dépendre d'une égalité flottante
+    // exacte sur le filtre strict `sample.atMs > sinceMs` de `reconcile()`).
+    const nowAtReconcile = 31 * REWIND_STEP_MS;
+    const sinceCutoff = 0.5 * REWIND_STEP_MS;
     const estimatedLatencyMs = nowAtReconcile - sinceCutoff;
 
     vi.spyOn(performance, 'now').mockReturnValueOnce(nowAtReconcile);
-    // Position ET vélocité autoritaires fournies au MÊME instant connu (t=8 sous-pas, voir
-    // `buildPreReplayWindowPrediction`) — exactement la recette de fix_vitesse_reseau.md ("Piège
-    // à éviter") : sans la vélocité, ce test mesurerait l'ANCIEN bug, pas le correctif.
+    // Position ET vélocité autoritaires fournies au MÊME instant connu (t=0, au repos) —
+    // exactement la recette de fix_vitesse_reseau.md ("Piège à éviter") : sans la vélocité, ce
+    // test mesurerait l'ANCIEN bug, pas le correctif.
     prediction.reconcile(
-      [ownSnapshot('1', 1.40625, 0)],
+      [ownSnapshot('1', 0, 0)],
       'self',
       REWIND_MOVEMENT,
       estimatedLatencyMs,
-      30, // serverTickRateHz : un seul bloc pour les 8 sous-pas rejoués (chunkHistoryForReplay)
-      new Map([['1', { x: 75, y: 0 }]]),
+      30, // serverTickRateHz : regroupe les 31 sous-pas rejoués en blocs de tick (chunkHistoryForReplay)
+      new Map([['1', { x: 0, y: 0 }]]),
     );
 
-    // Avance encore de 2 sous-pas fins (cible inchangée, toujours loin) pour laisser le correctif
-    // visuel se résorber entièrement (VISUAL_CORRECTION_SPEED_PX_PER_S : 2.5px max par sous-pas) —
-    // seul moyen d'observer la position SIMULÉE réelle via `applyTo()`, qui masquerait sinon
+    // Avance encore de 10 sous-pas fins (cible inchangée, toujours loin) pour laisser le correctif
+    // visuel se résorber ENTIÈREMENT (VISUAL_CORRECTION_SPEED_PX_PER_S : 2.5px max par sous-pas,
+    // donc 25px de capacité sur 10 sous-pas, largement au-dessus du résidu de 4.1015625 ci-dessous)
+    // — seul moyen d'observer la position SIMULÉE réelle via `applyTo()`, qui masquerait sinon
     // instantanément tout écart derrière `visualOffset` (voir le test "absorbe un petit désaccord"
     // plus haut : AUCUN saut n'est jamais visible à l'instant même de la réconciliation).
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < 10; i++) {
       vi.spyOn(performance, 'now').mockReturnValueOnce(nowAtReconcile + (i + 1) * REWIND_STEP_MS);
       prediction.step(1 / 240, REWIND_FAR_TARGET, 1, REWIND_MOVEMENT);
     }
 
     const [entity] = prediction.applyTo([ownSnapshot('1', 999, 999)], 'self');
-    // 6.6796875 : EXACTEMENT la position qu'une simulation locale continue (SANS AUCUNE
-    // réconciliation) aurait atteinte après le même temps total écoulé (18 sous-pas depuis le
+    // 31.875 : EXACTEMENT la position qu'une simulation locale continue (SANS AUCUNE
+    // réconciliation) aurait atteinte après le même temps total écoulé (41 sous-pas depuis le
     // repos) — la vélocité rembobinée élimine tout double comptage ; le résidu de rejeu restant
-    // (1.09375, simple biais de granularité fine/grossière, voir `chunkHistoryForReplay`) tombe
-    // sous le seuil dynamique d'ignorance (~1.875px ici : accel 2250 × tickSeconds² × 0.5 × 1.5,
-    // voir RECONCILE_IGNORE_SAFETY_FACTOR) et est ignoré : `reconcile()` n'introduit ici aucune
-    // erreur mesurable.
-    expect(entity!.x).toBeCloseTo(6.6796875, 5);
+    // (4.1015625, biais de granularité fine/grossière sur une rampe qui n'a pas fini de saturer,
+    // voir `chunkHistoryForReplay`) tombe sous le seuil dynamique d'ignorance de `reconcile()` et
+    // est ignoré : `reconcile()` n'introduit ici aucune erreur mesurable.
+    expect(entity!.x).toBeCloseTo(31.875, 5);
   });
 
   it("SANS `authoritativeVelocities` (paramètre omis) : reproduit l'ancien double comptage — régression", () => {
     const prediction = buildPreReplayWindowPrediction();
-    const nowAtReconcile = 16 * REWIND_STEP_MS;
-    const sinceCutoff = 8.5 * REWIND_STEP_MS;
+    const nowAtReconcile = 31 * REWIND_STEP_MS;
+    const sinceCutoff = 0.5 * REWIND_STEP_MS;
     const estimatedLatencyMs = nowAtReconcile - sinceCutoff;
 
     vi.spyOn(performance, 'now').mockReturnValueOnce(nowAtReconcile);
     // Même position autoritaire, même fenêtre de rejeu, même `serverTickRateHz` que le test
     // précédent — seul `authoritativeVelocities` est omis (comportement pré-correctif) : isole
     // strictement son effet.
-    prediction.reconcile([ownSnapshot('1', 1.40625, 0)], 'self', REWIND_MOVEMENT, estimatedLatencyMs, 30);
+    prediction.reconcile([ownSnapshot('1', 0, 0)], 'self', REWIND_MOVEMENT, estimatedLatencyMs, 30);
 
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < 10; i++) {
       vi.spyOn(performance, 'now').mockReturnValueOnce(nowAtReconcile + (i + 1) * REWIND_STEP_MS);
       prediction.step(1 / 240, REWIND_FAR_TARGET, 1, REWIND_MOVEMENT);
     }
 
     const [entity] = prediction.applyTo([ownSnapshot('1', 999, 999)], 'self');
-    // 10.8984375, PAS 6.6796875 (voir le test précédent) : le rejeu est reparti de la vélocité
-    // DÉJÀ avancée en direct par `step()` (150px/s, incluant déjà l'accélération de LA FENÊTRE
-    // qu'on est en train de rejouer) au lieu de la vélocité autoritaire à `sinceMs` (75px/s) —
+    // 51.25, PAS 31.875 (voir le test précédent) : le rejeu est reparti de la vélocité DÉJÀ
+    // avancée en direct par `step()` (290.625px/s, incluant déjà l'accélération de LA FENÊTRE
+    // qu'on est en train de rejouer) au lieu de la vélocité autoritaire à `sinceMs` (0px/s) —
     // l'accélération de cette fenêtre est comptée deux fois (une fois en direct, une fois au
-    // rejeu). Résidu de rejeu (3.59375) plus de 2x au-dessus de RECONCILE_IGNORE_THRESHOLD_PX
-    // (1.5) : un vrai écart perceptible (le tremblement décrit dans fix_vitesse_reseau.md), pas
-    // du bruit d'arrondi — exactement le comportement pré-correctif.
-    expect(entity!.x).toBeCloseTo(10.8984375, 5);
-    expect(entity!.x - 6.6796875).toBeGreaterThan(3); // marge large vs le résultat corrigé ci-dessus
+    // rejeu). Résidu de rejeu (19.375) largement au-dessus du seuil dynamique d'ignorance de
+    // `reconcile()` : un vrai écart perceptible (le tremblement décrit dans
+    // fix_vitesse_reseau.md), pas du bruit d'arrondi — exactement le comportement pré-correctif.
+    expect(entity!.x).toBeCloseTo(51.25, 5);
+    expect(entity!.x - 31.875).toBeGreaterThan(15); // marge large vs le résultat corrigé ci-dessus
   });
 });

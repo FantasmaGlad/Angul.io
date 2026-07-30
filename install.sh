@@ -111,8 +111,15 @@ fi
 
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 
-log "Nettoyage complet des caches de compilation (tsbuildinfo, dist) et compilation globale"
-sudo -u "$APP_USER" bash -c "cd '$APP_DIR' && rm -rf shared/dist server/dist client/dist admin/dist server/tsconfig.tsbuildinfo shared/tsconfig.tsbuildinfo && npm ci && npm run build"
+log "Nettoyage complet des caches de compilation (tsbuildinfo, dist, public généré) et compilation globale"
+# Les 4 workspaces (shared, server, client, admin) produisent chacun leur propre
+# tsconfig.tsbuildinfo — un déploiement précédent qui n'en purgeait que 2/4 (shared, server)
+# pouvait laisser le cache incrémental de tsc du CLIENT/ADMIN perimé d'un déploiement à l'autre.
+# client/public et admin/public (assets copiés par le script `prebuild`, voir client/package.json)
+# sont eux aussi entièrement régénérés à chaque build : les supprimer avant plutôt que de laisser
+# `cp -r`/vite accumuler d'anciens fichiers qu'un déploiement suivant n'aurait plus de raison de
+# recopier (asset renommé/supprimé côté source).
+sudo -u "$APP_USER" bash -c "cd '$APP_DIR' && rm -rf shared/dist server/dist client/dist admin/dist client/public admin/public shared/tsconfig.tsbuildinfo server/tsconfig.tsbuildinfo client/tsconfig.tsbuildinfo admin/tsconfig.tsbuildinfo && npm ci && npm run build"
 
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 

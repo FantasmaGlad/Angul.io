@@ -151,15 +151,44 @@ const VISUAL_CORRECTION_SPEED_PX_PER_S = 600;
  * le seuil de la formule physique elle-même (accélération réelle du morceau × pas de tick², voir
  * le commentaire de `chunkHistoryForReplay`), tout mode futur obtient automatiquement un seuil
  * cohérent avec ses propres réglages, sans retouche manuelle — "communise" ce correctif entre
- * Vanilla, Hardcore et tout mod à venir. */
+ * Vanilla, Hardcore et tout mod à venir.
+ *
+ * Ce terme seul ne couvre que le biais de la phase d'ACCÉLÉRATION (avant saturation de la
+ * vitesse) — il ne couvre PAS une seconde source de résidu, distincte et mesurée bien plus grande
+ * en simulation (voir historique de ce fichier, "tremblement du blob du joueur") : `sinceMs`
+ * (point de départ du rejeu) dépend de `estimatedLatencyMs`, une estimation LISSÉE (EMA 1x/s, voir
+ * GameView.tsx) de la latence MOYENNE — jamais exacte pour un message DONNÉ dès que la gigue
+ * réseau réelle (mesurée en production : voir `smoothedLatencyMs`) dépasse quelques ms. Or
+ * `chunkHistoryForReplay` regroupe le rejeu par BLOCS de la taille d'un tick : un écart de
+ * `sinceMs` d'une fraction de tick suffit à inclure/exclure un bloc ENTIER, donc à décaler le
+ * résidu d'un plein multiple de `vitesse_croisière × dtTick` — un ordre de grandeur au-dessus du
+ * biais d'accélération ci-dessus, et strictement DE LA MÊME NATURE que lui (bruit de découpage
+ * temporel du rejeu, jamais un vrai désaccord physique) : à l'arrêt (vitesse nulle) ce terme
+ * s'annule de lui-même, exactement comme le biais d'accélération, ce qui explique que ce
+ * tremblement soit lui aussi invisible à l'arrêt et perceptible seulement en pilotage actif. */
 const RECONCILE_IGNORE_SAFETY_FACTOR = 1.5;
 /** Plancher (px) du seuil dynamique ci-dessus — pur bruit d'arrondi flottant à masse/accélération
  * quasi nulle, jamais un vrai désaccord ; évite que le seuil ne tombe à (quasi) zéro et ne
  * déclenche un lissage visuel pour un résidu insignifiant. */
 const RECONCILE_IGNORE_FLOOR_PX = 0.5;
-/** Plafond (px) du seuil dynamique ci-dessus — borne supérieure pour éviter que des objets de test
- * ou des accélérations extrêmes ne fassent s'envoler le seuil d'ignorance. */
-const RECONCILE_IGNORE_MAX_PX = 3.0;
+/** Tolère jusqu'à un bloc de rejeu ENTIER (voir le commentaire ci-dessus sur `sinceMs`) de bruit de
+ * découpage temporel — au-delà, considéré comme un vrai événement (répulsion, correction). 1.0 =
+ * un tick plein ; volontairement pas plus (une répulsion serveur réelle et soutenue, voir le
+ * commentaire d'en-tête sur `applyRepulsion`, doit rester détectée dès qu'elle dépasse ce bruit de
+ * fond, pas être masquée indéfiniment). */
+const RECONCILE_JITTER_TOLERANCE_TICKS = 1.5;
+/** Plafond (px) du terme de biais d'ACCÉLÉRATION ci-dessus (`accelerationBiasPx` dans
+ * `reconcile`) — borne de sécurité pour éviter qu'un mod/test à l'accélération démesurée (voir
+ * `MOVEMENT` dans prediction.test.ts, accelerationBase quasi infini pour simplifier le calcul à la
+ * main) ne fasse s'envoler CE terme précis. Plafonné SÉPARÉMENT du terme de gigue ci-dessous (voir
+ * `RECONCILE_JITTER_TOLERANCE_MAX_PX`) : les deux mécanismes sont indépendants, l'un ne doit pas
+ * hériter du plafond, bien plus large, dimensionné pour l'autre. */
+const RECONCILE_ACCEL_BIAS_MAX_PX = 3.0;
+/** Plafond (px) du terme de tolérance à la gigue ci-dessus (`replayChunkJitterPx` dans
+ * `reconcile`) — borne de sécurité du même ordre qu'un tick à vitesse de croisière élevée, pour
+ * qu'un mod/test à la vitesse démesurée ne fasse pas s'envoler CE terme précis ; grand devant son
+ * usage normal (un mode réaliste dépasse rarement quelques dizaines de px/tick). */
+const RECONCILE_JITTER_TOLERANCE_MAX_PX = 60.0;
 /** Pas de temps interne FIXE auquel `step()` intègre la simulation locale (voir le commentaire
  * d'en-tête, "fix your timestep") — indépendant du `dt` réel de la frame de rendu. Assez fin pour
  * qu'aucun sous-pas ne soit perceptible individuellement, même sur un écran très haut
@@ -260,22 +289,37 @@ export class LocalPrediction {
       // `step()`, pour que l'AFFICHAGE reste continu sans désynchroniser la position simulée.
       const residual = sub(predicted.position, beforeReconcile);
       const residualDist = length(residual);
-      // Seuil dynamique en-deçà duquel le résidu est pur bruit de discrétisation (intégration
-      // fine côté client vs. un seul pas par tick côté serveur, voir `chunkHistoryForReplay`) —
-      // proportionnel à l'accélération EFFECTIVE du morceau (dépend de sa masse ET du mod actif,
-      // voir RECONCILE_IGNORE_SAFETY_FACTOR). En-dessous, on ignore purement et simplement : la
-      // position simulée reprend `beforeReconcile` (aucun événement réel à refléter), sans quoi
-      // CE bruit résiduel, non nul à quasiment chaque `state` reçu, se traduirait en une
-      // correction visuelle perceptible à la cadence du tick serveur — le tremblement du blob du
-      // joueur (absent des robots/joueurs distants, jamais réconciliés).
+      // Seuil dynamique en-deçà duquel le résidu est pur bruit de DÉCOUPAGE TEMPOREL du rejeu,
+      // jamais un vrai désaccord (voir le commentaire de RECONCILE_JITTER_TOLERANCE_TICKS) — le
+      // plus grand des deux termes suivants :
+      //  - biais de discrétisation pendant l'accélération (intégration fine côté client vs. un
+      //    seul pas par tick côté serveur, voir `chunkHistoryForReplay`), proportionnel à
+      //    l'accélération EFFECTIVE du morceau ;
+      //  - bruit d'ARRONDI DE `sinceMs` À LA GRANULARITÉ DU TICK : `estimatedLatencyMs` n'est
+      //    qu'une MOYENNE lissée (voir GameView.tsx `smoothedLatencyMs`), jamais exacte pour un
+      //    message donné dès que la gigue réseau réelle varie — un écart de quelques ms sur
+      //    `sinceMs` suffit à faire inclure/exclure un bloc ENTIER de rejeu (voir
+      //    `chunkHistoryForReplay`), déplaçant le résidu d'un plein multiple de la distance
+      //    parcourue en un tick à la vitesse de croisière EFFECTIVE du morceau.
+      // En-dessous du plus grand des deux, on ignore purement et simplement : la position simulée
+      // reprend `beforeReconcile` (aucun événement réel à refléter), sans quoi ce bruit résiduel,
+      // non nul à quasiment chaque `state` reçu dès que la latence réseau varie, se traduirait en
+      // une correction visuelle perceptible à la cadence du tick serveur — le tremblement du blob
+      // du joueur (absent des robots/joueurs distants, jamais réconciliés).
       const tickSeconds = serverTickRateHz && serverTickRateHz > 0 ? 1 / serverTickRateHz : 1 / 30;
-      const dynamicIgnoreThresholdPx = Math.min(
-        RECONCILE_IGNORE_MAX_PX,
-        Math.max(
-          RECONCILE_IGNORE_FLOOR_PX,
-          accelerationForMass(predicted.mass, movement) * tickSeconds * tickSeconds * 0.5 *
-            RECONCILE_IGNORE_SAFETY_FACTOR,
-        ),
+      const accelerationBiasPx = Math.min(
+        RECONCILE_ACCEL_BIAS_MAX_PX,
+        accelerationForMass(predicted.mass, movement) * tickSeconds * tickSeconds * 0.5 *
+          RECONCILE_IGNORE_SAFETY_FACTOR,
+      );
+      const replayChunkJitterPx = Math.min(
+        RECONCILE_JITTER_TOLERANCE_MAX_PX,
+        velocityForMass(predicted.mass, movement) * tickSeconds * RECONCILE_JITTER_TOLERANCE_TICKS,
+      );
+      const dynamicIgnoreThresholdPx = Math.max(
+        RECONCILE_IGNORE_FLOOR_PX,
+        accelerationBiasPx,
+        replayChunkJitterPx,
       );
       if (residualDist <= dynamicIgnoreThresholdPx) {
         predicted.position = beforeReconcile;
