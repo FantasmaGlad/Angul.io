@@ -72,6 +72,14 @@ const admin = new AdminAuth(
   process.env.DATABASE_URL ? new AdminUsersRepository(getPool()) : undefined,
 );
 
+// Identifiant de build (Lot "force-reload") : figé une fois au démarrage du process — un
+// déploiement redémarre toujours ce process (seul moyen de déployer avec cette architecture, voir
+// structure.md §1), donc cette valeur change nécessairement à chaque déploiement, jamais en cours
+// de vie du process. Un client qui reconnecte (voir net.ts, GameConnection) et reçoit un
+// `buildVersion` différent de celui de son `welcome` précédent sait qu'il a reconnecté vers un
+// nouveau déploiement et se recharge (voir GameView.tsx).
+const BUILD_VERSION = String(Date.now());
+
 startGameServer(roomManager, {
   port: PORT,
   staticDir: fileURLToPath(new URL('../../client/public', import.meta.url)),
@@ -79,6 +87,7 @@ startGameServer(roomManager, {
   availableModIds: listAvailableModIds(),
   accounts,
   admin,
+  buildVersion: BUILD_VERSION,
 });
 
 const baseRoomsDescription = baseRooms

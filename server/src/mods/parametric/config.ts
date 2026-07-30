@@ -155,27 +155,6 @@ export interface ParametricModConfig {
 
   bots?: BotConfig;
 
-  /** Punition du Top 5 (mécanique commune à tout mode paramétrique, voir
-   * mods/parametric/index.ts `onTick`) : force un split sur le morceau le plus lourd d'un joueur
-   * en tête si son avance sur le suivant devient trop confortable — évite qu'un seul joueur ne
-   * devienne intouchable en fin de partie. Absent = repli sur les valeurs par défaut ci-dessous
-   * (`DEFAULT_LEADER_PUNISHMENT`, index.ts), identiques au comportement d'origine. */
-  leaderPunishment?: {
-    /** `false` désactive entièrement la mécanique pour ce mode. */
-    enabled: boolean;
-    /** Nombre de joueurs les mieux classés examinés à chaque vérification (5 = "Top 5"). */
-    topN: number;
-    /** Masse totale minimale du joueur en tête avant que la mécanique ne puisse se déclencher. */
-    minMassThreshold: number;
-    /** Ratio d'avance (masse du joueur / masse du suivant) au-delà duquel le split est déclenché. */
-    leadRatio: number;
-    /** Délai minimal (ms) entre deux déclenchements pour un même joueur. */
-    cooldownMs: number;
-    /** Fréquence de vérification, en nombre de ticks du mod (pas de tick serveur) entre deux
-     * passages — 20 = une fois toutes les 20 exécutions de `onTick`. */
-    checkIntervalTicks: number;
-  };
-
   /** Réglages de salon par défaut pour ce mode — utilisés par `server/src/index.ts` pour les
    * salons de base créés au démarrage ; un salon créé depuis le lobby peut les redéfinir
    * individuellement (voir `CreateRoomOptions`, engine/roomManager.ts). Absents = repli sur les
@@ -204,5 +183,39 @@ export interface BotConfig {
     neutre: number;
     agressif: number;
     fou: number;
+  };
+  /** Bots "Challenger" (pyramide de robots forts identifiés par rang, voir
+   * engine/bots/botManager.ts/botTypes.ts) — population et paliers de masse distincts des bots
+   * normaux ci-dessus (`proportions`/`ambientTargetCount`). Absent = repli sur
+   * `DEFAULT_CHALLENGER_CONFIG` (botTypes.ts). */
+  challengers?: {
+    /** `false` désactive entièrement les Challengers pour ce mode (aucun, même avec un humain
+     * connecté) — indépendant de `BotConfig.enabled` (qui coupe TOUS les bots, y compris les
+     * bots normaux ci-dessus). */
+    enabled: boolean;
+    /** Nombre de Challengers maintenus en PERMANENCE, même sans aucun joueur humain connecté
+     * (demande utilisateur — auparavant 0 tant qu'aucun humain n'était présent). */
+    baselineCount: number;
+    /** Nombre total de Challengers dès qu'au moins un joueur humain est connecté (>=
+     * `baselineCount` — les `withHumanCount - baselineCount` en plus apparaissent immédiatement
+     * à la connexion du premier humain). */
+    withHumanCount: number;
+    /** Multiplicateur de masse de spawn par rang (index 0 = rang 1, le plus fort) — longueur
+     * attendue >= `withHumanCount` (un rang au-delà de la longueur du tableau retombe sur la
+     * dernière valeur, voir `challengerMassMultiplierForRank`, botTypes.ts). Sert aussi de valeur
+     * pour un Challenger qui réapparaît après avoir été mangé : toujours au dernier palier actif
+     * (le plus faible), jamais au palier du rang mangé — voir `BotManager.onPlayerDeath`. */
+    massMultipliers: number[];
+  };
+  /** Désactivation automatique de TOUS les bots (normaux ET Challengers) si aucun joueur humain
+   * n'est connecté au salon depuis `afterMinutes` minutes d'affilée — économise le CPU d'un salon
+   * durablement vide (voir engine/bots/botManager.ts `updateIdleDespawn`). Le peuplement normal
+   * reprend automatiquement dès qu'un humain rejoint. Absent = jamais de despawn automatique
+   * (comportement d'origine, bots toujours actifs même dans un salon vide). */
+  idleDespawn?: {
+    /** `false` désactive entièrement ce mécanisme pour ce mode. */
+    enabled: boolean;
+    /** Minutes consécutives sans aucun joueur humain avant le despawn de tous les bots. */
+    afterMinutes: number;
   };
 }

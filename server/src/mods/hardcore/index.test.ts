@@ -180,7 +180,7 @@ describe('createHardcoreMod — hooks délégués au mod paramétrique sous-jace
 });
 
 describe('createHardcoreMod — Absence de malus/split punitif pour le leader', () => {
-  it('ne divise pas le leader s’il fait plus de 2x la masse du deuxième joueur', () => {
+  it('ne divise jamais le leader, même très loin devant, même après de nombreux ticks', () => {
     const config = testConfig();
     const mod = createHardcoreMod(config);
     const world = freshWorld();
@@ -192,7 +192,9 @@ describe('createHardcoreMod — Absence de malus/split punitif pour le leader', 
 
     expect(world.getPiecesByOwner('p1')).toHaveLength(1);
 
-    mod.onTick?.(world, 0.05);
+    // Largement plus que l'ancien intervalle de vérification (20 ticks) du malus retiré — garde
+    // de régression contre sa réintroduction, pas seulement contre un unique tick.
+    for (let i = 0; i < 50; i++) mod.onTick?.(world, 0.05);
 
     const leaderPieces = world.getPiecesByOwner('p1');
     expect(leaderPieces.length).toBe(1);

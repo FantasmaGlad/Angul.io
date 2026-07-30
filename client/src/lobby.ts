@@ -12,6 +12,9 @@ export interface RoomSummary {
    * "Rejoindre" et du fond spectateur de l'accueil (voir App.tsx), plutôt que de compter sur
    * l'ordre de la liste renvoyée par le serveur. */
   permanent: boolean;
+  /** Horodatage (`Date.now()`) du prochain reset automatique de ce salon — `undefined` si aucun
+   * reset n'est planifié. */
+  nextResetAtMs?: number;
 }
 
 /** Réponse à la création d'un salon : inclut le code d'invitation pour un salon privé (Lot

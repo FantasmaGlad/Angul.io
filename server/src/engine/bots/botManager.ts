@@ -4,11 +4,13 @@ import type { Room } from '../room.js';
 import type { PlayerId } from '../types.js';
 import { computeBotInput, type BotStateMemory } from './botEvaluator.js';
 import {
+  challengerMassMultiplierForRank,
   DEFAULT_BOT_PROPORTIONS,
+  DEFAULT_CHALLENGER_CONFIG,
   generateBotNickname,
-  getChallengerMassMultiplier,
   selectRandomBotProfile,
   type BotProfileKind,
+  type ChallengerConfig,
 } from './botTypes.js';
 
 interface ActiveBot {
@@ -37,6 +39,14 @@ export class BotManager {
   private ratioTimerMs = 0;
   private nextRatioChangeMs = 0;
   private readonly updateIntervalMs: number;
+  /** Horodatage (`performance.now()`) du début de la période SANS AUCUN joueur humain actuelle —
+   * `undefined` tant qu'un humain est présent, ou si `config.idleDespawn` est absent/désactivé
+   * (voir `updateIdleDespawn`). Remis à zéro dès qu'un humain rejoint. */
+  private idleSinceMs: number | undefined;
+  /** `true` une fois le despawn d'inactivité déclenché (voir `updateIdleDespawn`) — empêche
+   * `adjustPopulation()` de repeupler le salon tant qu'aucun humain n'est revenu (sans quoi le
+   * peuplement normal, appelé à CHAQUE tick, annulerait le despawn dès le tick suivant). */
+  private idleDespawned = false;
 
   constructor(room: Room, config: BotConfig, maxRoomCapacity: number) {
     this.room = room;
@@ -63,7 +73,6 @@ export class BotManager {
 
     const dtMs = dt * 1000;
     this.updateFluctuatingRatio(dtMs);
-    this.adjustPopulation();
 
     // `isTouchingHuman` (voir son commentaire) ne peut JAMAIS renvoyer `true` en l'absence
     // d'humain — l'évaluer quand même coûterait une requête spatiale (`queryNearby`, allocation
@@ -71,8 +80,12 @@ export class BotManager {
     // profilage (voir audit_chaleur.md) sur un salon "au repos" (aucun joueur humain, seulement
     // les bots ambiants qui peuplent en permanence les salons publics) — précisément le cas le
     // plus fréquent en dehors des heures de forte affluence. Calculé UNE FOIS par tick (pas par
-    // bot) : `allPlayers()` alloue déjà un tableau, autant ne le payer qu'une fois.
+    // bot, et réutilisé par `updateIdleDespawn` ci-dessous) : `allPlayers()` alloue déjà un
+    // tableau, autant ne le payer qu'une fois.
     const hasHuman = this.room.world.allPlayers().some((p) => !this.isBot(p.id));
+
+    this.updateIdleDespawn(hasHuman);
+    this.adjustPopulation();
 
     for (const bot of this.activeBots.values()) {
       bot.accumulatorMs += dtMs;
@@ -115,6 +128,33 @@ export class BotManager {
     return false;
   }
 
+  /** Despawn automatique de tous les bots (demande utilisateur) si aucun joueur humain n'est
+   * connecté depuis `config.idleDespawn.afterMinutes` minutes D'AFFILÉE — économise le CPU d'un
+   * salon durablement vide (bots ambiants + Challengers désormais permanents, voir §1 de
+   * `adjustPopulation`). `idleDespawned` reste `true` (donc `adjustPopulation` continue de
+   * refuser tout repeuplement, voir sa garde) tant qu'aucun humain n'est revenu — sans cet état,
+   * le peuplement normal (appelé à CHAQUE tick juste après) annulerait le despawn dès le tick
+   * suivant. */
+  private updateIdleDespawn(hasHuman: boolean): void {
+    const idleConfig = this.config.idleDespawn;
+    if (!idleConfig?.enabled || hasHuman) {
+      this.idleSinceMs = undefined;
+      // Un humain vient de revenir (ou le despawn d'inactivité est désactivé) : lève l'état de
+      // dormance — `adjustPopulation()` (appelé juste après par `update()`) repeuple normalement.
+      this.idleDespawned = false;
+      return;
+    }
+
+    const now = performance.now();
+    this.idleSinceMs ??= now;
+    if (!this.idleDespawned && now - this.idleSinceMs >= idleConfig.afterMinutes * 60_000) {
+      // AVANT clearAll() (pas après) : son propre adjustPopulation() interne doit déjà voir cet
+      // état pour ne pas repeupler immédiatement ce qu'il vient de vider.
+      this.idleDespawned = true;
+      this.clearAll();
+    }
+  }
+
   /** Ajuste le nombre de bots actifs selon le nombre de joueurs humains et garantit qu'il reste toujours au moins 1 place disponible pour un humain. */
   adjustPopulation(maxSpawnPerTick = 20): void {
     if (!this.config?.enabled) return;
@@ -122,25 +162,41 @@ export class BotManager {
     const allPlayers = Array.from(this.room.world.allPlayers());
     const humanCount = allPlayers.filter((p) => !this.activeBots.has(p.id)).length;
 
+    // Dormance (voir `updateIdleDespawn`) : aucun repeuplement tant qu'aucun humain n'est revenu —
+    // un salon resté vide `afterMinutes` a été volontairement vidé, le repeupler au tick suivant
+    // annulerait le despawn.
+    if (humanCount === 0 && this.idleDespawned) return;
+
     // Toujours réserver au moins 1 place pour un joueur humain s'il n'y a pas d'humain connecté
     const maxBotsAllowed = Math.max(0, this.maxRoomCapacity - Math.max(1, humanCount));
 
-    // 1. Les Challenger Bots (jusqu'à 10, bridés par la capacité autorisée du salon ; 0 si 0 humain pour l'ambiance)
-    const maxChallengers = humanCount === 0 ? 0 : Math.min(10, maxBotsAllowed);
+    // 1. Les Challenger Bots — pyramide de robots forts identifiés par rang (voir botTypes.ts
+    // `ChallengerConfig`) : `baselineCount` en PERMANENCE, même à 0 joueur humain (demande
+    // utilisateur — auparavant 0 dans ce cas), étendue à `withHumanCount` dès qu'au moins un
+    // humain est connecté ; toujours bridée par la capacité autorisée du salon ET par le nombre
+    // de paliers de masse réellement configurés (`massMultipliers.length`).
+    const challengerConfig = this.config.challengers ?? DEFAULT_CHALLENGER_CONFIG;
+    const challengerTarget = !challengerConfig.enabled
+      ? 0
+      : humanCount === 0
+        ? challengerConfig.baselineCount
+        : challengerConfig.withHumanCount;
+    const maxChallengerRank = challengerConfig.massMultipliers.length;
+    const maxChallengers = Math.min(challengerTarget, maxBotsAllowed, maxChallengerRank);
     let spawnedThisTick = 0;
 
     for (let rank = 1; rank <= maxChallengers; rank++) {
       const challengerId = `bot-challenger-${rank}`;
       if (!this.activeBots.has(challengerId)) {
         if (spawnedThisTick < maxSpawnPerTick) {
-          this.spawnBot('challenger', rank);
+          this.spawnBot('challenger', rank, challengerConfig);
           spawnedThisTick++;
         }
       }
     }
 
-    // Retirer les challengers si la capacité du salon est inférieure à 10
-    for (let rank = maxChallengers + 1; rank <= 10; rank++) {
+    // Retirer les challengers en trop (capacité du salon réduite, ou Challengers désactivés)
+    for (let rank = maxChallengers + 1; rank <= maxChallengerRank; rank++) {
       const challengerId = `bot-challenger-${rank}`;
       if (this.activeBots.has(challengerId)) {
         this.activeBots.delete(challengerId);
@@ -149,29 +205,67 @@ export class BotManager {
     }
 
     // 2. Ajuster le reste de la population de bots normaux (mode ambiance à 0 joueur humain si ambientTargetCount est défini)
+    //
+    // Compte des bots normaux SEULS (pas `this.activeBots.size`, qui inclurait les Challengers
+    // désormais maintenus en permanence, voir §1 ci-dessus) : `desiredBots` ci-dessous n'a jamais
+    // été pensé comme incluant les Challengers (sa formule ne les mentionne pas), donc comparer un
+    // total qui les inclut ferait DÉCLENCHER LA BOUCLE DE RETRAIT ci-dessous dès que les
+    // Challengers, à eux seuls, dépassent `desiredBots` (ex. `targetRatio` bas/nul, ou
+    // `ambientTargetCount` absent) — `removeSmallestBot()` retomberait alors sur son repli
+    // "aucun bot normal, retire un Challenger" et viderait la pyramide que §1 vient pourtant de
+    // peupler délibérément, dans le MÊME appel. Un bug constaté au calibrage de la permanence des
+    // Challengers (demande utilisateur, §1) : la garantie "toujours au moins `baselineCount`
+    // Challengers" ne tient que si cette section ne les compte jamais dans ses propres calculs.
+    let challengerCount = 0;
+    for (const bot of this.activeBots.values()) {
+      if (bot.profile === 'challenger') challengerCount++;
+    }
+
     const effectiveRatio = this.config.targetRatio ?? this.currentTargetRatio;
     const targetBotCount = Math.floor(this.maxRoomCapacity * effectiveRatio);
     const ambientCount = this.config.ambientTargetCount;
+    // Budget restant pour les bots normaux APRÈS réservation des Challengers (`maxChallengers`,
+    // §1) — jamais `maxBotsAllowed` seul : les deux populations partagent la même réservation "au
+    // moins 1 place pour un humain" (`maxBotsAllowed`, voir plus haut), donc les plafonner
+    // indépendamment l'une de l'autre contre CE MÊME budget permettrait à leur SOMME de le
+    // dépasser (ex. un salon à capacité 2 avec 1 Challenger ET 1 bot normal, ne laissant plus
+    // aucune place à l'humain que `maxBotsAllowed` était censé garantir) — bug constaté au
+    // calibrage de la permanence des Challengers (demande utilisateur, §1).
+    const remainingBotBudget = Math.max(0, maxBotsAllowed - maxChallengers);
     const desiredBots = Math.min(
-      maxBotsAllowed,
+      remainingBotBudget,
       humanCount === 0 && ambientCount !== undefined
         ? ambientCount
         : Math.max(ambientCount ?? 0, targetBotCount - humanCount),
     );
 
     // Si on manque de bots : spawn progressif (limité à maxSpawnPerTick par tick)
-    while (this.activeBots.size < desiredBots && spawnedThisTick < maxSpawnPerTick) {
+    while (this.activeBots.size - challengerCount < desiredBots && spawnedThisTick < maxSpawnPerTick) {
       this.spawnBot();
       spawnedThisTick++;
     }
 
-    // Si on a trop de bots : ajustement immédiat
-    while (this.activeBots.size > desiredBots) {
+    // Si on a trop de bots normaux : ajustement immédiat (jamais les Challengers — voir plus
+    // haut : `normalBotCount > desiredBots >= 0` garantit qu'il reste au moins un bot normal à
+    // retirer ici, donc `removeSmallestBot()` ne retombe jamais sur son repli Challenger dans
+    // cette boucle précise).
+    while (this.activeBots.size - challengerCount > desiredBots) {
       this.removeSmallestBot();
     }
   }
 
-  private spawnBot(forcedProfile?: BotProfileKind, rank?: number): void {
+  /** `challengerMassOverride` : multiplicateur de masse imposé pour un Challenger, plutôt que
+   * celui du barème par rang (`challengerMassMultiplierForRank`) — utilisé UNIQUEMENT par
+   * `respawnChallengerAtWeakestTier` (voir son commentaire) pour qu'un Challenger qui réapparaît
+   * après avoir été mangé entre toujours au palier le plus faible actuellement actif, jamais à
+   * celui de son rang d'origine. Absent pour un spawn "normal" (peuplement initial du salon /
+   * extension de la pyramide à la connexion d'un humain), qui utilise le barème par rang. */
+  private spawnBot(
+    forcedProfile?: BotProfileKind,
+    rank?: number,
+    challengerConfig?: ChallengerConfig,
+    challengerMassOverride?: number,
+  ): void {
     const profile =
       forcedProfile ?? selectRandomBotProfile(this.config.proportions ?? DEFAULT_BOT_PROPORTIONS);
 
@@ -211,7 +305,8 @@ export class BotManager {
     this.room.addPlayer(botId, nickname, randomSkin);
 
     if (profile === 'challenger' && rank !== undefined) {
-      const multiplier = getChallengerMassMultiplier(rank);
+      const multiplier =
+        challengerMassOverride ?? challengerMassMultiplierForRank(rank, challengerConfig);
       const pieces = this.room.world.getPiecesByOwner(botId);
       const firstPiece = pieces[0];
       if (firstPiece) {
@@ -247,7 +342,8 @@ export class BotManager {
     }
 
     if (!smallestBotId) {
-      for (let rank = 10; rank >= 1; rank--) {
+      const maxRank = (this.config.challengers ?? DEFAULT_CHALLENGER_CONFIG).massMultipliers.length;
+      for (let rank = maxRank; rank >= 1; rank--) {
         const challengerId = `bot-challenger-${rank}`;
         if (this.activeBots.has(challengerId)) {
           smallestBotId = challengerId;
@@ -263,10 +359,49 @@ export class BotManager {
   }
 
   onPlayerDeath(playerId: PlayerId): void {
-    if (this.activeBots.has(playerId)) {
-      this.activeBots.delete(playerId);
-      this.room.removePlayer(playerId);
-      this.adjustPopulation();
+    const bot = this.activeBots.get(playerId);
+    if (!bot) return;
+
+    this.activeBots.delete(playerId);
+    this.room.removePlayer(playerId);
+
+    // Un Challenger mangé (demande utilisateur) : le remplaçant entre TOUJOURS au palier le plus
+    // faible actuellement actif (rang `baselineCount`/`withHumanCount`, ex. x10 ou x3) — jamais au
+    // palier de son propre rang (qui pouvait être x50) — voir `respawnChallengerAtWeakestTier`.
+    // Fait AVANT `adjustPopulation()` ci-dessous : celui-ci comble ensuite tout écart restant
+    // (rangs manquants) avec le barème normal par rang, sans jamais re-remplir un rang déjà
+    // repeuplé ici (voir la garde `!this.activeBots.has(challengerId)` dans `adjustPopulation`).
+    if (bot.profile === 'challenger') {
+      this.respawnChallengerAtWeakestTier();
+    }
+    this.adjustPopulation();
+  }
+
+  /** Fait réapparaître UN Challenger au palier de masse le plus faible actuellement actif
+   * (`baselineCount` paliers si aucun humain n'est connecté, `withHumanCount` sinon — voir
+   * `adjustPopulation`), dans n'importe quel rang de slot libre (le rang sert uniquement d'id
+   * unique/de nom ici, PAS de barème de masse — voir `spawnBot`, `challengerMassOverride`). Ne
+   * fait rien si les Challengers sont désactivés ou si aucun rang n'est libre (population déjà au
+   * complet, `adjustPopulation` juste après s'occupera du reste normalement). */
+  private respawnChallengerAtWeakestTier(): void {
+    if (!this.config?.enabled) return;
+    const challengerConfig = this.config.challengers ?? DEFAULT_CHALLENGER_CONFIG;
+    if (!challengerConfig.enabled) return;
+
+    const humanCount = this.room.world.allPlayers().filter((p) => !this.isBot(p.id)).length;
+    const activeTierCount = Math.min(
+      humanCount === 0 ? challengerConfig.baselineCount : challengerConfig.withHumanCount,
+      challengerConfig.massMultipliers.length,
+    );
+    if (activeTierCount <= 0) return;
+    const weakestMultiplier = challengerMassMultiplierForRank(activeTierCount, challengerConfig);
+
+    for (let rank = 1; rank <= activeTierCount; rank++) {
+      const challengerId = `bot-challenger-${rank}`;
+      if (!this.activeBots.has(challengerId)) {
+        this.spawnBot('challenger', rank, challengerConfig, weakestMultiplier);
+        return;
+      }
     }
   }
 

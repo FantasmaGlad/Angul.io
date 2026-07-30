@@ -19,6 +19,12 @@ export interface GameServerOptions {
   adminStaticDir?: string;
   /** Limite de tentatives par minute (Défaut : 3). Définir à 0 pour désactiver (ex : tests). */
   rateLimitMaxAttempts?: number;
+  /** Identifiant de build transmis dans chaque `welcome` (voir protocol.ts) — un client qui
+   * reçoit une valeur différente de celle de son `welcome` précédent sait qu'il a reconnecté vers
+   * un nouveau déploiement (nouveau process serveur) et se recharge automatiquement (voir
+   * GameView.tsx). Repli sur `Date.now()` au démarrage de CE process si absent (jamais recalculé
+   * ensuite) : suffisant en pratique, un déploiement redémarrant toujours le process. */
+  buildVersion?: string;
 }
 
 export interface GameServerHandle {
@@ -32,6 +38,7 @@ export function startGameServer(
 ): GameServerHandle {
   startMetrics();
 
+  const buildVersion = options.buildVersion ?? String(Date.now());
   const runtimes = new Map<string, RoomRuntime>();
 
   const maxAttempts = options.rateLimitMaxAttempts ?? 3;
@@ -104,6 +111,7 @@ export function startGameServer(
       options.accounts,
       wsRateLimiter,
       options.admin,
+      buildVersion,
     );
   });
 

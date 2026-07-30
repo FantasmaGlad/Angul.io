@@ -101,7 +101,7 @@ function updateCombo(combo: ComboState, nowMs: number): void {
 
 function comboMultiplierForChain(chain: number): number {
   // chain=2 (déclenchement) -> 1,2^1 = x1,2 (valeur fournie). Chaque maillon supplémentaire
-  // multiplie encore par 1,2, plafonné à x10 ("Boost Max", valeur fournie) — progression
+  // multiplie encore par 1,2, plafonné à x2 ("Boost Max", COMBO_MAX_MULTIPLIER) — progression
   // géométrique retenue comme interpolation raisonnable entre les deux points donnés, les
   // paliers intermédiaires n'étant pas spécifiés par la demande.
   return Math.min(COMBO_MAX_MULTIPLIER, Math.pow(COMBO_STEP_FACTOR, chain - 1));

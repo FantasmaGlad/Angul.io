@@ -26,10 +26,8 @@ const DEFAULT_HARDCORE_CONFIG: HardcoreModConfig = { massGainMultiplier: 2 };
  * à Vanilla, cf. cahier des charges §3.4 #2 — rien à y changer) — ne réécrit que ce qui diffère
  * réellement : le gain de masse multiplié à l'absorption d'un autre joueur (`onCollision`), la
  * conséquence d'une mort (`transformScoreForAccount`), et le Dash (`onPlayerInput`/`onTick`/
- * `getDashState`, absent de Vanilla). Le split punitif du Top 5 (`onTick`) N'EST PAS spécifique à
- * Hardcore : il vit dans le mod paramétrique de BASE (mods/parametric/index.ts), donc s'applique
- * identiquement à tout mode qui en hérite (Vanilla compris) — Hardcore ne fait que le relayer via
- * `base.onTick?.(world, dt)` ci-dessous, comme le reste du mouvement/decay/nourriture.
+ * `getDashState`, absent de Vanilla) — Hardcore relaie `base.onTick?.(world, dt)` ci-dessous pour
+ * le reste (mouvement/decay/nourriture), inchangé par rapport à Vanilla.
  */
 export function createHardcoreMod(
   config: ParametricModConfig,

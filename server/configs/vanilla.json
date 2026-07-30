@@ -21,15 +21,15 @@
     "amount": 5
   },
   "merge": {
-    "baseTimeSec": 10,
+    "baseTimeSec": 15,
     "massFactor": 0,
-    "overlapMinFraction": 0.3
+    "overlapMinFraction": 0
   },
   "eating": {
     "massAdvantage": 0.05,
     "minMassToEatFood": 2,
     "eatOverlapFraction": 0.7,
-    "absorptionDurationSec": 0.3
+    "absorptionDurationSec": 0.1
   },
   "decay": {
     "threshold": 100,
@@ -65,15 +65,17 @@
       "neutre": 30,
       "agressif": 30,
       "fou": 15
+    },
+    "challengers": {
+      "enabled": true,
+      "baselineCount": 6,
+      "withHumanCount": 10,
+      "massMultipliers": [50, 40, 30, 25, 20, 10, 8, 7, 5, 3]
+    },
+    "idleDespawn": {
+      "enabled": true,
+      "afterMinutes": 10
     }
-  },
-  "leaderPunishment": {
-    "enabled": true,
-    "topN": 5,
-    "minMassThreshold": 200,
-    "leadRatio": 2,
-    "cooldownMs": 10000,
-    "checkIntervalTicks": 20
   },
   "room": {
     "maxPlayers": 30,

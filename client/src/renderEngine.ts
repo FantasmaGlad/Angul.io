@@ -172,8 +172,29 @@ export class RenderEngine {
       t = clamp((renderTime - snapA.serverTimeMs) / intervalMs, 0, maxT);
     }
 
-    const fromEntities = snapA ? snapA.entities : (this.snapshotQueue[0]?.entities ?? []);
-    const toEntities = snapB ? snapB.entities : (this.snapshotQueue[this.snapshotQueue.length - 1]?.entities ?? []);
+    const rawFromEntities = snapA ? snapA.entities : (this.snapshotQueue[0]?.entities ?? []);
+    const rawToEntities = snapB ? snapB.entities : (this.snapshotQueue[this.snapshotQueue.length - 1]?.entities ?? []);
+
+    // Culling AVANT interpolation/lissage, pas après (contrairement à l'ancien pipeline) :
+    // `interpolateEntities` (juste en dessous) et le lissage exponentiel (`smoothed` plus bas)
+    // allouent chacun un objet PAR ENTITÉ à CHAQUE FRAME DE RENDU (jusqu'à 240 fois/seconde), et
+    // le second entretient en plus une `Map` persistante par entité (`smoothMap`) — un coût
+    // proportionnel au nombre d'entités TRANSMISES par le serveur, qui envoie désormais le salon
+    // ENTIER à chaque joueur (chargement dynamique par intérêt retiré, demande utilisateur
+    // antérieure, voir snapshotBuilder.ts) : potentiellement plusieurs milliers de pastilles de
+    // nourriture + bots hors-écran sur une carte chargée, alors que seule une fraction est
+    // réellement visible à l'écran. Culler d'abord réduit ce travail à ce que l'écran affiche
+    // réellement, sans changer le résultat visuel : une entité cullée ici n'aurait de toute façon
+    // jamais été dessinée par `renderFrame` (qui culle lui-même une seconde fois, bon marché,
+    // juste avant de dessiner). Un spectateur (fond d'accueil dézoomé, voir
+    // SpectatorBackground.tsx) voit déjà tout le salon par construction — culler n'y changerait
+    // rien, seulement gaspillerait le calcul du viewport.
+    const fromEntities = isSpectator
+      ? rawFromEntities
+      : cullEntitiesForViewport(rawFromEntities, camera, viewportWidth, viewportHeight, selfPlayerId);
+    const toEntities = isSpectator
+      ? rawToEntities
+      : cullEntitiesForViewport(rawToEntities, camera, viewportWidth, viewportHeight, selfPlayerId);
 
     // Pour éviter tout pop visuel d'entité entre snapA et snapB, l'interpolation se fait d'abord
     const interpolated = interpolateEntities(fromEntities, toEntities, t);
@@ -217,18 +238,9 @@ export class RenderEngine {
       }
     }
 
-    // Puis le culling de viewport (ou conservation de tout si spectateur)
-    if (isSpectator) {
-      return smoothed;
-    }
-
-    return cullEntitiesForViewport(
-      smoothed,
-      camera,
-      viewportWidth,
-      viewportHeight,
-      selfPlayerId,
-    );
+    // Le culling a déjà eu lieu en amont (voir `fromEntities`/`toEntities` ci-dessus) — inutile de
+    // le refaire ici sur le résultat interpolé/lissé.
+    return smoothed;
   }
 
   private smoothMap = new Map<string, { x: number; y: number; r: number }>();

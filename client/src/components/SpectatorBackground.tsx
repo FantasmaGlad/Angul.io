@@ -57,6 +57,13 @@ export default function SpectatorBackground({ roomId, zooming }: SpectatorBackgr
     camera: { x: 7500, y: 7500, scale: 0.1 },
     renderEngine: new RenderEngine(),
   });
+  /** `buildVersion` du tout premier `welcome` reçu par ce composant (voir protocol.ts) — persiste
+   * à travers les reconnexions déclenchées par un changement de `roomId` (bascule de mode sur
+   * l'accueil, voir l'effet ci-dessous), qui ne changent jamais `buildVersion` (propre au PROCESS
+   * serveur, pas au salon) : seul un vrai redémarrage du process (déploiement) le fait varier. Un
+   * `ref` (pas un `let` local à l'effet, qui serait recréé à chaque reconnexion) est nécessaire
+   * pour comparer à travers ces reconnexions normales. */
+  const knownBuildVersionRef = useRef<string | undefined>(undefined);
 
   // Boucle de rendu — montée une seule fois, indépendante de `roomId`
   useEffect(() => {
@@ -129,6 +136,16 @@ export default function SpectatorBackground({ roomId, zooming }: SpectatorBackgr
       let tickRateHz: number | undefined;
       connection.onMessage((message: ServerMessage) => {
         if (message.type === 'welcome') {
+          // Détection de nouveau déploiement (voir le commentaire de `knownBuildVersionRef`) —
+          // rechargement immédiat : à l'accueil, aucune partie en cours à préserver.
+          if (message.buildVersion !== undefined) {
+            if (knownBuildVersionRef.current === undefined) {
+              knownBuildVersionRef.current = message.buildVersion;
+            } else if (knownBuildVersionRef.current !== message.buildVersion) {
+              window.location.reload();
+              return;
+            }
+          }
           tickRateHz = message.tickRateHz;
           stateRef.current.mapSize = message.mapSize;
           stateRef.current.renderEngine.reset();

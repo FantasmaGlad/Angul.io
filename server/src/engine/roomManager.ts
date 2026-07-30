@@ -3,7 +3,7 @@ import type { MovementConfig } from '@angulio/shared';
 import { logEvent } from '../log.js';
 import type { GameMod } from './mod.js';
 import type { Room } from './room.js';
-import { DEFAULT_RESET_SCHEDULE, type RoomResetSchedule } from './resetSchedule.js';
+import { DEFAULT_RESET_SCHEDULE, delayUntilNextReset, type RoomResetSchedule } from './resetSchedule.js';
 import type { RoomHandle, RoomHost } from './worker/roomHost.js';
 import type { RoomSpec, RoomStats } from './worker/protocol.js';
 
@@ -56,6 +56,11 @@ export interface RoomSummary {
   playerCount: number;
   maxPlayers: number;
   permanent: boolean;
+  /** Horodatage (`Date.now()`) du prochain reset automatique — `undefined` si ce salon n'a aucun
+   * reset planifié. Calculé à la demande (voir `toSummary`/`nextResetAtMsOf`), jamais mémorisé :
+   * un reset annule et reprogramme le suivant (voir `Room.scheduleReset`), donc la valeur n'aurait
+   * de toute façon de sens qu'au moment où elle est lue. */
+  nextResetAtMs?: number;
 }
 
 export interface CreatedRoomSummary extends RoomSummary {
@@ -84,6 +89,11 @@ interface RoomEntry extends ManagedRoom {
   readonly permanent: boolean;
   lastNonEmptyAt: number;
   expireTimer?: ReturnType<typeof setTimeout>;
+  /** Planification de reset résolue à la création (voir `createRoom`) — retenue ici (en plus
+   * d'être transmise au `RoomSpec` envoyé au host) pour que `nextResetAtMsOf` puisse calculer le
+   * prochain horodatage à la demande, y compris pour un salon hébergé par un worker (le calcul
+   * lui-même est pur et n'a besoin d'aucun état de simulation, voir `resetSchedule.ts`). */
+  readonly resetSchedule: RoomResetSchedule | undefined;
 }
 
 export interface RoomManagerOptions {
@@ -183,6 +193,7 @@ export class RoomManager {
       maxPlayers,
       permanent: options.permanent ?? false,
       lastNonEmptyAt: Date.now(),
+      resetSchedule: resetSchedule ?? undefined,
     };
     if (options.durationMs !== undefined) {
       entry.expireTimer = setTimeout(() => this.expireRoom(id), options.durationMs);
@@ -326,7 +337,20 @@ export class RoomManager {
       playerCount: this.playerCountOf(entry),
       maxPlayers: entry.maxPlayers,
       permanent: entry.permanent,
+      nextResetAtMs: this.nextResetAtMsOf(entry),
     };
+  }
+
+  /** Prochain horodatage (`Date.now()`) de reset automatique d'un salon, ou `undefined` s'il n'en
+   * a aucun — recalculé à la demande plutôt que mémorisé (voir le commentaire de
+   * `RoomEntry.resetSchedule`). Public : réutilisé par `connectionHandler.ts` pour le transmettre
+   * dans `welcome` (affichage HUD en jeu), en plus de `toSummary` (lobby). Accepte un
+   * `ManagedRoom` (pas seulement `RoomEntry`) pour rester appelable avec ce que
+   * `roomManager.getManagedRoom` renvoie ailleurs dans le code réseau. */
+  nextResetAtMsOf(managed: ManagedRoom): number | undefined {
+    const entry = this.rooms.get(managed.id);
+    if (!entry?.resetSchedule) return undefined;
+    return Date.now() + delayUntilNextReset(entry.resetSchedule);
   }
 
   /** Lecture synchrone directe pour un salon `LocalRoomHost` (défaut, voir index.ts

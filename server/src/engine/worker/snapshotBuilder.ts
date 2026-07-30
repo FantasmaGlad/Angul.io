@@ -67,20 +67,41 @@ function roundMass(value: number): number {
 
 export function toSnapshot(entity: Entity): EntitySnapshot {
   if (entity.kind === 'particle') {
-    let snap = (entity as any)._snapshot as EntitySnapshot | undefined;
-    if (!snap) {
-      snap = {
-        i: entity.id,
-        k: 'f',
-        x: round1(entity.position.x),
-        y: round1(entity.position.y),
-        r: round1(entity.radius),
-        m: roundMass(entity.mass),
-        p: entity.ownerId,
-      };
-      (entity as any)._snapshot = snap;
+    // Cache réutilisé UNIQUEMENT pour une particule à vélocité nulle : la nourriture normale ne
+    // bouge jamais après son spawn (position/masse figées), donc reconstruire ce petit objet à
+    // chaque tick pour des milliers de pastilles était un gaspillage pur. Une particule éjectée
+    // (`tryEjectMass`, mods/parametric/index.ts) a en revanche une vélocité non nulle tant
+    // qu'elle n'a pas fini de freiner (`EJECT_FRICTION_PER_SEC`, onTick) : sa position continue
+    // de changer tick après tick côté serveur (collision comprise), donc mettre son snapshot en
+    // cache la ferait apparaître IMMOBILE à tous les clients pendant qu'elle se déplace
+    // réellement — un bug de rendu, pas seulement une optimisation manquée. Reconstruit un
+    // snapshot frais à chaque appel tant que la vélocité n'est pas retombée à zéro ; redevient
+    // éligible au cache une fois immobile (position de repos), comme la nourriture normale.
+    if (entity.velocity.x === 0 && entity.velocity.y === 0) {
+      let snap = (entity as any)._snapshot as EntitySnapshot | undefined;
+      if (!snap) {
+        snap = {
+          i: entity.id,
+          k: 'f',
+          x: round1(entity.position.x),
+          y: round1(entity.position.y),
+          r: round1(entity.radius),
+          m: roundMass(entity.mass),
+          p: entity.ownerId,
+        };
+        (entity as any)._snapshot = snap;
+      }
+      return snap;
     }
-    return snap;
+    return {
+      i: entity.id,
+      k: 'f',
+      x: round1(entity.position.x),
+      y: round1(entity.position.y),
+      r: round1(entity.radius),
+      m: roundMass(entity.mass),
+      p: entity.ownerId,
+    };
   }
   return {
     i: entity.id,

@@ -43,6 +43,7 @@ export function handleWsConnection(
   accounts: AccountsService | undefined,
   wsRateLimiter: RateLimiter,
   admin: AdminAuth | undefined,
+  buildVersion: string,
 ): void {
   const requestUrl = new URL(request.url ?? '/', 'http://localhost');
   const isAdmin = requestUrl.searchParams.get('admin') === '1';
@@ -90,6 +91,8 @@ export function handleWsConnection(
       mapSize: managed.handle.mapSize,
       tickRateHz: roomManager.tickRateHz,
       movement: managed.handle.movement,
+      nextResetAtMs: roomManager.nextResetAtMsOf(managed),
+      buildVersion,
     });
 
     socket.on('message', (raw: Buffer): void => {
@@ -143,6 +146,8 @@ export function handleWsConnection(
       tickRateHz: roomManager.tickRateHz,
       movement: managed.handle.movement,
       modId: managed.modId,
+      nextResetAtMs: roomManager.nextResetAtMsOf(managed),
+      buildVersion,
     });
     for (const [pId, nickname] of runtime.nicknameByPlayer.entries()) {
       const color = runtime.colorByPlayer.get(pId) ?? skinForNickname(nickname);
@@ -232,6 +237,8 @@ export function handleWsConnection(
           tickRateHz: roomManager.tickRateHz,
           movement: managed.handle.movement,
           modId: managed.modId,
+          nextResetAtMs: roomManager.nextResetAtMsOf(managed),
+          buildVersion,
         });
 
         for (const existingPlayer of result.existingPlayers) {
@@ -269,6 +276,8 @@ export function handleWsConnection(
             // GameView.tsx, `message.modId === 'hardcore'`) — son absence faisait toujours
             // retomber sur la musique Vanilla après un respawn, y compris en salon Hardcore.
             modId: managed.modId,
+            nextResetAtMs: roomManager.nextResetAtMsOf(managed),
+            buildVersion,
           });
         }
       }

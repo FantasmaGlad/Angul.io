@@ -6,6 +6,7 @@ import { hashPassword } from '../accounts/passwords.js';
 import { AccountsService } from '../accounts/service.js';
 import { AdminAuth } from '../admin/adminAuth.js';
 import type { GameMod } from '../engine/mod.js';
+import { resolveMod } from '../engine/modRegistry.js';
 import { RoomManager, type ModResolver } from '../engine/roomManager.js';
 import { createLocalRoomHost } from '../engine/worker/roomHost.js';
 import { startGameServer, type GameServerHandle } from './server.js';
@@ -641,6 +642,10 @@ describe('startGameServer', () => {
         playerCount: 0,
         maxPlayers: 100,
         permanent: false,
+        // Résolu par défaut (DEFAULT_RESET_SCHEDULE) faute de resetSchedule explicite — voir
+        // roomManager.ts `createRoom`/`nextResetAtMsOf` ; l'horodatage exact dépend de l'heure
+        // d'exécution du test, seul son existence (nombre fini) compte ici.
+        nextResetAtMs: expect.any(Number),
       },
     ]);
   });
@@ -694,6 +699,19 @@ describe('startGameServer', () => {
 
     const response = await fetch(`http://localhost:${port}/api/modes`);
     expect(await response.json()).toEqual(['vanilla', 'hardcore']);
+  });
+
+  it('GET /api/avatars renvoie la liste dynamique des avatars scannés dans assets/Profil', async () => {
+    const manager = makeManager(testResolver());
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
+    const port = await handle.whenReady;
+
+    const response = await fetch(`http://localhost:${port}/api/avatars`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { avatars: Array<{ id: string; name: string; url: string }> };
+    expect(Array.isArray(body.avatars)).toBe(true);
+    expect(body.avatars.length).toBeGreaterThan(0);
+    expect(body.avatars.some((a) => a.id === 'Banane')).toBe(true);
   });
 
   it('POST /api/rooms { visibility: "private" } renvoie un code d’invitation, absent en public', async () => {
@@ -971,6 +989,90 @@ describe.skipIf(!DATABASE_URL)('startGameServer (avec comptes joueurs)', () => {
 
     expect(profile?.xp).toBe(1234);
   });
+
+  // Couverture ajoutée : le test "crédite l'XP... à la déconnexion" ci-dessus ne couvrait que le
+  // chemin `leave()` (fermeture de socket), jamais le chemin `onPlayerDeath` (mort en jeu,
+  // broadcast.ts) — avec les VRAIS mods (vanilla/hardcore, via resolveMod), pas le mod factice
+  // `{ id: 'test' }` utilisé partout ailleurs dans ce fichier. Sert de garde-fou de régression
+  // pour le classement/meilleur score/gain d'XP (signalé "ne marche pas" par l'utilisateur —
+  // audit : le chemin `leave()` était déjà couvert et fonctionnait, celui-ci ne l'était pas
+  // encore ; les deux se sont révélés corrects une fois testés bout en bout contre un vrai
+  // Postgres, voir le résultat de ce test).
+  it.each(['vanilla', 'hardcore'] as const)(
+    'crédite le meilleur score de masse à la MORT (pas seulement à la déconnexion) avec le vrai mod %s',
+    async (modId) => {
+      const host = createLocalRoomHost(resolveMod);
+      const manager = new RoomManager(host, 20, { emptyRoomGraceMs: 10_000_000 });
+      managers.push(manager);
+      const accounts = new AccountsService(pool);
+      handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0, accounts });
+      const port = await handle.whenReady;
+
+      const pseudo = uniquePseudo(modId === 'hardcore' ? 'dhc' : 'dva');
+      const { token } = await accounts.register(pseudo, 'motdepasse123');
+      const accountId = accounts.resolveToken(token)!;
+      const summary = manager.createRoom({ name: 'Diag', modId, visibility: 'public' });
+
+      const socket = new WebSocket(
+        `ws://localhost:${port}/?roomId=${summary.id}&token=${encodeURIComponent(token)}`,
+      );
+      await waitForOpen(socket);
+      const messages = collectMessages(socket);
+      socket.send(JSON.stringify({ type: 'join', nickname: 'Diag' }));
+      await waitUntil(() => messages.some((m) => m.type === 'welcome'));
+      const welcome = messages.find((m) => m.type === 'welcome')!;
+      const playerId = String(welcome.playerId);
+
+      const room = manager.getManagedRoom(summary.id)!.room;
+      const world = room.world;
+      room.tick(); // player.alive -> true
+
+      // Simule une vie : masse gagnée (peak mass -> best score) + XP accumulée (engine/xp.ts),
+      // sans rejouer toute la mécanique d'absorption (déjà couverte ailleurs).
+      const player = world.getPlayer(playerId)!;
+      const piece = world.getEntity(player.pieceIds[0]!)!;
+      world.setMass(piece, 5000);
+      player.lifeStats.xpEarned = 777;
+      room.tick(); // fait progresser maxMassByPlayer (RoomInstance) au-delà du spawn initial
+
+      for (const pieceId of [...player.pieceIds]) world.removeEntity(pieceId);
+      room.tick(); // détecte la mort -> onPlayerDeath -> handleDeath -> broadcast.ts
+
+      await waitUntil(() => messages.some((m) => m.type === 'died'));
+      const died = messages.find((m) => m.type === 'died')!;
+      // Le message `died` porte toujours le score/XP BRUTS de cette vie (avant transformation
+      // propre au mod) — affichés à l'écran de mort quel que soit le mode, contrairement à ce qui
+      // est réellement crédité en base (voir plus bas).
+      expect(died.finalScore).toBe(5000);
+      expect(died.xpEarned).toBe(777);
+
+      // Écriture en base asynchrone (best-effort, voir broadcast.ts `onPlayerDeath`) : on
+      // interroge le profil jusqu'à ce que LES DEUX écritures indépendantes (recordBestMass +
+      // recordGameResult, deux appels distincts) soient visibles, plutôt qu'un délai fixe.
+      const deadline = Date.now() + 2000;
+      let profile = await accounts.getProfile(accountId);
+      while (Date.now() < deadline && (profile?.bestScores.length ?? 0) === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        profile = await accounts.getProfile(accountId);
+      }
+
+      // Meilleur score de masse : crédité dans LES DEUX modes (jamais transformé/annulé par
+      // `transformScoreForAccount`, voir mods/hardcore/index.ts — seule l'XP l'est).
+      expect(profile?.bestScores).toEqual([{ modeId: modId, bestScore: 5000 }]);
+
+      if (modId === 'hardcore') {
+        // "Perte totale de la progression XP de la partie en cas de mort" (cahier des charges
+        // §3.4 #2, mods/hardcore/index.ts `transformScoreForAccount`) : comportement VOULU, pas
+        // un bug — l'XP affichée à l'écran de mort (`died.xpEarned` ci-dessus) n'est jamais
+        // créditée au compte en Hardcore.
+        expect(profile?.xp).toBe(0);
+      } else {
+        expect(profile?.xp).toBe(777);
+      }
+
+      socket.close();
+    },
+  );
 
   it('POST /api/admin/login : 503 sans ADMIN_PASSWORD_HASH, 401 si mauvais mot de passe, 200 + token sinon', async () => {
     const { port } = await startServer(false);

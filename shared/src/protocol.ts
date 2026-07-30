@@ -89,6 +89,17 @@ export interface WelcomeMessage {
   movement: MovementConfig;
   /** Identifiant du mode de jeu actif (ex: 'hardcore', 'vanilla') pour la musique et l'UI. */
   modId?: string;
+  /** Horodatage (`Date.now()`) du prochain reset automatique planifié de ce salon (voir
+   * engine/resetSchedule.ts) — `undefined` si le salon n'a aucun reset automatique programmé.
+   * Sert au décompte affiché en HUD (GameView.tsx) ; calculé une fois par `welcome` plutôt que
+   * répété à chaque tick (contrairement à `entities`), un reset se recalcule rarement (voir
+   * roomManager.ts `nextResetAtMsOf`). */
+  nextResetAtMs?: number;
+  /** Identifiant de build du process serveur (fixé au démarrage, voir server/src/index.ts) —
+   * permet au client de détecter qu'il a reconnecté vers un nouveau déploiement (un redémarrage
+   * du process change forcément cette valeur) et de se recharger automatiquement plutôt que de
+   * continuer à exécuter un bundle périmé (voir GameView.tsx, comparaison au `welcome` précédent). */
+  buildVersion?: string;
 }
 
 export interface LeaderboardEntry {

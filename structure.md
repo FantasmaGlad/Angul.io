@@ -110,9 +110,12 @@ Angul.io/
 │       │   │   ├── roomWorker.ts                  Point d'entrée du worker_thread (boucle de messages)
 │       │   │   └── snapshotBuilder.ts / .test.ts  Construit l'EntitySnapshot[] envoyé au réseau
 │       │   └── bots/                        Système de robots (IA, régulation population)
-│       │       ├── botTypes.ts                    Profils ('fuis', 'neutre'...), voir BOT_IDENTITIES
+│       │       ├── botTypes.ts                    Profils ('fuis', 'neutre'...) + pyramide Challenger
+│       │       │                                   (ChallengerConfig/DEFAULT_CHALLENGER_CONFIG), voir BOT_IDENTITIES
 │       │       ├── botEvaluator.ts / .test.ts     IA décisionnelle (utility evaluation)
-│       │       └── botManager.ts / .test.ts       Population (spawn progressif, ratio fluctuant)
+│       │       └── botManager.ts / .test.ts       Population : bots normaux (spawn progressif, ratio
+│       │                                           fluctuant) + Challengers (permanents, extension à la
+│       │                                           connexion d'un humain) + despawn d'inactivité (idleDespawn)
 │       ├── mods/                      Modes de jeu — voir README §Modding pour la philosophie
 │       │   ├── parametric/                  Mod générique piloté à 100% par un JSON (server/configs/*.json)
 │       │   │   ├── config.ts                      Schéma TypeScript complet de la config JSON

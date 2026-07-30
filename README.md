@@ -89,7 +89,7 @@ Trois couches côté serveur, dans l'ordre de dépendance :
 Un salon (`Room`) = une instance de `World` + un `GameMod` + une boucle de tick. Tous les salons
 d'un déploiement tournent à la **même** `TICK_RATE_HZ` ; rien n'empêche un mod de faire évoluer sa
 propre notion de temps interne (compteurs, cooldowns) à un rythme différent en comptant ses
-propres ticks (voir `leaderPunishment.checkIntervalTicks`, §5).
+propres ticks.
 
 ---
 
@@ -161,8 +161,8 @@ règle de jeu nouvelle, tu n'écris **aucun TypeScript** :
 
 `createParametricMod` (`mods/parametric/index.ts`) implémente **toute** la logique de jeu
 générique à partir de `config` : mouvement (`shared/src/movement.ts`), split, fusion, absorption à
-seuil, éjection de masse, décroissance passive, bords de carte, spawn de nourriture, punition du
-Top N. Rien de tout cela n'a besoin d'être réécrit pour un nouveau mode paramétrique.
+seuil, éjection de masse, décroissance passive, bords de carte, spawn de nourriture. Rien de tout
+cela n'a besoin d'être réécrit pour un nouveau mode paramétrique.
 
 ### 4.2 Mod avec logique propre — composer ou écrire un `GameMod`
 
@@ -198,8 +198,8 @@ export function createHardcoreMod(config: ParametricModConfig): GameMod {
 
 Règle à retenir : **ne réécris que ce qui diffère réellement**, délègue le reste via
 `base.hook?.(...)`. Un hook non réécrit dans l'objet retourné (grâce à `...base`) reste exactement
-celui du mod composé — c'est ainsi que le split punitif du Top N (`onTick`, vivant dans le mod
-paramétrique de BASE) s'applique **aussi** à Hardcore sans qu'aucune ligne de Hardcore n'y touche.
+celui du mod composé — c'est ainsi que le mouvement/decay/nourriture (`onTick`, vivant dans le mod
+paramétrique de BASE) s'appliquent **aussi** à Hardcore sans qu'aucune ligne de Hardcore n'y touche.
 
 **Écrire un `GameMod` isolé** (si rien à réutiliser, ex. un mode avec une IA d'entité non-joueur) :
 implémente `GameMod` directement (voir `engine/mod.ts`), sans passer par
@@ -280,17 +280,17 @@ fichiers en démarrant le serveur en local avant de déployer.
 | | `respawnRatePerSecond` | number | Pellets réapparaissant par seconde sur toute la carte |
 | | `pelletTypes` | `{color, mass, weight}[]` | Types de pellets ; `weight` = poids de tirage relatif (pas nécessairement normalisé à 100) ; `color` est purement informatif, **jamais transmis au client** |
 | `areaConstant` | — | number | Constante masse→aire (Rayon = √(areaConstant·masse/π)) |
-| `bots?` | `enabled` | boolean | Active les bots pour ce mode |
+| `bots?` | `enabled` | boolean | Active les bots normaux ET les Challengers pour ce mode |
 | | `targetRatio?` | number | Absent = ratio fluctuant automatique (10-20%) piloté par `BotManager` |
-| | `ambientTargetCount?` | number | Bots maintenus en mode ambiance à 0 joueur humain (défaut 6) |
+| | `ambientTargetCount?` | number | Bots NORMAUX maintenus en mode ambiance à 0 joueur humain (défaut 6) |
 | | `updateFrequencyHz` | number | Cadence de décision de l'IA des bots |
-| | `proportions` | `{fuis, neutre, agressif, fou}` | Répartition des profils de bot (poids relatifs) |
-| `leaderPunishment?` | `enabled` | boolean | Punition du Top N (force un split du leader en cas d'avance écrasante) — défaut activé |
-| | `topN` | number | Nombre de joueurs les mieux classés examinés (défaut `5`) |
-| | `minMassThreshold` | number | Masse minimale du leader avant déclenchement possible (défaut `200`) |
-| | `leadRatio` | number | Ratio d'avance sur le suivant au-delà duquel le split est déclenché (défaut `2`) |
-| | `cooldownMs` | number | Délai minimal entre deux déclenchements pour un même joueur (défaut `10000`) |
-| | `checkIntervalTicks` | number | Fréquence de vérification, en ticks du mod (défaut `20`) |
+| | `proportions` | `{fuis, neutre, agressif, fou}` | Répartition des profils de bot normaux (poids relatifs) |
+| | `challengers?` | `enabled` | boolean | `false` désactive les Challengers spécifiquement (indépendant du `enabled` ci-dessus) — défaut activé |
+| | | `baselineCount` | number | Challengers maintenus EN PERMANENCE, même à 0 joueur humain |
+| | | `withHumanCount` | number | Total de Challengers dès qu'au moins un humain est connecté (>= `baselineCount`) |
+| | | `massMultipliers` | number[] | Multiplicateur de masse de spawn par rang (index 0 = rang 1, le plus fort) — un Challenger mangé réapparaît toujours au DERNIER palier actif (le plus faible), jamais à son rang d'origine, voir `BotManager.respawnChallengerAtWeakestTier` |
+| | `idleDespawn?` | `enabled` | boolean | Despawn de TOUS les bots (normaux + Challengers) si 0 humain depuis `afterMinutes` — défaut désactivé |
+| | | `afterMinutes` | number | Minutes consécutives sans humain avant despawn ; repeuplement automatique dès le retour d'un humain |
 | `room?` | `maxPlayers?` | number | Capacité par défaut d'un salon de base de ce mode (voir `server/src/index.ts`) |
 | | `resetSchedule?` | objet \| `null` | Cadence de reset auto — `{type:'dailyAt',hour,minute,timeZone}`, `{type:'everyNMinutes',minutes,timeZone}`, `{type:'interval',intervalMs}`, ou `null` (aucun reset auto) |
 
@@ -334,9 +334,20 @@ Protocole défini dans `shared/src/protocol.ts`, JSON texte sur WebSocket (pas d
 split/dash/eject), `ping` (mesure de latence), `latency` (RTT mesuré, pour l'admin).
 
 **Serveur → client** (`ServerMessage`) : `welcome` (une fois par connexion — id joueur, taille de
-carte, `tickRateHz`, `movement`, `modId`), `player` (pseudo/couleur d'un joueur, une fois par
-joueur), `state` (à chaque tick — `EntitySnapshot[]` + leaderboard + valeurs privées au
-destinataire), `died`, `pong`, `announcement`, `forceRoomChange`.
+carte, `tickRateHz`, `movement`, `modId`, `nextResetAtMs` pour le décompte HUD "Reset serveur",
+`buildVersion` pour le rechargement forcé, voir plus bas), `player` (pseudo/couleur d'un joueur,
+une fois par joueur), `state` (à chaque tick — `EntitySnapshot[]` + leaderboard + valeurs privées
+au destinataire), `died`, `pong`, `announcement`, `forceRoomChange`.
+
+**Rechargement forcé du client après un déploiement** (`buildVersion`) : figé une fois au démarrage
+du process serveur (`server/src/index.ts`, `Date.now()` au boot — un déploiement redémarre
+toujours ce process). Le client (GameView.tsx/SpectatorBackground.tsx) mémorise la valeur de son
+tout premier `welcome`, puis compare à chaque `welcome` ULTÉRIEUR (reconnexion auto après coupure,
+respawn) : une valeur différente signifie que la reconnexion a atterri sur un nouveau déploiement,
+et déclenche `window.location.reload()`. S'appuie sur la reconnexion automatique déjà existante
+(`GameConnection`, net.ts) plutôt qu'un mécanisme de polling séparé — un déploiement coupe de toute
+façon toutes les connexions WebSocket actives (process qui redémarre), donc chaque client
+reconnecte naturellement et détecte le changement à ce moment-là.
 
 `EntitySnapshot` utilise des clés à une lettre (`i,k,x,y,r,m,p`) — mesuré : la diffusion d'état
 complet à 50 joueurs avec des clés explicites coûtait ~387 Mbit/s d'upload serveur. Pas de delta

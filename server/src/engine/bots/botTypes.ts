@@ -1,6 +1,22 @@
 import { BOT_IDENTITIES } from '@angulio/shared';
+import type { BotConfig } from '../../mods/parametric/config.js';
 
 export type BotProfileKind = 'fuis' | 'neutre' | 'agressif' | 'fou' | 'challenger';
+
+/** Forme résolue de `BotConfig['challengers']` (config.ts) — champ optionnel côté config JSON,
+ * toujours présent ici une fois `DEFAULT_CHALLENGER_CONFIG` fusionné (voir `botManager.ts`). */
+export type ChallengerConfig = NonNullable<BotConfig['challengers']>;
+
+/** Repli si `config.bots.challengers` est absent du JSON — reprend le comportement d'origine
+ * (10 Challengers dès qu'un humain est connecté, dégradé linéaire 50x→5x) SAUF la permanence à 0
+ * humain (demande utilisateur : `baselineCount` Challengers désormais actifs en continu, au lieu
+ * de 0 auparavant — voir `BotManager.adjustPopulation`). */
+export const DEFAULT_CHALLENGER_CONFIG: ChallengerConfig = {
+  enabled: true,
+  baselineCount: 6,
+  withHumanCount: 10,
+  massMultipliers: [50, 40, 30, 25, 20, 10, 8, 7, 5, 3],
+};
 
 export interface BotProportions {
   fuis: number;
@@ -69,8 +85,17 @@ export function generateBotNickname(
   return BOT_IDENTITIES[poolStart + startOffset]?.name ?? `${profile}_${index}`;
 }
 
-/** Calcule le multiplicateur de masse de spawn pour un challenger de rang 1 à 10 (50x à 5x M0). */
-export function getChallengerMassMultiplier(rank: number): number {
-  const clampedRank = Math.max(1, Math.min(10, rank));
-  return 50 - (clampedRank - 1) * 5; // Rank 1 = 50x, Rank 10 = 5x
+/** Multiplicateur de masse de spawn pour un Challenger de rang `rank` (1 = le plus fort), lu dans
+ * `config.massMultipliers` (index 0 = rang 1) — voir `BotConfig['challengers']`, config.ts. Un
+ * rang au-delà de la longueur du tableau retombe sur la DERNIÈRE valeur (le palier le plus
+ * faible configuré) plutôt que de planter : filet de sécurité si `withHumanCount` dépasse la
+ * longueur de `massMultipliers` dans une config JSON mal formée. */
+export function challengerMassMultiplierForRank(
+  rank: number,
+  config: ChallengerConfig = DEFAULT_CHALLENGER_CONFIG,
+): number {
+  const multipliers =
+    config.massMultipliers.length > 0 ? config.massMultipliers : DEFAULT_CHALLENGER_CONFIG.massMultipliers;
+  const index = Math.max(0, Math.min(multipliers.length - 1, rank - 1));
+  return multipliers[index]!;
 }

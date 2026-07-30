@@ -18,15 +18,18 @@ describe('BotManager', () => {
     const room = new Room(mod, {
       mapSize: 1000,
       tickRateHz: 20,
-      maxPlayers: 30, // targetRatio 0.5 => 15 bots (10 Challengers + 5 normaux)
+      // targetRatio 0.5 => 15 bots normaux + 6 Challengers en permanence (baselineCount par
+      // défaut, DEFAULT_CHALLENGER_CONFIG, 0 humain) = 21 au total en régime stable.
+      maxPlayers: 30,
       bots: config.bots,
     });
 
-    // Premier tick pour lancer update()
-    room.tick();
+    // Plusieurs ticks : le spawn est étalé (maxSpawnPerTick, budget partagé entre Challengers et
+    // bots normaux) et n'atteint pas forcément la cible en un seul tick.
+    for (let i = 0; i < 5; i++) room.tick();
 
     expect(room.botManager).toBeDefined();
-    expect(room.botManager?.activeBotCount).toBe(15);
+    expect(room.botManager?.activeBotCount).toBe(21);
   });
 
   it('assigne un skin valide parmi SKINS lors du spawn d’un bot', () => {
@@ -76,14 +79,16 @@ describe('BotManager', () => {
       bots: config.bots,
     });
 
-    room.tick(); // 15 bots
-    expect(room.botManager?.activeBotCount).toBe(15);
+    for (let i = 0; i < 5; i++) room.tick(); // 15 normaux + 6 Challengers (0 humain) = 21
+    expect(room.botManager?.activeBotCount).toBe(21);
 
     // Un joueur humain rejoint
     room.addPlayer('human-1', 'JoueurHumain');
 
-    // Le nombre de bots actifs est ajusté à 14 (pour maintenir 15 - 1 = 14)
-    expect(room.botManager?.activeBotCount).toBe(14);
+    // Bots normaux ajustés à 14 (pour maintenir 15 - 1 = 14) ; Challengers étendus à 10 (dès
+    // qu'un humain est connecté, voir botTypes.ts DEFAULT_CHALLENGER_CONFIG.withHumanCount) —
+    // 14 + 10 = 24.
+    expect(room.botManager?.activeBotCount).toBe(24);
     expect(room.world.getPlayer('human-1')).toBeDefined();
   });
 
@@ -104,11 +109,13 @@ describe('BotManager', () => {
       bots: config.bots,
     });
 
-    room.tick();
-    expect(room.botManager?.activeBotCount).toBe(15);
+    for (let i = 0; i < 5; i++) room.tick();
+    expect(room.botManager?.activeBotCount).toBe(21);
 
     room.reset();
-    expect(room.botManager?.activeBotCount).toBe(15);
+    room.tick(); // reset() ne relance qu'un seul adjustPopulation() interne (throttlé) ; un tick
+    // externe supplémentaire suffit à atteindre le régime stable, comme au peuplement initial.
+    expect(room.botManager?.activeBotCount).toBe(21);
   });
 
   it('réserve toujours au moins une place pour un joueur humain dans un salon à petite capacité', () => {
@@ -146,6 +153,9 @@ describe('BotManager', () => {
         ambientTargetCount: 6,
         updateFrequencyHz: 2,
         proportions: { fuis: 25, neutre: 30, agressif: 30, fou: 15 },
+        // Désactivés : ce test cible exclusivement le réglage `ambientTargetCount` des bots
+        // normaux, indépendant de la pyramide Challenger (couverte par ses propres tests).
+        challengers: { enabled: false, baselineCount: 0, withHumanCount: 0, massMultipliers: [] },
       },
     });
     const mod = createParametricMod(config);
@@ -171,6 +181,7 @@ describe('BotManager', () => {
         ambientTargetCount: 6,
         updateFrequencyHz: 2,
         proportions: { fuis: 25, neutre: 30, agressif: 30, fou: 15 },
+        challengers: { enabled: false, baselineCount: 0, withHumanCount: 0, massMultipliers: [] },
       },
     });
     const mod = createParametricMod(config);
@@ -251,6 +262,76 @@ describe('BotManager', () => {
     expect(botCalls.length).toBeGreaterThan(0);
   });
 
+  it('maintient les Challengers "baselineCount" en permanence même à 0 joueur humain, avec les paliers de masse configurés', () => {
+    const config = testConfig({
+      bots: {
+        enabled: true,
+        targetRatio: 0,
+        updateFrequencyHz: 2,
+        proportions: { fuis: 0, neutre: 100, agressif: 0, fou: 0 },
+        challengers: { enabled: true, baselineCount: 2, withHumanCount: 3, massMultipliers: [10, 6, 3] },
+      },
+    });
+    const mod = createParametricMod(config);
+    const room = new Room(mod, { mapSize: 2000, tickRateHz: 20, maxPlayers: 30, bots: config.bots });
+
+    room.tick(); // 0 joueur humain : baselineCount (2) Challengers, jamais 0 (comportement d'origine)
+
+    const rank1 = room.world.getPiecesByOwner('bot-challenger-1')[0];
+    const rank2 = room.world.getPiecesByOwner('bot-challenger-2')[0];
+    const rank3 = room.world.getPiecesByOwner('bot-challenger-3');
+    expect(rank1?.mass).toBe(config.player.startMass * 10);
+    expect(rank2?.mass).toBe(config.player.startMass * 6);
+    expect(rank3).toHaveLength(0); // au-delà de baselineCount, pas encore actif sans humain
+  });
+
+  it('étend la pyramide de Challengers à withHumanCount dès qu’un joueur humain se connecte', () => {
+    const config = testConfig({
+      bots: {
+        enabled: true,
+        targetRatio: 0,
+        updateFrequencyHz: 2,
+        proportions: { fuis: 0, neutre: 100, agressif: 0, fou: 0 },
+        challengers: { enabled: true, baselineCount: 2, withHumanCount: 3, massMultipliers: [10, 6, 3] },
+      },
+    });
+    const mod = createParametricMod(config);
+    const room = new Room(mod, { mapSize: 2000, tickRateHz: 20, maxPlayers: 30, bots: config.bots });
+
+    room.tick();
+    room.addPlayer('human-1', 'Humain');
+
+    const rank3 = room.world.getPiecesByOwner('bot-challenger-3')[0];
+    expect(rank3?.mass).toBe(config.player.startMass * 3);
+  });
+
+  it('fait réapparaître un Challenger mangé au palier le PLUS FAIBLE actuellement actif, jamais à son rang d’origine', () => {
+    const config = testConfig({
+      bots: {
+        enabled: true,
+        targetRatio: 0,
+        updateFrequencyHz: 2,
+        proportions: { fuis: 0, neutre: 100, agressif: 0, fou: 0 },
+        challengers: { enabled: true, baselineCount: 2, withHumanCount: 3, massMultipliers: [10, 6, 3] },
+      },
+    });
+    const mod = createParametricMod(config);
+    const room = new Room(mod, { mapSize: 2000, tickRateHz: 20, maxPlayers: 30, bots: config.bots });
+
+    room.tick(); // rang 1 (x10) et rang 2 (x6) actifs, 0 humain -> palier le plus faible actif = rang 2 (x6)
+
+    // "Mange" le Challenger de rang 1 (le plus fort, x10) : retire tous ses morceaux.
+    for (const piece of room.world.getPiecesByOwner('bot-challenger-1')) {
+      room.world.removeEntity(piece.id);
+    }
+    room.tick(); // détecte la mort (Room.tick()) puis BotManager.onPlayerDeath -> respawn
+
+    // Le remplaçant réutilise le rang 1 (premier slot libre) mais avec le multiplicateur du
+    // palier le plus faible actif (x6, rang 2) — PAS x10 (son propre rang d'origine).
+    const replacement = room.world.getPiecesByOwner('bot-challenger-1')[0];
+    expect(replacement?.mass).toBe(config.player.startMass * 6);
+  });
+
   it('ne réévalue PAS un bot au contact d’un autre bot (pas d’humain)', () => {
     const config = testConfig({
       food: { ...testConfig().food, density: 0, respawnRatePerSecond: 0 },
@@ -260,6 +341,7 @@ describe('BotManager', () => {
         ambientTargetCount: 2, // exactement 2 bots, jamais d'humain dans ce test
         updateFrequencyHz: 2,
         proportions: { fuis: 0, neutre: 100, agressif: 0, fou: 0 },
+        challengers: { enabled: false, baselineCount: 0, withHumanCount: 0, massMultipliers: [] },
       },
     });
     const mod = createParametricMod(config);
@@ -287,5 +369,71 @@ describe('BotManager', () => {
 
     expect(handleInputSpy.mock.calls.filter(([id]) => id === firstId).length).toBe(0);
     expect(handleInputSpy.mock.calls.filter(([id]) => id === secondId).length).toBe(0);
+  });
+
+  it('despawn tous les bots après idleDespawn.afterMinutes sans aucun joueur humain', () => {
+    const config = testConfig({
+      bots: {
+        enabled: true,
+        targetRatio: 0,
+        ambientTargetCount: 3,
+        updateFrequencyHz: 2,
+        proportions: { fuis: 0, neutre: 100, agressif: 0, fou: 0 },
+        challengers: { enabled: false, baselineCount: 0, withHumanCount: 0, massMultipliers: [] },
+        idleDespawn: { enabled: true, afterMinutes: 1 },
+      },
+    });
+    const mod = createParametricMod(config);
+    const room = new Room(mod, { mapSize: 2000, tickRateHz: 20, maxPlayers: 30, bots: config.bots });
+
+    const nowSpy = vi.spyOn(performance, 'now').mockReturnValue(0);
+    room.tick(); // peuplement initial (0 humain depuis l'instant 0)
+    expect(room.botManager?.activeBotCount).toBe(3);
+
+    // Toujours sous le seuil (1 minute) : aucun despawn.
+    nowSpy.mockReturnValue(59_000);
+    room.tick();
+    expect(room.botManager?.activeBotCount).toBe(3);
+
+    // Seuil franchi : despawn de tous les bots.
+    nowSpy.mockReturnValue(61_000);
+    room.tick();
+    expect(room.botManager?.activeBotCount).toBe(0);
+
+    // Reste à 0 sur les ticks suivants (pas de repeuplement tant qu'aucun humain n'est revenu —
+    // sans quoi le peuplement normal, appelé à chaque tick, annulerait le despawn).
+    nowSpy.mockReturnValue(70_000);
+    room.tick();
+    room.tick();
+    expect(room.botManager?.activeBotCount).toBe(0);
+
+    nowSpy.mockRestore();
+  });
+
+  it('repeuple normalement dès qu’un joueur humain rejoint après un despawn d’inactivité', () => {
+    const config = testConfig({
+      bots: {
+        enabled: true,
+        targetRatio: 0,
+        ambientTargetCount: 3,
+        updateFrequencyHz: 2,
+        proportions: { fuis: 0, neutre: 100, agressif: 0, fou: 0 },
+        challengers: { enabled: false, baselineCount: 0, withHumanCount: 0, massMultipliers: [] },
+        idleDespawn: { enabled: true, afterMinutes: 1 },
+      },
+    });
+    const mod = createParametricMod(config);
+    const room = new Room(mod, { mapSize: 2000, tickRateHz: 20, maxPlayers: 30, bots: config.bots });
+
+    const nowSpy = vi.spyOn(performance, 'now').mockReturnValue(0);
+    room.tick();
+    nowSpy.mockReturnValue(61_000);
+    room.tick();
+    expect(room.botManager?.activeBotCount).toBe(0);
+
+    room.addPlayer('human-1', 'Humain');
+    expect(room.botManager?.activeBotCount).toBe(3);
+
+    nowSpy.mockRestore();
   });
 });

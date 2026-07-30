@@ -91,3 +91,72 @@ describe('RenderEngine — ligne de temps ancrée sur le numéro de tick', () =>
     expect(engine.missedTickCount).toBe(2);
   });
 });
+
+/** Le culling de viewport a été déplacé EN AMONT de l'interpolation/du lissage (voir le
+ * commentaire de `getInterpolatedEntities`, `fromEntities`/`toEntities`) — cette suite vérifie
+ * que le résultat visible reste identique à l'ancien pipeline (cull APRÈS), pas seulement que la
+ * fonction ne plante pas : une entité dans le viewport doit toujours être interpolée/lissée
+ * normalement, une entité loin hors du viewport doit toujours disparaître, et les propres
+ * morceaux du joueur doivent toujours être conservés quelle que soit leur position (même règle
+ * que `cullEntitiesForViewport`, render.ts). */
+/** Contrairement à `entity()` ci-dessus (toujours `p: 'self'`), une entité qui n'appartient PAS
+ * au joueur — nécessaire pour vérifier qu'une entité distante lointaine est bien cullée, sans que
+ * la règle "toujours garder ses propres morceaux" (cullEntitiesForViewport, render.ts) ne
+ * l'exempte à tort. */
+function otherEntity(id: string, x: number): EntitySnapshot {
+  return { i: id, k: 'c', x, y: 0, r: 10, m: 50, p: 'someone-else' };
+}
+
+describe('RenderEngine — culling déplacé avant interpolation/lissage (joueur, pas spectateur)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('interpole normalement une entité DANS le viewport', () => {
+    const engine = new RenderEngine();
+    const nowSpy = vi.spyOn(performance, 'now');
+
+    nowSpy.mockReturnValueOnce(0);
+    engine.pushSnapshot([entity('1', 0)], 1, 30);
+    nowSpy.mockReturnValueOnce(33);
+    engine.pushSnapshot([entity('1', 100)], 2, 30);
+
+    nowSpy.mockReturnValueOnce(135);
+    const result = engine.getInterpolatedEntities(16, { x: 0, y: 0, scale: 1 }, 2000, 2000, 'self', false);
+
+    const own = result.find((e) => e.i === '1');
+    expect(own).toBeDefined();
+  });
+
+  it('exclut une entité loin hors du viewport (culling toujours effectif malgré le réordonnancement)', () => {
+    const engine = new RenderEngine();
+    const nowSpy = vi.spyOn(performance, 'now');
+
+    // Très loin du centre caméra (0,0) avec un viewport de 2000x2000 à l'échelle 1 — bien
+    // au-delà de la marge de culling (CULL_MARGIN_WORLD_PX, render.ts).
+    nowSpy.mockReturnValueOnce(0);
+    engine.pushSnapshot([otherEntity('far', 100_000)], 1, 30);
+    nowSpy.mockReturnValueOnce(33);
+    engine.pushSnapshot([otherEntity('far', 100_000)], 2, 30);
+
+    nowSpy.mockReturnValueOnce(135);
+    const result = engine.getInterpolatedEntities(16, { x: 0, y: 0, scale: 1 }, 2000, 2000, 'self', false);
+
+    expect(result.find((e) => e.i === 'far')).toBeUndefined();
+  });
+
+  it('conserve toujours les propres morceaux du joueur, même loin hors du viewport', () => {
+    const engine = new RenderEngine();
+    const nowSpy = vi.spyOn(performance, 'now');
+
+    nowSpy.mockReturnValueOnce(0);
+    engine.pushSnapshot([entity('self', 100_000)], 1, 30);
+    nowSpy.mockReturnValueOnce(33);
+    engine.pushSnapshot([entity('self', 100_000)], 2, 30);
+
+    nowSpy.mockReturnValueOnce(135);
+    const result = engine.getInterpolatedEntities(16, { x: 0, y: 0, scale: 1 }, 2000, 2000, 'self', false);
+
+    expect(result.find((e) => e.i === 'self')).toBeDefined();
+  });
+});

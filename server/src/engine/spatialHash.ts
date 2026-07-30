@@ -5,9 +5,8 @@ import type { Entity, EntityId } from './types.js';
  * `largeEntities` ci-dessous) plutôt qu'insérée dans la grille — `insert()` d'une entité de rayon
  * `r` coûte O((r/cellSize)²) cellules (voir son commentaire) : au-delà de ce seuil, ce coût
  * dépasse largement celui d'un simple parcours linéaire des quelques grandes entités présentes.
- * 1.5 attrape les Blobs Challenger (5x-50x M0 au spawn — voir `getChallengerMassMultiplier`,
- * engine/bots/botTypes.ts, qui peuplent instantanément un salon dès qu'un premier joueur humain le
- * rejoint, voir audit_chaleur.md) tout en restant assez haut pour qu'un joueur/bot de taille
+ * 1.5 attrape les Blobs Challenger (3x-50x M0 au spawn — voir `challengerMassMultiplierForRank`,
+ * engine/bots/botTypes.ts) tout en restant assez haut pour qu'un joueur/bot de taille
  * "normale" en début/milieu de partie n'y tombe jamais — le budget de cette liste doit rester de
  * l'ordre de quelques entités, jamais des dizaines. */
 const LARGE_ENTITY_RADIUS_FACTOR = 1.5;

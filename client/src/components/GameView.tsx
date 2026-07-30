@@ -98,6 +98,18 @@ function formatSurvivalTime(totalSeconds: number): string {
   return `${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
 }
 
+/** "HH:MM:SS" (décompte reset serveur) — écrit imperativement dans le HUD à chaque frame (voir
+ * `resetTimerRef`), comme le reste du panneau de stats (Masse/Vitesse) : évite un re-render React
+ * pour une valeur qui change chaque seconde. `undefined`/passé = aucun décompte à afficher. */
+function formatCountdown(nextAtMs: number | undefined, nowMs: number): string {
+  if (nextAtMs === undefined) return '—';
+  const remainingSec = Math.max(0, Math.round((nextAtMs - nowMs) / 1000));
+  const hours = Math.floor(remainingSec / 3600);
+  const minutes = Math.floor((remainingSec % 3600) / 60);
+  const seconds = remainingSec % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
 interface GameViewProps {
   nickname: string;
   roomIdOrInviteCode: string;
@@ -127,6 +139,7 @@ export default function GameView({
   const statNicknameRef = useRef<HTMLSpanElement | null>(null);
   const statMassRef = useRef<HTMLSpanElement | null>(null);
   const statSpeedRef = useRef<HTMLSpanElement | null>(null);
+  const resetTimerRef = useRef<HTMLSpanElement | null>(null);
 
   const onExitRef = useRef(onExit);
   useLayoutEffect(() => {
@@ -227,6 +240,17 @@ export default function GameView({
      * qui confirme la reconnexion (voir net.ts) — purement pour informer le joueur (statut HUD)
      * que la partie n'est pas figée, juste en train de se rattacher. */
     let isReconnecting = false;
+    /** Horodatage (`Date.now()`) du prochain reset auto du salon (voir `welcome.nextResetAtMs`,
+     * protocol.ts) — `undefined` tant qu'aucun `welcome` n'est encore arrivé, ou si ce salon n'a
+     * aucun reset planifié. Décompté imperativement dans `frame()` (voir `resetTimerRef`), comme
+     * le reste du panneau de stats. */
+    let nextResetAtMs: number | undefined;
+    /** `buildVersion` du premier `welcome` de cette session (voir protocol.ts) — un `welcome`
+     * ULTÉRIEUR portant une valeur différente signifie que la reconnexion (automatique, voir
+     * net.ts) a atterri sur un nouveau process serveur (déploiement) : le bundle actuellement en
+     * mémoire est alors potentiellement périmé, d'où le rechargement forcé plus bas. `undefined`
+     * tant qu'aucun `welcome` n'est encore arrivé. */
+    let knownBuildVersion: string | undefined;
 
     function showComboBanner(level: number): void {
       const banner = comboBannerRef.current;
@@ -316,12 +340,28 @@ export default function GameView({
 
     connection.onMessage((message: ServerMessage) => {
       if (message.type === 'welcome') {
+        // Détection de nouveau déploiement (voir le commentaire de `knownBuildVersion`) : un
+        // `welcome` ULTÉRIEUR (reconnexion auto après coupure, ou respawn) portant une version
+        // différente du tout premier `welcome` de cette session signifie que le process serveur a
+        // redémarré (déploiement) — recharge la page pour repartir sur un bundle à jour plutôt que
+        // de continuer silencieusement sur l'ancien. Un reconnect a de toute façon déjà provoqué un
+        // nouveau spawn côté serveur (voir net.ts, `GameConnection` rejoue le dernier `join`) : rien
+        // d'une "vie en cours" n'est perdu de plus par ce rechargement.
+        if (message.buildVersion !== undefined) {
+          if (knownBuildVersion === undefined) {
+            knownBuildVersion = message.buildVersion;
+          } else if (knownBuildVersion !== message.buildVersion) {
+            window.location.reload();
+            return;
+          }
+        }
         currentModId = message.modId;
         modIdRef.current = message.modId;
         selfPlayerId = message.playerId;
         mapSize = message.mapSize;
         serverTickRateHz = message.tickRateHz;
         movementConfig = message.movement;
+        nextResetAtMs = message.nextResetAtMs;
         isReconnecting = false;
         renderEngine.reset();
         prediction.reset();
@@ -634,6 +674,9 @@ export default function GameView({
       if (statMassRef.current) {
         statMassRef.current.textContent = own ? Math.round(own.mass).toString() : '—';
       }
+      if (resetTimerRef.current) {
+        resetTimerRef.current.textContent = formatCountdown(nextResetAtMs, Date.now());
+      }
       const previousOwn = ownAggregate(previousSnapshot ?? [], selfPlayerId);
       const stateIntervalSec = serverTickRateHz ? 1 / serverTickRateHz : SERVER_STATE_INTERVAL_MS / 1000;
       const speed =
@@ -773,6 +816,12 @@ export default function GameView({
           <div className="stat-row">
             <span className="stat-label">Vitesse</span>
             <span className="stat-value" ref={statSpeedRef}>
+              —
+            </span>
+          </div>
+          <div className="stat-row">
+            <span className="stat-label">Reset serveur</span>
+            <span className="stat-value" ref={resetTimerRef}>
               —
             </span>
           </div>

@@ -98,17 +98,6 @@ const FALLBACK_DIRECTION: Vector2 = { x: 1, y: 0 };
  * vecteur quasi nul, seule vraiment visible via la prédiction locale du client). */
 const TARGET_DEAD_ZONE_PX = 3;
 
-/** Repli si `config.leaderPunishment` est absent — reprend telles quelles les valeurs d'origine
- * de cette mécanique (voir `ParametricModConfig['leaderPunishment']`, config.ts). */
-const DEFAULT_LEADER_PUNISHMENT: Required<NonNullable<ParametricModConfig['leaderPunishment']>> = {
-  enabled: true,
-  topN: 5,
-  minMassThreshold: 200,
-  leadRatio: 2,
-  cooldownMs: 10000,
-  checkIntervalTicks: 20,
-};
-
 /** Éjection de masse (demande utilisateur, touche configurable — `config.eject.amount`) : un
  * morceau ne peut éjecter que s'il pèse au moins CE multiple de la masse envoyée (demande
  * utilisateur : "impossible d'envoyer de la masse si le joueur est plus petit de 4x la masse
@@ -188,9 +177,6 @@ export function applyRepulsion(
  * Vanilla est une instance de cette même fonction (server/configs/*.json).
  */
 export function createParametricMod(config: ParametricModConfig): GameMod {
-  let modTickCounter = 0;
-  const leaderPunishment = { ...DEFAULT_LEADER_PUNISHMENT, ...config.leaderPunishment };
-
   function randomPositionInMap(margin: number): Vector2 {
     return {
       x: margin + Math.random() * (config.arena.width - 2 * margin),
@@ -526,44 +512,6 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         }
       }
 
-      modTickCounter++;
-      // Punition du Top N (voir `config.leaderPunishment`) : force un split sur le joueur en tête
-      // si son avance sur le suivant devient trop confortable — évite qu'un seul joueur ne
-      // devienne intouchable en fin de partie.
-      if (leaderPunishment.enabled && modTickCounter % leaderPunishment.checkIntervalTicks === 0) {
-        const playersByMass = allPlayers
-          .filter((p) => !isGodPlayerId(p.id))
-          .map((p) => ({
-            player: p,
-            totalMass: world.getPiecesByOwner(p.id).reduce((sum, piece) => sum + piece.mass, 0),
-          }))
-          .sort((a, b) => b.totalMass - a.totalMass);
-
-        for (let rank = 0; rank < Math.min(leaderPunishment.topN, playersByMass.length); rank++) {
-          const current = playersByMass[rank]!;
-          const next = playersByMass[rank + 1];
-          const nextMass = next ? next.totalMass : 0;
-
-          const hasCommandingLead =
-            current.totalMass >= leaderPunishment.minMassThreshold &&
-            (nextMass === 0 || current.totalMass >= leaderPunishment.leadRatio * nextMass);
-          if (!hasCommandingLead) continue;
-
-          const stateKey = `punitive_split_${current.player.id}`;
-          const lastPunish = (current.player as any)[stateKey] ?? 0;
-          const now = performance.now();
-          if (now - lastPunish < leaderPunishment.cooldownMs) continue;
-
-          (current.player as any)[stateKey] = now;
-          const pieces = world.getPiecesByOwner(current.player.id);
-          if (pieces.length > 0) {
-            const biggest = pieces.reduce((max, p) => (p.mass > max.mass ? p : max), pieces[0]!);
-            if (biggest.mass >= config.player.minSplitMass) {
-              trySplitPiece(world, current.player.id, biggest);
-            }
-          }
-        }
-      }
     },
 
     onPostMove(world: World) {

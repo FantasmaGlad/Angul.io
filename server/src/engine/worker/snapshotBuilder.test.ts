@@ -43,6 +43,29 @@ describe('toSnapshot', () => {
 
     expect(toSnapshot(piece).k).toBe('c');
   });
+
+  it('reflète la position réelle d’une particule à vélocité non nulle (éjection de masse) au lieu de la figer au cache', () => {
+    const room = makeRoom();
+    const entity = room.world.spawnParticle({ x: 0, y: 0 }, 10);
+    entity.velocity = { x: 100, y: 0 }; // particule éjectée (tryEjectMass), encore en mouvement
+
+    const firstSnapshot = toSnapshot(entity);
+    expect(firstSnapshot.x).toBe(0);
+
+    // La position évolue tick après tick tant que la vélocité n'est pas retombée à zéro (voir
+    // EJECT_FRICTION_PER_SEC, mods/parametric/index.ts `onTick`) — simulé ici directement.
+    entity.position = { x: 50, y: 0 };
+    const secondSnapshot = toSnapshot(entity);
+    expect(secondSnapshot.x).toBe(50); // pas figé à l'ancienne position (0) par le cache
+
+    // Une fois immobile (vélocité retombée à zéro), la position de repos redevient mise en cache
+    // normalement, comme la nourriture ordinaire.
+    entity.velocity = { x: 0, y: 0 };
+    entity.position = { x: 75, y: 0 };
+    const restSnapshot = toSnapshot(entity);
+    expect(restSnapshot.x).toBe(75);
+    expect(toSnapshot(entity)).toBe(restSnapshot); // même référence : bien mis en cache désormais
+  });
 });
 
 describe('isVisibleToSpectator', () => {
