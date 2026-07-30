@@ -1,6 +1,7 @@
 import type { IncomingMessage } from 'node:http';
 import {
   getRandomSkin,
+  isValidSkin,
   skinForNickname,
   WS_CLOSE_NICKNAME_TAKEN,
   WS_CLOSE_ROOM_FULL,
@@ -13,6 +14,7 @@ import type { AccountsService } from '../../accounts/service.js';
 import type { AdminAuth } from '../../admin/adminAuth.js';
 import type { RoomManager } from '../../engine/roomManager.js';
 import type { PlayerId } from '../../engine/types.js';
+import { SPECTATOR_TICK_DIVISOR } from '../../engine/worker/snapshotBuilder.js';
 import { logEvent } from '../../log.js';
 import { getClientIp } from '../http/httpUtils.js';
 import { RateLimiter } from '../rateLimiter.js';
@@ -89,7 +91,13 @@ export function handleWsConnection(
       type: 'welcome',
       playerId: adminViewerId,
       mapSize: managed.handle.mapSize,
-      tickRateHz: roomManager.tickRateHz,
+      // Cadence RÉELLE d'envoi pour ce viewer (spectateur/admin, un tick sur SPECTATOR_TICK_DIVISOR
+      // seulement, voir roomInstance.ts `shouldSendSpectatorTick`) — annoncer le tick rate de
+      // SIMULATION brut ici faisait sous-dimensionner le buffer d'interpolation du client
+      // (RenderEngine.getInterpolatedEntities), qui tombait alors bien plus souvent en
+      // extrapolation que pour un vrai joueur (retour utilisateur : lag du fond spectateur/vue
+      // admin).
+      tickRateHz: roomManager.tickRateHz / SPECTATOR_TICK_DIVISOR,
       movement: managed.handle.movement,
       nextResetAtMs: roomManager.nextResetAtMsOf(managed),
       buildVersion,
@@ -143,7 +151,8 @@ export function handleWsConnection(
       type: 'welcome',
       playerId: spectatorId,
       mapSize: managed.handle.mapSize,
-      tickRateHz: roomManager.tickRateHz,
+      // Voir le commentaire équivalent de la branche admin ci-dessus — même correctif.
+      tickRateHz: roomManager.tickRateHz / SPECTATOR_TICK_DIVISOR,
       movement: managed.handle.movement,
       modId: managed.modId,
       nextResetAtMs: roomManager.nextResetAtMsOf(managed),
@@ -196,11 +205,18 @@ export function handleWsConnection(
         // passer la vérification "salon plein" avant qu'aucun des deux n'ait encore ajouté son
         // joueur (TOCTOU) — un seul appel atomique élimine ce risque par construction.
         //
-        // Avatar procédural (refonte UI/UX) : couleur choisie par le compte, sinon dérivée du
-        // pseudo pour un invité — résolue avant le join (coût d'une requête DB inutile en cas de
-        // refus, accepté : rare, et la résolution doit de toute façon précéder l'ajout au monde).
+        // Avatar procédural (refonte UI/UX) : couleur choisie par le compte (source de vérité,
+        // toujours prioritaire), sinon le skin explicitement choisi par un invité et envoyé dans ce
+        // `join` (`message.skin`, voir ClientJoinMessage/ProfilePage.tsx — auparavant absent du
+        // protocole : un invité se voyait réassigner un skin ALÉATOIRE à chaque connexion, ignorant
+        // son choix), sinon un skin aléatoire en dernier recours — résolue avant le join (coût
+        // d'une requête DB inutile en cas de refus, accepté : rare, et la résolution doit de toute
+        // façon précéder l'ajout au monde).
+        const requestedSkin =
+          typeof message.skin === 'string' && isValidSkin(message.skin) ? message.skin : undefined;
         const avatarColor =
           (accountId !== undefined ? await accounts?.getAvatarColor(accountId) : undefined) ??
+          requestedSkin ??
           getRandomSkin();
 
         const result = await managed.handle.join(nickname, avatarColor);

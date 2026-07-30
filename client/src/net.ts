@@ -178,10 +178,22 @@ export class GameConnection {
    * (GameView.tsx) pour ne pas laisser un socket ouvert en arrière-plan (notamment le double
    * montage volontaire de React.StrictMode en développement, qui appellerait sinon deux fois la
    * connexion sans jamais fermer la première). Désactive aussi la reconnexion automatique : un
-   * démontage explicite n'est jamais une coupure transitoire à rattraper. */
+   * démontage explicite n'est jamais une coupure transitoire à rattraper.
+   *
+   * Si le socket est encore `CONNECTING` (retour utilisateur : le fond spectateur de l'accueil,
+   * SpectatorBackground.tsx, se démonte souvent avant la fin du handshake pendant la transition
+   * "entrer en jeu"), on attend l'événement `open` avant de fermer plutôt que d'appeler
+   * `socket.close()` immédiatement — fermer un socket encore en cours de connexion est légal mais
+   * Chrome journalise alors "WebSocket is closed before the connection is established" en
+   * console : bruyant sans être un vrai bug, mais évitable. La fermeture reste quasi immédiate
+   * dans tous les cas (le temps d'un aller-retour local), aucun délai perceptible. */
   close(): void {
     this.closedByUs = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    this.socket.close();
+    if (this.socket.readyState === WebSocket.CONNECTING) {
+      this.socket.addEventListener('open', () => this.socket.close(), { once: true });
+    } else {
+      this.socket.close();
+    }
   }
 }

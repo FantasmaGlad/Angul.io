@@ -73,8 +73,13 @@ export function wireRoom(
 
   managed.handle.onPlayerJoin(({ playerId, nickname, skin }) => {
     runtime.nicknameByPlayer.set(playerId, nickname);
+    // Filet de sécurité (skin stable, retour utilisateur) : si `skin` est absent (ne devrait plus
+    // arriver pour un respawn depuis le correctif de `RoomInstance.respawn`/`Room.addPlayer`, mais
+    // gardé au cas où un futur appelant l'omette à nouveau), préférer la valeur déjà connue pour ce
+    // `playerId` plutôt que de la redériver — sans ça, chaque appel sans `skin` réassignait
+    // silencieusement une nouvelle couleur, écrasant le skin réellement assigné à la création.
     const assignedSkin =
-      skin ?? (isBotId(playerId) ? getRandomSkin() : colorForNickname(nickname));
+      skin ?? runtime.colorByPlayer.get(playerId) ?? (isBotId(playerId) ? getRandomSkin() : colorForNickname(nickname));
     runtime.colorByPlayer.set(playerId, assignedSkin);
     const playerInfo = { type: 'player' as const, playerId, nickname, color: assignedSkin };
     for (const socket of runtime.sockets.values()) send(socket, playerInfo);

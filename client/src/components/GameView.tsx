@@ -115,6 +115,12 @@ interface GameViewProps {
   roomIdOrInviteCode: string;
   inviteCodeToShow?: string;
   authToken?: string;
+  /** Skin choisi par un invité (voir ProfilePage.tsx/`localStorage['angulio.guestSkin']`) — envoyé
+   * dans le `join` initial pour qu'un invité conserve son choix d'une connexion à l'autre (retour
+   * utilisateur : sans ça, le serveur réassignait un skin aléatoire à chaque connexion, voir
+   * connectionHandler.ts). Ignoré côté serveur pour un compte authentifié (la DB reste toujours
+   * prioritaire). */
+  guestSkin?: string;
   onExit: (message?: string) => void;
   /** Transfert forcé par un admin (§3.3 cahier_des_charges_admin.md) — GameView ne rouvre pas la
    * connexion lui-même (son effet principal ne dépend que du montage, voir plus bas) : l'appelant
@@ -127,6 +133,7 @@ export default function GameView({
   roomIdOrInviteCode,
   inviteCodeToShow,
   authToken,
+  guestSkin,
   onExit,
   onForceRoomChange,
 }: GameViewProps) {
@@ -322,7 +329,7 @@ export default function GameView({
         const dy = lastMouseY - centerY;
         const len = Math.hypot(dx, dy);
         const dir = len > 0 ? { x: dx / len, y: dy / len } : { x: 1, y: 0 };
-        prediction.applyDash(dir, 2700);
+        prediction.applyDash(dir, 4050);
       },
     );
 
@@ -475,7 +482,7 @@ export default function GameView({
       );
     });
 
-    connection.send({ type: 'join', nickname });
+    connection.send(guestSkin ? { type: 'join', nickname, skin: guestSkin } : { type: 'join', nickname });
     // Cadence dynamique (au lieu d'un intervalle fixe indépendant du tick serveur) : se recale
     // sur `serverTickRateHz` dès que `welcome` est connu, pour ne pas battre avec le vrai tick du
     // salon.
@@ -734,7 +741,11 @@ export default function GameView({
             netInPktSec: connection.netInPktSec,
             netOutKbps: connection.netOutKbps,
             interpBufferMs: Math.round(renderEngine.currentInterpDelayMs),
-            interpSnapshots: previousSnapshot ? 2 : 1,
+            // Vraie profondeur du buffer d'interpolation (pas un booléen déguisé, voir
+            // renderEngine.ts `snapshotQueue`) — corrigé pour que ce champ F3 soit une mesure
+            // réelle comme tous les autres (retour utilisateur : vérifier qu'aucune valeur du menu
+            // F3 n'est inventée).
+            interpSnapshots: renderEngine.snapshotQueue.length,
             missedTicks: renderEngine.missedTickCount,
           },
           hardware: {

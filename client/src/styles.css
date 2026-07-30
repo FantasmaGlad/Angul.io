@@ -275,9 +275,9 @@ select {
 .debug-overlay {
   display: none;
   position: fixed;
-  top: 12px;
+  top: 50%;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   width: max-content;
   max-width: calc(100vw - 480px);
   max-height: 85vh;
@@ -1187,7 +1187,7 @@ select {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 40px 24px 80px 24px;
+  padding: 40px 24px 40px 24px;
   box-sizing: border-box;
 }
 .subpage-header {
@@ -1261,8 +1261,9 @@ select {
 .profile-dashboard-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 24px;
+  gap: 16px;
   width: 100%;
+  align-items: start;
 }
 
 @media (max-width: 900px) {
@@ -1275,10 +1276,11 @@ select {
 .avatar-swiper-wrapper {
   position: relative;
   width: 100%;
+  max-width: 420px;
+  margin: 10px auto 0 auto;
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 10px;
 }
 
 .avatar-swiper-track {
@@ -1302,7 +1304,7 @@ select {
 }
 
 .avatar-swiper-card {
-  min-width: 125px;
+  min-width: 110px;
   flex-shrink: 0;
   scroll-snap-align: center;
   display: flex;
@@ -1312,7 +1314,7 @@ select {
   background: var(--bg);
   border: 2px solid var(--border);
   border-radius: 14px;
-  padding: 14px 10px;
+  padding: 12px 8px;
   cursor: pointer;
   transition: all 0.2s ease;
   user-select: none;
@@ -1947,344 +1949,6 @@ a.btn-primary {
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-
-/* --- Full Screen Technical Documentation Layout (Design System Aligné) --- */
-.wiki-doc-container {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  display: flex;
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font);
-}
-
-/* Bandeau d'ouverture vertical (Sidebar Gauche) */
-.wiki-sidebar {
-  width: 280px;
-  flex-shrink: 0;
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  box-sizing: border-box;
-}
-
-.wiki-sidebar-header {
-  padding: 28px 24px 20px;
-  border-bottom: 1px solid var(--border);
-}
-
-.wiki-sidebar-title {
-  font-size: 18px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  color: var(--text);
-}
-
-.wiki-sidebar-subtitle {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  color: var(--text-soft);
-  margin-top: 4px;
-}
-
-.wiki-sidebar-nav {
-  display: flex;
-  flex-direction: column;
-  padding: 16px 0;
-  flex: 1;
-}
-
-.wiki-nav-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 24px;
-  background: transparent;
-  border: none;
-  border-left: 3px solid transparent;
-  color: var(--text-soft);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-align: left;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.wiki-nav-item:hover {
-  background: var(--surface-hover);
-  color: var(--text);
-}
-
-.wiki-nav-item.active {
-  background: var(--bg);
-  color: var(--text);
-  border-left-color: var(--accent-strong);
-  font-weight: 800;
-}
-
-.wiki-nav-num {
-  font-family: var(--font-mono);
-  color: var(--text-faint);
-  font-size: 11px;
-}
-
-.wiki-nav-item.active .wiki-nav-num {
-  color: var(--accent-strong);
-}
-
-.wiki-sidebar-footer {
-  padding: 20px 24px;
-  border-top: 1px solid var(--border);
-}
-
-.wiki-back-button {
-  width: 100%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 10px 14px;
-  background: var(--bg);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-pill);
-  color: var(--text);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.wiki-back-button:hover {
-  background: var(--surface-hover);
-  border-color: var(--text);
-}
-
-/* Zone de contenu principal (Documentation propre & sobre) */
-.wiki-main-content {
-  flex: 1;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg);
-}
-
-.wiki-doc-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 36px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  font-family: var(--font-mono);
-  font-size: 12px;
-}
-
-.wiki-breadcrumb {
-  color: var(--text-soft);
-}
-
-.wiki-version-tag {
-  color: var(--accent-ink);
-  background: var(--accent);
-  font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 4px;
-  font-size: 11px;
-}
-
-.version-pill-badge {
-  display: inline-block;
-  background: linear-gradient(135deg, rgba(79, 172, 254, 0.25), rgba(0, 242, 254, 0.25));
-  border: 1px solid rgba(0, 242, 254, 0.5);
-  color: #00f2fe;
-  font-family: var(--font-heading, sans-serif);
-  font-size: 0.8rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  padding: 3px 12px;
-  border-radius: 9999px;
-  box-shadow: 0 0 15px rgba(0, 242, 254, 0.3);
-  margin-top: 4px;
-}
-
-.wiki-doc-body {
-  padding: 40px 48px;
-  max-width: 960px;
-  box-sizing: border-box;
-}
-
-.wiki-doc-h1 {
-  font-size: 22px;
-  font-weight: 900;
-  letter-spacing: 0.04em;
-  color: var(--text);
-  margin: 0 0 8px 0;
-  font-family: var(--font-mono);
-}
-
-.wiki-doc-intro {
-  font-size: 13.5px;
-  color: var(--text-soft);
-  margin: 0 0 32px 0;
-  line-height: 1.5;
-}
-
-.wiki-doc-block {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 24px;
-  margin-bottom: 24px;
-}
-
-.wiki-block-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.wiki-doc-h2 {
-  font-size: 15px;
-  font-weight: 800;
-  color: var(--text);
-  margin: 0;
-  letter-spacing: 0.03em;
-  font-family: var(--font-mono);
-}
-
-.wiki-tech-badge {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 4px;
-  background: var(--bg);
-  border: 1px solid var(--border-strong);
-  color: var(--text-soft);
-}
-
-.wiki-doc-p {
-  font-size: 13px;
-  color: var(--text-soft);
-  line-height: 1.6;
-  margin: 0 0 16px 0;
-}
-
-/* Tables Techniques Neutres */
-.wiki-tech-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-  text-align: left;
-  margin-top: 12px;
-}
-
-.wiki-tech-table th {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-soft);
-  letter-spacing: 0.05em;
-  padding: 10px 14px;
-  background: var(--surface-hover);
-  border: 1px solid var(--border-strong);
-}
-
-.wiki-tech-table td {
-  padding: 10px 14px;
-  border: 1px solid var(--border);
-  color: var(--text);
-  background: var(--bg);
-}
-
-.wiki-tech-table tr:nth-child(even) td {
-  background: var(--surface);
-}
-
-.wiki-tech-table td:first-child {
-  font-weight: 600;
-  color: var(--text);
-}
-
-/* Bestiaire (liste des 108 identités de bots, shared/src/botIdentities.ts) — grille de puces
-   compactes plutôt qu'un tableau : purement décoratif/informatif, pas de colonnes à aligner. */
-.wiki-bestiary-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 8px;
-  margin-top: 12px;
-}
-.wiki-bestiary-chip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  font-size: 12px;
-  color: var(--text);
-}
-.wiki-bestiary-dot {
-  flex-shrink: 0;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-}
-
-/* Wiki responsive : la sidebar fixe (280px) écrase le contenu sous ~700px (confirmé en jeu :
-   95px de contenu restant sur un viewport 375px) — on l'empile au-dessus, même logique que le
-   breakpoint 900px de `.home-columns`. */
-@media (max-width: 700px) {
-  .wiki-doc-container {
-    flex-direction: column;
-    overflow-y: auto;
-  }
-  .wiki-sidebar {
-    width: 100%;
-    flex-shrink: 0;
-  }
-  .wiki-sidebar-nav {
-    flex-direction: row;
-    flex-wrap: wrap;
-    padding: 10px 12px;
-  }
-  .wiki-nav-item {
-    padding: 8px 12px;
-    border-left: none;
-    border-bottom: 3px solid transparent;
-  }
-  .wiki-nav-item.active {
-    border-left-color: transparent;
-    border-bottom-color: var(--accent-strong);
-  }
-  .wiki-sidebar-footer {
-    padding: 12px;
-  }
-  /* Un seul conteneur défilant (le conteneur externe) plutôt que deux imbriqués — sinon
-     `.wiki-main-content` (flex:1 + overflow-y:auto, pensé pour la mise en page desktop
-     sidebar/contenu côte à côte) se retrouve compressé par la sidebar empilée au-dessus et son
-     propre scroll interne masque le contenu au lieu de l'afficher. */
-  .wiki-main-content {
-    flex: none;
-    overflow-y: visible;
-  }
-  .wiki-doc-body {
-    padding: 24px 20px;
-  }
-  .wiki-tech-table {
-    display: block;
-    overflow-x: auto;
-    white-space: nowrap;
-  }
 }
 
 /* Minimap Overlay (3x3 Grid: 1-3 horizontal, A-C vertical) */

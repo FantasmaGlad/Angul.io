@@ -1,4 +1,4 @@
-import { distance, getRandomSkin, isBotId } from '@angulio/shared';
+import { distance, isBotId, skinForNickname } from '@angulio/shared';
 import type { BotConfig } from '../../mods/parametric/config.js';
 import type { Room } from '../room.js';
 import type { PlayerId } from '../types.js';
@@ -8,6 +8,7 @@ import {
   DEFAULT_BOT_PROPORTIONS,
   DEFAULT_CHALLENGER_CONFIG,
   generateBotNickname,
+  rampedChallengerTarget,
   selectRandomBotProfile,
   type BotProfileKind,
   type ChallengerConfig,
@@ -167,20 +168,28 @@ export class BotManager {
     // annulerait le despawn.
     if (humanCount === 0 && this.idleDespawned) return;
 
-    // Toujours réserver au moins 1 place pour un joueur humain s'il n'y a pas d'humain connecté
-    const maxBotsAllowed = Math.max(0, this.maxRoomCapacity - Math.max(1, humanCount));
+    // Toujours réserver au moins 1 place pour un joueur humain s'il n'y a pas d'humain connecté —
+    // et plafond dur absolu TOUS bots confondus (demande utilisateur, §15 : "au-delà de X robots,
+    // plus d'apparition possible"), appliqué EN PLUS de cette réservation, jamais à la place.
+    const maxBotsAllowed = Math.min(
+      this.config.maxTotal ?? Infinity,
+      Math.max(0, this.maxRoomCapacity - Math.max(1, humanCount)),
+    );
 
     // 1. Les Challenger Bots — pyramide de robots forts identifiés par rang (voir botTypes.ts
     // `ChallengerConfig`) : `baselineCount` en PERMANENCE, même à 0 joueur humain (demande
-    // utilisateur — auparavant 0 dans ce cas), étendue à `withHumanCount` dès qu'au moins un
-    // humain est connecté ; toujours bridée par la capacité autorisée du salon ET par le nombre
-    // de paliers de masse réellement configurés (`massMultipliers.length`).
+    // utilisateur — auparavant 0 dans ce cas), puis une population qui DÉCROÎT LINÉAIREMENT de
+    // `maxWithHumans` (à 1 humain connecté) vers `minWithHumans` (atteint à `rampHumans` humains —
+    // voir `rampedChallengerTarget`, demande utilisateur §15 : "entre 6 et 15 bots... plus il y a
+    // de joueurs humains, plus le nombre de robots diminue") ; toujours bridée par la capacité
+    // autorisée du salon ET par le nombre de paliers de masse réellement configurés
+    // (`massMultipliers.length`).
     const challengerConfig = this.config.challengers ?? DEFAULT_CHALLENGER_CONFIG;
     const challengerTarget = !challengerConfig.enabled
       ? 0
       : humanCount === 0
         ? challengerConfig.baselineCount
-        : challengerConfig.withHumanCount;
+        : rampedChallengerTarget(humanCount, challengerConfig);
     const maxChallengerRank = challengerConfig.massMultipliers.length;
     const maxChallengers = Math.min(challengerTarget, maxBotsAllowed, maxChallengerRank);
     let spawnedThisTick = 0;
@@ -204,7 +213,12 @@ export class BotManager {
       }
     }
 
-    // 2. Ajuster le reste de la population de bots normaux (mode ambiance à 0 joueur humain si ambientTargetCount est défini)
+    // 2. Ajuster le reste de la population de bots normaux — UNIQUEMENT en mode ambiance, à 0
+    // joueur humain connecté (demande utilisateur, §15 : dès qu'un humain se connecte, TOUTE la
+    // population de bots passe par la pyramide Challenger ci-dessus ; les profils normaux
+    // fuis/neutre/agressif/fou ne scalent plus avec le nombre d'humains — comportement retiré,
+    // remplacé par la décroissance de §1). `ambientTargetCount` si défini, sinon le ratio cible
+    // (fixe ou fluctuant, voir `updateFluctuatingRatio`).
     //
     // Compte des bots normaux SEULS (pas `this.activeBots.size`, qui inclurait les Challengers
     // désormais maintenus en permanence, voir §1 ci-dessus) : `desiredBots` ci-dessous n'a jamais
@@ -232,12 +246,7 @@ export class BotManager {
     // aucune place à l'humain que `maxBotsAllowed` était censé garantir) — bug constaté au
     // calibrage de la permanence des Challengers (demande utilisateur, §1).
     const remainingBotBudget = Math.max(0, maxBotsAllowed - maxChallengers);
-    const desiredBots = Math.min(
-      remainingBotBudget,
-      humanCount === 0 && ambientCount !== undefined
-        ? ambientCount
-        : Math.max(ambientCount ?? 0, targetBotCount - humanCount),
-    );
+    const desiredBots = humanCount === 0 ? Math.min(remainingBotBudget, ambientCount ?? targetBotCount) : 0;
 
     // Si on manque de bots : spawn progressif (limité à maxSpawnPerTick par tick)
     while (this.activeBots.size - challengerCount < desiredBots && spawnedThisTick < maxSpawnPerTick) {
@@ -300,9 +309,13 @@ export class BotManager {
       accumulatorMs: offsetMs,
     };
 
-    const randomSkin = getRandomSkin();
+    // Déterministe (hash du pseudo, comme un invité sans compte, voir `colorForNickname`) plutôt
+    // qu'un tirage aléatoire à CHAQUE spawn/respawn (retour utilisateur : un bot changeait de skin
+    // à chaque réapparition, incohérent avec le bestiaire) — un bot garde ainsi toujours le même
+    // skin pour un nom donné, cohérent entre toutes les parties et tous les points de vue.
+    const botSkin = skinForNickname(nickname);
     this.activeBots.set(botId, bot);
-    this.room.addPlayer(botId, nickname, randomSkin);
+    this.room.addPlayer(botId, nickname, botSkin);
 
     if (profile === 'challenger' && rank !== undefined) {
       const multiplier =
@@ -366,7 +379,7 @@ export class BotManager {
     this.room.removePlayer(playerId);
 
     // Un Challenger mangé (demande utilisateur) : le remplaçant entre TOUJOURS au palier le plus
-    // faible actuellement actif (rang `baselineCount`/`withHumanCount`, ex. x10 ou x3) — jamais au
+    // faible actuellement actif (rang `baselineCount`/cible ramped, ex. x10 ou x3) — jamais au
     // palier de son propre rang (qui pouvait être x50) — voir `respawnChallengerAtWeakestTier`.
     // Fait AVANT `adjustPopulation()` ci-dessous : celui-ci comble ensuite tout écart restant
     // (rangs manquants) avec le barème normal par rang, sans jamais re-remplir un rang déjà
@@ -378,11 +391,12 @@ export class BotManager {
   }
 
   /** Fait réapparaître UN Challenger au palier de masse le plus faible actuellement actif
-   * (`baselineCount` paliers si aucun humain n'est connecté, `withHumanCount` sinon — voir
-   * `adjustPopulation`), dans n'importe quel rang de slot libre (le rang sert uniquement d'id
-   * unique/de nom ici, PAS de barème de masse — voir `spawnBot`, `challengerMassOverride`). Ne
-   * fait rien si les Challengers sont désactivés ou si aucun rang n'est libre (population déjà au
-   * complet, `adjustPopulation` juste après s'occupera du reste normalement). */
+   * (`baselineCount` paliers si aucun humain n'est connecté, cible ramped sinon — voir
+   * `rampedChallengerTarget`/`adjustPopulation`), dans n'importe quel rang de slot libre (le rang
+   * sert uniquement d'id unique/de nom ici, PAS de barème de masse — voir `spawnBot`,
+   * `challengerMassOverride`). Ne fait rien si les Challengers sont désactivés ou si aucun rang
+   * n'est libre (population déjà au complet, `adjustPopulation` juste après s'occupera du reste
+   * normalement). */
   private respawnChallengerAtWeakestTier(): void {
     if (!this.config?.enabled) return;
     const challengerConfig = this.config.challengers ?? DEFAULT_CHALLENGER_CONFIG;
@@ -390,7 +404,7 @@ export class BotManager {
 
     const humanCount = this.room.world.allPlayers().filter((p) => !this.isBot(p.id)).length;
     const activeTierCount = Math.min(
-      humanCount === 0 ? challengerConfig.baselineCount : challengerConfig.withHumanCount,
+      humanCount === 0 ? challengerConfig.baselineCount : rampedChallengerTarget(humanCount, challengerConfig),
       challengerConfig.massMultipliers.length,
     );
     if (activeTierCount <= 0) return;

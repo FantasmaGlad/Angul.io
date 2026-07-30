@@ -73,6 +73,39 @@ describe('World — findOverlappingPairs', () => {
     expect(world.findOverlappingPairs()).toHaveLength(0);
   });
 
+  describe('test balayé (correctif tunneling — retour utilisateur : un petit morceau splitté traversé sans être mangé)', () => {
+    it("détecte une collision qui ne se produit qu'EN COURS de trajet ce tick (ni au départ, ni à l'arrivée)", () => {
+      const world = new World({ mapSize: 1000 });
+      // Petite entité stationnaire (rayon ≈ 7.07) au milieu du trajet de l'autre.
+      const stationary = world.spawnParticle({ x: 100, y: 0 }, 50);
+      stationary.previousPosition = { x: 100, y: 0 };
+      // Entité rapide : partie de (0,0), arrivée à (200,0) ce tick — traverse (100,0) en plein
+      // milieu du trajet, sans jamais se recouvrir ni au départ ni à l'arrivée (distance finale
+      // 100px, très supérieure à la somme des rayons ≈ 14.14px).
+      const fast = world.spawnParticle({ x: 200, y: 0 }, 50);
+      fast.previousPosition = { x: 0, y: 0 };
+      world.rebuildSpatialHash();
+
+      const pairs = world.findOverlappingPairs();
+
+      expect(pairs).toHaveLength(1);
+      const pair = pairs[0];
+      if (!pair) throw new Error('expected one overlapping pair');
+      expect(new Set([pair[0].id, pair[1].id])).toEqual(new Set([stationary.id, fast.id]));
+    });
+
+    it('ne détecte rien si le trajet balayé passe à côté sans jamais recouper le rayon', () => {
+      const world = new World({ mapSize: 1000 });
+      const stationary = world.spawnParticle({ x: 100, y: 100 }, 50); // rayon ≈ 7.07
+      stationary.previousPosition = { x: 100, y: 100 };
+      const fast = world.spawnParticle({ x: 200, y: 0 }, 50); // trajet horizontal, y=0 partout
+      fast.previousPosition = { x: 0, y: 0 };
+      world.rebuildSpatialHash();
+
+      expect(world.findOverlappingPairs()).toHaveLength(0);
+    });
+  });
+
   describe('grandes entités (Blobs Challenger et assimilés, voir spatialHash.ts)', () => {
     // Régression : une grande entité (jamais insérée dans la grille, voir SpatialHash) dont le
     // rayon dépasse largement le rayon de recherche fixe (`cellSize`) de `queryNearby` doit quand

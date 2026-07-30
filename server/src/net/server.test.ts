@@ -711,7 +711,7 @@ describe('startGameServer', () => {
     const body = (await response.json()) as { avatars: Array<{ id: string; name: string; url: string }> };
     expect(Array.isArray(body.avatars)).toBe(true);
     expect(body.avatars.length).toBeGreaterThan(0);
-    expect(body.avatars.some((a) => a.id === 'Banane')).toBe(true);
+    expect(body.avatars.some((a) => a.id === 'Radiateur')).toBe(true);
   });
 
   it('POST /api/rooms { visibility: "private" } renvoie un code d’invitation, absent en public', async () => {

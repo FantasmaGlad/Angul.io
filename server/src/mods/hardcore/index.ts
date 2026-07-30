@@ -133,7 +133,7 @@ export function createHardcoreMod(
             const dy = input.target.y - piece.position.y;
             const len = Math.hypot(dx, dy);
             const dir: Vector2 = len > 0 ? { x: dx / len, y: dy / len } : { x: 1, y: 0 };
-            const DASH_IMPULSE_SPEED = 2700;
+            const DASH_IMPULSE_SPEED = 4050;
             piece.velocity = add(piece.velocity, scale(dir, DASH_IMPULSE_SPEED));
           }
         }
@@ -205,7 +205,7 @@ export function createHardcoreMod(
           const dy = dashTarget.y - piece.position.y;
           const len = Math.hypot(dx, dy);
           const dir: Vector2 = len > 0 ? { x: dx / len, y: dy / len } : { x: 1, y: 0 };
-          const DASH_IMPULSE_SPEED = 2700;
+          const DASH_IMPULSE_SPEED = 4050;
           piece.velocity = add(piece.velocity, scale(dir, DASH_IMPULSE_SPEED));
         }
       }

@@ -1,12 +1,11 @@
+import { SKIN_IMAGE_MAP } from '@angulio/shared';
 import { useEffect, useState } from 'react';
 
 const ASSETS_TO_PRELOAD = [
-  '/assets/Profil/Banane.png',
-  '/assets/Profil/BmxPor.png',
-  '/assets/Profil/Calamard.png',
-  '/assets/Profil/Champi.png',
-  '/assets/Profil/KK.png',
-  '/assets/Profil/Radiateur.png',
+  // Dérivé de `SKIN_IMAGE_MAP` (source de vérité unique, shared/src/avatarPalette.ts) plutôt que
+  // dupliqué en dur ici — cette liste divergeait silencieusement de la vraie palette de skins à
+  // chaque changement d'assets/Profil (retour utilisateur : 404 sur des skins déjà supprimés).
+  ...Object.values(SKIN_IMAGE_MAP),
   '/assets/Sons/Musiques/Hardcore.m4a',
   '/assets/Sons/Musiques/vanilla.m4a',
   '/assets/Sons/Musiques/lobby.mp3',

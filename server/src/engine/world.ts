@@ -193,14 +193,41 @@ export class World {
     for (const entity of this.entities.values()) this.spatialHash.insert(entity);
   }
 
-  /** `true` si les cercles de `a` et `b` se chevauchent réellement — même convention de marge
-   * (1.05x) qu'avant : une pastille de nourriture est considérée "mangée" un peu avant un contact
-   * cercle-à-cercle strict côté morceau (retour utilisateur : le contact strict ratait des
-   * pastilles pourtant visuellement recouvertes). */
+  /** `true` si les cercles de `a` et `b` se chevauchent réellement à leurs positions de FIN de
+   * tick — même convention de marge (1.05x) qu'avant : une pastille de nourriture est considérée
+   * "mangée" un peu avant un contact cercle-à-cercle strict côté morceau (retour utilisateur : le
+   * contact strict ratait des pastilles pourtant visuellement recouvertes).
+   *
+   * Test ponctuel SEUL — volontairement pas de test balayé ici (voir `findOverlappingPairs`,
+   * deuxième passe dédiée) : un morceau qui a beaucoup bougé ce tick doit interroger la grille à un
+   * rayon élargi pour retrouver un candidat qu'il aurait pu traverser (voir `queryNearbySwept`),
+   * alors que cette fonction-ci ne fait que trancher une paire déjà candidate — mélanger les deux
+   * casserait la symétrie dont dépend le raccourci `entity.id < otherId` de la première passe (si
+   * seule l'entité rapide interroge à rayon élargi, la relation "à proximité" cesse d'être
+   * symétrique entre les deux entités). */
   private isOverlapping(a: Entity, b: Entity): boolean {
     const radA = a.kind === 'piece' && b.kind === 'particle' ? a.radius * 1.05 : a.radius;
     const radB = b.kind === 'piece' && a.kind === 'particle' ? b.radius * 1.05 : b.radius;
     return distance(a.position, b.position) < radA + radB;
+  }
+
+  /** Distance minimale entre les cercles de `a` et `b` sur tout leur trajet du tick courant
+   * (segment `previousPosition -> position` de chacun), pas seulement à leurs positions de fin de
+   * tick — voir `findOverlappingPairs` (passe "tunneling"). Se ramène à la distance ponctuelle si
+   * l'une des deux entités n'a aucun déplacement relatif ce tick (`dd === 0`, ex. nourriture
+   * immobile) ou n'a pas encore de `previousPosition` (entité tout juste créée ce tick, rien à
+   * balayer). */
+  private sweptMinDistance(a: Entity, b: Entity): number {
+    const prevA = a.previousPosition ?? a.position;
+    const prevB = b.previousPosition ?? b.position;
+    const px = prevA.x - prevB.x;
+    const py = prevA.y - prevB.y;
+    const dx = a.position.x - prevA.x - (b.position.x - prevB.x);
+    const dy = a.position.y - prevA.y - (b.position.y - prevB.y);
+    const dd = dx * dx + dy * dy;
+    if (dd === 0) return Math.hypot(px, py);
+    const t = Math.max(0, Math.min(1, -(px * dx + py * dy) / dd));
+    return Math.hypot(px + t * dx, py + t * dy);
   }
 
   /** Paires d'entités dont les cercles se chevauchent réellement (narrow-phase après le broad-phase).
@@ -243,6 +270,8 @@ export class World {
       }
     }
 
+    this.findTunnelingPairs(pairs);
+
     const largeEntities = this.spatialHash.getLargeEntities();
     const maxSmallReach = this.spatialHash.maxGridEntityRadius();
     for (const large of largeEntities) {
@@ -262,5 +291,50 @@ export class World {
     }
 
     return pairs;
+  }
+
+  /** Complète `findOverlappingPairs` (petites entités entre elles) : une entité qui a bougé plus
+   * que son propre rayon ce tick (juste après un split, `ejectSpeedFactor` élevé, ou un Dash) peut
+   * avoir traversé une autre entité SANS jamais tomber dans le rayon de recherche fixe de la passe
+   * ci-dessus (basé uniquement sur sa position de FIN de tick) — correctif "tunneling" (retour
+   * utilisateur : un petit morceau splitté qu'on traverse sans le manger). N'ajoute que les paires
+   * PAS DÉJÀ trouvées par la passe ci-dessus (`isOverlapping` point-only).
+   *
+   * Passe séparée et dédoublonnée par un `Set` local (plutôt que le raccourci `entity.id <
+   * otherId` de la passe principale) : `queryNearbySwept` interroge à un rayon élargi SEULEMENT
+   * depuis l'entité qui a bougé vite, ce qui casse la symétrie "A trouve B ⟺ B trouve A" dont
+   * dépend ce raccourci (voir son commentaire) — sans cette dédoublonnage dédiée, une paire
+   * pourrait être découverte uniquement du côté de l'entité qui a le plus grand id et donc être
+   * silencieusement ignorée. Le coût de ce `Set` reste négligeable : cette condition n'est vraie
+   * que pour une poignée de morceaux à la fois (juste après un split/dash), jamais pour la masse de
+   * nourriture immobile d'une carte. */
+  private findTunnelingPairs(alreadyFound: Array<[Entity, Entity]>): void {
+    let sweptPairKeys: Set<string> | undefined;
+
+    for (const entity of this.entities.values()) {
+      if (!entity.previousPosition) continue;
+      const dx = entity.position.x - entity.previousPosition.x;
+      const dy = entity.position.y - entity.previousPosition.y;
+      if (dx * dx + dy * dy <= entity.radius * entity.radius) continue; // n'a pas bougé plus que sa propre taille
+
+      const movedDist = Math.sqrt(dx * dx + dy * dy);
+      const nearbyIds = this.spatialHash.queryNearbySwept(entity.position, movedDist);
+      for (const otherId of nearbyIds) {
+        if (otherId === entity.id) continue;
+        const other = this.entities.get(otherId);
+        if (!other) continue;
+        if (this.isOverlapping(entity, other)) continue; // déjà capturé par la passe principale
+
+        const radA = entity.kind === 'piece' && other.kind === 'particle' ? entity.radius * 1.05 : entity.radius;
+        const radB = other.kind === 'piece' && entity.kind === 'particle' ? other.radius * 1.05 : other.radius;
+        if (this.sweptMinDistance(entity, other) >= radA + radB) continue;
+
+        sweptPairKeys ??= new Set();
+        const key = entity.id < other.id ? `${entity.id}|${other.id}` : `${other.id}|${entity.id}`;
+        if (sweptPairKeys.has(key)) continue;
+        sweptPairKeys.add(key);
+        alreadyFound.push(entity.id < other.id ? [entity, other] : [other, entity]);
+      }
+    }
   }
 }

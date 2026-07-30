@@ -62,7 +62,7 @@ describe('BotManager', () => {
     }
   });
 
-  it('supprime le plus petit bot normal quand un joueur humain rejoint', () => {
+  it('retire tous les bots normaux au profit de la pyramide Challenger dès qu’un joueur humain rejoint (demande utilisateur, §15)', () => {
     const config = testConfig({
       bots: {
         enabled: true,
@@ -85,10 +85,11 @@ describe('BotManager', () => {
     // Un joueur humain rejoint
     room.addPlayer('human-1', 'JoueurHumain');
 
-    // Bots normaux ajustés à 14 (pour maintenir 15 - 1 = 14) ; Challengers étendus à 10 (dès
-    // qu'un humain est connecté, voir botTypes.ts DEFAULT_CHALLENGER_CONFIG.withHumanCount) —
-    // 14 + 10 = 24.
-    expect(room.botManager?.activeBotCount).toBe(24);
+    // Depuis la connexion du premier humain, les profils normaux ne peuplent plus (§15 : "tout en
+    // Challengers") — la pyramide Challenger seule monte à `maxWithHumans` (15, atteint dès 1
+    // humain, voir DEFAULT_CHALLENGER_CONFIG/`rampedChallengerTarget`) : 0 bot normal + 15
+    // Challengers = 15.
+    expect(room.botManager?.activeBotCount).toBe(15);
     expect(room.world.getPlayer('human-1')).toBeDefined();
   });
 
@@ -155,7 +156,7 @@ describe('BotManager', () => {
         proportions: { fuis: 25, neutre: 30, agressif: 30, fou: 15 },
         // Désactivés : ce test cible exclusivement le réglage `ambientTargetCount` des bots
         // normaux, indépendant de la pyramide Challenger (couverte par ses propres tests).
-        challengers: { enabled: false, baselineCount: 0, withHumanCount: 0, massMultipliers: [] },
+        challengers: { enabled: false, baselineCount: 0, minWithHumans: 0, maxWithHumans: 0, rampHumans: 1, massMultipliers: [] },
       },
     });
     const mod = createParametricMod(config);
@@ -169,8 +170,11 @@ describe('BotManager', () => {
     room.tick();
     expect(room.botManager?.activeBotCount).toBe(6);
 
+    // Depuis la connexion du premier humain, les bots normaux ne scalent plus avec le nombre
+    // d'humains (§15, "tout en Challengers") — ils tombent à 0 dès qu'un humain est présent, ici
+    // sans aucun Challenger pour prendre le relais (désactivés ci-dessus).
     room.addPlayer('h1', 'Humain');
-    expect(room.botManager?.activeBotCount).toBe(14);
+    expect(room.botManager?.activeBotCount).toBe(0);
   });
 
   it('ne produit pas de thrashing (joins répétés) en mode ambiance sur plusieurs ticks consécutifs', () => {
@@ -181,7 +185,7 @@ describe('BotManager', () => {
         ambientTargetCount: 6,
         updateFrequencyHz: 2,
         proportions: { fuis: 25, neutre: 30, agressif: 30, fou: 15 },
-        challengers: { enabled: false, baselineCount: 0, withHumanCount: 0, massMultipliers: [] },
+        challengers: { enabled: false, baselineCount: 0, minWithHumans: 0, maxWithHumans: 0, rampHumans: 1, massMultipliers: [] },
       },
     });
     const mod = createParametricMod(config);
@@ -269,7 +273,7 @@ describe('BotManager', () => {
         targetRatio: 0,
         updateFrequencyHz: 2,
         proportions: { fuis: 0, neutre: 100, agressif: 0, fou: 0 },
-        challengers: { enabled: true, baselineCount: 2, withHumanCount: 3, massMultipliers: [10, 6, 3] },
+        challengers: { enabled: true, baselineCount: 2, minWithHumans: 3, maxWithHumans: 3, rampHumans: 1, massMultipliers: [10, 6, 3] },
       },
     });
     const mod = createParametricMod(config);
@@ -285,14 +289,14 @@ describe('BotManager', () => {
     expect(rank3).toHaveLength(0); // au-delà de baselineCount, pas encore actif sans humain
   });
 
-  it('étend la pyramide de Challengers à withHumanCount dès qu’un joueur humain se connecte', () => {
+  it('étend la pyramide de Challengers à maxWithHumans dès qu’un joueur humain se connecte', () => {
     const config = testConfig({
       bots: {
         enabled: true,
         targetRatio: 0,
         updateFrequencyHz: 2,
         proportions: { fuis: 0, neutre: 100, agressif: 0, fou: 0 },
-        challengers: { enabled: true, baselineCount: 2, withHumanCount: 3, massMultipliers: [10, 6, 3] },
+        challengers: { enabled: true, baselineCount: 2, minWithHumans: 3, maxWithHumans: 3, rampHumans: 1, massMultipliers: [10, 6, 3] },
       },
     });
     const mod = createParametricMod(config);
@@ -312,7 +316,7 @@ describe('BotManager', () => {
         targetRatio: 0,
         updateFrequencyHz: 2,
         proportions: { fuis: 0, neutre: 100, agressif: 0, fou: 0 },
-        challengers: { enabled: true, baselineCount: 2, withHumanCount: 3, massMultipliers: [10, 6, 3] },
+        challengers: { enabled: true, baselineCount: 2, minWithHumans: 3, maxWithHumans: 3, rampHumans: 1, massMultipliers: [10, 6, 3] },
       },
     });
     const mod = createParametricMod(config);
@@ -341,7 +345,7 @@ describe('BotManager', () => {
         ambientTargetCount: 2, // exactement 2 bots, jamais d'humain dans ce test
         updateFrequencyHz: 2,
         proportions: { fuis: 0, neutre: 100, agressif: 0, fou: 0 },
-        challengers: { enabled: false, baselineCount: 0, withHumanCount: 0, massMultipliers: [] },
+        challengers: { enabled: false, baselineCount: 0, minWithHumans: 0, maxWithHumans: 0, rampHumans: 1, massMultipliers: [] },
       },
     });
     const mod = createParametricMod(config);
@@ -379,7 +383,7 @@ describe('BotManager', () => {
         ambientTargetCount: 3,
         updateFrequencyHz: 2,
         proportions: { fuis: 0, neutre: 100, agressif: 0, fou: 0 },
-        challengers: { enabled: false, baselineCount: 0, withHumanCount: 0, massMultipliers: [] },
+        challengers: { enabled: false, baselineCount: 0, minWithHumans: 0, maxWithHumans: 0, rampHumans: 1, massMultipliers: [] },
         idleDespawn: { enabled: true, afterMinutes: 1 },
       },
     });
@@ -418,7 +422,11 @@ describe('BotManager', () => {
         ambientTargetCount: 3,
         updateFrequencyHz: 2,
         proportions: { fuis: 0, neutre: 100, agressif: 0, fou: 0 },
-        challengers: { enabled: false, baselineCount: 0, withHumanCount: 0, massMultipliers: [] },
+        // Challengers activés (contrairement aux autres tests idleDespawn ci-dessus) : depuis la
+        // connexion du premier humain, ce sont EUX seuls qui repeuplent (§15, "tout en
+        // Challengers") — les bots normaux (ambientTargetCount) ne servent plus qu'au peuplement
+        // ambiant à 0 humain, y compris juste après un despawn d'inactivité.
+        challengers: { enabled: true, baselineCount: 3, minWithHumans: 4, maxWithHumans: 4, rampHumans: 1, massMultipliers: [5, 4, 3, 2] },
         idleDespawn: { enabled: true, afterMinutes: 1 },
       },
     });
@@ -426,13 +434,15 @@ describe('BotManager', () => {
     const room = new Room(mod, { mapSize: 2000, tickRateHz: 20, maxPlayers: 30, bots: config.bots });
 
     const nowSpy = vi.spyOn(performance, 'now').mockReturnValue(0);
-    room.tick();
+    room.tick(); // 3 bots normaux (ambiant) + 3 Challengers (baselineCount) = 6
+    expect(room.botManager?.activeBotCount).toBe(6);
     nowSpy.mockReturnValue(61_000);
-    room.tick();
+    room.tick(); // despawn d'inactivité : vide tout, Challengers compris
     expect(room.botManager?.activeBotCount).toBe(0);
 
     room.addPlayer('human-1', 'Humain');
-    expect(room.botManager?.activeBotCount).toBe(3);
+    // Repeuplement via la pyramide Challenger seule (maxWithHumans = 4), pas les bots normaux.
+    expect(room.botManager?.activeBotCount).toBe(4);
 
     nowSpy.mockRestore();
   });

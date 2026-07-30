@@ -435,7 +435,7 @@ export class LocalPrediction {
    * autoritaire (pré-dash, voir `reconcile`) et le rejeu ne restitue jamais l'impulsion —
    * l'accélération locale du dash est alors visuellement annulée puis "revient" d'un coup au
    * tick suivant, perçu comme un gros lag/saccade au dash. */
-  applyDash(direction: Vector2, speedImpulse = 2700): void {
+  applyDash(direction: Vector2, speedImpulse = 4050): void {
     for (const piece of this.pieces.values()) {
       piece.velocity = add(piece.velocity, scale(direction, speedImpulse));
     }

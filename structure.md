@@ -81,7 +81,7 @@ Angul.io/
 │   ├── migrations/                    Migrations node-pg-migrate (source de vérité exécutable)
 │   ├── configs/                       Configs JSON des mods paramétriques (voir README §Modding)
 │   │   ├── vanilla.json                     Mode par défaut
-│   │   └── hardcore.json                    Absorption x2, Dash, perte totale de score à la mort
+│   │   └── hardcore.json                    Absorption x2, Dash uniquement (split désactivé), perte totale de score à la mort
 │   ├── scripts/
 │   │   ├── hashPassword.mjs                 Génère un hash argon2 pour ADMIN_PASSWORD_HASH
 │   │   ├── loadtest.mjs                     Bots WebSocket pour valider la charge
@@ -111,11 +111,14 @@ Angul.io/
 │       │   │   └── snapshotBuilder.ts / .test.ts  Construit l'EntitySnapshot[] envoyé au réseau
 │       │   └── bots/                        Système de robots (IA, régulation population)
 │       │       ├── botTypes.ts                    Profils ('fuis', 'neutre'...) + pyramide Challenger
-│       │       │                                   (ChallengerConfig/DEFAULT_CHALLENGER_CONFIG), voir BOT_IDENTITIES
+│       │       │                                   (ChallengerConfig/DEFAULT_CHALLENGER_CONFIG,
+│       │       │                                   rampedChallengerTarget), voir BOT_IDENTITIES
 │       │       ├── botEvaluator.ts / .test.ts     IA décisionnelle (utility evaluation)
-│       │       └── botManager.ts / .test.ts       Population : bots normaux (spawn progressif, ratio
-│       │                                           fluctuant) + Challengers (permanents, extension à la
-│       │                                           connexion d'un humain) + despawn d'inactivité (idleDespawn)
+│       │       └── botManager.ts / .test.ts       Population : bots normaux (spawn progressif à 0 humain
+│       │                                           uniquement) + Challengers (permanents, population qui
+│       │                                           décroît linéairement de maxWithHumans à minWithHumans
+│       │                                           avec le nombre d'humains connectés) + despawn
+│       │                                           d'inactivité (idleDespawn) + plafond dur (maxTotal)
 │       ├── mods/                      Modes de jeu — voir README §Modding pour la philosophie
 │       │   ├── parametric/                  Mod générique piloté à 100% par un JSON (server/configs/*.json)
 │       │   │   ├── config.ts                      Schéma TypeScript complet de la config JSON
@@ -208,6 +211,7 @@ Angul.io/
 |---|---|---|
 | **Sources d'assets** | `assets/` (racine) | Skins joueurs (PNG), logo, images de joystick, musiques — sources non transformées, référencées depuis `client/public/assets/*` au build |
 | **Icônes PWA** | `client/static/icons/*.png` | 192px, 512px, 512px maskable |
+| **Favicon** | `client/static/favicon.ico` | Multi-résolution (16/32/48px), référencé dans `client/index.html` |
 | **Manifeste PWA** | `client/static/manifest.json` | Nom, couleurs, icônes déclarées à l'OS pour l'installation |
 | **Service worker** | `client/static/service-worker.js` | Cache offline de la coquille statique |
 | **Styles/design tokens** | `client/src/styles.css`, `admin/src/styles.css` | CSS pur, pas de préprocesseur |
@@ -223,7 +227,7 @@ Angul.io/
 | Composant | Rôle |
 |---|---|
 | `Home.tsx` | Composition racine de l'accueil : `TopNav` + 3 colonnes + `BottomBar` + `SpectatorBackground` |
-| `TopNav.tsx` | Nav haute : marque, liens Classement/Wiki/À Propos, cercle de compte |
+| `TopNav.tsx` | Nav haute : marque, liens Classement/À Propos, cercle de compte |
 | `ModeRoomList.tsx` | Colonne gauche : sélecteur de mode + classement des salons publics de ce mode |
 | `PlayPanel.tsx` | Colonne centre : compteur de joueurs connectés, pseudo, bouton "Rejoindre" |
 | `CreateRoomPanel.tsx` | Colonne droite : création de salon privé (Premium) + rejoindre par code |
@@ -233,7 +237,6 @@ Angul.io/
 | `AssetPreloader.tsx` | Précharge les images de skins avant affichage du jeu (évite un flash sans texture) |
 | `ErrorBoundary.tsx` | Filet de sécurité React (évite un écran blanc total sur exception de rendu) |
 | `AudioSettings.tsx` / `KeybindSettings.tsx` | Réglages son / remapping des touches (accessibles depuis Paramètres) |
-| `WikiPage.tsx` | Wiki joueur plein écran (route `/wiki`) — modes/monde/adversaires/bestiaire |
 | `GameView.tsx` | **Le seul composant qui touche au canvas en partie** — boucle de rendu (`requestAnimationFrame`), connexion WebSocket, HUD (stats/leaderboard/minimap/dash/écran de mort) — voir README §Réseau pour le détail de sa boucle |
 
 ### 4.2 Client — sous-pages (`client/src/pages/`)

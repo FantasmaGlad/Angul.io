@@ -15,10 +15,13 @@
 // `CACHE_NAME` a été incrémenté (v1 -> v2) pour cette raison précise : purger, chez tout appareil
 // ayant déjà installé l'ancien service worker, le cache `v1` qui contenait encore `/bundle.js`/
 // `index.html` (voir le handler `activate` plus bas, qui supprime tout cache dont le nom ne
-// correspond plus à `CACHE_NAME` courant). Incrémenter à nouveau si `PRECACHE_URLS` change encore.
-const CACHE_NAME = 'angulio-shell-v2';
+// correspond plus à `CACHE_NAME` courant). Incrémenté à nouveau (v2 -> v3) pour la même raison :
+// nouveau logo/favicon (assets/Logos/LogoIcon.png) — sans ce bump, un appareil ayant déjà installé
+// la PWA garderait l'ancien favicon en cache indéfiniment.
+const CACHE_NAME = 'angulio-shell-v3';
 const PRECACHE_URLS = [
   '/manifest.json',
+  '/favicon.ico',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/icons/icon-maskable-512.png',

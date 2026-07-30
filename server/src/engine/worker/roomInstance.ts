@@ -134,7 +134,11 @@ export class RoomInstance {
   respawn(playerId: PlayerId, nickname: string): RespawnResult {
     const existingPlayer = this.room.world.getPlayer(playerId);
     if (!existingPlayer || existingPlayer.pieceIds.length === 0) {
-      this.room.addPlayer(playerId, nickname);
+      // Réutilise le skin déjà assigné à ce joueur (compte, ou choix invité résolu au premier join)
+      // plutôt que de laisser `Room.addPlayer` le redériver silencieusement (voir broadcast.ts
+      // `onPlayerJoin`) — sans ça, chaque respawn changeait le skin affiché à tous les viewers
+      // (retour utilisateur : skin incohérent d'un point de vue à l'autre).
+      this.room.addPlayer(playerId, nickname, existingPlayer?.skin);
       return { respawned: true };
     }
     return { respawned: false };

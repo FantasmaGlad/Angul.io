@@ -3,7 +3,8 @@
   "player": {
     "startMass": 50,
     "maxSplits": 32,
-    "minSplitMass": 50
+    "minSplitMass": 50,
+    "splitEnabled": false
   },
   "physics": {
     "v0": 245,
@@ -29,7 +30,7 @@
     "massAdvantage": 0.05,
     "minMassToEatFood": 2,
     "eatOverlapFraction": 0.7,
-    "absorptionDurationSec": 0.1
+    "absorptionDurationSec": 0
   },
   "decay": {
     "threshold": 100,
@@ -94,6 +95,7 @@
   "bots": {
     "enabled": true,
     "ambientTargetCount": 6,
+    "maxTotal": 15,
     "updateFrequencyHz": 2,
     "proportions": {
       "fuis": 25,
@@ -104,8 +106,10 @@
     "challengers": {
       "enabled": true,
       "baselineCount": 6,
-      "withHumanCount": 10,
-      "massMultipliers": [50, 40, 30, 25, 20, 10, 8, 7, 5, 3]
+      "maxWithHumans": 15,
+      "minWithHumans": 6,
+      "rampHumans": 5,
+      "massMultipliers": [50, 40, 30, 25, 20, 15, 12, 10, 8, 7, 6, 5, 4, 3, 2]
     },
     "idleDespawn": {
       "enabled": true,

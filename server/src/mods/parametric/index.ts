@@ -29,6 +29,7 @@ import {
   eatOverlapFraction,
   foodTargetCount,
   randomFoodMass,
+  splitEnabled,
   velocityForMass,
 } from './physics.js';
 import { pieceState } from './pieceState.js';
@@ -138,6 +139,18 @@ function fullSeparationDistance(a: Entity, b: Entity): number {
   return a.radius + b.radius;
 }
 
+/** Fraction de la pénétration réellement corrigée EN UN SEUL TICK (le reste se résorbe sur les
+ * ticks suivants) — voir `applyRepulsion`. Une résolution à 100% (valeur historique) compose mal
+ * quand un même morceau appartient à PLUSIEURS paires en chevauchement le même tick (ex. beaucoup
+ * de morceaux qui se regroupent en même temps pour fusionner) : chaque paire déplace une position
+ * déjà décalée par la paire précédente CE MÊME tick, sans plafond, donc le déplacement cumulé d'un
+ * morceau peut dépasser de loin la pénétration réelle d'une seule paire — visible côté client comme
+ * une "explosion" (saut de position > 200px entre deux snapshots, voir `smoothMap` de
+ * renderEngine.ts, qui bascule alors sur un snap instantané au lieu d'un lissage). Amortir la
+ * correction lisse ce cumul sur quelques ticks (~100-150ms à 30Hz, imperceptible en soi) plutôt que
+ * de résoudre un chevauchement profond d'un coup. */
+const REPULSION_CORRECTION_FACTOR = 0.3;
+
 export function applyRepulsion(
   a: Entity,
   b: Entity,
@@ -150,8 +163,9 @@ export function applyRepulsion(
 
   const dir = d > 0 ? scale(sub(a.position, b.position), 1 / d) : FALLBACK_DIRECTION;
   const totalMass = a.mass + b.mass;
-  const moveA = penetration * (b.mass / totalMass);
-  const moveB = penetration * (a.mass / totalMass);
+  const correction = penetration * REPULSION_CORRECTION_FACTOR;
+  const moveA = correction * (b.mass / totalMass);
+  const moveB = correction * (a.mass / totalMass);
 
   a.position = add(a.position, scale(dir, moveA));
   b.position = sub(b.position, scale(dir, moveB));
@@ -281,6 +295,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
   /** Divise un morceau en deux (masse restante m/2, éjecté = m/2 * eta_W — metriques.md §9,
    * généralisé par `config.split.ejectEfficiency`). */
   function trySplitPiece(world: World, playerId: PlayerId, piece: Entity): void {
+    if (!splitEnabled(config)) return;
     if (piece.mass < config.player.minSplitMass) return;
     if (world.getPiecesByOwner(playerId).length >= config.player.maxSplits) return;
 

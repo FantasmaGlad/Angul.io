@@ -27,6 +27,12 @@ export interface EntitySnapshot {
 export interface ClientJoinMessage {
   type: 'join';
   nickname: string;
+  /** Skin choisi par un invité (compte `localStorage['angulio.guestSkin']`, voir ProfilePage.tsx)
+   * — absent pour un compte authentifié, dont le skin vient de la base (`players.avatar_color`,
+   * toujours prioritaire côté serveur, voir connectionHandler.ts). Sans ce champ, le serveur
+   * retombait sur un skin aléatoire à CHAQUE connexion d'un invité, ignorant son choix (retour
+   * utilisateur : skin incohérent d'une connexion à l'autre). */
+  skin?: string;
 }
 
 export interface ClientInputMessage {

@@ -18,7 +18,6 @@ import {
 // effectivement vers la page correspondante. Chacune a sa propre URL (voir router.ts), à la
 // place des anciennes modales superposées (Panel.tsx/ProfileModal.tsx supprimés).
 const AccountPage = lazy(() => import('./pages/AccountPage.js'));
-const WikiPage = lazy(() => import('./components/WikiPage.js'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage.js'));
 const LeaderboardPage = lazy(() => import('./pages/LeaderboardPage.js'));
 const SupportPage = lazy(() => import('./pages/SupportPage.js'));
@@ -222,15 +221,7 @@ export default function App() {
     setSession((previous) => (previous ? { ...previous, roomIdOrInviteCode: roomId } : previous));
   }, []);
 
-  const isWikiRoute = path === '/wiki' || path === '/wiki/';
-
-  if (isWikiRoute) {
-    return (
-      <Suspense fallback={null}>
-        <WikiPage modes={modes} />
-      </Suspense>
-    );
-  }
+  const effectiveAvatarColor = avatarColor ?? guestSkin;
 
   if (session) {
     return (
@@ -241,14 +232,13 @@ export default function App() {
           inviteCodeToShow={session.inviteCodeToShow}
           nickname={session.nickname}
           authToken={authSession?.token}
+          guestSkin={effectiveAvatarColor}
           onExit={handleExit}
           onForceRoomChange={handleForceRoomChange}
         />
       </ErrorBoundary>
     );
   }
-
-  const effectiveAvatarColor = avatarColor ?? guestSkin;
 
   const knownSubPaths = [
     '/compte',

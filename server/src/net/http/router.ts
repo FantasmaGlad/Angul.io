@@ -52,6 +52,20 @@ export async function handleHttpRequest(
   res: ServerResponse,
 ): Promise<void> {
   const url = new URL(req.url ?? '/', 'http://localhost');
+  // `URL.pathname` (API WHATWG) garde le chemin PERCENT-ENCODÉ tel quel (`%20`, `%C3%89`...) — ce
+  // n'est PAS déjà décodé, contrairement à ce qu'on pourrait attendre. Un chemin de fichier statique
+  // contenant un espace/caractère accentué (ex. un skin d'avatar, `assets/Profil/Banane Épic.png`)
+  // ne correspondait donc jamais au vrai nom de fichier sur disque (`stat()`/comparaison insensible
+  // à la casse de `serveStatic` comparés à un `%20` littéral) — retour utilisateur : 404 sur un
+  // skin dont le nom de fichier contient un espace. Repli sur le chemin brut si le décodage échoue
+  // (séquence `%` malformée) plutôt que de planter toute la requête.
+  const decodedPathname = ((): string => {
+    try {
+      return decodeURIComponent(url.pathname);
+    } catch {
+      return url.pathname;
+    }
+  })();
 
   if (url.pathname === '/api/rooms' && req.method === 'GET') {
     handleGetRooms(roomManager, res);
@@ -188,8 +202,8 @@ export async function handleHttpRequest(
     return;
   }
 
-  if (adminStaticDir && (url.pathname === '/admin' || url.pathname.startsWith('/admin/'))) {
-    const stripped = url.pathname.slice('/admin'.length);
+  if (adminStaticDir && (decodedPathname === '/admin' || decodedPathname.startsWith('/admin/'))) {
+    const stripped = decodedPathname.slice('/admin'.length);
     await serveStatic(
       adminStaticDir,
       stripped === '' || stripped === '/' ? '/index.html' : stripped,
@@ -198,9 +212,5 @@ export async function handleHttpRequest(
     return;
   }
 
-  await serveStatic(
-    staticDir,
-    req.url && req.url !== '/' ? req.url.split('?')[0]! : '/index.html',
-    res,
-  );
+  await serveStatic(staticDir, decodedPathname === '/' ? '/index.html' : decodedPathname, res);
 }

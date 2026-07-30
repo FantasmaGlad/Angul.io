@@ -1,4 +1,4 @@
-import { clamp, isBotId, SKIN_IMAGE_MAP, skinForNickname, type EntitySnapshot } from '@angulio/shared';
+import { clamp, DEFAULT_SKIN, isBotId, SKIN_IMAGE_MAP, skinForNickname, type EntitySnapshot } from '@angulio/shared';
 import { ownAggregate } from './stats.js';
 
 const skinImageCache = new Map<string, HTMLImageElement>();
@@ -57,12 +57,17 @@ function getCircularSkinImage(skinId: string): HTMLCanvasElement | null {
 export function colorForSkinFallback(skinId: string): string {
   if (skinId.startsWith('#')) return skinId;
   const map: Record<string, string> = {
-    Banane: '#FFE135',
-    BmxPor: '#E05A47',
-    Calamard: '#40A9FF',
-    Champi: '#FF4D4F',
-    KK: '#73D13D',
+    'Baamix LSD': '#FFE135',
+    'Banane Épic': '#FFC300',
+    Calamoche: '#40A9FF',
+    'Mouche Moche': '#9254DE',
+    'Pieuvre Défoncée': '#7A3FA0',
     Radiateur: '#9254DE',
+    Robibou: '#E05A47',
+    Scoobi: '#C9702E',
+    'Scoobi-1': '#C9A227',
+    'Scoobi-2': '#B23A2E',
+    'Souris Parapluis': '#73D13D',
   };
   return map[skinId] ?? '#3a6b35';
 }
@@ -315,17 +320,21 @@ export function renderFrame(
     drawCalls++;
 
     const nickname = entity.p && nicknames.get(entity.p);
-    if (nickname) {
+    // Le pseudo n'est affiché qu'au-delà de 100 de masse (demande utilisateur) — un tout petit
+    // morceau (juste après un split, ou en fin de vie) ne l'affiche plus, mais garde son label de
+    // masse perso ci-dessous si c'est le morceau du joueur lui-même.
+    const showNickname = Boolean(nickname) && entity.m >= 100;
+    if (showNickname) {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const fontSize = isBotId(entity.p!)
-        ? botNicknameFontSizePx(ctx, nickname, screenRadius)
+        ? botNicknameFontSizePx(ctx, nickname!, screenRadius)
         : Math.max(10, screenRadius * 0.3);
       ctx.font = `normal ${fontSize}px sans-serif`;
       ctx.fillStyle = '#ffffff';
       ctx.shadowColor = 'transparent';
       ctx.shadowBlur = 0;
-      ctx.fillText(nickname, screenX, screenY);
+      ctx.fillText(nickname!, screenX, screenY);
       drawCalls++;
 
       if (selfPlayerId && entity.p === selfPlayerId) {
@@ -334,6 +343,16 @@ export function renderFrame(
         ctx.fillText(String(Math.floor(entity.m)), screenX, screenY + fontSize * 0.85);
         drawCalls++;
       }
+    } else if (selfPlayerId && entity.p === selfPlayerId) {
+      const massFontSize = Math.max(9, screenRadius * 0.3 * 0.7);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = `normal ${massFontSize}px sans-serif`;
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.fillText(String(Math.floor(entity.m)), screenX, screenY);
+      drawCalls++;
     }
   }
 
@@ -482,7 +501,7 @@ export function colorFor(
   nicknames?: ReadonlyMap<string, string>,
   colors?: ReadonlyMap<string, string>,
 ): string {
-  if (!entity.p) return 'Banane';
+  if (!entity.p) return DEFAULT_SKIN;
   const explicitColor = colors?.get(entity.p);
   if (explicitColor) return explicitColor;
   const name = nicknames?.get(entity.p);

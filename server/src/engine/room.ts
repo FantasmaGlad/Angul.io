@@ -179,6 +179,10 @@ export class Room {
     }
 
     for (const entity of this.world.allEntities()) {
+      // Capturée AVANT l'intégration : sert au test de collision balayé (`World.findOverlappingPairs`,
+      // correctif anti-tunneling) pour reconstruire le trajet réel de ce tick, pas seulement son
+      // point de départ/arrivée.
+      entity.previousPosition = entity.position;
       entity.position = add(entity.position, scale(entity.velocity, dt));
     }
 
@@ -239,7 +243,7 @@ export class Room {
   > = [];
 
   addPlayer(id: PlayerId, nickname: string, skin?: string): void {
-    this.world.addPlayer(id, nickname);
+    this.world.addPlayer(id, nickname, skin);
     this.mod.onPlayerJoin?.(this.world, id);
     for (const listener of this.playerJoinListeners) {
       listener(id, nickname, skin);

@@ -38,6 +38,9 @@ export interface ParametricModConfig {
      * pas ce paramètre), repris de metriques.md §3.5 (100 = 2×M0 pour Vanilla) et généralisé
      * en valeur absolue configurable plutôt qu'un facteur implicite. */
     minSplitMass: number;
+    /** `false` désactive entièrement le split pour ce mode (demande utilisateur : Hardcore ne
+     * garde que le Dash) — absent = activé, voir `splitEnabled()` (physics.ts). */
+    splitEnabled?: boolean;
   };
 
   physics: {
@@ -177,6 +180,12 @@ export interface BotConfig {
   targetRatio?: number;
   /** Nombre de bots maintenus en mode ambiance à 0 joueur humain connecté (défaut : 6). */
   ambientTargetCount?: number;
+  /** Plafond dur absolu du nombre de bots ACTIFS SIMULTANÉMENT dans ce salon, Challengers ET bots
+   * normaux confondus (demande utilisateur : "au-delà de X robots, plus d'apparition possible") —
+   * appliqué en plus (jamais à la place) de la réservation "au moins 1 place pour un humain" déjà
+   * garantie par `maxRoomCapacity` (voir `BotManager.adjustPopulation`). Absent = aucun plafond
+   * dédié (seule la capacité du salon borne la population de bots, comportement d'origine). */
+  maxTotal?: number;
   updateFrequencyHz: number;
   proportions: {
     fuis: number;
@@ -186,7 +195,9 @@ export interface BotConfig {
   };
   /** Bots "Challenger" (pyramide de robots forts identifiés par rang, voir
    * engine/bots/botManager.ts/botTypes.ts) — population et paliers de masse distincts des bots
-   * normaux ci-dessus (`proportions`/`ambientTargetCount`). Absent = repli sur
+   * normaux ci-dessus (`proportions`/`ambientTargetCount`). Depuis la connexion du premier humain,
+   * c'est ce mécanisme SEUL qui peuple le salon (demande utilisateur, §15) : les profils normaux
+   * ci-dessus ne servent plus qu'au peuplement ambiant à 0 humain. Absent = repli sur
    * `DEFAULT_CHALLENGER_CONFIG` (botTypes.ts). */
   challengers?: {
     /** `false` désactive entièrement les Challengers pour ce mode (aucun, même avec un humain
@@ -196,12 +207,19 @@ export interface BotConfig {
     /** Nombre de Challengers maintenus en PERMANENCE, même sans aucun joueur humain connecté
      * (demande utilisateur — auparavant 0 tant qu'aucun humain n'était présent). */
     baselineCount: number;
-    /** Nombre total de Challengers dès qu'au moins un joueur humain est connecté (>=
-     * `baselineCount` — les `withHumanCount - baselineCount` en plus apparaissent immédiatement
-     * à la connexion du premier humain). */
-    withHumanCount: number;
+    /** Population de Challengers dès qu'UN SEUL joueur humain vient de se connecter (démarrage de
+     * la décroissance ci-dessous, voir `minWithHumans`/`rampHumans`). */
+    maxWithHumans: number;
+    /** Plancher vers lequel `maxWithHumans` décroît linéairement à mesure que le nombre de joueurs
+     * humains augmente (demande utilisateur, §15 : "plus il y a de joueurs humains, plus le nombre
+     * de robots diminue") — atteint et maintenu à partir de `rampHumans` joueurs humains. */
+    minWithHumans: number;
+    /** Nombre de joueurs humains à partir duquel la décroissance linéaire entre `maxWithHumans` (à
+     * 1 humain) et `minWithHumans` atteint son plancher — voir `rampedChallengerTarget`,
+     * botTypes.ts. */
+    rampHumans: number;
     /** Multiplicateur de masse de spawn par rang (index 0 = rang 1, le plus fort) — longueur
-     * attendue >= `withHumanCount` (un rang au-delà de la longueur du tableau retombe sur la
+     * attendue >= `maxWithHumans` (un rang au-delà de la longueur du tableau retombe sur la
      * dernière valeur, voir `challengerMassMultiplierForRank`, botTypes.ts). Sert aussi de valeur
      * pour un Challenger qui réapparaît après avoir été mangé : toujours au dernier palier actif
      * (le plus faible), jamais au palier du rang mangé — voir `BotManager.onPlayerDeath`. */

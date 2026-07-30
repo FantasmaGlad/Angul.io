@@ -1,6 +1,7 @@
 import type { ServerResponse } from 'node:http';
 import { readdir, stat } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
+import { SKINS, SKIN_IMAGE_MAP } from '@angulio/shared';
 import { respondJson } from '../httpUtils.js';
 
 export interface AvatarItem {
@@ -50,16 +51,13 @@ export async function handleGetAvatars(rootDir: string, res: ServerResponse): Pr
     } catch {}
   }
 
-  // Fallback si le dossier est vide ou inaccessible
+  // Fallback si le dossier est vide ou inaccessible — reflète `SKINS`/`SKIN_IMAGE_MAP`
+  // (shared/src/avatarPalette.ts, source de vérité unique) plutôt qu'une liste dupliquée en dur
+  // ici, qui divergeait silencieusement de la vraie palette à chaque changement d'assets/Profil.
   if (avatars.length === 0) {
-    avatars.push(
-      { id: 'Banane', name: 'Banane', url: '/assets/Profil/Banane.png' },
-      { id: 'BmxPor', name: 'BmxPor', url: '/assets/Profil/BmxPor.png' },
-      { id: 'Calamard', name: 'Calamard', url: '/assets/Profil/Calamard.png' },
-      { id: 'Champi', name: 'Champi', url: '/assets/Profil/Champi.png' },
-      { id: 'KK', name: 'KK', url: '/assets/Profil/KK.png' },
-      { id: 'Radiateur', name: 'Radiateur', url: '/assets/Profil/Radiateur.png' },
-    );
+    for (const id of SKINS) {
+      avatars.push({ id, name: id, url: SKIN_IMAGE_MAP[id]! });
+    }
   }
 
   respondJson(res, 200, { avatars });

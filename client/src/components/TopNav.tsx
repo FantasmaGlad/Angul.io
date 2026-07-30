@@ -33,10 +33,6 @@ export default function TopNav({ accountActive, pseudo, level, avatarColor }: To
           <span className="material-symbols-outlined nav-icon" style={{ fontSize: '18px', verticalAlign: 'middle', marginRight: '4px' }}>leaderboard</span>
           Classement
         </button>
-        <button type="button" onClick={() => navigate('/wiki')}>
-          <span className="material-symbols-outlined nav-icon" style={{ fontSize: '18px', verticalAlign: 'middle', marginRight: '4px' }}>help_outline</span>
-          Wiki
-        </button>
         <button type="button" onClick={() => navigate('/a-propos')}>
           <span className="material-symbols-outlined nav-icon" style={{ fontSize: '18px', verticalAlign: 'middle', marginRight: '4px' }}>info</span>
           À Propos

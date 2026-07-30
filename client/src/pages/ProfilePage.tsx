@@ -1,4 +1,5 @@
 import {
+  DEFAULT_SKIN,
   MAX_DEATH_MESSAGE_LENGTH,
   SKIN_IMAGE_MAP,
   SKINS,
@@ -152,9 +153,14 @@ function AvatarSwiper({ activeSkin, onPickColor, disabled, avatars }: AvatarSwip
               <img
                 src={item.url}
                 alt={item.name}
-                style={{ width: 68, height: 68, objectFit: 'contain' }}
+                style={{ width: 56, height: 56, objectFit: 'contain' }}
                 onError={(e) => {
-                  (e.currentTarget as HTMLImageElement).src = '/assets/Profil/Banane.png';
+                  // Garde contre boucle infinie (retour utilisateur : un défaut codé en dur
+                  // pointant vers un fichier supprimé redéclenchait `onError` indéfiniment) — ne
+                  // substitue qu'une fois, et seulement si ce n'est pas déjà le défaut.
+                  const img = e.currentTarget as HTMLImageElement;
+                  const fallback = SKIN_IMAGE_MAP[DEFAULT_SKIN]!;
+                  if (!img.src.endsWith(fallback)) img.src = fallback;
                 }}
               />
               <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{item.name}</span>
@@ -228,7 +234,7 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
     setDeathBannerDraft(profile.deathBannerId);
   }, [profile]);
 
-  const activeSkin = profile?.avatarColor ?? currentSkin ?? 'Banane';
+  const activeSkin = profile?.avatarColor ?? currentSkin ?? DEFAULT_SKIN;
 
   const handlePickColor = (color: string): void => {
     onAvatarColorChange(color);
@@ -313,7 +319,7 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
           <div className="profile-header-banner">
             <div className="profile-header-user">
               <img
-                src={SKIN_IMAGE_MAP[activeSkin] ?? SKIN_IMAGE_MAP.Banane}
+                src={SKIN_IMAGE_MAP[activeSkin] ?? SKIN_IMAGE_MAP[DEFAULT_SKIN]}
                 alt={activeSkin}
                 style={{ width: 56, height: 56, borderRadius: '50%', border: '2px solid var(--accent)' }}
               />
@@ -340,7 +346,6 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
             {/* Colonne de Gauche : Skins & Statistiques */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
               <section className="lobby-section">
-                <span className="section-title">Choix du Skin d'Avatar</span>
                 <AvatarSwiper
                   activeSkin={activeSkin}
                   onPickColor={handlePickColor}
@@ -489,7 +494,7 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
                       background: isCustomImageBanner(deathBannerDraft)
                         ? `url("${deathBannerDraft}") center/cover no-repeat`
                         : 'linear-gradient(135deg, rgba(30, 32, 34, 0.95), rgba(20, 22, 24, 0.95))',
-                      minHeight: 140,
+                      minHeight: 100,
                       position: 'relative',
                       overflow: 'hidden',
                       borderRadius: 'var(--radius-md)',

@@ -1,33 +1,53 @@
 /** Skins d'avatar choisissables et utilisables en jeu pour les joueurs et les bots.
  * Les fichiers PNG correspondants sont hébergés sous `/assets/Profil/`. */
 export const SKINS = [
-  'Banane',
-  'BmxPor',
-  'Calamard',
-  'Champi',
-  'KK',
+  'Baamix LSD',
+  'Banane Épic',
+  'Calamoche',
+  'Mouche Moche',
+  'Pieuvre Défoncée',
   'Radiateur',
+  'Robibou',
+  'Scoobi',
+  'Scoobi-1',
+  'Scoobi-2',
+  'Souris Parapluis',
 ] as const;
 
 export type SkinId = (typeof SKINS)[number];
 
+/** Skin de repli — utilisé partout où un défaut concret est nécessaire (nouvel invité, morceau
+ * sans propriétaire, image cassée) plutôt qu'un nom codé en dur (`'Banane'`) qui devenait un skin
+ * invalide/404 à chaque changement du contenu réel d'`assets/Profil/` (retour utilisateur). Toujours
+ * le premier de `SKINS`, donc toujours valide par construction même si la palette change. */
+export const DEFAULT_SKIN: SkinId = SKINS[0];
+
 export const SKIN_IMAGE_MAP: Record<string, string> = {
-  Banane: '/assets/Profil/Banane.png',
-  BmxPor: '/assets/Profil/BmxPor.png',
-  Calamard: '/assets/Profil/Calamard.png',
-  Champi: '/assets/Profil/Champi.png',
-  KK: '/assets/Profil/KK.png',
+  'Baamix LSD': '/assets/Profil/Baamix LSD.png',
+  'Banane Épic': '/assets/Profil/Banane Épic.png',
+  Calamoche: '/assets/Profil/Calamoche.png',
+  'Mouche Moche': '/assets/Profil/Mouche Moche.png',
+  'Pieuvre Défoncée': '/assets/Profil/Pieuvre Défoncée.png',
   Radiateur: '/assets/Profil/Radiateur.png',
+  Robibou: '/assets/Profil/Robibou.png',
+  Scoobi: '/assets/Profil/Scoobi.png',
+  'Scoobi-1': '/assets/Profil/Scoobi-1.png',
+  'Scoobi-2': '/assets/Profil/Scoobi-2.png',
+  'Souris Parapluis': '/assets/Profil/Souris Parapluis.png',
 };
 
 /** Palette d'avatars — exportée pour compatibilité avec l'existant (`ProfilePage`, `AccountsService`...) */
 export const AVATAR_PALETTE: readonly string[] = SKINS as unknown as readonly string[];
 
+/** Un skin n'est valide que s'il appartient à `SKINS` — auparavant, seuls `..`/`<`/`>` et la
+ * longueur étaient rejetés, donc N'IMPORTE QUELLE chaîne (y compris le nom d'un fichier déjà
+ * supprimé d'`assets/Profil/`) pouvait être persistée comme choix de skin (retour utilisateur :
+ * 404 sur l'avatar d'un joueur/bot une fois ce fichier disparu). */
 export function isValidSkin(skin: string): boolean {
   if (!skin || typeof skin !== 'string') return false;
   if (skin.length > 200) return false;
   if (skin.includes('..') || skin.includes('<') || skin.includes('>')) return false;
-  return true;
+  return (SKINS as readonly string[]).includes(skin);
 }
 
 export function isValidAvatarColor(color: string): boolean {

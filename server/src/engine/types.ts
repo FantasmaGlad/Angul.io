@@ -15,6 +15,13 @@ export interface Entity {
   ownerId?: PlayerId;
   /** Sac libre pour l'état propre à un mod (ex: timer de cooldown de fusion, cf. mods/vanilla). */
   data: Record<string, unknown>;
+  /** Position juste AVANT l'intégration du mouvement de ce tick (voir `Room.tick`) — sert
+   * uniquement au test de collision balayé (`World.findOverlappingPairs`, correctif anti-tunneling)
+   * pour détecter qu'un morceau petit et rapide a traversé un autre morceau entre deux ticks sans
+   * jamais se retrouver en recouvrement à la position finale échantillonnée. `undefined` avant le
+   * tout premier tick d'une entité tout juste créée (rien à balayer, le test balayé se replie alors
+   * silencieusement sur le test ponctuel existant). */
+  previousPosition?: Vector2;
 }
 
 export interface PlayerState {

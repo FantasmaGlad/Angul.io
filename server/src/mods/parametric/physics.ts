@@ -31,6 +31,13 @@ export function accelerationForMass(mass: number, config: ParametricModConfig): 
   return sharedAccelerationForMass(mass, toMovementConfig(config));
 }
 
+/** Repli si `config.player.splitEnabled` est absent — le split reste activé par défaut (Vanilla ne
+ * le renseigne pas) ; seul Hardcore le passe explicitement à `false` (demande utilisateur : ne
+ * garder que le Dash). */
+export function splitEnabled(config: ParametricModConfig): boolean {
+  return config.player.splitEnabled ?? true;
+}
+
 /** Repli si `config.eating.eatOverlapFraction` est absent — 0.7 (70%, arrondi de 2/3) : valeur
  * d'origine du seuil, reprise telle quelle (voir historique de `handleEatAttempt`,
  * mods/parametric/index.ts et mods/hardcore/index.ts). */

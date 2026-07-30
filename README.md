@@ -252,6 +252,7 @@ fichiers en démarrant le serveur en local avant de déployer.
 | `player` | `startMass` | number | Masse au spawn/respawn (M0) |
 | | `maxSplits` | number | Nombre maximal de morceaux simultanés par joueur |
 | | `minSplitMass` | number | Masse minimale requise pour avoir le droit de split |
+| | `splitEnabled?` | boolean | `false` désactive entièrement le split pour ce mode (ex. Hardcore : Dash uniquement) — défaut activé |
 | `physics` | `v0` | number | Vitesse nominale (px/s) à la masse M0 |
 | | `speedMultiplier` | number | Multiplicateur de vitesse global du mode |
 | | `speedMassExponent` | number | Exposant d'atténuation de la vitesse avec la masse |
@@ -282,12 +283,15 @@ fichiers en démarrant le serveur en local avant de déployer.
 | `areaConstant` | — | number | Constante masse→aire (Rayon = √(areaConstant·masse/π)) |
 | `bots?` | `enabled` | boolean | Active les bots normaux ET les Challengers pour ce mode |
 | | `targetRatio?` | number | Absent = ratio fluctuant automatique (10-20%) piloté par `BotManager` |
-| | `ambientTargetCount?` | number | Bots NORMAUX maintenus en mode ambiance à 0 joueur humain (défaut 6) |
+| | `ambientTargetCount?` | number | Bots NORMAUX maintenus en mode ambiance à 0 joueur humain (défaut 6) — dès qu'un humain est connecté, seuls les Challengers ci-dessous peuplent (les bots normaux tombent à 0) |
+| | `maxTotal?` | number | Plafond dur du nombre de bots actifs simultanément, Challengers ET normaux confondus — absent = aucun plafond dédié (seule la capacité du salon borne) |
 | | `updateFrequencyHz` | number | Cadence de décision de l'IA des bots |
-| | `proportions` | `{fuis, neutre, agressif, fou}` | Répartition des profils de bot normaux (poids relatifs) |
+| | `proportions` | `{fuis, neutre, agressif, fou}` | Répartition des profils de bot normaux (poids relatifs), utilisés uniquement à 0 joueur humain |
 | | `challengers?` | `enabled` | boolean | `false` désactive les Challengers spécifiquement (indépendant du `enabled` ci-dessus) — défaut activé |
 | | | `baselineCount` | number | Challengers maintenus EN PERMANENCE, même à 0 joueur humain |
-| | | `withHumanCount` | number | Total de Challengers dès qu'au moins un humain est connecté (>= `baselineCount`) |
+| | | `maxWithHumans` | number | Population de Challengers dès qu'UN SEUL humain vient de se connecter (point de départ de la décroissance ci-dessous) |
+| | | `minWithHumans` | number | Plancher vers lequel `maxWithHumans` décroît linéairement à mesure que le nombre d'humains augmente (atteint à `rampHumans` humains) |
+| | | `rampHumans` | number | Nombre d'humains à partir duquel la décroissance linéaire atteint `minWithHumans` |
 | | | `massMultipliers` | number[] | Multiplicateur de masse de spawn par rang (index 0 = rang 1, le plus fort) — un Challenger mangé réapparaît toujours au DERNIER palier actif (le plus faible), jamais à son rang d'origine, voir `BotManager.respawnChallengerAtWeakestTier` |
 | | `idleDespawn?` | `enabled` | boolean | Despawn de TOUS les bots (normaux + Challengers) si 0 humain depuis `afterMinutes` — défaut désactivé |
 | | | `afterMinutes` | number | Minutes consécutives sans humain avant despawn ; repeuplement automatique dès le retour d'un humain |

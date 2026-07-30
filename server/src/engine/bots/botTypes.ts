@@ -7,15 +7,18 @@ export type BotProfileKind = 'fuis' | 'neutre' | 'agressif' | 'fou' | 'challenge
  * toujours présent ici une fois `DEFAULT_CHALLENGER_CONFIG` fusionné (voir `botManager.ts`). */
 export type ChallengerConfig = NonNullable<BotConfig['challengers']>;
 
-/** Repli si `config.bots.challengers` est absent du JSON — reprend le comportement d'origine
- * (10 Challengers dès qu'un humain est connecté, dégradé linéaire 50x→5x) SAUF la permanence à 0
- * humain (demande utilisateur : `baselineCount` Challengers désormais actifs en continu, au lieu
- * de 0 auparavant — voir `BotManager.adjustPopulation`). */
+/** Repli si `config.bots.challengers` est absent du JSON — pyramide 6 à 15 Challengers selon le
+ * nombre de joueurs humains connectés (demande utilisateur, §15 : "entre 6 et 15 bots... plus il y
+ * a de joueurs humains, plus le nombre de robots diminue"), SAUF la permanence à 0 humain
+ * (`baselineCount` Challengers actifs en continu même sans aucun humain — voir
+ * `BotManager.adjustPopulation`). */
 export const DEFAULT_CHALLENGER_CONFIG: ChallengerConfig = {
   enabled: true,
   baselineCount: 6,
-  withHumanCount: 10,
-  massMultipliers: [50, 40, 30, 25, 20, 10, 8, 7, 5, 3],
+  maxWithHumans: 15,
+  minWithHumans: 6,
+  rampHumans: 5,
+  massMultipliers: [50, 40, 30, 25, 20, 15, 12, 10, 8, 7, 6, 5, 4, 3, 2],
 };
 
 export interface BotProportions {
@@ -85,10 +88,26 @@ export function generateBotNickname(
   return BOT_IDENTITIES[poolStart + startOffset]?.name ?? `${profile}_${index}`;
 }
 
+/** Population de Challengers dès QU'AU MOINS un joueur humain est connecté (`humanCount >= 1`) —
+ * décroissance LINÉAIRE de `maxWithHumans` (à `humanCount === 1`) jusqu'à `minWithHumans` (atteint
+ * et maintenu à partir de `humanCount === rampHumans`), demande utilisateur §15 : "entre 6 et 15
+ * bots... plus il y a de joueurs humains, plus le nombre de robots diminue". Remplace l'ancien
+ * `withHumanCount` fixe (identique quel que soit le nombre d'humains). `rampHumans <= 1` (config
+ * mal formée) retombe immédiatement sur `minWithHumans`, aucune division par zéro possible. */
+export function rampedChallengerTarget(
+  humanCount: number,
+  config: ChallengerConfig = DEFAULT_CHALLENGER_CONFIG,
+): number {
+  const { minWithHumans, maxWithHumans, rampHumans } = config;
+  if (rampHumans <= 1) return minWithHumans;
+  const progress = Math.min(1, Math.max(0, (humanCount - 1) / (rampHumans - 1)));
+  return Math.round(maxWithHumans - (maxWithHumans - minWithHumans) * progress);
+}
+
 /** Multiplicateur de masse de spawn pour un Challenger de rang `rank` (1 = le plus fort), lu dans
  * `config.massMultipliers` (index 0 = rang 1) — voir `BotConfig['challengers']`, config.ts. Un
  * rang au-delà de la longueur du tableau retombe sur la DERNIÈRE valeur (le palier le plus
- * faible configuré) plutôt que de planter : filet de sécurité si `withHumanCount` dépasse la
+ * faible configuré) plutôt que de planter : filet de sécurité si `maxWithHumans` dépasse la
  * longueur de `massMultipliers` dans une config JSON mal formée. */
 export function challengerMassMultiplierForRank(
   rank: number,

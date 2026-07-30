@@ -91,6 +91,14 @@ export class SpatialHash {
     return this.queryRadius(position, this.cellSize);
   }
 
+  /** Comme `queryNearby`, mais avec le rayon de recherche élargi de `extraRadius` (la distance
+   * parcourue par l'appelant CE tick, voir `World.findTunnelingPairs`, correctif "tunneling") —
+   * permet à une entité qui a beaucoup bougé de retrouver un candidat qu'elle aurait pu traverser
+   * sans que sa seule position de FIN de tick tombe dans le rayon fixe de `queryNearby`. */
+  queryNearbySwept(position: Vector2, extraRadius: number): EntityId[] {
+    return this.queryRadius(position, this.cellSize + Math.max(0, extraRadius));
+  }
+
   /** Identifiants des entités DE LA GRILLE (jamais les grandes, voir le commentaire de la
    * classe) dans un rayon donné (en pixels) autour de `position`. */
   queryRadius(position: Vector2, radius: number): EntityId[] {
