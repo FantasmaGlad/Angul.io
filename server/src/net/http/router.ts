@@ -20,6 +20,7 @@ import {
   handleAdminTransfer,
 } from './routes/adminRooms.js';
 import { handleAdminHealth } from './routes/health.js';
+import { handleGetAvatars } from './routes/avatars.js';
 import {
   handleGetProfile,
   handleLogout,
@@ -74,6 +75,11 @@ export async function handleHttpRequest(
 
   if (url.pathname === '/api/leaderboard' && req.method === 'GET') {
     await handleGetLeaderboard(accounts, url, res);
+    return;
+  }
+
+  if (url.pathname === '/api/avatars' && req.method === 'GET') {
+    await handleGetAvatars(staticDir ?? '', res);
     return;
   }
 

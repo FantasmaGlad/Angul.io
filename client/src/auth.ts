@@ -1,8 +1,37 @@
 /** Client de l'API de comptes joueurs (Lot 3.2-3.6) — servie par le même process que le jeu
  * et le lobby (net/server.ts), pas de configuration d'origine à faire. */
+import { SKIN_IMAGE_MAP, SKINS } from '@angulio/shared';
+
 export interface AuthResult {
   token: string;
   pseudo: string;
+}
+
+export interface AvatarItem {
+  id: string;
+  name: string;
+  url: string;
+}
+
+export async function fetchAvatars(): Promise<AvatarItem[]> {
+  try {
+    const res = await fetch('/api/avatars');
+    if (res.ok) {
+      const data = (await res.json()) as { avatars?: AvatarItem[] };
+      if (Array.isArray(data.avatars) && data.avatars.length > 0) {
+        for (const item of data.avatars) {
+          SKIN_IMAGE_MAP[item.id] = item.url;
+        }
+        return data.avatars;
+      }
+    }
+  } catch {}
+
+  return SKINS.map((skin) => ({
+    id: skin,
+    name: skin,
+    url: SKIN_IMAGE_MAP[skin] ?? `/assets/Profil/${skin}.png`,
+  }));
 }
 
 export interface BestScore {

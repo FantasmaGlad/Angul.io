@@ -9,7 +9,7 @@ const LEADERBOARD_LIMIT = 50;
 function avatarUrl(avatarColor: string | undefined): string | undefined {
   if (!avatarColor) return undefined;
   return (
-    SKIN_IMAGE_MAP[avatarColor] ?? (avatarColor.startsWith('/') ? avatarColor : `/assets/${avatarColor}.png`)
+    SKIN_IMAGE_MAP[avatarColor] ?? (avatarColor.startsWith('/') ? avatarColor : `/assets/Profil/${avatarColor}.png`)
   );
 }
 

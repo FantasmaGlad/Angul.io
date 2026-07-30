@@ -13,7 +13,7 @@ interface TopNavProps {
 export default function TopNav({ accountActive, pseudo, level, avatarColor }: TopNavProps) {
   const initial = accountActive && pseudo ? pseudo.charAt(0).toUpperCase() : '?';
   const skinUrl = avatarColor
-    ? SKIN_IMAGE_MAP[avatarColor] ?? (avatarColor.startsWith('/') ? avatarColor : `/assets/${avatarColor}.png`)
+    ? SKIN_IMAGE_MAP[avatarColor] ?? (avatarColor.startsWith('/') ? avatarColor : `/assets/Profil/${avatarColor}.png`)
     : undefined;
 
   return (

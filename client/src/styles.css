@@ -1290,6 +1290,12 @@ select {
   scrollbar-width: none;
   scroll-behavior: smooth;
   width: 100%;
+  user-select: none;
+  touch-action: pan-x;
+}
+.avatar-swiper-track:focus-visible {
+  outline: 2px solid var(--accent);
+  border-radius: 12px;
 }
 .avatar-swiper-track::-webkit-scrollbar {
   display: none;
@@ -1298,7 +1304,7 @@ select {
 .avatar-swiper-card {
   min-width: 125px;
   flex-shrink: 0;
-  scroll-snap-align: start;
+  scroll-snap-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1309,6 +1315,7 @@ select {
   padding: 14px 10px;
   cursor: pointer;
   transition: all 0.2s ease;
+  user-select: none;
 }
 .avatar-swiper-card:hover {
   transform: translateY(-4px);

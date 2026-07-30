@@ -6,7 +6,7 @@ const skinImageCache = new Map<string, HTMLImageElement>();
 export function getSkinImage(skinId: string): HTMLImageElement | null {
   const url =
     SKIN_IMAGE_MAP[skinId] ??
-    (skinId.startsWith('/') ? skinId : `/assets/${skinId}.png`);
+    (skinId.startsWith('/') ? skinId : `/assets/Profil/${skinId}.png`);
   let img = skinImageCache.get(url);
   if (!img && typeof Image !== 'undefined') {
     img = new Image();

@@ -20,6 +20,7 @@ export default defineConfig({
       // semblait fonctionner (200 OK) mais ne chargeait jamais le bon contenu.
       '/assets/Logos': 'http://localhost:8080',
       '/assets/Sons': 'http://localhost:8080',
+      '/assets/Profil': 'http://localhost:8080',
       '/': {
         target: 'ws://localhost:8080',
         ws: true,

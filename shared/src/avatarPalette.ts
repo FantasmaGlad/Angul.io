@@ -1,5 +1,5 @@
 /** Skins d'avatar choisissables et utilisables en jeu pour les joueurs et les bots.
- * Les fichiers PNG correspondants sont hébergés sous `/assets/`. */
+ * Les fichiers PNG correspondants sont hébergés sous `/assets/Profil/`. */
 export const SKINS = [
   'Banane',
   'BmxPor',
@@ -12,19 +12,22 @@ export const SKINS = [
 export type SkinId = (typeof SKINS)[number];
 
 export const SKIN_IMAGE_MAP: Record<string, string> = {
-  Banane: '/assets/Banane.png',
-  BmxPor: '/assets/BmxPor.png',
-  Calamard: '/assets/Calamard.png',
-  Champi: '/assets/Champi.png',
-  KK: '/assets/KK.png',
-  Radiateur: '/assets/Radiateur.png',
+  Banane: '/assets/Profil/Banane.png',
+  BmxPor: '/assets/Profil/BmxPor.png',
+  Calamard: '/assets/Profil/Calamard.png',
+  Champi: '/assets/Profil/Champi.png',
+  KK: '/assets/Profil/KK.png',
+  Radiateur: '/assets/Profil/Radiateur.png',
 };
 
 /** Palette d'avatars — exportée pour compatibilité avec l'existant (`ProfilePage`, `AccountsService`...) */
 export const AVATAR_PALETTE: readonly string[] = SKINS as unknown as readonly string[];
 
 export function isValidSkin(skin: string): boolean {
-  return (SKINS as readonly string[]).includes(skin) || Boolean(SKIN_IMAGE_MAP[skin]);
+  if (!skin || typeof skin !== 'string') return false;
+  if (skin.length > 200) return false;
+  if (skin.includes('..') || skin.includes('<') || skin.includes('>')) return false;
+  return true;
 }
 
 export function isValidAvatarColor(color: string): boolean {

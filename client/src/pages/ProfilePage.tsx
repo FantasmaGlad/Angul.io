@@ -6,10 +6,12 @@ import {
 } from '@angulio/shared';
 import { useEffect, useRef, useState } from 'react';
 import {
+  fetchAvatars,
   fetchProfile,
   updateAvatarColor,
   updateDeathScreen,
   type AccountProfile,
+  type AvatarItem,
 } from '../auth.js';
 import { modeMeta } from '../modes.js';
 import { navigate } from '../router.js';
@@ -38,15 +40,70 @@ interface AvatarSwiperProps {
   activeSkin: string;
   onPickColor: (skin: string) => void;
   disabled: boolean;
+  avatars: AvatarItem[];
 }
 
-function AvatarSwiper({ activeSkin, onPickColor, disabled }: AvatarSwiperProps) {
+function AvatarSwiper({ activeSkin, onPickColor, disabled, avatars }: AvatarSwiperProps) {
   const trackRef = useRef<HTMLDivElement>(null);
+  const cardRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const isDraggingRef = useRef(false);
+  const startXRef = useRef(0);
+  const scrollLeftRef = useRef(0);
+
+  const list: AvatarItem[] =
+    avatars.length > 0
+      ? avatars
+      : SKINS.map((skin) => ({
+          id: skin,
+          name: skin,
+          url: SKIN_IMAGE_MAP[skin] ?? `/assets/Profil/${skin}.png`,
+        }));
 
   const scroll = (direction: 'left' | 'right') => {
     if (!trackRef.current) return;
     const amount = direction === 'left' ? -280 : 280;
     trackRef.current.scrollBy({ left: amount, behavior: 'smooth' });
+  };
+
+  // Scroll active skin into view on mount or when activeSkin changes
+  useEffect(() => {
+    const cardEl = cardRefs.current.get(activeSkin);
+    if (cardEl && trackRef.current) {
+      cardEl.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+  }, [activeSkin, avatars]);
+
+  // Mouse Drag handlers
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!trackRef.current) return;
+    isDraggingRef.current = true;
+    startXRef.current = e.pageX - trackRef.current.offsetLeft;
+    scrollLeftRef.current = trackRef.current.scrollLeft;
+    trackRef.current.style.cursor = 'grabbing';
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isDraggingRef.current || !trackRef.current) return;
+    e.preventDefault();
+    const x = e.pageX - trackRef.current.offsetLeft;
+    const walk = (x - startXRef.current) * 1.5;
+    trackRef.current.scrollLeft = scrollLeftRef.current - walk;
+  };
+
+  const handleMouseUpOrLeave = () => {
+    isDraggingRef.current = false;
+    if (trackRef.current) {
+      trackRef.current.style.cursor = 'grab';
+    }
+  };
+
+  // Keyboard navigation
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'ArrowLeft') {
+      scroll('left');
+    } else if (e.key === 'ArrowRight') {
+      scroll('right');
+    }
   };
 
   return (
@@ -60,29 +117,55 @@ function AvatarSwiper({ activeSkin, onPickColor, disabled }: AvatarSwiperProps) 
         <span className="material-symbols-outlined">chevron_left</span>
       </button>
 
-      <div className="avatar-swiper-track" ref={trackRef}>
-        {SKINS.map((skin) => (
-          <button
-            key={skin}
-            type="button"
-            className={`avatar-swiper-card${activeSkin === skin ? ' selected' : ''}`}
-            disabled={disabled}
-            aria-label={`Choisir le skin ${skin}`}
-            onClick={() => onPickColor(skin)}
-          >
-            <img
-              src={SKIN_IMAGE_MAP[skin]}
-              alt={skin}
-              style={{ width: 68, height: 68, objectFit: 'contain' }}
-            />
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{skin}</span>
-            {activeSkin === skin && (
-              <span className="account-badge-pill premium" style={{ fontSize: 9, padding: '2px 6px' }}>
-                Actif
-              </span>
-            )}
-          </button>
-        ))}
+      <div
+        className="avatar-swiper-track"
+        ref={trackRef}
+        tabIndex={0}
+        style={{ cursor: 'grab' }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUpOrLeave}
+        onMouseLeave={handleMouseUpOrLeave}
+        onKeyDown={handleKeyDown}
+      >
+        {list.map((item) => {
+          const isSelected = activeSkin === item.id || activeSkin === item.url;
+          return (
+            <button
+              key={item.id}
+              ref={(el) => {
+                if (el) cardRefs.current.set(item.id, el);
+                else cardRefs.current.delete(item.id);
+              }}
+              type="button"
+              className={`avatar-swiper-card${isSelected ? ' selected' : ''}`}
+              disabled={disabled}
+              aria-label={`Choisir le skin ${item.name}`}
+              onClick={() => {
+                onPickColor(item.id);
+                const el = cardRefs.current.get(item.id);
+                if (el) {
+                  el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                }
+              }}
+            >
+              <img
+                src={item.url}
+                alt={item.name}
+                style={{ width: 68, height: 68, objectFit: 'contain' }}
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src = '/assets/Profil/Banane.png';
+                }}
+              />
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{item.name}</span>
+              {isSelected && (
+                <span className="account-badge-pill premium" style={{ fontSize: 9, padding: '2px 6px' }}>
+                  Actif
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       <button
@@ -99,6 +182,7 @@ function AvatarSwiper({ activeSkin, onPickColor, disabled }: AvatarSwiperProps) 
 
 export default function ProfilePage({ authToken, onAvatarColorChange, currentSkin }: ProfilePageProps) {
   const [profile, setProfile] = useState<AccountProfile | null>(null);
+  const [avatars, setAvatars] = useState<AvatarItem[]>([]);
   const [error, setError] = useState('');
   const [savingColor, setSavingColor] = useState<string | null>(null);
 
@@ -107,6 +191,17 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
   const [deathScreenError, setDeathScreenError] = useState('');
   const [savingDeathScreen, setSavingDeathScreen] = useState(false);
   const [deathScreenSaved, setDeathScreenSaved] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const items = await fetchAvatars();
+      if (!cancelled) setAvatars(items);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!authToken) {
@@ -203,11 +298,11 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
           </section>
 
           <section className="lobby-section">
-            <span className="section-title">Choix du Skin d'Avatar (Carrousel)</span>
             <AvatarSwiper
               activeSkin={activeSkin}
               onPickColor={handlePickColor}
               disabled={savingColor !== null}
+              avatars={avatars}
             />
           </section>
         </div>
@@ -250,6 +345,7 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
                   activeSkin={activeSkin}
                   onPickColor={handlePickColor}
                   disabled={savingColor !== null}
+                  avatars={avatars}
                 />
               </section>
 

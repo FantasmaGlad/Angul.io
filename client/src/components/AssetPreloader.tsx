@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 
 const ASSETS_TO_PRELOAD = [
-  '/assets/Banane.png',
-  '/assets/BmxPor.png',
-  '/assets/Calamard.png',
-  '/assets/Champi.png',
-  '/assets/KK.png',
-  '/assets/Radiateur.png',
+  '/assets/Profil/Banane.png',
+  '/assets/Profil/BmxPor.png',
+  '/assets/Profil/Calamard.png',
+  '/assets/Profil/Champi.png',
+  '/assets/Profil/KK.png',
+  '/assets/Profil/Radiateur.png',
   '/assets/Sons/Musiques/Hardcore.m4a',
   '/assets/Sons/Musiques/vanilla.m4a',
   '/assets/Sons/Musiques/lobby.mp3',
