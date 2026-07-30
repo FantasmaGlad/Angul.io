@@ -14,6 +14,7 @@ const MOVEMENT: MovementConfig = {
   accelerationBase: 1e9,
   accelerationMassExponent: 0,
   startMass: 50,
+  mergeOverlapMinFraction: 0.3,
 };
 
 function ownSnapshot(id: string, x: number, y: number, mass = 50): EntitySnapshot {
@@ -220,6 +221,7 @@ describe('LocalPrediction — réconciliation par rejeu', () => {
       accelerationBase: 4500,
       accelerationMassExponent: 0,
       startMass: 50,
+  mergeOverlapMinFraction: 0.3,
     };
     const SERVER_TICK_RATE_HZ = 30;
     const FAR_TARGET = { x: 1000, y: 0 };
@@ -321,6 +323,7 @@ const REWIND_MOVEMENT: MovementConfig = {
   accelerationBase: 2250,
   accelerationMassExponent: 0,
   startMass: 50,
+  mergeOverlapMinFraction: 0.3,
 };
 const REWIND_STEP_MS = 1000 / 240;
 const REWIND_FAR_TARGET = { x: 1000, y: 0 };

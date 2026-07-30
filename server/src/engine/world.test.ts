@@ -72,4 +72,48 @@ describe('World — findOverlappingPairs', () => {
     world.rebuildSpatialHash();
     expect(world.findOverlappingPairs()).toHaveLength(0);
   });
+
+  describe('grandes entités (Blobs Challenger et assimilés, voir spatialHash.ts)', () => {
+    // Régression : une grande entité (jamais insérée dans la grille, voir SpatialHash) dont le
+    // rayon dépasse largement le rayon de recherche fixe (`cellSize`) de `queryNearby` doit quand
+    // même être appariée avec une petite entité en bordure de son PROPRE grand rayon — bug
+    // constaté et corrigé lors du calibrage initial de ce correctif (une version intermédiaire
+    // manquait ce chevauchement, la requête de la petite entité découvrant bien la grande, mais
+    // l'ordre `entity.id < otherId` désignait alors la grande comme "responsable" de la paire —
+    // dont la propre requête, à rayon fixe, ne pouvait pas se voir aussi loin).
+    it('détecte le chevauchement entre une grande entité et une petite entité en bordure de son rayon', () => {
+      const world = new World({ mapSize: 20000 });
+      const giant = world.spawnParticle({ x: 10000, y: 10000 }, 2500); // rayon ≈ 222.7 (> 50*1.5)
+      const small = world.spawnParticle(
+        { x: 10000 + giant.radius - 5, y: 10000 },
+        10,
+      ); // à 5px à l'intérieur du bord du géant
+      world.rebuildSpatialHash();
+      const pairs = world.findOverlappingPairs();
+      expect(pairs).toHaveLength(1);
+      const pair = pairs[0];
+      if (!pair) throw new Error('expected one overlapping pair');
+      expect(new Set([pair[0].id, pair[1].id])).toEqual(new Set([giant.id, small.id]));
+    });
+
+    it("ne détecte rien pour une petite entité hors de portée d'une grande", () => {
+      const world = new World({ mapSize: 20000 });
+      const giant = world.spawnParticle({ x: 10000, y: 10000 }, 2500);
+      world.spawnParticle({ x: 10000 + giant.radius + 100, y: 10000 }, 10); // 100px au-delà du bord
+      world.rebuildSpatialHash();
+      expect(world.findOverlappingPairs()).toHaveLength(0);
+    });
+
+    it('détecte le chevauchement entre deux grandes entités', () => {
+      const world = new World({ mapSize: 20000 });
+      const giantA = world.spawnParticle({ x: 10000, y: 10000 }, 2500);
+      const giantB = world.spawnParticle({ x: 10000 + giantA.radius, y: 10000 }, 2500); // centres distants du rayon d'un seul -> chevauchement franc
+      world.rebuildSpatialHash();
+      const pairs = world.findOverlappingPairs();
+      expect(pairs).toHaveLength(1);
+      const pair = pairs[0];
+      if (!pair) throw new Error('expected one overlapping pair');
+      expect(new Set([pair[0].id, pair[1].id])).toEqual(new Set([giantA.id, giantB.id]));
+    });
+  });
 });

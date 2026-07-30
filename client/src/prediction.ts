@@ -5,6 +5,8 @@ import {
   length,
   massToRadius,
   moveToward,
+  PI,
+  restingDistanceForOverlap,
   scale,
   sub,
   velocityForMass,
@@ -253,11 +255,19 @@ export class LocalPrediction {
       const predicted = this.pieces.get(entity.i);
       if (!predicted) {
         // Morceau inconnu (premier `state` de la vie, ou apparu ce tick — ex. juste après un
-        // split) : pas d'historique de CE morceau à rejouer, on part directement de la position
-        // serveur (il rejoindra le rejeu normalement dès le `state` suivant).
+        // split OU une fusion, voir World.mergeEntities qui fait toujours naître un NOUVEL id) :
+        // pas d'historique de CE morceau à rejouer, on part directement de la position serveur
+        // (il rejoindra le rejeu normalement dès le `state` suivant). Vélocité autoritaire si
+        // connue (voir le commentaire de `authoritativeVelocities` ci-dessus) plutôt que figée à
+        // zéro : un morceau tout juste apparu peut déjà être lancé à pleine vitesse de croisière
+        // (fusion de deux morceaux déjà en mouvement, éjection de split) — le forcer à zéro
+        // faisait ensuite REPARTIR `step()` depuis l'arrêt (rampe d'accélération complète) pour
+        // un morceau qui n'a en réalité jamais ralenti, un à-coup de décélération/ré-accélération
+        // perceptible visible à chaque fusion (la caméra, qui suit la position prédite, hérite de
+        // ce "lag"). `{0,0}` reste le repli pour un morceau sans vélocité connue (ancien serveur).
         this.pieces.set(entity.i, {
           position: authoritative,
-          velocity: { x: 0, y: 0 },
+          velocity: authoritativeVelocities?.get(entity.i) ?? { x: 0, y: 0 },
           mass: entity.m,
           visualOffset: { x: 0, y: 0 },
         });
@@ -329,7 +339,7 @@ export class LocalPrediction {
         // Téléportation importante (mort/respawn, bord de carte) : réinitialisation visuelle directe.
       }
     }
-    this.applySelfRepulsion();
+    this.applySelfRepulsion(movement);
 
     for (const id of [...this.pieces.keys()]) {
       if (!seenIds.has(id)) this.pieces.delete(id);
@@ -337,12 +347,22 @@ export class LocalPrediction {
   }
 
   /** Répulsion entre les propres morceaux du joueur (post-split) — miroir de la même règle
-   * appliquée côté serveur (`applyRepulsion`, server/src/mods/parametric/index.ts), pour que les
-   * morceaux prédits localement ne s'inter-pénètrent jamais visuellement en attendant le prochain
-   * `state` qui appliquerait la même correction. Appelée après `step()`/`reconcile()`, jamais à
-   * l'intérieur de la boucle de sous-pas fixes de `step()` (correction géométrique instantanée,
-   * pas une intégration temporelle). */
-  private applySelfRepulsion(): void {
+   * appliquée côté serveur (`applyRepulsion`/`onCollision`, server/src/mods/parametric/index.ts),
+   * pour que les morceaux prédits localement ne s'inter-pénètrent jamais visuellement en attendant
+   * le prochain `state` qui appliquerait la même correction. Appelée après `step()`/`reconcile()`,
+   * jamais à l'intérieur de la boucle de sous-pas fixes de `step()` (correction géométrique
+   * instantanée, pas une intégration temporelle).
+   *
+   * Distance de repos = CHEVAUCHEMENT PARTIEL (`restingDistanceForOverlap`,
+   * `movement.mergeOverlapMinFraction`), jamais une séparation totale (`rA+rB`) : tant que deux
+   * morceaux d'un même joueur coexistent, le serveur les laisse au repos partiellement superposés
+   * (design voulu, pour permettre la fusion — voir `onCollision`, qui n'appelle
+   * `applyRepulsion(..., restDist)` QUE quand `tryMerge` échoue, donc à chaque tick où les deux
+   * morceaux coexistent encore). Viser à tort une séparation totale ici créait un residu constant
+   * entre la prédiction locale (qui les repoussait à chaque frame) et l'état serveur reçu (qui les
+   * laissait superposés) — perçu comme un comportement chaotique/des rebonds au lieu d'un contact
+   * stable (voir l'historique de ce fichier). */
+  private applySelfRepulsion(movement: MovementConfig): void {
     if (this.pieces.size <= 1) return;
     const pieceList = Array.from(this.pieces.values());
     for (let i = 0; i < pieceList.length; i++) {
@@ -352,7 +372,9 @@ export class LocalPrediction {
         const rA = massToRadius(a.mass);
         const rB = massToRadius(b.mass);
         const d = distance(a.position, b.position);
-        const restDistance = rA + rB;
+        const targetOverlapArea =
+          Math.min(PI * rA * rA, PI * rB * rB) * movement.mergeOverlapMinFraction;
+        const restDistance = restingDistanceForOverlap(rA, rB, targetOverlapArea);
         const penetration = restDistance - d;
         if (penetration > 0) {
           const dir = d > 0 ? scale(sub(a.position, b.position), 1 / d) : { x: 1, y: 0 };
@@ -401,7 +423,7 @@ export class LocalPrediction {
     // Collisions/répulsion entre les propres morceaux du joueur (voir son commentaire) — une
     // correction géométrique de position, pas une intégration temporelle : appliquée une seule
     // fois par frame de rendu, après tous les sous-pas fixes, jamais à l'intérieur de la boucle.
-    this.applySelfRepulsion();
+    this.applySelfRepulsion(movement);
     this.pruneHistory(atMs);
   }
 

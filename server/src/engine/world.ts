@@ -95,9 +95,24 @@ export class World {
   /** Requête spatiale publique (broad-phase) pour un rayon arbitraire autour d'un point — utilisée
    * par les consommateurs externes au moteur (ex. l'IA des bots, `engine/bots/botEvaluator.ts`) qui
    * n'ont pas de raison d'accéder à `spatialHash` lui-même (grille interne dimensionnée pour la
-   * narrow-phase des collisions, voir `rebuildSpatialHash`/`findOverlappingPairs`). */
+   * narrow-phase des collisions, voir `rebuildSpatialHash`/`findOverlappingPairs`). Combine la
+   * grille (`SpatialHash.queryRadius`, jamais les grandes entités — voir son commentaire) et les
+   * grandes entités (Blobs Challenger...) réellement à portée : un appelant générique comme l'IA
+   * des bots doit toujours voir une grande entité proche, quelle que soit sa taille, exactement
+   * comme avant l'introduction de `SpatialHash.getLargeEntities` (voir audit_chaleur.md). */
   queryNearby(position: Vector2, radius: number): EntityId[] {
-    return this.spatialHash.queryRadius(position, radius);
+    const gridIds = this.spatialHash.queryRadius(position, radius);
+    const largeEntities = this.spatialHash.getLargeEntities();
+    if (largeEntities.length === 0) return gridIds;
+
+    const result = gridIds.slice();
+    for (const entity of largeEntities) {
+      const dx = entity.position.x - position.x;
+      const dy = entity.position.y - position.y;
+      const reach = radius + entity.radius;
+      if (dx * dx + dy * dy <= reach * reach) result.push(entity.id);
+    }
+    return result;
   }
 
   /** Fusionne deux entités : masse additive, position barycentrique (metriques.md §10). */
@@ -178,28 +193,71 @@ export class World {
     for (const entity of this.entities.values()) this.spatialHash.insert(entity);
   }
 
-  /** Paires d'entités dont les cercles se chevauchent réellement (narrow-phase après le broad-phase). */
+  /** `true` si les cercles de `a` et `b` se chevauchent réellement — même convention de marge
+   * (1.05x) qu'avant : une pastille de nourriture est considérée "mangée" un peu avant un contact
+   * cercle-à-cercle strict côté morceau (retour utilisateur : le contact strict ratait des
+   * pastilles pourtant visuellement recouvertes). */
+  private isOverlapping(a: Entity, b: Entity): boolean {
+    const radA = a.kind === 'piece' && b.kind === 'particle' ? a.radius * 1.05 : a.radius;
+    const radB = b.kind === 'piece' && a.kind === 'particle' ? b.radius * 1.05 : b.radius;
+    return distance(a.position, b.position) < radA + radB;
+  }
+
+  /** Paires d'entités dont les cercles se chevauchent réellement (narrow-phase après le broad-phase).
+   *
+   * Fonction la plus chaude du serveur au profilage (voir audit_chaleur.md — ~20% de tout le temps
+   * CPU JS mesuré, y compris salons vides de joueurs humains, simplement peuplés de bots/nourriture
+   * ambiants). Trois catégories de paires, JAMAIS mélangées entre elles (aucun risque de double
+   * comptage, aucune paire manquée) :
+   *
+   * 1. Petites entités entre elles (grille SEULEMENT, voir `SpatialHash` — les grandes entités n'y
+   *    sont jamais insérées, donc cette boucle ne peut jamais les y trouver). Chaque paire NON
+   *    ORDONNÉE y est découverte deux fois par construction du broad-phase (une fois depuis
+   *    chaque entité, la requête spatiale de l'une retrouvant forcément l'autre) — l'ancienne
+   *    implémentation payait cette redondance avec un `Set<string>` de dédoublonnage RECRÉÉ à
+   *    chaque appel (30x/s) et une clé de paire par CONCATÉNATION DE CHAÎNE pour CHAQUE candidat
+   *    (avant même de savoir si les cercles se chevauchent réellement) — visible au profil
+   *    (`FindOrderedHashSetEntry`, `RecordWriteSaveFP`/`GrowFastSmiOrObjectElements`, la pression
+   *    GC qui va avec). `entity.id < otherId` (n'importe quel ordre total cohérent suffit, pas
+   *    besoin d'un ordre numérique) élimine cette redondance À LA SOURCE : ni Set, ni chaîne, et
+   *    la moitié des candidats est écartée AVANT même le calcul de `distance()`, pas après.
+   *
+   * 2. Chaque grande entité (Blob Challenger...) contre les petites entités réellement à sa
+   *    portée — recherche à SA PROPRE taille (+ la plus grande taille possible d'une petite
+   *    entité, `maxGridEntityRadius()`), jamais le rayon fixe de `queryNearby` : une grande
+   *    entité qui chercherait ses voisines avec un petit rayon fixe manquerait des petites
+   *    entités en bordure de son propre (grand) rayon — bug constaté et corrigé lors du calibrage
+   *    initial de ce correctif (voir l'historique de ce fichier).
+   *
+   * 3. Grandes entités entre elles — leur nombre reste petit par construction (voir
+   *    `LARGE_ENTITY_RADIUS_FACTOR`, spatialHash.ts), donc un simple O(k²) reste bon marché. */
   findOverlappingPairs(): Array<[Entity, Entity]> {
     const pairs: Array<[Entity, Entity]> = [];
-    const seen = new Set<string>();
 
     for (const entity of this.entities.values()) {
       const nearbyIds = this.spatialHash.queryNearby(entity.position);
       for (const otherId of nearbyIds) {
-        if (otherId === entity.id) continue;
+        if (!(entity.id < otherId)) continue;
         const other = this.entities.get(otherId);
-        if (!other) continue;
+        if (other && this.isOverlapping(entity, other)) pairs.push([entity, other]);
+      }
+    }
 
-        const pairKey =
-          entity.id < other.id ? `${entity.id}|${other.id}` : `${other.id}|${entity.id}`;
-        if (seen.has(pairKey)) continue;
-        seen.add(pairKey);
+    const largeEntities = this.spatialHash.getLargeEntities();
+    const maxSmallReach = this.spatialHash.maxGridEntityRadius();
+    for (const large of largeEntities) {
+      const nearbyIds = this.spatialHash.queryRadius(large.position, large.radius + maxSmallReach);
+      for (const otherId of nearbyIds) {
+        const other = this.entities.get(otherId);
+        if (other && this.isOverlapping(large, other)) pairs.push([large, other]);
+      }
+    }
 
-        const radEntity = entity.kind === 'piece' && other.kind === 'particle' ? entity.radius * 1.05 : entity.radius;
-        const radOther = other.kind === 'piece' && entity.kind === 'particle' ? other.radius * 1.05 : other.radius;
-        if (distance(entity.position, other.position) < radEntity + radOther) {
-          pairs.push([entity, other]);
-        }
+    for (let i = 0; i < largeEntities.length; i++) {
+      for (let j = i + 1; j < largeEntities.length; j++) {
+        const a = largeEntities[i]!;
+        const b = largeEntities[j]!;
+        if (this.isOverlapping(a, b)) pairs.push([a, b]);
       }
     }
 

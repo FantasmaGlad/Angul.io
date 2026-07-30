@@ -9,7 +9,12 @@ import type { ParametricModConfig } from './config.js';
  * (voir `WelcomeMessage.movement`, protocol.ts) — un seul point de vérité pour ce mapping,
  * réutilisé par `connectionHandler.ts` au moment du `welcome`. */
 export function toMovementConfig(config: ParametricModConfig): MovementConfig {
-  return { ...config.physics, startMass: config.player.startMass, mapSize: config.arena.width };
+  return {
+    ...config.physics,
+    startMass: config.player.startMass,
+    mapSize: config.arena.width,
+    mergeOverlapMinFraction: config.merge.overlapMinFraction,
+  };
 }
 
 /** v(m) = MAX(Vfloor, V0·kv·(M0/m)^gamma) — feuille Excel, dictionnaire des variables. Délègue à

@@ -28,6 +28,13 @@ export interface MovementConfig {
   startMass: number;
   /** Taille de la carte en pixels monde (ex: 10000). */
   mapSize?: number;
+  /** `config.merge.overlapMinFraction` du mod actif — fraction minimale de la surface des deux
+   * morceaux qui doit se chevaucher pour fusionner (voir `tryMerge`/`onCollision`,
+   * mods/parametric/index.ts). Transmise au client uniquement pour que sa propre répulsion locale
+   * entre morceaux d'un même joueur (`applySelfRepulsion`, prediction.ts) vise la MÊME distance de
+   * repos partiellement chevauchante que le serveur, plutôt qu'une séparation totale erronée (voir
+   * `restingDistanceForOverlap`, geometry.ts). */
+  mergeOverlapMinFraction: number;
 }
 
 /** Repli utilisé uniquement quand un `ModResolver` ne fournit pas de config de mouvement (ex.
@@ -44,6 +51,7 @@ export const DEFAULT_MOVEMENT_CONFIG: MovementConfig = {
   accelerationBase: 4500,
   accelerationMassExponent: 0.7,
   startMass: 50,
+  mergeOverlapMinFraction: 0.3,
 };
 
 /** v(m) = MAX(Vfloor, V0·kv·(M0/m)^gamma) — voir metriques.md §4/server/mods/parametric/physics.ts. */

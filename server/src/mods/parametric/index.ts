@@ -8,6 +8,7 @@ import {
   length,
   moveToward,
   PI,
+  restingDistanceForOverlap,
   scale,
   sub,
   type Vector2,
@@ -146,34 +147,6 @@ const EJECT_FRICTION_PER_SEC = 4;
  * de `applyRepulsion`. */
 function fullSeparationDistance(a: Entity, b: Entity): number {
   return a.radius + b.radius;
-}
-
-/** Inverse de `circleOverlapArea` (décroissante et continue sur [|rA-rB|, rA+rB], voir
- * shared/geometry.ts) : distance entre centres pour laquelle l'aire de chevauchement vaut
- * `targetOverlapArea` — recherche dichotomique (pas de forme fermée, l'aire de lentille
- * circulaire mêle des `acos`). Bornée par construction : ne peut jamais renvoyer moins que
- * `|rA-rB|` (chevauchement maximal, le plus petit cercle entièrement inclus dans l'autre) ni
- * plus que `rA+rB` (tangence, chevauchement nul). Utilisée par `onCollision` pour que la
- * répulsion "dure" entre morceaux d'un même joueur (cooldown de fusion pas encore écoulé) ne les
- * sépare que jusqu'à CE chevauchement, plutôt que jusqu'à un contact nul — sans quoi ils ne
- * pouvaient plus jamais atteindre le chevauchement minimal exigé par `tryMerge` une fois le
- * cooldown écoulé (voir le commentaire de `tryMerge`, bug "fusion ne marche jamais"). */
-function restingDistanceForOverlap(rA: number, rB: number, targetOverlapArea: number): number {
-  let low = Math.max(0, Math.abs(rA - rB));
-  let high = rA + rB;
-  for (let i = 0; i < 30; i++) {
-    const mid = (low + high) / 2;
-    const overlapAtMid = circleOverlapArea(rA, rB, mid);
-    // `circleOverlapArea` décroît quand `mid` croît : trop de chevauchement -> il faut s'éloigner.
-    if (overlapAtMid > targetOverlapArea) low = mid;
-    else high = mid;
-  }
-  // `low` (jamais `high`, ni leur moyenne) : invariant de la boucle ci-dessus, son chevauchement
-  // est TOUJOURS >= `targetOverlapArea` — reposer pile sur la frontière (`(low+high)/2`) serait
-  // à la merci du moindre bruit flottant côté `tryMerge` (`overlap < target`), qui ne fusionnerait
-  // alors jamais une fois le cooldown écoulé (le chevauchement resterait figé à ce point de
-  // repos, rien d'autre ne le fait plus bouger une fois la pénétration résorbée).
-  return low;
 }
 
 export function applyRepulsion(

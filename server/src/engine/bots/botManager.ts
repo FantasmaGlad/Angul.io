@@ -65,6 +65,15 @@ export class BotManager {
     this.updateFluctuatingRatio(dtMs);
     this.adjustPopulation();
 
+    // `isTouchingHuman` (voir son commentaire) ne peut JAMAIS renvoyer `true` en l'absence
+    // d'humain — l'évaluer quand même coûterait une requête spatiale (`queryNearby`, allocation
+    // d'un tableau) PAR MORCEAU DE BOT, À CHAQUE TICK non dû, un coût mesuré non négligeable au
+    // profilage (voir audit_chaleur.md) sur un salon "au repos" (aucun joueur humain, seulement
+    // les bots ambiants qui peuplent en permanence les salons publics) — précisément le cas le
+    // plus fréquent en dehors des heures de forte affluence. Calculé UNE FOIS par tick (pas par
+    // bot) : `allPlayers()` alloue déjà un tableau, autant ne le payer qu'une fois.
+    const hasHuman = this.room.world.allPlayers().some((p) => !this.isBot(p.id));
+
     for (const bot of this.activeBots.values()) {
       bot.accumulatorMs += dtMs;
       const dueByAccumulator = bot.accumulatorMs >= this.updateIntervalMs;
@@ -74,9 +83,9 @@ export class BotManager {
       // échéance ambiante, poussant le joueur (répulsion, voir mods/parametric/index.ts
       // `applyRepulsion`) pendant toute la durée du contact au lieu d'un seul tick — non prédit
       // côté client (prediction.ts), donc visible comme un tremblement à chaque contact prolongé.
-      // Ne coûte rien pour les bots isolés (l'immense majorité du temps) : le hook ne s'active
-      // qu'au contact réel avec un humain, jamais entre bots (l'ambiant à 2Hz reste inchangé).
-      const dueByContact = !dueByAccumulator && this.isTouchingHuman(bot.id);
+      // Ne s'évalue (`isTouchingHuman`) que si au moins un humain est présent dans le salon (voir
+      // `hasHuman` ci-dessus) — jamais entre bots (l'ambiant à 2Hz reste inchangé).
+      const dueByContact = !dueByAccumulator && hasHuman && this.isTouchingHuman(bot.id);
       if (dueByAccumulator || dueByContact) {
         bot.accumulatorMs %= this.updateIntervalMs;
         const { input, memory } = computeBotInput(this.room.world, bot.id, bot.profile, bot.memory);
