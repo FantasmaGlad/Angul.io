@@ -2,15 +2,22 @@
 // quel par le navigateur (contrairement à src/, qui passe par tsc+esbuild), donc aucun besoin de
 // la chaîne de build du reste du client.
 //
-// Portée volontairement limitée à la "coquille" statique de l'app (menu/lobby) — jamais à l'API
-// (`/api/*`) ni au WebSocket du jeu : un salon list périmé ou une partie qui semble tourner hors
-// ligne serait pire qu'une absence de cache. Seuls les fichiers listés ci-dessous sont
-// interceptés ; tout le reste passe directement au réseau, comme sans service worker.
-const CACHE_NAME = 'angulio-shell-v1';
+// Portée volontairement limitée à des assets qui ne changent JAMAIS entre deux déploiements
+// (icônes/manifeste PWA) — jamais à l'API (`/api/*`), au WebSocket du jeu, ni à `/`/`index.html`/
+// `bundle.js` : ces trois derniers changent à CHAQUE déploiement, et une stratégie cache-first
+// (voir le handler `fetch` plus bas) les aurait servis indéfiniment périmés à tout appareil ayant
+// déjà installé le service worker — un déploiement serveur n'aurait alors plus aucun effet
+// visible côté client tant que ce service worker particulier reste installé (aucune raison pour
+// le navigateur de le ré-installer : le fichier service-worker.js lui-même ne change pas à chaque
+// déploiement). Même logique que l'exclusion de `/api`/WS ci-dessus, appliquée jusqu'au bout :
+// une coquille figée est pire qu'une absence de cache.
+//
+// `CACHE_NAME` a été incrémenté (v1 -> v2) pour cette raison précise : purger, chez tout appareil
+// ayant déjà installé l'ancien service worker, le cache `v1` qui contenait encore `/bundle.js`/
+// `index.html` (voir le handler `activate` plus bas, qui supprime tout cache dont le nom ne
+// correspond plus à `CACHE_NAME` courant). Incrémenter à nouveau si `PRECACHE_URLS` change encore.
+const CACHE_NAME = 'angulio-shell-v2';
 const PRECACHE_URLS = [
-  '/',
-  '/index.html',
-  '/bundle.js',
   '/manifest.json',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
