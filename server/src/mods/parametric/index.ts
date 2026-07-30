@@ -22,6 +22,7 @@ import { applyBorder } from './border.js';
 
 import type { ParametricModConfig } from './config.js';
 import {
+  absorptionDurationSec,
   applyPassiveDecay,
   accelerationForMass,
   eatOverlapFraction,
@@ -30,6 +31,65 @@ import {
   velocityForMass,
 } from './physics.js';
 import { pieceState } from './pieceState.js';
+
+/** Masse résiduelle (px, en unités de masse) en-dessous de laquelle une cible en cours
+ * d'absorption (voir `beginConsumption`) est retirée entièrement plutôt que de laisser traîner un
+ * reliquat quasi nul — le drain est linéaire (voir `advanceConsumptions`) mais un dernier tick
+ * peut ne pas tomber exactement sur 0 selon `dt`. */
+const ABSORPTION_REMOVE_FLOOR = 0.5;
+
+/** Amorce l'absorption d'un morceau dont le seuil de recouvrement vient d'être franchi —
+ * n'effectue AUCUN transfert de masse elle-même, seulement une marque posée sur `target` (voir
+ * `ParametricPieceState.consumedBy`), consommée ensuite tick après tick par
+ * `advanceConsumptions` (interne à `createParametricMod`, mais qui s'applique à TOUT morceau
+ * marqué quel que soit le mod appelant — voir mods/hardcore/index.ts, qui appelle cette fonction
+ * avec son propre `massGainMultiplier`). Sans effet si `target` est déjà en cours d'absorption
+ * (ne réinitialise jamais `massAtStart`/`gainMultiplier` une fois posés — l'issue est scellée). */
+export function beginConsumption(target: Entity, attackerPieceId: string, gainMultiplier = 1): void {
+  const state = pieceState(target);
+  if (state.consumedBy) return;
+  state.consumedBy = { attackerPieceId, massAtStart: target.mass, gainMultiplier };
+}
+
+/** Crédite `amount` à `attacker` (masse + XP + reset de son propre délai de grâce de decay) —
+ * factorisé (niveau module, pas seulement interne au mod paramétrique) car appelé aussi bien pour
+ * une tranche de drain (`advanceConsumptions`) que pour un transfert instantané (Blob Dieu), par
+ * Vanilla ET Hardcore. */
+export function creditAttacker(world: World, attacker: Entity, amount: number): void {
+  world.setMass(attacker, attacker.mass + amount);
+  pieceState(attacker).timeSinceLastEatenS = 0;
+  creditMassEatenXp(world, attacker.ownerId, amount, performance.now());
+}
+
+/** Clôture une absorption terminée (masse déjà entièrement créditée, via `creditAttacker`,
+ * incrémentalement pour un drain ou en un coup pour Blob Dieu) : journal, écran de mort
+ * personnalisé, retrait du monde, bonus XP fixe. `totalMassEaten` sert uniquement au journal
+ * (`player_eaten`), pas à un nouveau crédit de masse. `attacker` peut être `undefined` si le
+ * morceau qui absorbait a disparu en cours de route (fusion, mort...) — la victime disparaît
+ * quand même, simplement sans que personne n'en soit crédité. Niveau module (comme
+ * `creditAttacker`) pour être réutilisée par Hardcore sans dupliquer cette logique. */
+export function finalizeConsumedEntity(
+  world: World,
+  attacker: Entity | undefined,
+  target: Entity,
+  totalMassEaten: number,
+): void {
+  if (attacker && attacker.ownerId && target.ownerId) {
+    const attackerPlayer = world.getPlayer(attacker.ownerId);
+    const targetPlayer = world.getPlayer(target.ownerId);
+    logEvent('player_eaten', {
+      attackerId: attacker.ownerId,
+      attackerNickname: attackerPlayer?.nickname ?? attacker.ownerId,
+      victimId: target.ownerId,
+      victimNickname: targetPlayer?.nickname ?? target.ownerId,
+      mass: Math.floor(totalMassEaten),
+    });
+    // Écran de mort personnalisé ("Éliminé par : X") — voir World.recordAttacker.
+    world.recordAttacker(target.ownerId, attacker.ownerId);
+  }
+  world.removeEntity(target.id);
+  if (attacker?.ownerId) creditPlayerEatenXp(world, attacker.ownerId, performance.now());
+}
 
 const FALLBACK_DIRECTION: Vector2 = { x: 1, y: 0 };
 /** Rayon (px monde) autour de la cible du curseur en-deçà duquel `inputVectorOf` n'applique plus
@@ -66,9 +126,6 @@ const EJECT_LAUNCH_SPEED_PX_PER_S = 900;
  * ralentir jusqu'à l'arrêt plutôt que dériver indéfiniment à vitesse constante (rien d'autre ne
  * freine une particule). */
 const EJECT_FRICTION_PER_SEC = 4;
-
-/** Attire vers `piece` (jamais vers un AUTRE morceau de joueur, demande utilisateur : "pas les
-
 
 /** Repousse deux morceaux hors de leur pénétration mutuelle — correction de POSITION (résout
  * 100% du chevauchement en un seul appel, mass-weighted), commune aux deux variantes. `hard`
@@ -343,15 +400,22 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     return attacker.mass > target.mass;
   }
 
-  /** Absorption À SEUIL (avantage de masse + chevauchement suffisant, voir
-   * `config.eating.eatOverlapFraction`/`eatOverlapFraction()`, physics.ts) : un seul transfert
-   * intégral de la masse de `target` vers `attacker` dès que le seuil est franchi — pas de drain
-   * progressif tick après tick (voir mods/hardcore/index.ts pour la même mécanique, avec un
-   * multiplicateur de gain différent).
+  /** Décision d'absorption (avantage de masse + chevauchement suffisant, voir
+   * `config.eating.eatOverlapFraction`/`eatOverlapFraction()`, physics.ts) — tant que ce seuil
+   * n'est pas franchi, `target` reste librement chevauchable, sans aucun effet (demande
+   * utilisateur : "comme sur le vrai agar.io"). Une fois franchi, la masse est transférée
+   * PROGRESSIVEMENT sur `config.eating.absorptionDurationSec` (voir `beginConsumption`/
+   * `advanceConsumptions` plus bas) plutôt qu'en un seul tick — un transfert instantané faisait
+   * disparaître la cible en un temps trop court pour être perçu (~33ms à 30Hz dès que l'écart de
+   * masse est important, voir l'audit ayant motivé ce correctif), donnant l'impression d'être
+   * mangé "sans comprendre pourquoi". Exception : Blob Dieu (§4.5 cahier_des_charges_admin.md)
+   * mange toujours instantanément — outil admin, pas une mécanique de jeu régulière.
    *
-   * Retourne `true` si un transfert a eu lieu ce tick — `onCollision` s'en sert pour savoir s'il
-   * doit à la place repousser les deux morceaux (aucun avantage de masse). */
+   * Retourne `true` si une absorption a débuté ou est en cours ce tick — `onCollision` s'en sert
+   * pour savoir s'il doit à la place repousser les deux morceaux (aucun avantage de masse). */
   function handleEatAttempt(world: World, attacker: Entity, target: Entity): boolean {
+    if (pieceState(target).consumedBy) return true; // déjà engagée, voir advanceConsumptions
+
     if (!hasMassAdvantage(attacker, target)) return false;
 
     const dist = distance(attacker.position, target.position);
@@ -365,29 +429,42 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
 
     if (overlapFraction < eatOverlapFraction(config)) return false;
 
-    const massToTransfer = target.mass;
-
-    world.setMass(attacker, attacker.mass + massToTransfer);
-    const attackerState = pieceState(attacker);
-    attackerState.timeSinceLastEatenS = 0;
-    creditMassEatenXp(world, attacker.ownerId, massToTransfer, performance.now());
-
-    if (attacker.ownerId && target.ownerId) {
-      const attackerPlayer = world.getPlayer(attacker.ownerId);
-      const targetPlayer = world.getPlayer(target.ownerId);
-      logEvent('player_eaten', {
-        attackerId: attacker.ownerId,
-        attackerNickname: attackerPlayer?.nickname ?? attacker.ownerId,
-        victimId: target.ownerId,
-        victimNickname: targetPlayer?.nickname ?? target.ownerId,
-        mass: Math.floor(target.mass), // masse de la cible au dernier tick d'absorption
-      });
-      // Écran de mort personnalisé ("Éliminé par : X") — voir World.recordAttacker.
-      world.recordAttacker(target.ownerId, attacker.ownerId);
+    if (isGodPlayerId(attacker.ownerId)) {
+      const massEaten = target.mass;
+      creditAttacker(world, attacker, massEaten);
+      finalizeConsumedEntity(world, attacker, target, massEaten);
+      return true;
     }
-    world.removeEntity(target.id);
-    if (attacker.ownerId) creditPlayerEatenXp(world, attacker.ownerId, performance.now());
+
+    beginConsumption(target, attacker.id);
     return true;
+  }
+
+  /** Fait avancer chaque absorption en cours (voir `beginConsumption`) : draine une fraction
+   * CONSTANTE de `massAtStart` par seconde (indépendante de la masse restante, donc un rythme
+   * régulier plutôt qu'une décroissance exponentielle qui traînerait en fin de vie) jusqu'à
+   * extinction, puis finalise. Tourne pour tout morceau marqué quel que soit le mod qui a posé la
+   * marque : Hardcore délègue toujours son `onTick` à celui du mod paramétrique en premier (voir
+   * mods/hardcore/index.ts), donc ses propres cibles sont drainées ici aussi — un seul point
+   * d'implémentation du "temps qu'il faut pour manger quelqu'un", jamais dupliqué par mod. */
+  function advanceConsumptions(world: World, dt: number): void {
+    const duration = absorptionDurationSec(config);
+    for (const entity of world.allEntities()) {
+      if (entity.kind !== 'piece') continue;
+      const consumption = pieceState(entity).consumedBy;
+      if (!consumption) continue;
+
+      const attacker = world.getEntity(consumption.attackerPieceId);
+      const drainThisTick = Math.min(entity.mass, (consumption.massAtStart / duration) * dt);
+      if (attacker) creditAttacker(world, attacker, drainThisTick * consumption.gainMultiplier);
+
+      const remainingMass = entity.mass - drainThisTick;
+      if (remainingMass <= ABSORPTION_REMOVE_FLOOR) {
+        finalizeConsumedEntity(world, attacker, entity, consumption.massAtStart);
+      } else {
+        world.setMass(entity, remainingMass);
+      }
+    }
   }
 
   let foodSpawnCredit = 0;
@@ -460,6 +537,8 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         const decayedMass = applyPassiveDecay(entity.mass, dt, config, state.timeSinceLastEatenS);
         if (decayedMass !== entity.mass) world.setMass(entity, decayedMass);
       }
+
+      advanceConsumptions(world, dt);
 
       const allPlayers = world.allPlayers();
       const humanCount = allPlayers.filter((p) => !isBotId(p.id)).length;

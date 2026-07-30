@@ -28,7 +28,8 @@
   "eating": {
     "massAdvantage": 0.05,
     "minMassToEatFood": 2,
-    "eatOverlapFraction": 0.7
+    "eatOverlapFraction": 0.7,
+    "absorptionDurationSec": 0.3
   },
   "decay": {
     "threshold": 100,

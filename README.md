@@ -267,7 +267,8 @@ fichiers en démarrant le serveur en local avant de déployer.
 | `eating` | `massAdvantage` | number | Avantage de masse requis pour manger un autre joueur (ex. `0.05` = 5%) |
 | | `minMassToEatFood` | number | Masse minimale pour manger une particule de nourriture |
 | | `foodEfficiency?` | number | Multiplicateur de masse gagnée par la nourriture |
-| | `eatOverlapFraction?` | number | Fraction (0-1) de recouvrement au-delà de laquelle la cible est dévorée d'un coup — défaut `0.7` |
+| | `eatOverlapFraction?` | number | Fraction (0-1) de recouvrement au-delà de laquelle l'absorption se déclenche — défaut `0.7`. En-dessous, chevauchement libre, aucun effet (comme un vrai agar.io) |
+| `absorptionDurationSec?` | number | Durée (s) de l'absorption une fois le seuil franchi — la cible rétrécit PROGRESSIVEMENT sur cette durée plutôt que de disparaître en un seul tick (pour que la victime comprenne ce qui lui arrive) — défaut `0.3`. Une fois déclenchée, l'issue est scellée : la cible ne peut plus s'en sortir même si elle se dégage du chevauchement entre-temps |
 | `decay` | `threshold` | number | Masse en-dessous de laquelle le taux de perte passive change |
 | | `rateAboveThreshold`/`rateBelowThreshold` | number | Taux de perte (fraction) par intervalle, au-dessus/en-dessous du seuil |
 | | `intervalAboveThresholdSec`/`intervalBelowThresholdSec` | number | Période (s) de chaque taux |

@@ -3,10 +3,10 @@ import type { GameMod } from '../../engine/mod.js';
 import { isGodPlayerId } from '../../engine/godmode.js';
 import type { Entity, PlayerId, PlayerInput } from '../../engine/types.js';
 import type { World } from '../../engine/world.js';
-import { creditMassEatenXp, creditPlayerEatenXp } from '../../engine/xp.js';
 import type { ParametricModConfig } from '../parametric/config.js';
-import { createParametricMod } from '../parametric/index.js';
+import { beginConsumption, createParametricMod, creditAttacker, finalizeConsumedEntity } from '../parametric/index.js';
 import { eatOverlapFraction } from '../parametric/physics.js';
+import { pieceState } from '../parametric/pieceState.js';
 
 export interface HardcoreModConfig {
   /** Multiplicateur appliqué à la masse gagnée en mangeant un **autre joueur** (cahier des
@@ -37,15 +37,21 @@ export function createHardcoreMod(
 ): GameMod {
   const base = createParametricMod(config);
 
-  /** Identique à `handleEatAttempt` du mod paramétrique (même condition de seuil de
-   * chevauchement — `config.eating.eatOverlapFraction`, transfert intégral en un seul coup),
-   * sauf le montant gagné par l'attaquant (`massGainMultiplier`, x2 par défaut) — c'est la seule
+  /** Identique à `handleEatAttempt` du mod paramétrique (même seuil de chevauchement —
+   * `config.eating.eatOverlapFraction` — et même absorption PROGRESSIVE sur
+   * `absorptionDurationSec` une fois ce seuil franchi, voir `beginConsumption`/
+   * `advanceConsumptions` dans mods/parametric/index.ts, qui draine ce morceau exactement comme
+   * ceux marqués par Vanilla), sauf la condition d'avantage de masse (marge de
+   * `config.eating.massAdvantage`, 5% par défaut, plutôt qu'un avantage de masse quelconque) et le
+   * montant gagné par l'attaquant (`massGainMultiplier`, x2 par défaut) — c'est la seule
    * différence de mécanique de ce mode avec Vanilla. */
   function handleEatAttempt(world: World, attacker: Entity, target: Entity): boolean {
+    if (pieceState(target).consumedBy) return true; // déjà engagée, voir advanceConsumptions
+
     // Blob Dieu (§4.5 cahier_des_charges_admin.md) : jamais mangeable, mange toujours — même
     // exemption que le mod paramétrique sous-jacent (voir `hasMassAdvantage`), dupliquée ici car
-    // Hardcore réimplémente sa propre condition d'avantage de masse (gain de masse multiplié,
-    // `massGainMultiplier`) plutôt que de réutiliser celle du mod de base.
+    // Hardcore réimplémente sa propre condition d'avantage de masse (marge de
+    // `config.eating.massAdvantage`) plutôt que de réutiliser celle du mod de base.
     if (isGodPlayerId(target.ownerId)) return false;
     const hasAdvantage =
       isGodPlayerId(attacker.ownerId) ||
@@ -62,22 +68,16 @@ export function createHardcoreMod(
 
     if (overlapFraction < eatOverlapFraction(config)) return false;
 
-    const massLostByTarget = target.mass;
-
-    const gainedMass = massLostByTarget * hardcoreConfig.massGainMultiplier;
-    world.setMass(attacker, attacker.mass + gainedMass);
-    // XP (engine/xp.ts) : la masse gagnée (déjà multipliée par `massGainMultiplier`) compte intégralement
-    // pour "1 masse mangée = 1xp" — cohérent avec un mode à haut risque/haute récompense ; de
-    // toute façon annulée à la mort/déconnexion par `transformScoreForAccount` ci-dessous.
-    const now = performance.now();
-    creditMassEatenXp(world, attacker.ownerId, gainedMass, now);
-
-    if (attacker.ownerId && target.ownerId) {
-      // Écran de mort personnalisé ("Éliminé par : X") — voir World.recordAttacker.
-      world.recordAttacker(target.ownerId, attacker.ownerId);
+    // Blob Dieu : mange instantanément, sans délai de "digestion" — outil admin, pas une
+    // mécanique de jeu régulière (même exception que le mod paramétrique sous-jacent).
+    if (isGodPlayerId(attacker.ownerId)) {
+      const massEaten = target.mass * hardcoreConfig.massGainMultiplier;
+      creditAttacker(world, attacker, massEaten);
+      finalizeConsumedEntity(world, attacker, target, massEaten);
+      return true;
     }
-    world.removeEntity(target.id);
-    if (attacker.ownerId) creditPlayerEatenXp(world, attacker.ownerId, now);
+
+    beginConsumption(target, attacker.id, hardcoreConfig.massGainMultiplier);
     return true;
   }
 

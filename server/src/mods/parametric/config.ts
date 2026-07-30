@@ -93,12 +93,20 @@ export interface ParametricModConfig {
     minMassToEatFood: number;
     /** Multiplicateur de masse gagnée par la nourriture (1.5 = +50% de grossissement). */
     foodEfficiency?: number;
-    /** Fraction (0-1) de la surface de la cible qui doit être recouverte pour qu'elle soit
-     * immédiatement dévorée en entier (voir `handleEatAttempt`, mods/parametric/index.ts et
-     * mods/hardcore/index.ts) — un seul événement de transfert par avantage de masse, pas un
-     * drain progressif tick après tick. Absent = repli sur `DEFAULT_EAT_OVERLAP_FRACTION`
+    /** Fraction (0-1) de la surface de la cible qui doit être recouverte pour que l'absorption se
+     * déclenche (voir `handleEatAttempt`, mods/parametric/index.ts et mods/hardcore/index.ts) —
+     * en-dessous, les deux morceaux peuvent se chevaucher librement (aucune répulsion, aucun
+     * effet), exactement comme un vrai agar.io. Absent = repli sur `DEFAULT_EAT_OVERLAP_FRACTION`
      * (physics.ts). */
     eatOverlapFraction?: number;
+    /** Durée (s) de l'absorption une fois `eatOverlapFraction` franchi — la masse de la cible est
+     * transférée à l'attaquant PROGRESSIVEMENT sur cette durée (la cible rétrécit visiblement)
+     * plutôt qu'en un seul tick de simulation, pour que la victime comprenne ce qui lui arrive
+     * (voir `beginConsumption`/`advanceConsumptions`, mods/parametric/index.ts) — une fois ce
+     * seuil franchi, l'issue est scellée : le morceau ne peut plus s'en sortir même s'il se dégage
+     * du chevauchement entre-temps. Absent = repli sur `DEFAULT_ABSORPTION_DURATION_SEC`
+     * (physics.ts). */
+    absorptionDurationSec?: number;
   };
 
   /** Perte de masse passive — Mm (`floor`) et Ml (les taux/seuil) de la feuille Excel,

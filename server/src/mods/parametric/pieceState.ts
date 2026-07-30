@@ -23,6 +23,17 @@ export interface ParametricPieceState {
    * utilisateur) — anti-spam (une touche maintenue/répétition clavier OS ne doit pas vider la
    * masse instantanément), pas une vraie mécanique de jeu réglable par mode. */
   ejectCooldownS: number;
+  /** Rempli une fois que ce morceau a franchi le seuil d'absorption (`eatOverlapFraction`) face à
+   * un adversaire — voir `beginConsumption`/`advanceConsumptions`, mods/parametric/index.ts.
+   * `attackerPieceId` : le morceau qui l'absorbe (peut avoir disparu entre-temps, voir
+   * `advanceConsumptions`). `massAtStart` : masse de CE morceau au moment du déclenchement (fixe
+   * le taux de drain constant sur `absorptionDurationSec`, indépendant de la masse restante).
+   * `gainMultiplier` : fraction de chaque tranche drainée effectivement créditée à l'attaquant
+   * (1 en Vanilla, `massGainMultiplier` en Hardcore). `undefined` tant qu'aucune absorption n'est
+   * en cours. Une fois posé, ne peut plus être annulé — le morceau est condamné même s'il se
+   * dégage du chevauchement entre-temps (comme un vrai agar.io : l'issue est scellée dès que le
+   * seuil de recouvrement est atteint, pas re-évaluée en continu). */
+  consumedBy?: { attackerPieceId: string; massAtStart: number; gainMultiplier: number };
 }
 
 const KEY = 'parametric';

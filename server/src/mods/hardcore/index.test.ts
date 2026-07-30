@@ -1,11 +1,21 @@
 import { describe, expect, it } from 'vitest';
+import type { GameMod } from '../../engine/mod.js';
 import { World } from '../../engine/world.js';
 import { testConfig } from '../parametric/testConfig.js';
-import { accelerationForMass } from '../parametric/physics.js';
+import { accelerationForMass, absorptionDurationSec } from '../parametric/physics.js';
 import { createHardcoreMod } from './index.js';
 
 function freshWorld(mapSize = 15000, kArea = testConfig().areaConstant): World {
   return new World({ mapSize, kArea });
+}
+
+/** Fait avancer le drain d'une absorption en cours (voir `beginConsumption`/
+ * `advanceConsumptions`, mods/parametric/index.ts, appliqué aussi aux cibles marquées par
+ * Hardcore) jusqu'à extinction — absorption PROGRESSIVE sur `absorptionDurationSec` (0.3s par
+ * défaut) plutôt qu'un transfert en un seul tick. */
+function finishConsumption(mod: GameMod, world: World, config = testConfig(), stepSec = 0.05): void {
+  const steps = Math.ceil(absorptionDurationSec(config) / stepSec) + 1;
+  for (let i = 0; i < steps; i++) mod.onTick?.(world, stepSec);
 }
 
 describe('createHardcoreMod — onCollision (absorption entre joueurs)', () => {
@@ -18,7 +28,8 @@ describe('createHardcoreMod — onCollision (absorption entre joueurs)', () => {
     const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 120);
     const target = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
 
-    mod.onCollision?.(world, attacker, target, 1);
+    mod.onCollision?.(world, attacker, target, 1 / 20);
+    finishConsumption(mod, world, config);
 
     expect(world.getEntity(target.id)).toBeUndefined();
     // 120 + 100*2 = 320, pas 220 (comportement Vanilla)
@@ -34,11 +45,24 @@ describe('createHardcoreMod — onCollision (absorption entre joueurs)', () => {
     const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 120);
     const target = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
 
-    // Attaquant avec avantage de masse absorbe la cible et gagne sa masse multipliée par massGainMultiplier (x2 par défaut)
+    // Seuil de recouvrement franchi : l'absorption démarre, mais la cible n'est pas encore
+    // retirée — voir `beginConsumption`.
     mod.onCollision?.(world, attacker, target, 1 / 20);
+    expect(world.getEntity(target.id)).toBeDefined();
+    expect(attacker.mass).toBeCloseTo(120, 6); // rien encore transféré
 
+    const stepSec = 0.05;
+    mod.onTick?.(world, stepSec); // une seule tranche de drain
+
+    // Tranche attendue : (massAtStart / duration) * stepSec, multipliée par massGainMultiplier (x2)
+    const duration = absorptionDurationSec(config);
+    const expectedSlice = (100 / duration) * stepSec * 2;
+    expect(attacker.mass).toBeCloseTo(120 + expectedSlice, 6);
+    expect(world.getEntity(target.id)).toBeDefined(); // toujours pas entièrement mangée
+
+    finishConsumption(mod, world, config);
     expect(world.getEntity(target.id)).toBeUndefined();
-    expect(attacker.mass).toBe(120 + 100 * 2); // 120 + 200
+    expect(attacker.mass).toBeCloseTo(120 + 100 * 2, 6); // 120 + 200 au total, multiplicateur inclus à chaque tranche
   });
 
   it('respecte un multiplicateur personnalisé', () => {
@@ -50,9 +74,10 @@ describe('createHardcoreMod — onCollision (absorption entre joueurs)', () => {
     const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 120);
     const target = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
 
-    mod.onCollision?.(world, attacker, target, 1);
+    mod.onCollision?.(world, attacker, target, 1 / 20);
+    finishConsumption(mod, world, config);
 
-    expect(attacker.mass).toBe(120 + 100 * 3);
+    expect(attacker.mass).toBeCloseTo(120 + 100 * 3, 6);
   });
 
   it("crédite l'XP sur la masse gagnée déjà multipliée (x2), pas la masse brute de la cible", () => {
@@ -64,7 +89,8 @@ describe('createHardcoreMod — onCollision (absorption entre joueurs)', () => {
     const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 120);
     const target = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
 
-    mod.onCollision?.(world, attacker, target, 1);
+    mod.onCollision?.(world, attacker, target, 1 / 20);
+    finishConsumption(mod, world, config);
 
     const stats = world.getPlayer('p1')!.lifeStats;
     expect(stats.massEaten).toBeCloseTo(200, 6); // 100 * 2

@@ -39,6 +39,23 @@ export function eatOverlapFraction(config: ParametricModConfig): number {
   return config.eating.eatOverlapFraction ?? DEFAULT_EAT_OVERLAP_FRACTION;
 }
 
+/** Repli si `config.eating.absorptionDurationSec` est absent — 0.3s : assez court pour ne jamais
+ * ressembler à un ancien "drain" continu (voir `beginConsumption`, mods/parametric/index.ts),
+ * assez long pour que la victime se voie visiblement rétrécir avant de disparaître plutôt que de
+ * s'effacer en un seul tick de simulation (~33ms à 30Hz — largement sous le seuil de perception
+ * humaine pour un événement aussi soudain). */
+const DEFAULT_ABSORPTION_DURATION_SEC = 0.3;
+
+/** Durée (s) sur laquelle la masse d'une cible dont le seuil d'absorption vient d'être franchi
+ * est transférée à l'attaquant — voir `beginConsumption`/`advanceConsumptions`,
+ * mods/parametric/index.ts. Le seuil lui-même (`eatOverlapFraction`) n'est pas affecté : cette
+ * durée ne concerne que l'ACTE de manger une fois la décision prise, jamais la décision
+ * elle-même (la cible reste librement mangeable/non-mangeable exactement comme avant tant que le
+ * seuil n'est pas franchi). */
+export function absorptionDurationSec(config: ParametricModConfig): number {
+  return config.eating.absorptionDurationSec ?? DEFAULT_ABSORPTION_DURATION_SEC;
+}
+
 function decayLambda(mass: number, config: ParametricModConfig, timeSinceLastEatenS = 10): number {
   const floor = config.decay.floor ?? 2;
   const decayDelayS = mass > 20000 ? 0.5 : 10;

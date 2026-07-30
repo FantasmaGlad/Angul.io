@@ -1,13 +1,23 @@
 import { distance } from '@angulio/shared';
 import { describe, expect, it } from 'vitest';
+import type { GameMod } from '../../engine/mod.js';
 import { World } from '../../engine/world.js';
 import { createParametricMod } from './index.js';
 import { pieceState } from './pieceState.js';
 import { testConfig } from './testConfig.js';
-import { accelerationForMass, velocityForMass } from './physics.js';
+import { accelerationForMass, velocityForMass, absorptionDurationSec } from './physics.js';
 
 function freshWorld(mapSize = 15000, kArea = testConfig().areaConstant): World {
   return new World({ mapSize, kArea });
+}
+
+/** Fait avancer le drain d'une absorption en cours (voir `beginConsumption`/
+ * `advanceConsumptions`, mods/parametric/index.ts) jusqu'à extinction — l'absorption est
+ * désormais PROGRESSIVE sur `config.eating.absorptionDurationSec` (0.3s par défaut) plutôt qu'un
+ * transfert en un seul tick, pour que la victime ait le temps de comprendre ce qui lui arrive. */
+function finishConsumption(mod: GameMod, world: World, config = testConfig(), stepSec = 0.05): void {
+  const steps = Math.ceil(absorptionDurationSec(config) / stepSec) + 1;
+  for (let i = 0; i < steps; i++) mod.onTick?.(world, stepSec);
 }
 
 describe('createParametricMod — getAccelerationForMass', () => {
@@ -359,7 +369,7 @@ describe('createParametricMod — manger', () => {
     expect(distance(piece1.position, piece2.position)).toBe(distanceBefore);
   });
 
-  it('absorbe un morceau de joueur si l’attaquant a l’avantage de masse et recouvre au moins 2/3 du blob', () => {
+  it('absorbe un morceau de joueur si l’attaquant a l’avantage de masse et recouvre au moins 2/3 du blob (absorption progressive : le seuil franchi condamne la cible, drainée sur absorptionDurationSec)', () => {
     const config = testConfig();
     const mod = createParametricMod(config);
     const world = freshWorld();
@@ -369,9 +379,13 @@ describe('createParametricMod — manger', () => {
     const target = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
 
     mod.onCollision?.(world, attacker, target, 1 / 20);
+    // Seuil franchi : la cible n'est pas encore retirée (drain en cours), mais son sort est scellé.
+    expect(world.getEntity(target.id)).toBeDefined();
+
+    finishConsumption(mod, world, config);
 
     expect(world.getEntity(target.id)).toBeUndefined();
-    expect(attacker.mass).toBe(220);
+    expect(attacker.mass).toBeCloseTo(220, 6);
   });
 
   it('ne mange PAS un morceau de joueur si le chevauchement est inférieur à 0.6 (60%)', () => {
@@ -414,12 +428,13 @@ describe('createParametricMod — manger', () => {
     const attacker = world.spawnPiece('p1', { x: 500, y: 500 }, 120);
     const target = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
 
-    mod.onCollision?.(world, attacker, target, 1);
+    mod.onCollision?.(world, attacker, target, 1 / 20);
+    finishConsumption(mod, world, config);
 
     const stats = world.getPlayer('p1')!.lifeStats;
-    expect(stats.massEaten).toBe(100);
+    expect(stats.massEaten).toBeCloseTo(100, 6);
     expect(stats.playersEaten).toBe(1);
-    expect(stats.xpEarned).toBe(100 + 400); // 1 masse = 1xp + bonus fixe de 400xp
+    expect(stats.xpEarned).toBeCloseTo(100 + 400, 6); // 1 masse = 1xp + bonus fixe de 400xp
   });
 
   it("crédite l'XP de masse (mais pas le bonus joueur) en mangeant une particule", () => {
@@ -479,7 +494,8 @@ describe('createParametricMod — manger', () => {
     // Victime superposée quasi au centre (x: 550, chevauchement > 70%)
     const victimClose = world.spawnPiece('p2', { x: 550, y: 500 }, 100);
     mod.onCollision?.(world, attacker, victimClose, 0.05);
-    // Mangée immédiatement
+    // Seuil franchi : absorption engagée (progressive, voir `beginConsumption`) — puis mangée.
+    finishConsumption(mod, world, config);
     expect(world.getEntity(victimClose.id)).toBeUndefined();
   });
 

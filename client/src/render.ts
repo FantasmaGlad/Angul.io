@@ -344,7 +344,26 @@ export function renderFrame(
     const circularImg = getCircularSkinImage(skinId);
 
     if (circularImg) {
-      ctx.drawImage(circularImg, screenX - radius, screenY - radius, radius * 2, radius * 2);
+      // Position/rayon ARRONDIS au pixel entier, uniquement pour ce `drawImage` (le cercle de
+      // contour et le texte juste en-dessous gardent leurs coordonnées sous-pixel intactes) —
+      // `screenX`/`screenY`/`radius` sont des flottants qui varient légèrement à CHAQUE frame
+      // (lerp de caméra, interpolation réseau), même pour un blob immobile en coordonnées monde.
+      // Une image détaillée (avatar) rééchantillonnée par le filtrage bilinéaire du canvas à une
+      // phase sous-pixel différente à chaque frame "grouille"/tremble visiblement, alors qu'un
+      // simple aplat de couleur (cercle, texte) n'a pas ce problème (rien à rééchantillonner).
+      // Ancrer le rectangle de destination sur des entiers stabilise cette phase d'une frame à
+      // l'autre tant que la position/taille réelle n'a pas assez bougé pour changer de pixel —
+      // le blob et sa croissance restent visuellement fluides, seul le grouillement disparaît.
+      const drawCenterX = Math.round(screenX);
+      const drawCenterY = Math.round(screenY);
+      const drawRadius = Math.round(radius);
+      ctx.drawImage(
+        circularImg,
+        drawCenterX - drawRadius,
+        drawCenterY - drawRadius,
+        drawRadius * 2,
+        drawRadius * 2,
+      );
     } else {
       ctx.beginPath();
       ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
