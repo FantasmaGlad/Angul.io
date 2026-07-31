@@ -354,7 +354,7 @@ commune `PageLayout.tsx`.
 
 | Page | Route | Rôle |
 |---|---|---|
-| `PageLayout.tsx` | — | Coquille commune (titre + bouton retour accueil) |
+| `PageLayout.tsx` | — | Coquille commune (titre + bouton retour rond icône-seule, `.subpage-back` — plus de libellé texte depuis v5.5) |
 | `AccountPage.tsx` | `/compte` | Connexion/inscription/déconnexion |
 | `ProfilePage.tsx` | `/profil` | Niveau/XP/Premium/cosmétiques/scores + avatar (caroussel pleine largeur, aligné sur les autres cartes de la colonne) + personnalisation écran de mort. Badge NIVEAU en pastille blanche glassmorphism |
 | `SettingsPage.tsx` | `/parametres` | Plafond FPS/Vsync, son, touches (réglages locaux à l'appareil) |

@@ -584,7 +584,7 @@ select {
    centrer un contenu qui déborde son conteneur scrollable coupe classiquement le HAUT du contenu
    hors de portée du scroll dans la plupart des moteurs — un point d'ancrage en haut, lui, reste
    entièrement atteignable en scrollant vers le bas. */
-@media (max-height: 640px) {
+@media (max-height: 640px), (max-width: 480px) {
   .home-columns {
     align-items: flex-start;
     overflow-y: auto;
@@ -1167,6 +1167,61 @@ select {
   margin-right: -8px;
 }
 
+/* Accueil compacté sur téléphone (demande utilisateur : "réduis la taille du logo, des infos pour
+   que ça tienne sans devoir scroller") — le repli de défilement plus haut (`.home-columns`) reste
+   un filet de sécurité (clavier virtuel ouvert, pseudo très long...), mais le vrai correctif est
+   de réduire le contenu lui-même pour qu'il tienne dans un viewport portrait typique SANS avoir à
+   défiler. Placé APRÈS les règles de base qu'il redéfinit (`.hero-logo-img`, `.play-panel-card`...)
+   : à spécificité CSS égale, l'ordre du fichier tranche — un bloc `@media` placé AVANT sa cible
+   perd systématiquement contre elle, peu importe que la condition du media query soit vraie. */
+@media (max-width: 480px) {
+  .play-panel-wrapper {
+    gap: 6px;
+  }
+  .hero-logo-img {
+    width: 160px;
+    max-width: 55%;
+  }
+  .players-online-header {
+    padding: 0 0 4px;
+    margin-bottom: 0;
+  }
+  .players-online-count {
+    font-size: 26px;
+  }
+  .players-online-label {
+    font-size: 9px;
+    margin-top: 2px;
+  }
+  .play-panel-card {
+    padding: 14px;
+    gap: 10px;
+  }
+  .launcher-form {
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .play-button-main {
+    padding: 12px 16px;
+  }
+  .rank-list {
+    gap: 5px;
+  }
+  .rank-row {
+    padding: 7px 10px;
+  }
+  /* Ne montre que le top 3 salons sur téléphone (même principe que le classement compacté en
+     partie, voir plus bas dans ce fichier) — les rangs 4-5 restent dans le DOM (inchangé côté JS)
+     mais masqués ici, pour ne pas allonger la colonne au-delà du viewport. */
+  .rank-list li:nth-child(n + 4) {
+    display: none;
+  }
+  .bottom-bar {
+    padding: 8px 14px;
+    font-size: 11px;
+  }
+}
+
 .lobby-error-toast {
   position: fixed;
   bottom: 16px;
@@ -1225,22 +1280,29 @@ select {
   gap: 14px;
   margin-bottom: 20px;
 }
+/* Bouton retour discret (demande utilisateur : remplace l'ancien bouton pilule "Retour à
+   l'accueil" par un simple bouton rond icône-seule, façon navigation "classique") — flèche
+   seule, sans libellé (voir `aria-label`/`title` dans PageLayout.tsx pour l'accessibilité). */
 .subpage-back {
   align-self: flex-start;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  font-size: 12px;
-  font-weight: 700;
-  padding: 7px 14px;
+  border-radius: 50%;
   color: var(--text-soft);
+  flex-shrink: 0;
+}
+.subpage-back .material-symbols-outlined {
+  font-size: 18px;
 }
 .subpage-back:hover {
   background: var(--surface-hover);
   color: var(--text);
+  border-color: var(--border-strong);
 }
 .subpage-title {
   margin: 0;
@@ -1291,6 +1353,17 @@ select {
   gap: 16px;
   width: 100%;
   align-items: start;
+}
+/* Sans `min-width: 0`, un enfant de grille garde par défaut `min-width: auto` — sa taille
+   MIN-CONTENU (ici le caroussel d'avatars, une rangée de cartes à largeur fixe qui ne peut pas se
+   réduire sous la somme de leurs `min-width`) devient un plancher qui l'emporte sur le partage
+   `1fr 1fr` demandé. Avec 10 skins (v5.5), ce plancher dépasse largement 50% de la largeur
+   disponible : la colonne de gauche (caroussel) grossissait alors bien au-delà de sa part et
+   écrasait la colonne de droite (personnalisation de l'écran de mort) en une fine bande à peine
+   visible (retour utilisateur) — `min-width: 0` restaure le `overflow-x: auto` interne du
+   caroussel (`.avatar-swiper-track`) comme SEULE échappatoire, sans jamais élargir la colonne. */
+.profile-dashboard-grid > div {
+  min-width: 0;
 }
 
 @media (max-width: 900px) {
@@ -1358,6 +1431,19 @@ select {
   background: var(--surface);
   box-shadow: 0 0 0 3px rgba(46, 134, 171, 0.3);
   transform: scale(1.05);
+}
+
+/* Caroussel resserré sur téléphone/écran étroit : cartes plus étroites (moins de scroll
+   horizontal nécessaire pour apercevoir le voisinage) — la colonne unique (voir le
+   `@media (max-width: 900px)` de `.profile-dashboard-grid` plus haut) doit rester compacte plutôt
+   que de reproduire la largeur de carte pensée pour un grand écran à deux colonnes. Placé APRÈS
+   les règles de base ci-dessus qu'il redéfinit (même piège d'ordre CSS que `.hero-logo-img` — un
+   `@media` avant sa cible perd systématiquement à spécificité égale). */
+@media (max-width: 900px) {
+  .avatar-swiper-card {
+    min-width: 88px;
+    padding: 8px 6px;
+  }
 }
 
 .swiper-arrow-btn {
@@ -1903,6 +1989,13 @@ a.btn-primary {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   padding: 20px;
+  /* Filet de sécurité (retour utilisateur : sur téléphone en paysage — le jeu est verrouillé en
+     paysage, voir mobileScreen.ts — la hauteur de viewport peut tomber sous ~400px, bien moins que
+     la hauteur naturelle de `.death-modal` ; sans défilement possible ici, le bas de la carte
+     (boutons Rejouer/Menu Principal) se retrouvait hors écran et totalement inatteignable). Le
+     compactage ci-dessous (media query) couvre le cas courant ; ce défilement reste le filet pour
+     un message/bannière personnalisé exceptionnellement long. */
+  overflow-y: auto;
 }
 .death-modal {
   width: 420px;
@@ -1913,6 +2006,12 @@ a.btn-primary {
   padding: 28px;
   text-align: center;
   box-shadow: var(--shadow-modal);
+  /* `margin: auto` (plutôt que de compter uniquement sur `align-items: center` du parent) :
+     nécessaire pour qu'un contenu plus grand que le viewport reste correctement scrollable des
+     DEUX côtés (haut ET bas) une fois `overflow-y: auto` actif ci-dessus — `align-items: center`
+     seul, sur un flex container débordant, coupe classiquement le haut du contenu hors de portée
+     du scroll dans la plupart des moteurs (même correctif que `.home-columns` plus haut). */
+  margin: auto;
 }
 .death-modal h2 {
   margin: 0 0 8px 0;
@@ -2012,6 +2111,55 @@ a.btn-primary {
   font-weight: 700;
   color: var(--text);
   text-align: center;
+}
+
+/* Écran de mort compacté sur téléphone (retour utilisateur : sur téléphone en paysage — le jeu est
+   verrouillé en paysage, une hauteur de viewport de ~380-430px n'est pas rare — la carte "hors
+   écran, tellement elle est grosse") : mêmes marges/tailles resserrées que le HUD de jeu
+   (`@media (max-width: 700px), (pointer: coarse)` plus bas dans ce fichier), pour que l'essentiel
+   tienne SANS défiler dans le cas courant — `.death-overlay { overflow-y: auto }` ci-dessus reste
+   le filet de sécurité pour une bannière/message personnalisé exceptionnellement grand. */
+@media (max-width: 700px), (pointer: coarse) {
+  .death-overlay {
+    padding: 10px;
+  }
+  .death-modal {
+    padding: 16px;
+  }
+  .death-modal h2 {
+    font-size: 17px;
+    margin-bottom: 4px;
+  }
+  .death-killer {
+    font-size: 12px;
+    margin-bottom: 10px;
+  }
+  .death-banner {
+    min-height: 70px;
+    padding: 10px;
+    margin-bottom: 12px;
+  }
+  .death-banner-message {
+    font-size: 12px;
+  }
+  .death-stats-grid {
+    padding: 8px 4px;
+    margin-bottom: 14px;
+    gap: 4px;
+  }
+  .death-stat-label {
+    font-size: 8.5px;
+  }
+  .death-stat-value {
+    font-size: 14px;
+  }
+  .death-save-score-cta {
+    padding: 10px 12px;
+    margin-bottom: 12px;
+  }
+  .death-actions {
+    gap: 6px;
+  }
 }
 
 /* Minimap Overlay (3x3 Grid: 1-3 horizontal, A-C vertical) */

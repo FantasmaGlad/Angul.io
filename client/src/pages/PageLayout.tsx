@@ -10,9 +10,14 @@ export default function PageLayout({ title, wide = false, children }: PropsWithC
   return (
     <div className="subpage">
       <header className={`subpage-header${wide ? ' wide' : ''}`}>
-        <button type="button" className="subpage-back" onClick={() => navigate('/')}>
-          <span className="material-symbols-outlined" style={{ fontSize: 16 }}>arrow_back</span>
-          Retour à l'accueil
+        <button
+          type="button"
+          className="subpage-back"
+          onClick={() => navigate('/')}
+          aria-label="Retour à l'accueil"
+          title="Retour à l'accueil"
+        >
+          <span className="material-symbols-outlined">arrow_back</span>
         </button>
         <h1 className="subpage-title">{title}</h1>
       </header>

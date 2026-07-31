@@ -982,7 +982,7 @@
         "design",
         "css"
       ],
-      "description": "Design tokens + toutes les classes CSS (dont .debug-overlay F3, .avatar-swiper-*, .profile-dashboard-grid)."
+      "description": "Design tokens + toutes les classes CSS (dont .debug-overlay F3, .avatar-swiper-*, .profile-dashboard-grid). PIÈGE D'ORDRE CSS récurrent dans ce fichier (déjà rencontré 2x, v5.5) : un bloc `@media` doit être placé APRÈS la règle de base qu'il redéfinit — à spécificité égale, l'ordre du fichier tranche, un `@media` placé AVANT sa cible perd systématiquement même si sa condition est vraie. `.profile-dashboard-grid > div { min-width: 0 }` évite qu'un enfant de grille au contenu large (le caroussel d'avatars) ne fasse déborder le partage `1fr 1fr` des colonnes. `.death-overlay { overflow-y: auto }` + `.death-modal { margin: auto }` : filet de sécurité si la carte dépasse la hauteur du viewport (téléphone en paysage)."
     },
     {
       "path": "client/src/modes.ts",
@@ -1265,7 +1265,7 @@
         "sous-page",
         "layout"
       ],
-      "description": "Coquille commune des sous-pages (titre + bouton retour accueil)."
+      "description": "Coquille commune des sous-pages (titre + bouton retour accueil, `.subpage-back` — icône seule depuis v5.5, plus de libellé texte)."
     },
     {
       "path": "client/src/pages/AccountPage.tsx",
