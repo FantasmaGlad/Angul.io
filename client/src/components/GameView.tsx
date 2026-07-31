@@ -183,6 +183,11 @@ export default function GameView({
   const [playerMass, setPlayerMass] = useState<number | undefined>(undefined);
   const [mapSizeState, setMapSizeState] = useState<number>(15000);
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
+  // Écran de connexion (demande utilisateur) : masque le léger lag entre le montage de GameView et
+  // le moment où le blob est réellement synchronisé avec le monde (premier `state` reçu) — voir
+  // l'effet de connexion plus bas, qui l'éteint après un délai MINIMUM de 2s (jamais avant, même si
+  // la connexion est immédiate) pour ne pas clignoter sur un aller-retour local ultra-rapide.
+  const [connecting, setConnecting] = useState(true);
   const [dashInfo, setDashInfo] = useState<{
     charges: number;
     maxCharges: number;
@@ -377,6 +382,24 @@ export default function GameView({
 
     let lastMinimapUpdateAt = 0;
 
+    // Écran de connexion (voir `connecting`/son commentaire) : durée minimum forcée à 2s même si le
+    // premier `state` arrive plus vite, pour ne jamais clignoter sur un aller-retour local quasi
+    // instantané (dev/LAN) ; filet de sécurité au-delà (`CONNECTING_SCREEN_FALLBACK_MS`) pour ne
+    // jamais rester bloqué dessus si, pour une raison quelconque, aucun `state` n'arrive jamais
+    // (le socket resterait alors "connecting" indéfiniment sans jamais déclencher `onClose` non
+    // plus) — mêmes ordres de grandeur que le filet de secours d'AssetPreloader.tsx.
+    const MIN_CONNECTING_SCREEN_MS = 2000;
+    const CONNECTING_SCREEN_FALLBACK_MS = 8000;
+    const connectStartMs = performance.now();
+    let connectingOverlayHidden = false;
+    function hideConnectingOverlaySoon(): void {
+      if (connectingOverlayHidden) return;
+      connectingOverlayHidden = true;
+      const remainingMs = Math.max(0, MIN_CONNECTING_SCREEN_MS - (performance.now() - connectStartMs));
+      setTimeout(() => setConnecting(false), remainingMs);
+    }
+    const connectingFallbackTimer = setTimeout(hideConnectingOverlaySoon, CONNECTING_SCREEN_FALLBACK_MS);
+
     connection.onMessage((message: ServerMessage) => {
       if (message.type === 'welcome') {
         // Détection de nouveau déploiement (voir le commentaire de `knownBuildVersion`) : un
@@ -424,6 +447,10 @@ export default function GameView({
         nicknames.set(message.playerId, message.nickname);
         if (message.color) colors.set(message.playerId, message.color);
       } else if (message.type === 'state') {
+        // Premier `state` reçu pour cette vie = le blob est réellement synchronisé avec le monde
+        // (voir le commentaire de `connecting`) — éteint l'écran de connexion (après son délai
+        // minimum). No-op à chaque `state` suivant (voir le garde `connectingOverlayHidden`).
+        hideConnectingOverlaySoon();
         previousSnapshot = latestSnapshot;
         latestSnapshot = message.entities;
         latestSnapshotAt = performance.now();
@@ -809,6 +836,7 @@ export default function GameView({
       audioManager.stopMusic();
       if (inputTimer) clearTimeout(inputTimer);
       clearInterval(pingInterval);
+      clearTimeout(connectingFallbackTimer);
       if (comboHideTimer) clearTimeout(comboHideTimer);
       cancelAnimationFrame(rafId);
       connection.close();
@@ -819,6 +847,19 @@ export default function GameView({
   return (
     <>
       <canvas ref={canvasRef} id="game" />
+
+      {/* Écran de connexion (demande utilisateur) : masque le léger lag d'arrivée en salon derrière
+          un écran glassmorphism cohérent avec le reste de l'UI (même style que `.play-panel-card`
+          de l'accueil), le temps que le blob soit réellement synchronisé avec le monde. */}
+      {connecting && (
+        <div className="connecting-overlay">
+          <div className="connecting-card">
+            <div className="connecting-spinner" />
+            <p className="connecting-text">Connexion au salon…</p>
+          </div>
+        </div>
+      )}
+
       <div className="combo-banner" ref={comboBannerRef} aria-hidden="true" />
       <div className="announcement-banner" ref={announcementBannerRef} aria-hidden="true" />
       {dashInfo && (

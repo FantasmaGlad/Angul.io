@@ -37,6 +37,18 @@ const HOME_REFRESH_INTERVAL_MS = 10_000;
  * `.spectator-background.zooming` dans styles.css. */
 const HOME_LEAVE_TRANSITION_MS = 450;
 
+/** Pseudo par défaut d'un joueur anonyme (champ "Pseudo de jeu" laissé vide, demande utilisateur) —
+ * un suffixe numérique aléatoire (000-999) plutôt qu'un "Joueur" fixe pour tout le monde : le
+ * serveur refuse deux pseudos identiques dans un même salon (voir `WS_CLOSE_NICKNAME_TAKEN`,
+ * net.ts/GameView.tsx), donc plusieurs anonymes rejoignant le même salon avec l'ancien "Joueur"
+ * fixe se voyaient l'un après l'autre rejetés à la connexion. */
+function randomAnonymousNickname(): string {
+  const suffix = Math.floor(Math.random() * 1000)
+    .toString()
+    .padStart(3, '0');
+  return `Joueur ${suffix}`;
+}
+
 interface GameSession {
   roomIdOrInviteCode: string;
   inviteCodeToShow: string | undefined;
@@ -169,7 +181,7 @@ export default function App() {
       // utilisateur (clic) — voir mobileScreen.ts.
       enterMobileFullscreenLandscape();
       setLeaving(true);
-      const nicknameToUse = nickname.trim() || 'Joueur';
+      const nicknameToUse = nickname.trim() || randomAnonymousNickname();
       // Laisse jouer la transition CSS (zoom out de l'UI, zoom in du fond spectateur, voir
       // Home.tsx) avant de monter GameView — un montage immédiat couperait l'animation.
       setTimeout(() => {

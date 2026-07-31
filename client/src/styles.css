@@ -1846,6 +1846,7 @@ a.btn-primary {
 }
 .leaderboard-nickname {
   flex: 1;
+  font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2176,6 +2177,50 @@ a.btn-primary {
   color: rgba(255, 255, 255, 0.7);
   margin-top: 10px;
   font-family: var(--font-mono);
+}
+
+/* --- Écran de connexion au salon (GameView.tsx, demande utilisateur) -------------------------
+   Glassmorphism BLANC (contrairement au fond sombre d'.asset-preloader-overlay ci-dessus) — même
+   carte que `.play-panel-card`/`.home-column` de l'accueil, pour rester dans le même langage visuel
+   d'un écran à l'autre plutôt que d'introduire un troisième style de "loading" dans l'app. */
+.connecting-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.connecting-card {
+  background: rgba(241, 241, 243, 0.92);
+  border: 1px solid rgba(46, 49, 51, 0.18);
+  box-shadow: 0 12px 36px rgba(46, 49, 51, 0.15);
+  border-radius: var(--radius-lg);
+  padding: 32px 40px;
+  max-width: 320px;
+  width: 90%;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.connecting-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid rgba(46, 49, 51, 0.12);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: preloaderSpin 0.9s linear infinite;
+  margin-bottom: 16px;
+}
+.connecting-text {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
 }
 
 /* --- Dash HUD Top Bar --- */
@@ -2549,6 +2594,15 @@ a.btn-primary {
     right: max(8px, env(safe-area-inset-right));
     width: 132px;
     padding: 8px;
+    /* Plafonnée + scrollable : avec le top 10 complet, cette carte dépassait largement les 96px
+       jusqu'ici supposés par `.minimap-container` ci-dessous (audit mobile, retour utilisateur :
+       minimap et classement qui se chevauchent) — une hauteur bornée rend le chevauchement
+       impossible quel que soit le nombre d'entrées, au prix d'un défilement pour voir les rangs
+       les plus bas quand le salon est plein. 132px de contenu (`box-sizing` reste `content-box`,
+       non modifié ici) + le padding (8px×2) + la bordure (1px×2) de cette carte = 150px rendus au
+       total, budget sur lequel se cale le `top` de `.minimap-container` ci-dessous. */
+    max-height: 132px;
+    overflow-y: auto;
   }
   .leaderboard-header {
     font-size: 9px;
@@ -2562,9 +2616,12 @@ a.btn-primary {
 
   /* Minimap déplacée en haut (au lieu de bas-droite) pour ne jamais chevaucher le joystick
      virtuel (bas-gauche) ni le bouton d'action (bas-droite) — voir .virtual-joystick-base/
-     .virtual-action-button ci-dessus. */
+     .virtual-action-button ci-dessus. Son `top` part du bas du classement ci-dessus (`max-height`
+     150px + son propre décalage haut + une petite marge de 8px), jamais d'une position fixe
+     devinée à l'avance : la marge est donc garantie quel que soit le nombre d'entrées du
+     classement. */
   .minimap-container {
-    top: 96px;
+    top: max(166px, calc(env(safe-area-inset-top) + 158px));
     right: max(8px, env(safe-area-inset-right));
     bottom: auto;
     width: 108px;

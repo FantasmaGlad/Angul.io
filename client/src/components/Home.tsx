@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { audioManager } from '../audio.js';
 import type { RoomSummary } from '../lobby.js';
+import { enterMobileFullscreenLandscape } from '../mobileScreen.js';
 import BottomBar from './BottomBar.js';
 import CreateRoomPanel from './CreateRoomPanel.js';
 import ModeRoomList from './ModeRoomList.js';
@@ -67,6 +68,25 @@ export default function Home({
 
   useEffect(() => {
     audioManager.playMusic('/assets/Sons/Musiques/lobby.mp3');
+  }, []);
+
+  // Plein écran + verrouillage paysage dès la toute première interaction sur l'accueil mobile
+  // (retour utilisateur : jusqu'ici, ces deux effets n'étaient déclenchés qu'au clic sur "Jouer",
+  // profondément dans le flux — l'UI restait donc affichée en portrait/hors plein écran, cassée,
+  // pendant toute la navigation dans le lobby). Aucune API navigateur ne permet de forcer le plein
+  // écran sans un geste utilisateur explicite (voir mobileScreen.ts) : ceci en reste le geste le
+  // plus précoce possible — le premier `pointerdown` n'importe où sur la page, plutôt que
+  // spécifiquement sur le bouton "Jouer". `capture: true` pour être notifié même si un enfant
+  // arrête la propagation (ex. `stopPropagation` d'un tiroir) ; sans effet sur desktop (voir le
+  // garde `isTouchDevice()` interne à `enterMobileFullscreenLandscape`).
+  useEffect(() => {
+    const onFirstPointerDown = (): void => {
+      enterMobileFullscreenLandscape();
+    };
+    document.addEventListener('pointerdown', onFirstPointerDown, { capture: true, once: true });
+    return () => {
+      document.removeEventListener('pointerdown', onFirstPointerDown, { capture: true });
+    };
   }, []);
 
   // Hystérésis sur la sélection du salon spectateur : évite les bascules/reconnexions intempestives

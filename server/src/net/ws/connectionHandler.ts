@@ -239,7 +239,13 @@ export function handleWsConnection(
     }
 
     if (message.type === 'join') {
-      const nickname = message.nickname.trim().slice(0, MAX_NICKNAME_LENGTH) || 'Joueur';
+      // Filet de sécurité serveur (le client, voir App.tsx, envoie déjà un suffixe aléatoire pour
+      // un pseudo laissé vide) : un "Joueur" fixe pour tout le monde ferait rejeter en boucle tout
+      // second client anonyme sur le même salon (deux pseudos identiques dans un même salon sont
+      // refusés, voir WS_CLOSE_NICKNAME_TAKEN plus bas).
+      const trimmedNickname = message.nickname.trim().slice(0, MAX_NICKNAME_LENGTH);
+      const nickname =
+        trimmedNickname || `Joueur ${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
 
       if (!playerId) {
         // Reconnexion transitoire reconnue (voir GRACE_PERIOD_MS/pendingLeaves, broadcast.ts) :

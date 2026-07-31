@@ -90,12 +90,6 @@ export default function SpectatorBackground({ roomId, zooming }: SpectatorBackgr
     let rafId = 0;
     let lastFrameAt = 0;
 
-    // Simple décor d'arrière-plan dézoomé : 30fps n'apportait rien de perceptible par rapport à
-    // 18fps, pour un coût CPU/GPU proportionnellement plus élevé (retour utilisateur : lag du
-    // lobby vu de l'extérieur).
-    const SPECTATOR_MAX_FPS = 18;
-    const SPECTATOR_MIN_INTERVAL_MS = 1000 / SPECTATOR_MAX_FPS;
-
     function frame(now: number): void {
       // Onglet en arrière-plan : `requestAnimationFrame` continue d'être planifié (nécessaire pour
       // reprendre proprement dès que l'onglet redevient visible) mais le travail de rendu
@@ -105,8 +99,11 @@ export default function SpectatorBackground({ roomId, zooming }: SpectatorBackgr
         rafId = requestAnimationFrame(frame);
         return;
       }
-      const playerMinInterval = computeMinFrameIntervalMs(loadVsyncEnabled(), loadFpsSliderIndex());
-      const minInterval = Math.max(SPECTATOR_MIN_INTERVAL_MS, playerMinInterval);
+      // Mêmes réglages Vsync/slider FPS que la partie elle-même (settings.ts) — un plafond dédié,
+      // bas et fixe (18fps), donnait un fond d'accueil visiblement saccadé indépendamment de la
+      // machine (retour utilisateur : "lobby extrêmement lent en fps"), sans jamais pouvoir être
+      // désactivé par le joueur comme le reste du jeu.
+      const minInterval = computeMinFrameIntervalMs(loadVsyncEnabled(), loadFpsSliderIndex());
       if (now - lastFrameAt >= minInterval) {
         const frameDt = Math.min(50, lastFrameAt > 0 ? now - lastFrameAt : 16);
         lastFrameAt = now;

@@ -283,11 +283,24 @@ export class LocalPrediction {
       const knownVelocity = authoritativeVelocities?.get(entity.i);
       if (knownVelocity) {
         predicted.velocity = { ...knownVelocity };
-      } else {
-        const activeDashes = this.pendingDashes.filter((d) => d.atMs >= sinceMs);
-        for (const dash of activeDashes) {
-          predicted.velocity = add(predicted.velocity, dash.impulse);
-        }
+      }
+      // Un Dash appliqué localement APRÈS l'instant serveur que cette vérité représente (`sinceMs`,
+      // voir plus haut) n'a par construction pas encore pu être reçu/traité par le serveur —
+      // `knownVelocity` (quand connue) reste alors celle d'AVANT le dash. Avant ce correctif,
+      // l'impulsion n'était réappliquée que si `knownVelocity` était ABSENTE (branche `else`
+      // désormais retirée) : dès que le serveur envoyait un `state` autoritaire (quasi toujours,
+      // `authoritativeVelocities` est renseignée dès que `self.pieces` existe), ce `state` — même
+      // produit par le serveur AVANT qu'il ait reçu l'input du dash — écrasait purement et
+      // simplement la vélocité locale déjà boostée, sans jamais la restituer : le dash "revenait en
+      // arrière" visuellement jusqu'au `state` suivant (retour utilisateur, Hardcore : rollback ~1
+      // fois sur 2, selon qu'un tel `state` "en retard" arrivait ou non dans cette fenêtre). Réappliquée
+      // ici dans TOUS les cas plutôt que seulement en l'absence de `knownVelocity` : un dash déjà
+      // intégré par le serveur a `d.atMs < sinceMs`, donc filtré par `pendingDashes.filter` ci-dessous
+      // — son impulsion (déjà présente dans `knownVelocity` reçue) n'est alors pas rajoutée une
+      // seconde fois.
+      const activeDashes = this.pendingDashes.filter((d) => d.atMs >= sinceMs);
+      for (const dash of activeDashes) {
+        predicted.velocity = add(predicted.velocity, dash.impulse);
       }
 
       for (const chunk of replayChunks) {

@@ -338,7 +338,9 @@ export function renderFrame(
       const fontSize = isBotId(entity.p!)
         ? botNicknameFontSizePx(ctx, nickname!, screenRadius)
         : Math.max(10, screenRadius * 0.3);
-      ctx.font = `normal ${fontSize}px sans-serif`;
+      // Gras (demande utilisateur) — plus lisible par-dessus un skin/fond de blob coloré qu'un
+      // trait fin, notamment aux petites tailles de police.
+      ctx.font = `bold ${fontSize}px sans-serif`;
       ctx.fillStyle = '#ffffff';
       ctx.shadowColor = 'transparent';
       ctx.shadowBlur = 0;
@@ -389,7 +391,9 @@ function botNicknameFontSizePx(
 ): number {
   const availableWidth = screenRadius * 1.7;
   let fontSize = Math.max(BOT_NICKNAME_MIN_FONT_PX, screenRadius * BOT_NICKNAME_START_FONT_RATIO);
-  ctx.font = `${fontSize}px sans-serif`;
+  // `bold` ici aussi (voir l'appelant) : mesurer en `normal` sous-estimerait la largeur réelle du
+  // texte en gras effectivement dessiné, laissant déborder légèrement les pseudos de bots longs.
+  ctx.font = `bold ${fontSize}px sans-serif`;
   const textWidth = ctx.measureText(nickname).width;
   if (textWidth > availableWidth && textWidth > 0) {
     fontSize = Math.max(BOT_NICKNAME_MIN_FONT_PX, fontSize * (availableWidth / textWidth));
