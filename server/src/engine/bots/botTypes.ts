@@ -69,10 +69,11 @@ export function generateBotNickname(
 ): string {
   if (BOT_IDENTITIES.length === 0) return `${profile}_${index}`;
 
-  const poolStart = profile === 'challenger' ? 0 : Math.min(CHALLENGER_POOL_SIZE, BOT_IDENTITIES.length);
+  const isSmallPool = BOT_IDENTITIES.length <= CHALLENGER_POOL_SIZE;
+  const poolStart = profile === 'challenger' || isSmallPool ? 0 : Math.min(CHALLENGER_POOL_SIZE, BOT_IDENTITIES.length);
   const poolLength =
-    profile === 'challenger'
-      ? Math.min(CHALLENGER_POOL_SIZE, BOT_IDENTITIES.length)
+    profile === 'challenger' || isSmallPool
+      ? BOT_IDENTITIES.length
       : BOT_IDENTITIES.length - poolStart;
   if (poolLength <= 0) return `${profile}_${index}`;
 

@@ -185,12 +185,29 @@ export function computeBotInput(
     }
   }
 
-  // Évite d'avancer dans le mur si trop près des bordures
-  const margin = 200;
-  if (center.x < margin && targetDir.x < 0) targetDir.x = 1;
-  if (center.x > mapSize - margin && targetDir.x > 0) targetDir.x = -1;
-  if (center.y < margin && targetDir.y < 0) targetDir.y = 1;
-  if (center.y > mapSize - margin && targetDir.y > 0) targetDir.y = -1;
+  // Évite d'avancer dans le mur et s'éloigne activement des bordures (demande utilisateur :
+  // "éviter de rester proche des murs (peut s'y coller suite à un dash, mais cherche à s'éloigner)").
+  const margin = 250;
+  let wallAvoidance: Vector2 = { x: 0, y: 0 };
+  if (center.x < margin) {
+    if (targetDir.x < 0) targetDir.x = 1;
+    wallAvoidance.x += (margin - center.x) / margin;
+  } else if (center.x > mapSize - margin) {
+    if (targetDir.x > 0) targetDir.x = -1;
+    wallAvoidance.x -= (center.x - (mapSize - margin)) / margin;
+  }
+  if (center.y < margin) {
+    if (targetDir.y < 0) targetDir.y = 1;
+    wallAvoidance.y += (margin - center.y) / margin;
+  } else if (center.y > mapSize - margin) {
+    if (targetDir.y > 0) targetDir.y = -1;
+    wallAvoidance.y -= (center.y - (mapSize - margin)) / margin;
+  }
+
+  if (wallAvoidance.x !== 0 || wallAvoidance.y !== 0) {
+    const push = scale(normalize(wallAvoidance), 2.0);
+    targetDir = add(targetDir, push);
+  }
 
   let normDir = normalize(targetDir);
   if (memory.lastDir && (normDir.x !== 0 || normDir.y !== 0)) {

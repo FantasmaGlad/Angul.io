@@ -77,4 +77,23 @@ describe('botEvaluator', () => {
     expect(input.intensity).toBe(1.0);
     expect(input.split).toBe(true);
   });
+
+  it('évitement des murs : s’éloigne activement des bordures quand il est proche d’un mur', () => {
+    const mod = createParametricMod(testConfig());
+    const world = new World({ mapSize: 1000 });
+
+    const botId = 'bot-wall-1';
+    world.addPlayer(botId, 'WallBot');
+    mod.onPlayerJoin?.(world, botId);
+
+    const botPiece = world.getPiecesByOwner(botId)[0];
+    botPiece.position = { x: 50, y: 500 }; // Très proche du mur gauche (x = 50 < 250)
+    world.setMass(botPiece, 50);
+
+    world.rebuildSpatialHash();
+
+    const { input } = computeBotInput(world, botId, 'neutre');
+    // Le bot doit cibler une position vers la droite (x > 50) pour s'éloigner du mur gauche
+    expect(input.target.x).toBeGreaterThan(50);
+  });
 });
