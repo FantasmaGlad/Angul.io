@@ -148,7 +148,7 @@ Angul.io/
 │       ├── adminProtocol.ts           Types des messages du canal WebSocket admin dédié (`?admin=1`)
 │       ├── botIdentities.ts           Dictionnaire des identités de bots (pseudo + couleur)
 │       ├── botKillMessages.ts         Répliques affichées à l'écran de mort quand tué par un bot
-│       ├── avatarPalette.ts           Palette de couleurs d'avatar + repli déterministe par pseudo
+│       ├── avatarPalette.ts           Palette de couleurs d'avatar (14 skins) + repli déterministe par pseudo
 │       └── deathBanners.ts            Catalogue des bannières de l'écran de mort (déblocage par niveau)
 │
 ├── server/                            Serveur de jeu
@@ -158,7 +158,13 @@ Angul.io/
 │   ├── migrations/                    Migrations node-pg-migrate (source de vérité exécutable)
 │   ├── configs/                       Configs JSON des mods paramétriques (voir README §Modding)
 │   │   ├── vanilla.json                     Mode par défaut
-│   │   └── hardcore.json                    Absorption x2, Dash uniquement (split désactivé)
+│   │   ├── hardcore.json                    Absorption x2, Dash uniquement (split désactivé)
+│   │   └── bots/                            Profils de COMPORTEMENT de robots (même système que ci-dessus,
+│   │       └── default.json                 mais pour le pilotage IA — voir engine/bots/behaviorConfig.ts/
+│   │                                         loadBehaviorConfig.ts) : fuis/neutre/agressif/fou/wallAvoidance.
+│   │                                         Sélectionné par `BotConfig.behaviorId` (mods/parametric/config.ts),
+│   │                                         absent = 'default'. Distinct de la POPULATION de bots
+│   │                                         (ambientTargetCount/challengers, restée dans server/configs/*.json).
 │   ├── scripts/
 │   │   ├── hashPassword.mjs                 Génère un hash argon2 pour ADMIN_PASSWORD_HASH
 │   │   ├── loadtest.mjs                     Bots WebSocket pour valider la charge
@@ -174,7 +180,11 @@ Angul.io/
 │       │   ├── mod.ts                       Interface GameMod — LE contrat de modding (voir README)
 │       │   ├── modRegistry.ts               Résout un modId → { mod, mapSize, movement, room… }
 │       │   ├── room.ts / room.test.ts       Un salon = une simulation indépendante (tick fixe)
-│       │   ├── roomManager.ts / .test.ts    Registre des salons (créer/lister/rejoindre/expirer)
+│       │   ├── roomManager.ts / .test.ts    Registre des salons (créer/lister/rejoindre/expirer) — un salon
+│       │   │                                 PRIVÉ n'est joignable QUE par son code d'invitation, jamais par
+│       │   │                                 son id interne (voir CreateRoomOptions.mapSize/botCount pour la
+│       │   │                                 personnalisation d'un salon privé : taille de carte 1000-50000,
+│       │   │                                 population de bots 0-50 fixe ou min/max)
 │       │   ├── roomIsolation.test.ts        Mesure l'isolation CPU entre salons (mono-thread Node)
 │       │   ├── resetSchedule.ts             Planification du reset auto (quotidien/intervalle/calé horloge)
 │       │   ├── godmode.ts                   Convention "Blob Dieu" (invincible, mange tout — outil admin)
@@ -182,23 +192,39 @@ Angul.io/
 │       │   ├── worker/                      Hébergement des salons — scalabilité horizontale
 │       │   │   ├── protocol.ts                    Messages échangés avec un worker_thread
 │       │   │   ├── roomHost.ts                    Interface RoomHost + LocalRoomHost (mono-thread, tests)
-│       │   │   ├── workerRoomHost.ts               RoomHost réparti sur N worker_threads (production)
-│       │   │   ├── roomInstance.ts                Une Room vivant DANS un worker
+│       │   │   ├── workerRoomHost.ts               RoomHost réparti sur N worker_threads (production) —
+│       │   │   │                                    résout spec.mapSize ?? mapSize du mod pour
+│       │   │   │                                    RoomHandle.mapSize (welcome.mapSize), en phase avec
+│       │   │   │                                    la même résolution faite par RoomInstance ci-dessous
+│       │   │   ├── roomInstance.ts / .test.ts      Une Room vivant DANS un worker — applique spec.mapSize
+│       │   │   │                                    (taille de carte perso) et applyRoomBotCountOverride
+│       │   │   │                                    (spec.botCount, réutilise la pyramide Challenger)
 │       │   │   ├── roomWorker.ts                  Point d'entrée du worker_thread (boucle de messages)
 │       │   │   └── snapshotBuilder.ts / .test.ts  Construit l'EntitySnapshot[] envoyé au réseau
 │       │   └── bots/                        Système de robots (IA, régulation population)
 │       │       ├── botTypes.ts                    Profils ('fuis', 'neutre'...) + pyramide Challenger
 │       │       │                                   (ChallengerConfig/DEFAULT_CHALLENGER_CONFIG,
 │       │       │                                   rampedChallengerTarget), voir BOT_IDENTITIES
-│       │       ├── botEvaluator.ts / .test.ts     IA décisionnelle (utility evaluation)
+│       │       ├── behaviorConfig.ts              Schéma BotBehaviorConfig (pilotage : rayons, intensités,
+│       │       │                                   cooldowns de split, marge d'évitement des murs par profil)
+│       │       │                                   + DEFAULT_BOT_BEHAVIOR_CONFIG (repli/valeurs historiques)
+│       │       ├── loadBehaviorConfig.ts / .test.ts  Lit server/configs/bots/<id>.json (fusion par section
+│       │       │                                   avec le défaut), listAvailableBotBehaviorIds()
+│       │       ├── botEvaluator.ts / .test.ts     IA décisionnelle (utility evaluation) — pilotée par un
+│       │       │                                   BotBehaviorConfig injecté (voir ci-dessus), plus aucune
+│       │       │                                   constante codée en dur
 │       │       └── botManager.ts / .test.ts       Population : bots normaux (spawn progressif à 0 humain
 │       │                                           uniquement) + Challengers (permanents, population qui
 │       │                                           décroît linéairement de maxWithHumans à minWithHumans
 │       │                                           avec le nombre d'humains connectés) + despawn
-│       │                                           d'inactivité (idleDespawn) + plafond dur (maxTotal)
+│       │                                           d'inactivité (idleDespawn) + plafond dur (maxTotal).
+│       │                                           Charge aussi le BotBehaviorConfig une fois à la
+│       │                                           construction (loadBotBehaviorConfig(config.behaviorId))
 │       ├── mods/                      Modes de jeu — voir README §Modding pour la philosophie
 │       │   ├── parametric/                  Mod générique piloté à 100% par un JSON (server/configs/*.json)
 │       │   │   ├── config.ts                      Schéma TypeScript complet de la config JSON
+│       │   │   │                                    (BotConfig.behaviorId référence un fichier
+│       │   │   │                                    server/configs/bots/<id>.json, absent = 'default')
 │       │   │   ├── loadConfig.ts                  Lit/valide server/configs/<modId>.json
 │       │   │   ├── physics.ts                     Formules dérivées de la config (vitesse/accel/décroissance…)
 │       │   │   ├── pieceState.ts                  État par-morceau (cible, cooldowns) hors du World générique
@@ -227,7 +253,8 @@ Angul.io/
 │           │   ├── staticServer.ts          Serveur de fichiers statiques (anti path-traversal)
 │           │   ├── router.ts                Routage HTTP central déléguant aux handlers
 │           │   └── routes/
-│           │       ├── lobby.ts             GET/POST /api/rooms, GET /api/modes, GET /api/stats
+│           │       ├── lobby.ts             GET/POST /api/rooms (mapSize/botCount pour un salon privé
+│           │       │                          personnalisé), GET /api/modes, GET /api/stats
 │           │       ├── auth.ts              POST /api/auth/register, /login, /logout, GET /api/account/me
 │           │       ├── health.ts            GET /api/admin/health (métriques de charge par salon)
 │           │       ├── admin.ts             POST /api/admin/login, /logout, GET/PATCH /api/admin/players
@@ -253,7 +280,8 @@ Angul.io/
 │       ├── audio.ts                   Gestionnaire de musique/sons (un seul flux actif à la fois)
 │       ├── pwa.ts                     Enregistrement du service worker
 │       ├── auth.ts                    Client API comptes (login/register/logout/profile/avatar)
-│       ├── lobby.ts                   Client API salons (liste/création/modes/stats serveur)
+│       ├── lobby.ts                   Client API salons (liste/création/modes/stats serveur, personnalisation
+│       │                               mapSize/botCount d'un salon privé)
 │       ├── support.ts                 Contenu de la page Soutenir (lien de don, texte)
 │       ├── net.ts / net.test.ts       Connexion WebSocket au serveur de jeu (reconnexion auto)
 │       ├── input.ts                   Capture souris/clavier/manette → cible + intensité + actions
@@ -309,14 +337,14 @@ Angul.io/
 | `TopNav.tsx` | Nav haute : marque, liens Classement/À Propos, cercle de compte |
 | `ModeRoomList.tsx` | Colonne gauche : sélecteur de mode + classement des salons publics de ce mode |
 | `PlayPanel.tsx` | Colonne centre : compteur de joueurs connectés, pseudo, bouton "Rejoindre" |
-| `CreateRoomPanel.tsx` | Colonne droite : création de salon privé (Premium) + rejoindre par code |
+| `CreateRoomPanel.tsx` | Colonne droite : création de salon privé (Premium, nombre de robots fixe ou min/max et taille de carte personnalisables) + rejoindre par code — un salon PRIVÉ est rejoint via son CODE d'invitation, jamais son id interne |
 | `BottomBar.tsx` | Pied de page : version, marque, lien Soutenir |
 | `SpectatorBackground.tsx` | Fond animé : connexion WS lecture seule (`?spectate=1`), réutilise `render.ts` |
 | `Minimap.tsx` | Mini-carte 3x3 (secteurs A1-C3) affichée en jeu |
 | `AssetPreloader.tsx` | Précharge les images de skins avant affichage du jeu (évite un flash sans texture) |
 | `ErrorBoundary.tsx` | Filet de sécurité React (évite un écran blanc total sur exception de rendu) |
 | `AudioSettings.tsx` / `KeybindSettings.tsx` | Réglages son / remapping des touches (accessibles depuis Paramètres) |
-| `GameView.tsx` | **Le seul composant qui touche au canvas en partie** — boucle de rendu (`requestAnimationFrame`), connexion WebSocket, HUD (stats/leaderboard/minimap/dash/écran de mort) — voir README §Réseau pour le détail de sa boucle |
+| `GameView.tsx` | **Le seul composant qui touche au canvas en partie** — boucle de rendu (`requestAnimationFrame`), connexion WebSocket, HUD (stats/leaderboard/minimap/dash/écran de mort) — voir README §Réseau pour le détail de sa boucle. Écran de connexion initial limité à 500ms (`MIN_CONNECTING_SCREEN_MS`) ; `doRespawn()`/le bouton Rejouer forcent une reconnexion immédiate (`ensureConnected()`, `net.ts`) avant d'envoyer le `join` |
 
 ### 4.2 Client — sous-pages (`client/src/pages/`)
 
@@ -327,7 +355,7 @@ commune `PageLayout.tsx`.
 |---|---|---|
 | `PageLayout.tsx` | — | Coquille commune (titre + bouton retour accueil) |
 | `AccountPage.tsx` | `/compte` | Connexion/inscription/déconnexion |
-| `ProfilePage.tsx` | `/profil` | Niveau/XP/Premium/cosmétiques/scores + avatar + personnalisation écran de mort |
+| `ProfilePage.tsx` | `/profil` | Niveau/XP/Premium/cosmétiques/scores + avatar (caroussel pleine largeur, aligné sur les autres cartes de la colonne) + personnalisation écran de mort. Badge NIVEAU en pastille blanche glassmorphism |
 | `SettingsPage.tsx` | `/parametres` | Plafond FPS/Vsync, son, touches (réglages locaux à l'appareil) |
 | `LeaderboardPage.tsx` | `/classement` | Classement global |
 | `SupportPage.tsx` | `/soutenir` | Explication du don libre + lien de don |

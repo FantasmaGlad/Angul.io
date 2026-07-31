@@ -45,6 +45,12 @@ export interface CreateRoomOptions {
   botsEnabled?: boolean;
   /** Code d'invitation à 6 chiffres pré-généré par le client (ou généré automatiquement si omis/pris). */
   inviteCode?: string;
+  /** Taille de carte personnalisée (carrée, px) — voir `RoomSpec.mapSize` (worker/protocol.ts).
+   * Bornes (1000-50000) validées côté HTTP (net/http/routes/lobby.ts), pas ici. */
+  mapSize?: number;
+  /** Population de bots personnalisée — voir `RoomSpec.botCount` (worker/protocol.ts). Bornes
+   * (0-50) validées côté HTTP (net/http/routes/lobby.ts), pas ici. */
+  botCount?: { min: number; max: number };
 }
 
 /** Vue publique d'un salon, sans exposer la `Room` ni ses internes (utilisée par le lobby, Lot 2.2). */
@@ -170,6 +176,8 @@ export class RoomManager {
       maxPlayers,
       botsEnabled: options.botsEnabled,
       resetSchedule,
+      mapSize: options.mapSize,
+      botCount: options.botCount,
     };
     const handle = this.host.createRoom(spec);
     handle.onTick((_tick, _payloads, stats) => this.roomStats.set(id, stats));

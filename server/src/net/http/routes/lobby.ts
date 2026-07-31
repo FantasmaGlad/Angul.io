@@ -9,6 +9,13 @@ const MIN_ROOM_MAX_PLAYERS = 2;
 const MAX_ROOM_MAX_PLAYERS = 200;
 const MIN_ROOM_DURATION_MS = 60_000;
 const MAX_ROOM_DURATION_MS = 24 * 60 * 60_000;
+/** Bornes de personnalisation d'un salon privé (demande utilisateur : "customiser le nombre de
+ * robots au total, mini, max, ou fixe entre 0 et 50 robots" / "taille de la carte entre 1000x1000
+ * et 50000x50000"). */
+const MIN_ROOM_BOT_COUNT = 0;
+const MAX_ROOM_BOT_COUNT = 50;
+const MIN_ROOM_MAP_SIZE = 1000;
+const MAX_ROOM_MAP_SIZE = 50_000;
 
 export async function handleCreateRoom(
   roomManager: RoomManager,
@@ -64,6 +71,30 @@ export async function handleCreateRoom(
   const inviteCode =
     isRecord(body) && typeof body.inviteCode === 'string' ? body.inviteCode : undefined;
 
+  const mapSizeRaw = isRecord(body) ? body.mapSize : undefined;
+  const mapSize =
+    typeof mapSizeRaw === 'number' &&
+    Number.isInteger(mapSizeRaw) &&
+    mapSizeRaw >= MIN_ROOM_MAP_SIZE &&
+    mapSizeRaw <= MAX_ROOM_MAP_SIZE
+      ? mapSizeRaw
+      : undefined;
+
+  const botCountRaw = isRecord(body) ? body.botCount : undefined;
+  let botCount: { min: number; max: number } | undefined;
+  if (isRecord(botCountRaw)) {
+    const minRaw = botCountRaw.min;
+    const maxRaw = botCountRaw.max;
+    const isBoundedInt = (n: unknown): n is number =>
+      typeof n === 'number' &&
+      Number.isInteger(n) &&
+      n >= MIN_ROOM_BOT_COUNT &&
+      n <= MAX_ROOM_BOT_COUNT;
+    if (isBoundedInt(minRaw) && isBoundedInt(maxRaw) && minRaw <= maxRaw) {
+      botCount = { min: minRaw, max: maxRaw };
+    }
+  }
+
   if (!name) {
     logEvent('room_create_rejected', { reason: 'missing_name' });
     respondJson(res, 400, { error: 'Le nom du salon est requis.' });
@@ -84,6 +115,8 @@ export async function handleCreateRoom(
       durationMs,
       botsEnabled,
       inviteCode,
+      mapSize,
+      botCount,
     });
     respondJson(res, 201, summary);
   } catch (error) {

@@ -240,10 +240,16 @@ export function createWorkerRoomHost(workerCount: number): RoomHost {
       // worker, qui résout le mod une seconde fois de son côté pour la simulation elle-même
       // (roomWorker.ts).
       const { mapSize, movement } = resolveMod(spec.modId);
+      // `spec.mapSize` (taille personnalisée d'un salon créé depuis le lobby) doit être répercuté
+      // ICI aussi, pas seulement dans `RoomInstance` côté worker — sinon `welcome.mapSize` annoncé
+      // au client (voir connectionHandler.ts, qui lit `handle.mapSize`) resterait la taille par
+      // défaut du mod alors que la simulation réelle (dans le worker) tourne bien à la taille
+      // demandée : bordures/minimap/prédiction client désynchronisées de la vraie carte.
+      const effectiveMapSize = spec.mapSize ?? mapSize;
 
       const handle = new WorkerRoomHandle(
         spec.id,
-        mapSize,
+        effectiveMapSize,
         movement ?? DEFAULT_MOVEMENT_CONFIG,
         entry.worker,
         nextReqId,

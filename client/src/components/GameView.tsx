@@ -443,7 +443,7 @@ export default function GameView({
     // jamais rester bloqué dessus si, pour une raison quelconque, aucun `state` n'arrive jamais
     // (le socket resterait alors "connecting" indéfiniment sans jamais déclencher `onClose` non
     // plus) — mêmes ordres de grandeur que le filet de secours d'AssetPreloader.tsx.
-    const MIN_CONNECTING_SCREEN_MS = 2000;
+    const MIN_CONNECTING_SCREEN_MS = 500;
     const CONNECTING_SCREEN_FALLBACK_MS = 8000;
     const connectStartMs = performance.now();
     let connectingOverlayHidden = false;
@@ -676,6 +676,15 @@ export default function GameView({
       // plutôt que d'attendre le `welcome` qui suivra (round-trip réseau) — voir le commentaire
       // de `musicUrlForMod`/`modIdRef`.
       audioManager.playMusic(musicUrlForMod(modIdRef.current, roomIdOrInviteCode));
+      // Force une reconnexion immédiate si le socket est dans la fenêtre de backoff entre deux
+      // tentatives automatiques (voir GameConnection.handleClose/RECONNECT_DELAYS_MS, net.ts) —
+      // sans ça, un `join` cliqué pendant cette fenêtre (micro-coupure réseau juste après la mort,
+      // par exemple) est silencieusement perdu (`send()` sur un socket CLOSED/CLOSING) et le
+      // joueur reste bloqué jusqu'à 4.8s sur un écran de mort déjà masqué (`setDeathState` ci-
+      // dessus) sans statistiques ni blob — un "écran blanc" perçu comme figé (retour
+      // utilisateur : "après Rejouer, pas de stats, page blanche coincée"). No-op si déjà
+      // ouvert/en cours d'ouverture (voir `ensureConnected`).
+      connection.ensureConnected();
       connection.send({ type: 'join', nickname });
     }
 
@@ -1119,6 +1128,11 @@ export default function GameView({
                   // Voir `doRespawn`/`musicUrlForMod` dans l'effet ci-dessus : relance synchrone
                   // au clic plutôt que d'attendre le `welcome` réseau.
                   audioManager.playMusic(musicUrlForMod(modIdRef.current, roomIdOrInviteCode));
+                  // Voir le commentaire de `doRespawn` (même effet, dupliqué ici car cette JSX
+                  // n'a pas accès aux fonctions de l'effet) : force une reconnexion immédiate si
+                  // le socket est en fenêtre de backoff, pour ne jamais perdre silencieusement ce
+                  // `join`.
+                  connectionRef.current?.ensureConnected();
                   connectionRef.current?.send({ type: 'join', nickname });
                 }}
               >

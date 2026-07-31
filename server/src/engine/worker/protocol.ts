@@ -23,6 +23,16 @@ export interface RoomSpec {
    * résout déjà le "reset par défaut" avant de construire ce spec, pour ne pas dépendre d'une
    * troisième valeur possible côté worker). */
   resetSchedule: RoomResetSchedule | null;
+  /** Taille de carte (carrée, px) pour CE salon — remplace `mapSize` du mod résolu (voir
+   * `RoomInstance`). Absent = taille par défaut du mod (comportement d'origine). Bornes de
+   * validité (1000-50000) appliquées côté HTTP (lobby.ts), pas ici. */
+  mapSize?: number;
+  /** Population de bots pour CE salon — remplace les réglages du mod résolu (voir `RoomInstance`,
+   * `applyRoomBotCountOverride`). `min`/`max` identiques = population FIXE ; `min < max` = la même
+   * pyramide Challenger que le comportement par défaut (décroissance de `max` à `min` bots à mesure
+   * que des humains rejoignent), mais bornée par ces valeurs plutôt que celles du mod. Absent =
+   * réglages du mod inchangés. */
+  botCount?: { min: number; max: number };
 }
 
 export interface TickPayload {

@@ -364,9 +364,20 @@ export class LocalPrediction {
         accelerationBiasPx,
         replayChunkJitterPx,
       );
+      // Le seuil de lissage doit toujours rester AU-DESSUS du seuil d'ignorance dynamique
+      // (`dynamicIgnoreThresholdPx`, jusqu'à ~220px pendant un Dash à pleine vitesse, voir
+      // RECONCILE_JITTER_TOLERANCE_MAX_PX) — sans ce plancher dynamique, `RECONCILE_SNAP_THRESHOLD_PX`
+      // (120px, dimensionné pour la vitesse de croisière hors Dash) se retrouvait EN-DESSOUS du
+      // seuil d'ignorance pendant un Dash : toute correction réelle (répulsion contre un bot croisé
+      // en pleine charge, typiquement) qui dépassait le bruit de découpage temporel tombait
+      // directement dans la branche téléportation (aucun lissage), au lieu d'être absorbée en
+      // douceur par `visualOffset` — un vrai saut/rollback visuel perceptible en dash, distinct du
+      // tremblement déjà réglé par `dynamicIgnoreThresholdPx` lui-même (retour utilisateur : "lag
+      // avec roll back" au dash, persistant malgré le réglage précédent de ce seuil d'ignorance).
+      const snapThresholdPx = Math.max(RECONCILE_SNAP_THRESHOLD_PX, dynamicIgnoreThresholdPx * 2);
       if (residualDist <= dynamicIgnoreThresholdPx) {
         predicted.position = beforeReconcile;
-      } else if (residualDist <= RECONCILE_SNAP_THRESHOLD_PX) {
+      } else if (residualDist <= snapThresholdPx) {
         predicted.visualOffset = sub(predicted.visualOffset, residual);
       } else {
         // Téléportation importante (mort/respawn, bord de carte) : réinitialisation visuelle directe.

@@ -1,0 +1,41 @@
+{
+  "neighborQueryRadiusPx": 500,
+  "predatorMassRatio": 1.05,
+  "preyMassRatio": 0.8,
+  "targetProjectionDistancePx": 10000,
+  "directionSmoothing": 0.25,
+  "fuis": {
+    "predatorRadiusPx": 350,
+    "fleeIntensity": 1.0,
+    "foodSeekIntensity": 0.5,
+    "wanderIntensity": 0.5
+  },
+  "neutre": {
+    "predatorRadiusPx": 150,
+    "cautionIntensity": 0.8,
+    "foodSeekIntensity": 0.7,
+    "wanderIntensity": 0.6
+  },
+  "agressif": {
+    "threatRadiusPx": 200,
+    "fleeIntensity": 1.0,
+    "preyPredictionSeconds": 0.3,
+    "chaseIntensity": 1.0,
+    "foodSeekIntensity": 0.9,
+    "wanderIntensity": 0.9,
+    "splitCooldownMs": 15000,
+    "splitMassMultiplier": 1.35
+  },
+  "fou": {
+    "pauseChance": 0.1,
+    "intensityMin": 0.2,
+    "intensityRange": 0.8,
+    "wanderMaxDeviation": 0.8,
+    "splitCooldownMs": 20000,
+    "splitMinMass": 300,
+    "splitChance": 0.002
+  },
+  "wallAvoidance": {
+    "marginPx": 300
+  }
+}

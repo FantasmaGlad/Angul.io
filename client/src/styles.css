@@ -1301,10 +1301,12 @@ select {
 
 /* --- Avatar Swiper Component --- */
 .avatar-swiper-wrapper {
+  /* Largeur alignée sur les autres cartes de la même colonne (ex. `.xp-progress-card`, "Progression
+     de niveau") — demande utilisateur : l'ancien plafond à 420px, centré, rendait le caroussel
+     visiblement plus étroit que le reste de la colonne `.profile-dashboard-grid`. */
   position: relative;
   width: 100%;
-  max-width: 420px;
-  margin: 10px auto 0 auto;
+  margin: 10px 0 0 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1470,6 +1472,16 @@ select {
 .account-badge-pill.premium {
   background: linear-gradient(135deg, #d4af37, #f3e5ab);
   color: #5a4500;
+}
+/* Badge de niveau (page Profil) — demande utilisateur : retire le style coloré/doré du niveau,
+   garde un pastille blanche glassmorphism (contrairement au badge Premium ci-dessus, qui reste
+   doré) plutôt que le fond neutre plat de `.account-badge-pill` par défaut. */
+.account-badge-pill.level {
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
 }
 
 .lobby-section {

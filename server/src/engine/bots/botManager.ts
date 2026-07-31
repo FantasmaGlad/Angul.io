@@ -2,7 +2,9 @@ import { distance, isBotId, skinForNickname } from '@angulio/shared';
 import type { BotConfig } from '../../mods/parametric/config.js';
 import type { Room } from '../room.js';
 import type { PlayerId } from '../types.js';
+import type { BotBehaviorConfig } from './behaviorConfig.js';
 import { computeBotInput, type BotStateMemory } from './botEvaluator.js';
+import { loadBotBehaviorConfig } from './loadBehaviorConfig.js';
 import {
   challengerMassMultiplierForRank,
   DEFAULT_BOT_PROPORTIONS,
@@ -27,6 +29,11 @@ export class BotManager {
   private readonly room: Room;
   private readonly config: BotConfig;
   private readonly maxRoomCapacity: number;
+  /** Profil de PILOTAGE des bots (fuite/chasse/vagabondage/split, botEvaluator.ts) — distinct de
+   * `config` ci-dessus (leur POPULATION) : voir `BotConfig.behaviorId`/`behaviorConfig.ts`. Chargé
+   * une seule fois à la construction (pas par tick) — un fichier JSON de comportement n'est
+   * jamais modifié pendant qu'un salon tourne. */
+  private readonly behavior: BotBehaviorConfig;
   private readonly activeBots = new Map<PlayerId, ActiveBot>();
   private readonly botCounters: Record<BotProfileKind, number> = {
     fuis: 0,
@@ -54,6 +61,7 @@ export class BotManager {
     this.config = config;
     this.maxRoomCapacity = maxRoomCapacity;
     this.updateIntervalMs = 1000 / Math.max(0.1, config.updateFrequencyHz || 30);
+    this.behavior = loadBotBehaviorConfig(config.behaviorId);
   }
 
   /** Recalcule périodiquement le ratio de bots entre 1/10 (10%) et 2/10 (20%) de la capacité du salon pour un nombre fluctuant et non fixe de joueurs. */
@@ -102,7 +110,13 @@ export class BotManager {
       const dueByContact = !dueByAccumulator && hasHuman && this.isTouchingHuman(bot.id);
       if (dueByAccumulator || dueByContact) {
         bot.accumulatorMs %= this.updateIntervalMs;
-        const { input, memory } = computeBotInput(this.room.world, bot.id, bot.profile, bot.memory);
+        const { input, memory } = computeBotInput(
+          this.room.world,
+          bot.id,
+          bot.profile,
+          bot.memory,
+          this.behavior,
+        );
         bot.memory = memory;
         this.room.handleInput(bot.id, input);
       }

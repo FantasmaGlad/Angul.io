@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
-import { getRandomSkin } from '@angulio/shared';
+import { getRandomSkin, isValidSkin } from '@angulio/shared';
 import { clearSession, fetchProfile, loadSession, type AuthResult } from './auth.js';
 import AssetPreloader from './components/AssetPreloader.js';
 import Home from './components/Home.js';
@@ -73,9 +73,26 @@ export default function App() {
   const [guestSkin] = useState<string>(() => {
     try {
       const saved = localStorage.getItem('angulio.guestSkin');
-      if (saved) return saved;
-    } catch {}
-    return getRandomSkin();
+      // Valide contre le roster actuel (`SKINS`, shared/src/avatarPalette.ts) — un skin choisi
+      // lors d'une session précédente peut avoir été retiré d'`assets/Profil/` depuis (demande
+      // utilisateur : "si un profil n'a pas d'asset de profil ou un asset qui n'existe plus, en
+      // mettre un au hasard parmi ceux qui sont présents"). Sans cette validation, la valeur brute
+      // de `localStorage` était réutilisée telle quelle indéfiniment, produisant un avatar
+      // cassé/introuvable à chaque partie tant que le joueur n'ouvrait pas la page Profil pour en
+      // choisir un autre manuellement.
+      if (saved && isValidSkin(saved)) return saved;
+    } catch {
+      // localStorage indisponible (navigation privée, quota) — repli sur un skin aléatoire plus bas.
+    }
+    // Persisté immédiatement (pas seulement retourné) : sans ça, un `saved` invalide serait
+    // re-tiré au hasard à CHAQUE chargement de page plutôt que de se stabiliser sur un choix.
+    const fallback = getRandomSkin();
+    try {
+      localStorage.setItem('angulio.guestSkin', fallback);
+    } catch {
+      // localStorage indisponible — le choix reste actif pour CETTE session, juste non persisté.
+    }
+    return fallback;
   });
 
   const [rooms, setRooms] = useState<RoomSummary[]>([]);

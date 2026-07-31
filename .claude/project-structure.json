@@ -1,7 +1,7 @@
 {
   "version": 1,
   "generatedFrom": "structure.md",
-  "lastReviewed": "2026-07-31",
+  "lastReviewed": "2026-07-31 (v5.5)",
   "note": "Cartographie machine-readable du depot, en complement de structure.md (lisible par un humain) et README.md (architecture/modding en detail). Sert de source au serveur MCP local que .mcp.json enregistre aupres de Claude Code (.gemini/mcp/server.mjs, PAS .claude/mcp/server.mjs qui existe aussi mais n'est pas celui lance) et a son equivalent Gemini/Antigravity — .gemini/project-structure.json est un SYMLINK vers CE fichier (../.claude/project-structure.json), pas une copie separee : les deux plateformes lisent toujours exactement le meme contenu, rien a resynchroniser manuellement. Ce fichier ET .claude/mcp/** SONT commites (voir structure.md §1bis) — outillage de projet partage, pas une preference locale. Mets a jour CE fichier ET structure.md dans le meme commit si tu ajoutes/deplaces/supprimes un fichier important — sinon les deux deviennent trompeurs.",
   "workspaces": [
     {
@@ -267,7 +267,7 @@
         "profil",
         "bots"
       ],
-      "description": "SKINS/SKIN_IMAGE_MAP (roster d'avatars, source de verite unique), DEFAULT_SKIN, isValidSkin, skinForNickname (choix deterministe), getRandomSkin. Si assets/Profil/ change, mettre a jour SKINS/SKIN_IMAGE_MAP ici."
+      "description": "SKINS/SKIN_IMAGE_MAP (roster d'avatars, source de verite unique — 14 skins depuis v5.5 : +Cacahuete/Fekeboude en string/Olivia), DEFAULT_SKIN, isValidSkin, skinForNickname (choix deterministe), getRandomSkin. Si assets/Profil/ change, mettre a jour SKINS/SKIN_IMAGE_MAP ici. Un skin qui en sort (asset supprime) est detecte et remplace au hasard par AccountsService.ensureValidAvatarColor (service.ts, comptes) et App.tsx (guestSkin, invites) — jamais laisse comme avatar casse."
     },
     {
       "path": "shared/src/deathBanners.ts",
@@ -336,6 +336,17 @@
         "dash"
       ],
       "description": "Config JSON du mode Hardcore : absorption x2, Dash uniquement (split desactive via player.splitEnabled=false)."
+    },
+    {
+      "path": "server/configs/bots/default.json",
+      "workspace": "server",
+      "tags": [
+        "config",
+        "bots",
+        "comportement",
+        "ia"
+      ],
+      "description": "Profil de comportement de robots par defaut (fuis/neutre/agressif/fou/wallAvoidance) — meme systeme que server/configs/*.json pour les modes, selectionne via BotConfig.behaviorId (config.ts), charge par loadBehaviorConfig.ts. Un nouveau fichier ici = un nouveau profil de comportement, sans code."
     },
     {
       "path": "server/scripts/hashPassword.mjs",
@@ -437,9 +448,11 @@
       "tags": [
         "moteur",
         "salons",
-        "registre"
+        "registre",
+        "map-size",
+        "bots"
       ],
-      "description": "Registre des salons (creer/lister/rejoindre/expirer)."
+      "description": "Registre des salons (creer/lister/rejoindre/expirer). CreateRoomOptions.mapSize/botCount (salon prive personnalise, voir CreateRoomPanel.tsx) transmis tels quels dans le RoomSpec envoye au RoomHost — resolus/appliques par RoomInstance (worker/roomInstance.ts)."
     },
     {
       "path": "server/src/engine/resetSchedule.ts",
@@ -487,9 +500,10 @@
       "tags": [
         "moteur",
         "scalabilite",
-        "worker-threads"
+        "worker-threads",
+        "map-size"
       ],
-      "description": "RoomHost reparti sur N worker_threads (production, defaut)."
+      "description": "RoomHost reparti sur N worker_threads (production, defaut). Resout spec.mapSize ?? mapSize du mod pour RoomHandle.mapSize (welcome.mapSize cote reseau) — doit rester EN PHASE avec la meme resolution faite par RoomInstance dans le worker, sinon le client recoit une taille de carte annoncee differente de la simulation reelle."
     },
     {
       "path": "server/src/engine/worker/roomInstance.ts",
@@ -499,9 +513,11 @@
         "room",
         "join",
         "respawn",
-        "skin"
+        "skin",
+        "map-size",
+        "bots"
       ],
-      "description": "Une Room vivant DANS un worker — join()/respawn() (reutilise le skin deja assigne au joueur plutot que de le redoriver, voir avatarPalette.ts)."
+      "description": "Une Room vivant DANS un worker — join()/respawn() (reutilise le skin deja assigne au joueur plutot que de le redoriver, voir avatarPalette.ts). Applique spec.mapSize (override de taille de carte) et applyRoomBotCountOverride(spec.botCount) (population de bots personnalisee pour un salon prive, reutilise la pyramide Challenger existante — voir botManager.ts/botTypes.ts)."
     },
     {
       "path": "server/src/engine/worker/roomWorker.ts",
@@ -539,9 +555,32 @@
       "workspace": "server",
       "tags": [
         "bots",
-        "ia"
+        "ia",
+        "comportement",
+        "config"
       ],
-      "description": "IA decisionnelle des bots (utility evaluation)."
+      "description": "IA decisionnelle des bots (utility evaluation) — pilotee par un BotBehaviorConfig injecte (voir behaviorConfig.ts/loadBehaviorConfig.ts), plus aucune constante codee en dur (rayons, intensites, cooldowns de split, marge d'evitement des murs...). computeBotInput(..., behavior = DEFAULT_BOT_BEHAVIOR_CONFIG) : le parametre est optionnel pour les appels/tests existants."
+    },
+    {
+      "path": "server/src/engine/bots/behaviorConfig.ts",
+      "workspace": "server",
+      "tags": [
+        "bots",
+        "comportement",
+        "config",
+        "schema"
+      ],
+      "description": "Schema TypeScript du comportement de robots (BotBehaviorConfig, un objet par profil fuis/neutre/agressif/fou + wallAvoidance) + DEFAULT_BOT_BEHAVIOR_CONFIG (copie exacte des anciennes constantes codees en dur — comportement inchange par defaut)."
+    },
+    {
+      "path": "server/src/engine/bots/loadBehaviorConfig.ts",
+      "workspace": "server",
+      "tags": [
+        "bots",
+        "comportement",
+        "config"
+      ],
+      "description": "loadBotBehaviorConfig(id) lit server/configs/bots/<id>.json (fusion PAR SECTION avec DEFAULT_BOT_BEHAVIOR_CONFIG, jamais un remplacement total) — repli silencieux sur le defaut si absent/invalide. listAvailableBotBehaviorIds() liste les profils disponibles."
     },
     {
       "path": "server/src/engine/bots/botManager.ts",
@@ -551,9 +590,10 @@
         "population",
         "spawn",
         "challengers",
-        "idle-despawn"
+        "idle-despawn",
+        "comportement"
       ],
-      "description": "Population de bots : normaux (uniquement a 0 humain) + Challengers (permanents, decroissance avec le nb d'humains, plafond dur maxTotal) + despawn d'inactivite (idleDespawn)."
+      "description": "Population de bots : normaux (uniquement a 0 humain) + Challengers (permanents, decroissance avec le nb d'humains, plafond dur maxTotal) + despawn d'inactivite (idleDespawn). Charge aussi le BotBehaviorConfig (loadBotBehaviorConfig(config.behaviorId), une seule fois a la construction) transmis a computeBotInput a chaque evaluation."
     },
     {
       "path": "server/src/mods/parametric/config.ts",
@@ -562,9 +602,10 @@
         "mods",
         "config",
         "schema",
-        "json"
+        "json",
+        "bots"
       ],
-      "description": "Schema TypeScript complet de la config JSON d'un mod parametrique (ParametricModConfig, BotConfig) — voir README section 5 pour la reference exhaustive."
+      "description": "Schema TypeScript complet de la config JSON d'un mod parametrique (ParametricModConfig, BotConfig) — voir README section 5 pour la reference exhaustive. BotConfig.behaviorId reference un fichier server/configs/bots/<id>.json (voir engine/bots/behaviorConfig.ts/loadBehaviorConfig.ts) ; absent = 'default'."
     },
     {
       "path": "server/src/mods/parametric/loadConfig.ts",
@@ -691,7 +732,7 @@
         "inscription",
         "connexion"
       ],
-      "description": "Logique metier inscription/connexion/profil, updateAvatarColor (valide via isValidAvatarColor/isValidSkin)."
+      "description": "Logique metier inscription/connexion/profil, updateAvatarColor (valide via isValidAvatarColor/isValidSkin). ensureValidAvatarColor(accountId, raw) : si la couleur/skin stockee est absente ou ne correspond plus a aucun skin existant (asset retire), assigne et PERSISTE un skin au hasard (v5.5) — appele par getProfile/getAvatarColor, jamais par updateAccountForAdmin (l'admin garde le droit d'ecrire une valeur arbitraire, ex. tests avec un hex historique)."
     },
     {
       "path": "server/src/admin/adminAuth.ts",
@@ -789,9 +830,11 @@
         "reseau",
         "http",
         "salons",
-        "api"
+        "api",
+        "map-size",
+        "bots"
       ],
-      "description": "GET/POST /api/rooms, GET /api/modes, GET /api/stats."
+      "description": "GET/POST /api/rooms, GET /api/modes, GET /api/stats. POST /api/rooms valide mapSize (1000-50000) et botCount ({min,max}, 0-50 chacun) pour un salon prive personnalise."
     },
     {
       "path": "server/src/net/http/routes/auth.ts",
@@ -892,7 +935,7 @@
         "favicon",
         "source-de-verite"
       ],
-      "description": "Assets statiques SOURCE (icons/*.png, favicon.ico, manifest.json, service-worker.js) copies tels quels par le build via publicDir:'static' (vite.config.ts) — PAS client/public/, qui est entierement genere."
+      "description": "Assets statiques SOURCE (icons/*.png, favicon.ico, manifest.json, service-worker.js) copies tels quels par le build via publicDir:'static' (vite.config.ts) — PAS client/public/, qui est entierement genere. favicon.ico/icons/icon-*.png derives de assets/Logos/LogoIcon.png (v5.5) — regenerer les trois (favicon multi-resolution 16/32/48 + icon-192/icon-512 + icon-maskable-512 avec marge de securite ~72% pour le masque OS) si LogoIcon.png change a nouveau."
     },
     {
       "path": "client/public/",
@@ -1002,9 +1045,11 @@
       "workspace": "client",
       "tags": [
         "salons",
-        "api-client"
+        "api-client",
+        "map-size",
+        "bots"
       ],
-      "description": "Client API salons (liste/creation/modes/stats serveur)."
+      "description": "Client API salons (liste/creation/modes/stats serveur). CreateRoomOptions.mapSize/botCount pour un salon prive personnalise (voir CreateRoomPanel.tsx)."
     },
     {
       "path": "client/src/support.ts",
@@ -1022,7 +1067,7 @@
         "websocket",
         "reconnexion"
       ],
-      "description": "GameConnection : connexion WebSocket au serveur de jeu, reconnexion auto, close() attend l'ouverture avant de fermer un socket CONNECTING (evite l'erreur console 'closed before established')."
+      "description": "GameConnection : connexion WebSocket au serveur de jeu, reconnexion auto (backoff RECONNECT_DELAYS_MS), close() attend l'ouverture avant de fermer un socket CONNECTING (evite l'erreur console 'closed before established'). ensureConnected() force une reconnexion IMMEDIATE si le socket est dans la fenetre de backoff — utilise par le bouton Rejouer/doRespawn (GameView.tsx) pour ne pas perdre silencieusement le `join` envoye pendant cette fenetre (v5.5, retour utilisateur : 'pas de stats, page blanche coincee' apres Rejouer)."
     },
     {
       "path": "client/src/input.ts",
@@ -1043,7 +1088,7 @@
         "reconciliation",
         "dash"
       ],
-      "description": "PREDICTION LOCALE + reconciliation du blob du joueur, applyDash (DASH_IMPULSE_SPEED=4050, synchronise avec le serveur)."
+      "description": "PREDICTION LOCALE + reconciliation du blob du joueur, applyDash (DASH_IMPULSE_SPEED=4050, synchronise avec le serveur). Seuil de lissage (`snapThresholdPx` dans reconcile()) desormais DYNAMIQUE, toujours >= au seuil d'ignorance de gigue (jusqu'a ~220px en plein Dash) — l'ancien seuil fixe (120px, RECONCILE_SNAP_THRESHOLD_PX) tombait sous ce seuil pendant un Dash a pleine vitesse, faisant sauter au lieu de lisser certaines corrections reelles (v5.5, retour utilisateur : 'lag avec roll back' au dash)."
     },
     {
       "path": "client/src/renderEngine.ts",
@@ -1054,7 +1099,7 @@
         "spectateur",
         "tick-rate"
       ],
-      "description": "INTERPOLATION reseau des entites distantes, snapshotQueue (buffer, expose pour le F3 interpSnapshots), sensible a serverTickRateHz (voir welcome.tickRateHz reduit pour spectateurs)."
+      "description": "INTERPOLATION reseau des entites distantes, snapshotQueue (buffer, expose pour le F3 interpSnapshots), sensible a serverTickRateHz (voir welcome.tickRateHz reduit pour spectateurs). Le lissage exponentiel anti-tressautement s'applique desormais AUSSI en mode spectateur (v5.5, retour utilisateur : bots tremblotants dans le fond du lobby vs fluides en partie) — l'ancienne optimisation qui le sautait pour ce mode supposait a tort qu'un fond decoratif n'en avait pas besoin."
     },
     {
       "path": "client/src/render.ts",
@@ -1129,9 +1174,11 @@
       "workspace": "client",
       "tags": [
         "accueil",
-        "salon-prive"
+        "salon-prive",
+        "map-size",
+        "bots"
       ],
-      "description": "Colonne droite : creation de salon prive (Premium) + rejoindre par code."
+      "description": "Colonne droite : creation de salon prive (Premium) + rejoindre par code. Champs nombre de robots (fixe ou min/max, 0-50) et taille de carte (1000-50000). Un salon PRIVE rejoint via `onJoinRoom` doit passer le CODE D'INVITATION (jamais `room.id`, resolu a `undefined` cote serveur pour un salon prive, voir RoomManager.getManagedRoom) — piege corrige (v5.5)."
     },
     {
       "path": "client/src/components/BottomBar.tsx",
@@ -1209,7 +1256,7 @@
         "f3",
         "dash"
       ],
-      "description": "LE seul composant qui touche au canvas en partie — boucle de rendu, connexion WebSocket (envoie guestSkin au join initial), HUD (stats/leaderboard/minimap/dash/ecran de mort), toggle F3."
+      "description": "LE seul composant qui touche au canvas en partie — boucle de rendu, connexion WebSocket (envoie guestSkin au join initial), HUD (stats/leaderboard/minimap/dash/ecran de mort), toggle F3. Ecran de connexion initial (MIN_CONNECTING_SCREEN_MS) reduit a 500ms (v5.5, etait 2000ms). doRespawn()/le bouton Rejouer appellent connection.ensureConnected() avant d'envoyer le `join` (voir net.ts)."
     },
     {
       "path": "client/src/pages/PageLayout.tsx",
@@ -1241,7 +1288,7 @@
         "ecran-de-mort",
         "route:/profil"
       ],
-      "description": "Niveau/XP/Premium/cosmetiques/scores + AvatarSwiper (caroussel de skins, plafonne en largeur) + personnalisation ecran de mort. Pas de libelle au-dessus du caroussel."
+      "description": "Niveau/XP/Premium/cosmetiques/scores + AvatarSwiper (caroussel de skins, largeur alignee sur les autres cartes de la colonne, ex. la barre de progression de niveau) + personnalisation ecran de mort. Badge NIVEAU en pastille blanche glassmorphism (`.account-badge-pill.level`, styles.css) — le badge Premium reste dore. Pas de libelle au-dessus du caroussel."
     },
     {
       "path": "client/src/pages/SettingsPage.tsx",
@@ -1387,7 +1434,19 @@
     "bots": [
       "server/src/engine/bots/botManager.ts",
       "server/src/engine/bots/botTypes.ts",
-      "server/src/engine/bots/botEvaluator.ts"
+      "server/src/engine/bots/botEvaluator.ts",
+      "server/src/engine/bots/behaviorConfig.ts",
+      "server/src/engine/bots/loadBehaviorConfig.ts",
+      "server/configs/bots/default.json"
+    ],
+    "salons/personnalisation": [
+      "client/src/components/CreateRoomPanel.tsx",
+      "client/src/lobby.ts",
+      "server/src/net/http/routes/lobby.ts",
+      "server/src/engine/roomManager.ts",
+      "server/src/engine/worker/protocol.ts",
+      "server/src/engine/worker/roomInstance.ts",
+      "server/src/engine/worker/workerRoomHost.ts"
     ],
     "avatars/skins": [
       "shared/src/avatarPalette.ts",

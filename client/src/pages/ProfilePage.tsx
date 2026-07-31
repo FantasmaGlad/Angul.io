@@ -328,7 +328,7 @@ export default function ProfilePage({ authToken, onAvatarColorChange, currentSki
                   Joueur : {profile.pseudo}
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                  <span className="account-badge-pill premium">Niveau {profile.level}</span>
+                  <span className="account-badge-pill level">Niveau {profile.level}</span>
                   <span className="account-badge-pill">{profile.premium ? 'Compte Premium' : 'Compte Membre'}</span>
                 </div>
               </div>

@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import {
+  getRandomSkin,
   isValidAvatarColor,
   isDeathBannerUnlocked,
   MAX_DEATH_MESSAGE_LENGTH,
@@ -193,7 +194,7 @@ export class AccountsService {
       premium: account.premium,
       cosmetics: account.cosmetics,
       bestScores,
-      avatarColor: account.avatarColor ?? undefined,
+      avatarColor: await this.ensureValidAvatarColor(accountId, account.avatarColor),
       deathMessage: account.deathMessage,
       deathBannerId: account.deathBannerId,
     };
@@ -204,7 +205,22 @@ export class AccountsService {
    * appelée à chaque `join`/reconnexion, pas seulement à l'ouverture de la page Profil. */
   async getAvatarColor(accountId: number): Promise<string | undefined> {
     const account = await this.repository.findById(accountId);
-    return account?.avatarColor ?? undefined;
+    if (!account) return undefined;
+    return this.ensureValidAvatarColor(accountId, account.avatarColor);
+  }
+
+  /** Si la couleur stockée est absente OU ne correspond plus à aucun skin existant (asset retiré
+   * d'`assets/Profil/` depuis, voir `SKINS`/`shared/src/avatarPalette.ts`), assigne et PERSISTE un
+   * skin au hasard parmi ceux réellement présents plutôt que de laisser un avatar cassé/incohérent
+   * d'un point de vue à l'autre (demande utilisateur : "si un profil n'a pas d'asset de profil ou
+   * un asset qui n'existe plus, en mettre un au hasard parmi ceux qui sont présents"). Auto-guérison
+   * silencieuse et unique : le nouveau choix est ensuite stocké comme n'importe quel choix
+   * explicite, jamais re-tiré au hasard à chaque lecture suivante. */
+  private async ensureValidAvatarColor(accountId: number, raw: string | null): Promise<string> {
+    if (raw && isValidAvatarColor(raw)) return raw;
+    const randomSkin = getRandomSkin();
+    await this.repository.updateAvatarColor(accountId, randomSkin);
+    return randomSkin;
   }
 
   /** Choix d'avatar (refonte UI/UX) — `color` doit appartenir à `AVATAR_PALETTE` (validation

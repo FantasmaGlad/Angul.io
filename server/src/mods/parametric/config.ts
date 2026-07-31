@@ -175,6 +175,13 @@ export interface ParametricModConfig {
 
 export interface BotConfig {
   enabled: boolean;
+  /** Id du profil de comportement de robots à utiliser (nom de fichier sans extension sous
+   * `server/configs/bots/`, voir `engine/bots/loadBehaviorConfig.ts`/`behaviorConfig.ts`) — même
+   * principe que `modId` pour `server/configs/*.json` (demande utilisateur : "même système que les
+   * salons"). Gouverne le PILOTAGE des bots (fuite/chasse/vagabondage/split, botEvaluator.ts) ;
+   * n'a aucun effet sur leur POPULATION (ambientTargetCount/challengers ci-dessous, un souci
+   * différent). Absent = `'default'` (comportement historique, voir `DEFAULT_BOT_BEHAVIOR_CONFIG`). */
+  behaviorId?: string;
   /** Absent : laisse `BotManager.updateFluctuatingRatio` piloter le ratio (10-20%) plutôt qu'une
    * valeur fixe — voir server/configs/*.json, qui n'en définissent volontairement pas. */
   targetRatio?: number;

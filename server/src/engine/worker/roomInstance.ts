@@ -1,4 +1,6 @@
 import { DEFAULT_MOVEMENT_CONFIG, type MovementConfig, type ServerMessage } from '@angulio/shared';
+import { DEFAULT_CHALLENGER_CONFIG } from '../bots/botTypes.js';
+import type { BotConfig } from '../../mods/parametric/config.js';
 import { Room } from '../room.js';
 import type { ModResolver } from '../roomManager.js';
 import type { PlayerId, PlayerInput } from '../types.js';
@@ -62,9 +64,12 @@ export class RoomInstance {
 
     const { mod, mapSize, kArea, bots, movement } = resolveMod(spec.modId);
     this.movement = movement ?? DEFAULT_MOVEMENT_CONFIG;
-    const botConfig = bots ? { ...bots, enabled: spec.botsEnabled ?? bots.enabled } : undefined;
+    let botConfig = bots ? { ...bots, enabled: spec.botsEnabled ?? bots.enabled } : undefined;
+    if (botConfig && spec.botCount) botConfig = applyRoomBotCountOverride(botConfig, spec.botCount);
     this.room = new Room(mod, {
-      mapSize,
+      // Taille de carte personnalisée pour un salon créé depuis le lobby (demande utilisateur,
+      // "Salon Privé") — remplace la taille par défaut du mod ; absente = comportement d'origine.
+      mapSize: spec.mapSize ?? mapSize,
       tickRateHz: spec.tickRateHz,
       kArea,
       maxPlayers: spec.maxPlayers,
@@ -390,4 +395,47 @@ export class RoomInstance {
     };
     for (const listener of this.deathListeners) listener(playerId, death);
   }
+}
+
+/** Remplace la population de bots du mod résolu par les bornes personnalisées d'un salon créé
+ * depuis le lobby (demande utilisateur : "customiser le nombre de robots au total, mini, max, ou
+ * fixe, entre 0 et 50") — réutilise la pyramide Challenger existante (voir botTypes.ts) plutôt
+ * qu'un mécanisme séparé : `min === max` revient à une population FIXE (le mécanisme de rampe
+ * humains n'a alors plus rien à faire varier), `min < max` reproduit le même comportement que le
+ * réglage par défaut du mod (décroissance de `max` à `min` bots à mesure que des humains
+ * rejoignent), seulement borné différemment. `ambientTargetCount`/`maxTotal` sont alignés sur
+ * `max` pour qu'aucun autre mécanisme (peuplement ambiant à 0 humain, plafond dur, voir
+ * `BotManager.adjustPopulation`) ne vienne recouper cette borne en-dessous de ce qui est demandé. */
+export function applyRoomBotCountOverride(
+  bots: BotConfig,
+  override: { min: number; max: number },
+): BotConfig {
+  const base = bots.challengers ?? DEFAULT_CHALLENGER_CONFIG;
+  const { min, max } = override;
+  // `BotManager.adjustPopulation` borne aussi la population de Challengers par
+  // `massMultipliers.length` (un rang sans palier de masse ne peut pas apparaître) — sans étendre
+  // ce tableau ici, une borne `max` au-delà de sa longueur d'origine (15 par défaut) serait
+  // silencieusement recoupée en-dessous de ce qui a été demandé. Le dernier palier existant est
+  // répété pour les rangs supplémentaires plutôt que d'inventer une progression arbitraire.
+  const lastMultiplier = base.massMultipliers[base.massMultipliers.length - 1] ?? 1;
+  const massMultipliers =
+    base.massMultipliers.length >= max
+      ? base.massMultipliers
+      : [
+          ...base.massMultipliers,
+          ...Array<number>(max - base.massMultipliers.length).fill(lastMultiplier),
+        ];
+  return {
+    ...bots,
+    ambientTargetCount: max,
+    maxTotal: max,
+    challengers: {
+      ...base,
+      enabled: true,
+      baselineCount: min,
+      maxWithHumans: max,
+      minWithHumans: min,
+      massMultipliers,
+    },
+  };
 }

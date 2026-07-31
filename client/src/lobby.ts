@@ -69,6 +69,11 @@ export interface CreateRoomOptions {
   botsEnabled?: boolean;
   /** Code d'invitation pré-généré à la volée par le client pour le salon privé. */
   inviteCode?: string;
+  /** Taille de carte personnalisée (carrée, px) — 1000 à 50000, omis = taille par défaut du mode. */
+  mapSize?: number;
+  /** Population de bots personnalisée — 0 à 50 chacun, `min === max` pour une population FIXE,
+   * omis = réglages par défaut du mode. */
+  botCount?: { min: number; max: number };
 }
 
 /** `token` (Lot 6.4) : la création de salon est réservée aux comptes Premium — le serveur
@@ -94,6 +99,8 @@ export async function createRoom(
       durationMs: options.durationMs,
       botsEnabled: options.botsEnabled,
       inviteCode: options.inviteCode,
+      mapSize: options.mapSize,
+      botCount: options.botCount,
     }),
   });
 

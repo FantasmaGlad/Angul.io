@@ -261,11 +261,16 @@ export class RenderEngine {
     // Pour éviter tout pop visuel d'entité entre snapA et snapB, l'interpolation se fait d'abord
     const interpolated = interpolateEntities(fromEntities, toEntities, t);
 
-    // Lissage exponentiel sauté en mode spectateur : un simple décor d'arrière-plan dézoomé n'a
-    // pas besoin du lissage fin anti-tressautement (utile surtout à 60/144/240 FPS sur le blob
-    // suivi de près par la caméra du JOUEUR) — économise une allocation + un lookup Map par
-    // entité par frame, sans perte visuelle perceptible sur un fond flouté/dézoomé.
-    if (isSpectator) return interpolated;
+    // Lissage exponentiel APPLIQUÉ AUSSI en mode spectateur (retour utilisateur : "les robots vus
+    // depuis le lobby sont légèrement tremblotants, alors qu'en partie ils sont fluides") — une
+    // ancienne optimisation sautait ce lissage pour le fond décoratif de l'accueil, en supposant
+    // qu'un fond dézoomé n'en avait pas besoin ; ce n'est pas le cas en pratique : le tick réseau
+    // réduit des spectateurs (SPECTATOR_TICK_DIVISOR, voir snapshotBuilder.ts) rend au contraire CE
+    // lissage encore plus utile qu'en partie (intervalle entre deux points d'interpolation ~4x plus
+    // long, donc tout micro-écart de découpage temporel proportionnellement plus visible). Le coût
+    // (une allocation + un lookup Map par entité visible et par frame) reste négligeable : les
+    // créatures sont peu nombreuses et la nourriture déjà sous-échantillonnée (voir
+    // `subsampleForSpectator`).
 
     // Lissage exponentiel style Agar.io officiel : élimine le tressautement à 60/144/240 FPS
     const dtSec = Math.min(0.05, Math.max(0.001, frameDt / 1000));
