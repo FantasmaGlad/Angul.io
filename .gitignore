@@ -17,6 +17,7 @@ coverage/
 
 # AI & Assistant files
 .claude/
+.mcp.json
 .gemini/
 .antigravity/
 .cursor/
