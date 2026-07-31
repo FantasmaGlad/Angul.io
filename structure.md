@@ -43,17 +43,34 @@ les fichiers.
 
 ## 1bis. Outillage IA (serveur MCP local, coordination multi-plateformes)
 
-Un serveur MCP local (`.claude/mcp/server.mjs`, enregistré auprès de Claude Code par `.mcp.json` à
-la racine) expose `.claude/project-structure.json` — une cartographie du dépôt **interrogeable par
-un agent** (outils `find_file`/`list_topics`/`get_topic_files`/`get_full_map`/`list_workspaces`) :
-retrouver "où se trouve le code qui gère X" sans devoir grep tout le dépôt à l'aveugle à chaque
-nouvelle session. `.mcp.json`, `.claude/mcp/**` (hors `node_modules/`) et
-`.claude/project-structure.json` sont **volontairement COMMITÉS**, à rebours du reste du bloc "AI &
-Assistant files" du `.gitignore` : ce n'est pas une préférence personnelle (contrairement à
-`.claude/settings.local.json`, permissions locales, resté ignoré) mais un outil de projet partagé —
-n'importe quel contributeur ou agent, sur n'importe quelle machine, doit pouvoir en bénéficier dès
-le clone, quelle que soit la plateforme IA utilisée (Claude Code, mais aussi potentiellement Gemini
-CLI, Cursor, Windsurf… si le projet vient à en utiliser d'autres un jour).
+Un serveur MCP local — enregistré auprès de Claude Code par `.mcp.json` à la racine, qui pointe
+vers `.gemini/mcp/server.mjs` (PAS `.claude/mcp/server.mjs` : ce dernier existe aussi, avec une
+implémentation quasi identique, mais `.mcp.json` lance bien la version `.gemini/`, qui sait en plus
+retomber sur `.claude/project-structure.json` si `.gemini/project-structure.json` venait à manquer —
+voir `getStructurePath()` dans ce fichier) — expose `.claude/project-structure.json` (lu via le
+symlink `.gemini/project-structure.json`, voir plus bas) : une cartographie du dépôt
+**interrogeable par un agent** (outils
+`find_file`/`list_topics`/`get_topic_files`/`get_full_map`/`list_workspaces`) : retrouver "où se
+trouve le code qui gère X" sans devoir grep tout le dépôt à l'aveugle à chaque nouvelle session.
+`.mcp.json`, `.claude/mcp/**` (hors `node_modules/`) et `.claude/project-structure.json` sont
+**volontairement COMMITÉS**, à rebours du reste du bloc "AI & Assistant files" du `.gitignore` : ce
+n'est pas une préférence personnelle (contrairement à `.claude/settings.local.json`, permissions
+locales, resté ignoré) mais un outil de projet partagé — n'importe quel contributeur ou agent, sur
+n'importe quelle machine, doit pouvoir en bénéficier dès le clone, quelle que soit la plateforme IA
+utilisée.
+
+Ce dépôt utilise déjà **deux** plateformes IA avec leur propre répertoire de configuration/contexte
+de projet : Claude Code (`.claude/`) et Gemini/Antigravity (`.gemini/`). Les deux servent la MÊME
+cartographie — `.gemini/project-structure.json` est un **symlink** vers
+`../.claude/project-structure.json` (pas une copie séparée à resynchroniser à la main : les deux
+plateformes lisent toujours exactement le même contenu par construction), lu par un serveur MCP
+équivalent (`.gemini/mcp/server.mjs`). `.gemini/` committe en plus `AGENTS.md` (consignes
+d'architecture/méthodologie propres à cet agent, voir ce fichier) et
+`skills/angulio-navigation/SKILL.md` (skill de navigation qui pointe vers cette même cartographie).
+Sont donc **volontairement COMMITÉS** : `.gemini/mcp/**` (hors `node_modules/`),
+`.gemini/project-structure.json` (le symlink lui-même), `.gemini/AGENTS.md` et `.gemini/skills/` —
+même logique que `.claude/` ci-dessus, avec les mêmes exceptions au `.gitignore` (voir son bloc "AI
+& Assistant files").
 
 `.claude/launch.json` (config de lancement de l'aperçu navigateur + une section `_deployment`
 documentant l'infra de production RÉELLE : hostname/IP LAN, accès sudo, procédure de déploiement)
@@ -62,22 +79,21 @@ contient des détails d'infrastructure réels (pas seulement une aide à la navi
 à reconsidérer au cas par cas si le besoin de le partager entre plusieurs machines/agents se
 présente, mais pas fait par défaut.
 
-**Règle de coordination inter-plateformes** : si ce dépôt vient un jour à utiliser un autre outil
-IA avec son propre répertoire de configuration/contexte de projet (`.gemini/`, `.cursor/`,
-`.windsurf/`, ou tout autre — voir le bloc "AI & Assistant files" du `.gitignore`), et que ce
-répertoire porte lui aussi une cartographie ou un contexte de projet utile à *n'importe quel*
-agent (pas une préférence purement locale à cet outil précis) — applique la même logique que
-ci-dessus : committe la partie partageable (comme `.claude/mcp/**`/`project-structure.json` ici),
-garde locale la partie vraiment personnelle/spécifique à la machine (comme
-`.claude/settings.local.json`/`launch.json`), et mets à jour ce document (§1bis) pour le
-documenter. Objectif : que la coordination entre plateformes reste complète et permanente au fil
-du temps, pas seulement pour Claude Code.
+**Règle de coordination inter-plateformes** : si ce dépôt vient un jour à utiliser un TROISIÈME
+outil IA avec son propre répertoire de configuration/contexte de projet (`.cursor/`, `.windsurf/`,
+ou tout autre — voir le bloc "AI & Assistant files" du `.gitignore`), et que ce répertoire porte
+lui aussi une cartographie ou un contexte de projet utile à *n'importe quel* agent (pas une
+préférence purement locale à cet outil précis) — applique la même logique que `.claude/`/`.gemini/`
+ci-dessus : committe la partie partageable, garde locale la partie vraiment
+personnelle/spécifique à la machine (comme `.claude/settings.local.json`/`launch.json`), et mets à
+jour ce document (§1bis) pour le documenter. Objectif : que la coordination entre plateformes
+reste complète et permanente au fil du temps, pas seulement pour Claude Code.
 
 **Règle de mise à jour** : comme pour ce fichier lui-même (voir l'en-tête), si tu ajoutes/déplaces/
-renomme un fichier/module qui mériterait une entrée dans `.claude/project-structure.json` (un
-nouveau composant, un nouveau sujet thématique), mets-le à jour dans le même commit — le serveur
-MCP ne fait que servir ce fichier tel quel, il devient trompeur aussi vite qu'une doc humaine
-non maintenue.
+renomme un fichier/module qui mériterait une entrée dans `.claude/project-structure.json` — mets-le
+à jour dans le même commit (inutile de toucher `.gemini/project-structure.json` séparément, c'est
+un symlink vers ce même fichier, voir plus haut) — le serveur MCP ne fait que servir ce fichier tel
+quel, il devient trompeur aussi vite qu'une doc humaine non maintenue.
 
 ---
 
@@ -91,15 +107,16 @@ Angul.io/
 ├── scripts/install.sh                 Bootstrap d'un nœud de production (voir §8 cahier des charges)
 ├── eslint.config.js                   Config ESLint racine (couvre les 4 workspaces)
 ├── .prettierrc.json / .prettierignore Config formatage
-├── .gitignore                         Note : *.md gitignored sauf README.md (voir §1) ; voir §1bis
-│                                       pour ce qui EST commité sous .claude/ malgré le nom du bloc
+├── .gitignore                         Note : *.md gitignored sauf README.md/structure.md/AGENTS.md
+│                                       (voir §1) ; voir §1bis pour ce qui EST commité sous
+│                                       .claude/ et .gemini/ malgré le nom du bloc
 ├── package.json / package-lock.json   Racine du monorepo (workspaces, scripts globaux)
 ├── tsconfig.json / tsconfig.base.json Config TypeScript partagée
 ├── vitest.config.ts / vitest.setup.ts Config des tests (tous workspaces)
 ├── .github/workflows/ci.yml           CI GitHub Actions (build/lint/format/test)
-├── .mcp.json                           Enregistre le serveur MCP local ci-dessous auprès de Claude
-│                                       Code — voir §1bis, COMMITÉ (contrairement au reste des
-│                                       fichiers d'assistants IA)
+├── .mcp.json                           Enregistre .gemini/mcp/server.mjs auprès de Claude Code
+│                                       (pas .claude/mcp/server.mjs, voir §1bis) — COMMITÉ
+│                                       (contrairement au reste des fichiers d'assistants IA)
 ├── .claude/
 │   ├── launch.json                    Config de lancement server+client pour l'aperçu navigateur
 │                                       + section _deployment (infra de prod réelle) — NON commité,
@@ -110,6 +127,13 @@ Angul.io/
 │   └── mcp/                           Serveur MCP local exposant cette cartographie aux agents —
 │       ├── server.mjs                       voir §1bis, COMMITÉ (source, pas node_modules/)
 │       └── package.json / package-lock.json
+├── .gemini/                            Équivalent Gemini/Antigravity de .claude/ ci-dessus — voir §1bis
+│   ├── AGENTS.md                      Consignes d'architecture/méthodologie pour Gemini/Antigravity — COMMITÉ
+│   ├── project-structure.json         SYMLINK vers .claude/project-structure.json — COMMITÉ
+│   ├── mcp/                           Serveur MCP local équivalent — COMMITÉ (source, pas node_modules/)
+│   │   ├── server.mjs
+│   │   └── package.json / package-lock.json
+│   └── skills/angulio-navigation/SKILL.md   Skill de navigation (pointe vers cette cartographie) — COMMITÉ
 ├── assets/                            Sources d'assets graphiques/audio (voir §3)
 │
 ├── shared/                            Code TypeScript partagé
@@ -305,7 +329,7 @@ commune `PageLayout.tsx`.
 | `SettingsPage.tsx` | `/parametres` | Plafond FPS/Vsync, son, touches (réglages locaux à l'appareil) |
 | `LeaderboardPage.tsx` | `/classement` | Classement global |
 | `SupportPage.tsx` | `/soutenir` | Explication du don libre + lien de don |
-| `AboutPage.tsx` | `/a-propos` | Nom du projet, version, licence |
+| `AboutPage.tsx` | `/a-propos` | Nom du projet, licence (le numéro de version affiché aux joueurs vit dans `BottomBar.tsx`, pas ici) |
 
 ### 4.3 Routeur (`client/src/router.ts`)
 

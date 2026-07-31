@@ -2,7 +2,7 @@
   "version": 1,
   "generatedFrom": "structure.md",
   "lastReviewed": "2026-07-31",
-  "note": "Cartographie machine-readable du depot, en complement de structure.md (lisible par un humain) et README.md (architecture/modding en detail). Sert de source pour le serveur MCP .claude/mcp/server.mjs (voir .mcp.json). Ce fichier ET .claude/mcp/** SONT commites (voir structure.md §1bis) — outillage de projet partage, pas une preference locale. Mets a jour CE fichier ET structure.md dans le meme commit si tu ajoutes/deplaces/supprimes un fichier important — sinon les deux deviennent trompeurs.",
+  "note": "Cartographie machine-readable du depot, en complement de structure.md (lisible par un humain) et README.md (architecture/modding en detail). Sert de source au serveur MCP local que .mcp.json enregistre aupres de Claude Code (.gemini/mcp/server.mjs, PAS .claude/mcp/server.mjs qui existe aussi mais n'est pas celui lance) et a son equivalent Gemini/Antigravity — .gemini/project-structure.json est un SYMLINK vers CE fichier (../.claude/project-structure.json), pas une copie separee : les deux plateformes lisent toujours exactement le meme contenu, rien a resynchroniser manuellement. Ce fichier ET .claude/mcp/** SONT commites (voir structure.md §1bis) — outillage de projet partage, pas une preference locale. Mets a jour CE fichier ET structure.md dans le meme commit si tu ajoutes/deplaces/supprimes un fichier important — sinon les deux deviennent trompeurs.",
   "workspaces": [
     {
       "name": "shared",
@@ -77,7 +77,7 @@
         "outillage-ia",
         "agent"
       ],
-      "description": "Enregistre le serveur MCP local (.claude/mcp/server.mjs) aupres de Claude Code. Commite (voir structure.md §1bis) — contrairement au reste du bloc 'AI & Assistant files' du .gitignore, ce n'est pas une preference locale."
+      "description": "Enregistre .gemini/mcp/server.mjs (PAS .claude/mcp/server.mjs, qui existe aussi mais n'est pas celui lance) aupres de Claude Code. Commite (voir structure.md §1bis) — contrairement au reste du bloc 'AI & Assistant files' du .gitignore, ce n'est pas une preference locale."
     },
     {
       "path": ".claude/mcp/server.mjs",
@@ -88,7 +88,7 @@
         "agent",
         "cartographie"
       ],
-      "description": "Serveur MCP local exposant ce fichier (.claude/project-structure.json) a n'importe quel agent via find_file/list_topics/get_topic_files/get_full_map/list_workspaces — evite de regrep tout le depot a l'aveugle a chaque session. Commite, voir structure.md §1bis."
+      "description": "Serveur MCP local exposant ce fichier (.claude/project-structure.json) a n'importe quel agent via find_file/list_topics/get_topic_files/get_full_map/list_workspaces — evite de regrep tout le depot a l'aveugle a chaque session. PAS celui reellement enregistre par .mcp.json aupres de Claude Code actuellement (qui pointe vers .gemini/mcp/server.mjs, implementation quasi identique) — garde neanmoins commite comme reference/repli. Commite, voir structure.md §1bis."
     },
     {
       "path": ".claude/project-structure.json",
@@ -98,7 +98,52 @@
         "outillage-ia",
         "cartographie"
       ],
-      "description": "Ce fichier lui-meme — cartographie machine-readable servie par .claude/mcp/server.mjs. Voir structure.md §1bis pour la regle de coordination multi-plateformes IA (.gemini/, .cursor/, .windsurf/... si le projet en vient a utiliser un jour)."
+      "description": "Ce fichier lui-meme — cartographie machine-readable servie par .claude/mcp/server.mjs ET par .gemini/mcp/server.mjs (.gemini/project-structure.json est un symlink vers ce fichier, pas une copie). Voir structure.md §1bis pour la regle de coordination multi-plateformes IA (.cursor/, .windsurf/... si le projet en vient a utiliser un jour)."
+    },
+    {
+      "path": ".gemini/AGENTS.md",
+      "workspace": "root",
+      "tags": [
+        "mcp",
+        "outillage-ia",
+        "agent",
+        "gemini"
+      ],
+      "description": "Consignes d'architecture/methodologie pour l'assistant Gemini/Antigravity (equivalent .gemini de ce que ce document + structure.md sont pour Claude Code) — regle d'or de navigation via le serveur MCP angulio-project-map. Commite, voir structure.md §1bis."
+    },
+    {
+      "path": ".gemini/project-structure.json",
+      "workspace": "root",
+      "tags": [
+        "mcp",
+        "outillage-ia",
+        "cartographie",
+        "gemini"
+      ],
+      "description": "SYMLINK vers .claude/project-structure.json (pas une copie separee) — servi par .gemini/mcp/server.mjs a l'assistant Gemini/Antigravity, toujours identique par construction. Commite, voir structure.md §1bis."
+    },
+    {
+      "path": ".gemini/mcp/server.mjs",
+      "workspace": "root",
+      "tags": [
+        "mcp",
+        "outillage-ia",
+        "agent",
+        "cartographie",
+        "gemini"
+      ],
+      "description": "Serveur MCP local equivalent a .claude/mcp/server.mjs, pour l'assistant Gemini/Antigravity (memes outils find_file/list_topics/get_topic_files/get_full_map/list_workspaces). Commite, voir structure.md §1bis."
+    },
+    {
+      "path": ".gemini/skills/angulio-navigation/SKILL.md",
+      "workspace": "root",
+      "tags": [
+        "outillage-ia",
+        "skill",
+        "gemini",
+        "navigation"
+      ],
+      "description": "Skill Gemini/Antigravity : consigne d'interroger le serveur MCP angulio-project-map avant tout grep/exploration a l'aveugle. Commite, voir structure.md §1bis."
     },
     {
       "path": ".github/workflows/ci.yml",
@@ -1225,7 +1270,7 @@
         "a-propos",
         "route:/a-propos"
       ],
-      "description": "Nom du projet, version, licence."
+      "description": "Nom du projet, licence (le numero de version affiche aux joueurs vit dans BottomBar.tsx, pas ici)."
     },
     {
       "path": "admin/src/main.tsx",
@@ -1307,6 +1352,10 @@
       ".mcp.json",
       ".claude/mcp/server.mjs",
       ".claude/project-structure.json",
+      ".gemini/AGENTS.md",
+      ".gemini/project-structure.json",
+      ".gemini/mcp/server.mjs",
+      ".gemini/skills/angulio-navigation/SKILL.md",
       "structure.md"
     ],
     "gameplay/physique": [
@@ -1355,6 +1404,7 @@
     ],
     "spectateur/lobby": [
       "client/src/components/SpectatorBackground.tsx",
+      "client/src/renderEngine.ts",
       "server/src/engine/worker/snapshotBuilder.ts",
       "server/src/net/ws/connectionHandler.ts"
     ],

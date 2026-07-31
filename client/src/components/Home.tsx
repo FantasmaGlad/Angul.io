@@ -70,22 +70,23 @@ export default function Home({
     audioManager.playMusic('/assets/Sons/Musiques/lobby.mp3');
   }, []);
 
-  // Plein écran + verrouillage paysage dès la toute première interaction sur l'accueil mobile
-  // (retour utilisateur : jusqu'ici, ces deux effets n'étaient déclenchés qu'au clic sur "Jouer",
-  // profondément dans le flux — l'UI restait donc affichée en portrait/hors plein écran, cassée,
-  // pendant toute la navigation dans le lobby). Aucune API navigateur ne permet de forcer le plein
-  // écran sans un geste utilisateur explicite (voir mobileScreen.ts) : ceci en reste le geste le
-  // plus précoce possible — le premier `pointerdown` n'importe où sur la page, plutôt que
-  // spécifiquement sur le bouton "Jouer". `capture: true` pour être notifié même si un enfant
-  // arrête la propagation (ex. `stopPropagation` d'un tiroir) ; sans effet sur desktop (voir le
-  // garde `isTouchDevice()` interne à `enterMobileFullscreenLandscape`).
+  // Plein écran + verrouillage paysage à CHAQUE tap sur l'accueil mobile (demande utilisateur :
+  // pouvoir passer en plein écran en tapant le jeu/le logo, sans devoir lancer une partie) —
+  // jamais un seul essai (`once: true`, retiré) : le tout premier tap peut échouer silencieusement
+  // (ex. navigateur qui ne compte pas le focus d'un champ texte comme un geste valide pour
+  // `requestFullscreen`), sans ce retrait le joueur n'aurait alors plus AUCUN moyen de retenter
+  // avant de lancer une partie. `enterMobileFullscreenLandscape` est idempotente si déjà en plein
+  // écran (voir mobileScreen.ts) : aucun effet de bord à le retenter à chaque tap. `capture: true`
+  // pour être notifié même si un enfant arrête la propagation (ex. `stopPropagation` d'un tiroir) ;
+  // sans effet sur desktop (voir le garde `isTouchDevice()` interne à
+  // `enterMobileFullscreenLandscape`).
   useEffect(() => {
-    const onFirstPointerDown = (): void => {
+    const onPointerDown = (): void => {
       enterMobileFullscreenLandscape();
     };
-    document.addEventListener('pointerdown', onFirstPointerDown, { capture: true, once: true });
+    document.addEventListener('pointerdown', onPointerDown, { capture: true });
     return () => {
-      document.removeEventListener('pointerdown', onFirstPointerDown, { capture: true });
+      document.removeEventListener('pointerdown', onPointerDown, { capture: true });
     };
   }, []);
 

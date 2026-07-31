@@ -2207,20 +2207,43 @@ a.btn-primary {
   flex-direction: column;
   align-items: center;
 }
-.connecting-spinner {
-  width: 40px;
-  height: 40px;
-  border: 4px solid rgba(46, 49, 51, 0.12);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: preloaderSpin 0.9s linear infinite;
-  margin-bottom: 16px;
-}
 .connecting-text {
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--text);
+  display: inline-flex;
+  align-items: baseline;
+}
+.connecting-dots {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 6px;
+}
+.connecting-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: connecting-dot-bounce 1.2s ease-in-out infinite;
+}
+.connecting-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.connecting-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes connecting-dot-bounce {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.7);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 /* --- Dash HUD Top Bar --- */
@@ -2594,15 +2617,6 @@ a.btn-primary {
     right: max(8px, env(safe-area-inset-right));
     width: 132px;
     padding: 8px;
-    /* Plafonnée + scrollable : avec le top 10 complet, cette carte dépassait largement les 96px
-       jusqu'ici supposés par `.minimap-container` ci-dessous (audit mobile, retour utilisateur :
-       minimap et classement qui se chevauchent) — une hauteur bornée rend le chevauchement
-       impossible quel que soit le nombre d'entrées, au prix d'un défilement pour voir les rangs
-       les plus bas quand le salon est plein. 132px de contenu (`box-sizing` reste `content-box`,
-       non modifié ici) + le padding (8px×2) + la bordure (1px×2) de cette carte = 150px rendus au
-       total, budget sur lequel se cale le `top` de `.minimap-container` ci-dessous. */
-    max-height: 132px;
-    overflow-y: auto;
   }
   .leaderboard-header {
     font-size: 9px;
@@ -2613,27 +2627,20 @@ a.btn-primary {
     padding: 2px 3px;
     gap: 4px;
   }
+  /* Classement réduit au top 5 sur téléphone (demande utilisateur) — les rangs 6-10 restent dans
+     le DOM (`GameView.tsx` en reçoit toujours jusqu'à 10 du serveur, inchangé pour les autres
+     écrans) mais ne sont plus affichés ici : un simple masquage CSS plutôt qu'un slice côté JS,
+     cohérent avec le reste de ce fichier (c'est le CSS qui décide de l'affichage adapté à l'écran,
+     jamais une détection JS dédiée — voir VirtualControls.tsx). */
+  .leaderboard-row:nth-child(n + 6) {
+    display: none;
+  }
 
-  /* Minimap déplacée en haut (au lieu de bas-droite) pour ne jamais chevaucher le joystick
-     virtuel (bas-gauche) ni le bouton d'action (bas-droite) — voir .virtual-joystick-base/
-     .virtual-action-button ci-dessus. Son `top` part du bas du classement ci-dessus (`max-height`
-     150px + son propre décalage haut + une petite marge de 8px), jamais d'une position fixe
-     devinée à l'avance : la marge est donc garantie quel que soit le nombre d'entrées du
-     classement. */
+  /* Minimap retirée sur téléphone (demande utilisateur) — redondante avec le secteur déjà annoncé
+     en jeu et coûteuse en place sur un petit écran ; `Minimap.tsx` reste monté (pas de changement
+     côté React) mais n'est plus rendue visuellement ici. */
   .minimap-container {
-    top: max(166px, calc(env(safe-area-inset-top) + 158px));
-    right: max(8px, env(safe-area-inset-right));
-    bottom: auto;
-    width: 108px;
-    height: 108px;
-    padding: 2px;
-  }
-  .minimap-header,
-  .minimap-rows-labels {
-    font-size: 9px;
-  }
-  .minimap-cell {
-    font-size: 8px;
+    display: none;
   }
 
   .dash-hud-wrapper {

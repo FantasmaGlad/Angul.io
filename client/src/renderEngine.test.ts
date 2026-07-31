@@ -107,6 +107,10 @@ function otherEntity(id: string, x: number): EntitySnapshot {
   return { i: id, k: 'c', x, y: 0, r: 10, m: 50, p: 'someone-else' };
 }
 
+function food(id: string, x: number): EntitySnapshot {
+  return { i: id, k: 'f', x, y: 0, r: 5, m: 1 };
+}
+
 describe('RenderEngine — culling déplacé avant interpolation/lissage (joueur, pas spectateur)', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -158,5 +162,77 @@ describe('RenderEngine — culling déplacé avant interpolation/lissage (joueur
     const result = engine.getInterpolatedEntities(16, { x: 0, y: 0, scale: 1 }, 2000, 2000, 'self', false);
 
     expect(result.find((e) => e.i === 'self')).toBeDefined();
+  });
+});
+
+/** Mode spectateur (fond animé de l'accueil, voir SpectatorBackground.tsx) : les créatures
+ * (joueurs/bots, 'k' === 'c') doivent TOUJOURS être toutes affichées, seule la nourriture ('f')
+ * est sous-échantillonnée (retour utilisateur : le lobby ne doit jamais sacrifier de bot, une
+ * pastille de nourriture individuelle est de toute façon à peine visible sur un fond dézoomé). */
+describe('RenderEngine — sous-échantillonnage spectateur type-aware (nourriture uniquement)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('conserve TOUTES les créatures en mode spectateur, même en grand nombre', () => {
+    const engine = new RenderEngine();
+    const nowSpy = vi.spyOn(performance, 'now');
+
+    const creatures = Array.from({ length: 500 }, (_, i) => otherEntity(`bot-${i}`, 0));
+
+    nowSpy.mockReturnValueOnce(0);
+    engine.pushSnapshot(creatures, 1, 30);
+    nowSpy.mockReturnValueOnce(33);
+    engine.pushSnapshot(creatures, 2, 30);
+
+    nowSpy.mockReturnValueOnce(135);
+    const result = engine.getInterpolatedEntities(16, { x: 0, y: 0, scale: 1 }, 2000, 2000, undefined, true);
+
+    expect(result).toHaveLength(500);
+  });
+
+  it("ne conserve qu'environ 10% de la nourriture en mode spectateur", () => {
+    const engine = new RenderEngine();
+    const nowSpy = vi.spyOn(performance, 'now');
+
+    // Id purement numériques et séquentiels ("1", "2", "3"...), PAS "food-0"/"food-1"... — c'est
+    // exactement la forme des vrais id serveur (`String(nextEntityId++)`, voir World.spawnEntity) :
+    // un simple hash polynomial (essayé d'abord pour `hashEntityId`, voir son commentaire) reste
+    // quasi-monotone sur des chaînes aussi courtes/régulières, donc PAS dispersé du tout par rapport
+    // au seuil de coupure — un préfixe alphabétique masquait ce problème dans une version antérieure
+    // de ce test, en apportant à tort assez de variation de caractères pour bien disperser malgré
+    // le mauvais hash.
+    const pellets = Array.from({ length: 2000 }, (_, i) => food(String(i + 1), 0));
+
+    nowSpy.mockReturnValueOnce(0);
+    engine.pushSnapshot(pellets, 1, 30);
+    nowSpy.mockReturnValueOnce(33);
+    engine.pushSnapshot(pellets, 2, 30);
+
+    nowSpy.mockReturnValueOnce(135);
+    const result = engine.getInterpolatedEntities(16, { x: 0, y: 0, scale: 1 }, 2000, 2000, undefined, true);
+
+    // Hash-based, pas un tirage exact à 10.00% — large tolérance pour éviter tout flakiness.
+    expect(result.length).toBeGreaterThan(100);
+    expect(result.length).toBeLessThan(300);
+  });
+
+  it('sous-échantillonne la nourriture de façon déterministe (même résultat à chaque appel pour le même snapshot)', () => {
+    const engine = new RenderEngine();
+    const nowSpy = vi.spyOn(performance, 'now');
+
+    const pellets = Array.from({ length: 200 }, (_, i) => food(`food-${i}`, 0));
+
+    nowSpy.mockReturnValueOnce(0);
+    engine.pushSnapshot(pellets, 1, 30);
+    nowSpy.mockReturnValueOnce(33);
+    engine.pushSnapshot(pellets, 2, 30);
+
+    nowSpy.mockReturnValueOnce(135);
+    const first = engine.getInterpolatedEntities(16, { x: 0, y: 0, scale: 1 }, 2000, 2000, undefined, true);
+    nowSpy.mockReturnValueOnce(136);
+    const second = engine.getInterpolatedEntities(16, { x: 0, y: 0, scale: 1 }, 2000, 2000, undefined, true);
+
+    expect(first.map((e) => e.i).sort()).toEqual(second.map((e) => e.i).sort());
   });
 });

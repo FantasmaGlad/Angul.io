@@ -25,34 +25,67 @@ const JITTER_SMOOTHING = 0.1;
  * peu de latence supplémentaire sur les entités distantes (jamais sur le blob du joueur, prédit
  * localement — voir prediction.ts). */
 const JITTER_MARGIN_FACTOR = 3;
-/** Plafond d'entités traitées en mode spectateur (fond animé de l'accueil, voir
- * SpectatorBackground.tsx) — sans culling viewport possible (la caméra spectateur cadre TOUTE la
- * carte, rien à exclure géométriquement), le coût d'interpolation/lissage était sinon proportionnel
- * au nombre d'entités du salon ENTIER (potentiellement plusieurs milliers avec bots+nourriture),
- * pour un simple décor d'arrière-plan (retour utilisateur : lag du fond spectateur). */
-const SPECTATOR_MAX_ENTITIES = 400;
+/** Fraction de pastilles de nourriture ('f') conservée en mode spectateur (fond animé de
+ * l'accueil, voir SpectatorBackground.tsx) — sans culling viewport possible (la caméra spectateur
+ * cadre TOUTE la carte, rien à exclure géométriquement), le coût d'interpolation/lissage était
+ * sinon proportionnel au nombre d'entités du salon ENTIER (potentiellement plusieurs milliers de
+ * pastilles, voir server/configs/*.json `food.density`), pour un simple décor d'arrière-plan
+ * dézoomé où une pastille individuelle est de toute façon à peine visible (retour utilisateur :
+ * lag du lobby). Les créatures (joueurs/bots, 'c') restent TOUJOURS toutes affichées — un plafond
+ * générique type-agnostique (l'ancien `SPECTATOR_MAX_ENTITIES`) pouvait aussi bien sacrifier des
+ * bots que de la nourriture, quand seule cette dernière est vraiment sacrifiable sans perte
+ * perceptible. */
+const SPECTATOR_FOOD_SAMPLE_RATE = 0.1;
+const SPECTATOR_FOOD_SAMPLE_THRESHOLD = Math.floor(SPECTATOR_FOOD_SAMPLE_RATE * 0xffffffff);
 
-/** Hash simple et stable d'un id d'entité — permet un sous-échantillonnage DÉTERMINISTE (la même
- * entité est gardée ou exclue d'une frame à l'autre tant qu'elle existe), contrairement à un
+/** Hash FNV-1a (32 bits) d'un id d'entité — permet un sous-échantillonnage DÉTERMINISTE (la même
+ * pastille est gardée ou exclue d'un snapshot à l'autre tant qu'elle existe), contrairement à un
  * découpage par index de tableau qui changerait de sujet à chaque variation du nombre d'entités
- * (flicker constant, une nourriture différente "sampled" chaque frame). */
+ * (flicker constant, une nourriture différente "sampled" chaque frame).
+ *
+ * PAS un simple hash polynomial (`hash*31 + charCode`, essayé d'abord) : les id réels sont de
+ * simples entiers décimaux séquentiels convertis en chaîne (`String(nextEntityId++)`, voir
+ * World.spawnEntity côté serveur) — pour une chaîne aussi COURTE et régulière, ce hash polynomial
+ * reste presque entièrement MONOTONE en la valeur numérique de l'id (jamais assez de caractères
+ * pour vraiment déborder les 32 bits), donc PAS dispersé du tout par rapport au seuil de coupure :
+ * mesuré, 100% des id "1".."1000000" passaient un seuil censé n'en garder que 10% (tout ou
+ * quasiment rien selon la plage d'id en jeu, jamais réellement 10%) — la cause réelle du lobby
+ * resté lent malgré le sous-échantillonnage (retour utilisateur). Le mélange XOR-puis-multiplication
+ * de FNV-1a (constantes standard) reste bien dispersé même sur des chaînes courtes/séquentielles —
+ * vérifié : ~10% ± quelques % sur toute plage d'id testée, du plus petit salon au plus peuplé. */
 function hashEntityId(id: string): number {
-  let hash = 0;
+  let hash = 0x811c9dc5; // FNV offset basis (32 bits)
   for (let i = 0; i < id.length; i++) {
-    hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+    hash ^= id.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193); // FNV prime (32 bits)
   }
-  return hash;
+  return hash >>> 0;
 }
 
-/** Sous-échantillonne au plafond `SPECTATOR_MAX_ENTITIES` par seuil de hash plutôt que par index —
- * voir `hashEntityId`. Le seuil est recalculé à partir de la taille courante à chaque appel, donc
- * reste approximativement proportionnel même si le nombre total d'entités fluctue (bots/nourriture
- * qui apparaissent/disparaissent). */
+/** Résultat mis en cache PAR RÉFÉRENCE de tableau brut (voir `subsampleForSpectator`) — le même
+ * snapshot réseau (`SnapshotItem.entities`, poussé une fois par tick serveur, ~30Hz) est relu par
+ * `getInterpolatedEntities` à CHAQUE frame de rendu (jusqu'à plusieurs centaines de fois/seconde
+ * depuis la suppression du plafond FPS dédié du fond spectateur, voir SpectatorBackground.tsx) :
+ * sans ce cache, le filtre ci-dessous (coût proportionnel au nombre d'entités du salon ENTIER)
+ * s'exécutait en double (fromEntities + toEntities) à CHAQUE frame de rendu au lieu d'une seule
+ * fois par tick réseau réellement reçu — la cause réelle du lag persistant après la seule
+ * suppression du plafond FPS (retour utilisateur). Une `WeakMap` (pas de fuite mémoire : une
+ * entrée disparaît automatiquement avec son tableau source une fois le snapshot expulsé de
+ * `snapshotQueue`) plutôt qu'un champ sur `SnapshotItem` lui-même, pour ne pas coupler ce module
+ * de rendu à la structure de `pushSnapshot`. */
+const spectatorSampleCache = new WeakMap<EntitySnapshot[], EntitySnapshot[]>();
+
+/** Ne sous-échantillonne QUE la nourriture ('f'), à taux fixe (voir `SPECTATOR_FOOD_SAMPLE_RATE`) —
+ * les créatures ('c', joueurs/bots) sont toujours conservées intégralement. Mis en cache par
+ * référence du tableau source (voir `spectatorSampleCache`). */
 function subsampleForSpectator(entities: EntitySnapshot[]): EntitySnapshot[] {
-  if (entities.length <= SPECTATOR_MAX_ENTITIES) return entities;
-  const fraction = SPECTATOR_MAX_ENTITIES / entities.length;
-  const threshold = Math.floor(fraction * 0xffffffff);
-  return entities.filter((entity) => hashEntityId(entity.i) <= threshold);
+  const cached = spectatorSampleCache.get(entities);
+  if (cached) return cached;
+  const sampled = entities.filter(
+    (entity) => entity.k === 'c' || hashEntityId(entity.i) <= SPECTATOR_FOOD_SAMPLE_THRESHOLD,
+  );
+  spectatorSampleCache.set(entities, sampled);
+  return sampled;
 }
 
 export class RenderEngine {

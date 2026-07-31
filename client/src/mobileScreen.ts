@@ -46,6 +46,14 @@ function lockLandscape(): void {
 export function enterMobileFullscreenLandscape(): void {
   if (!isTouchDevice()) return;
 
+  // Déjà en plein écran (ex. appelé de nouveau à chaque tap sur le lobby, voir Home.tsx) — évite
+  // une requête `requestFullscreen()` redondante à chaque interaction ; ne retente que le
+  // verrouillage d'orientation seul, lui idempotent et sans effet de bord perceptible.
+  if (document.fullscreenElement) {
+    lockLandscape();
+    return;
+  }
+
   const root = document.documentElement;
   if (root.requestFullscreen) {
     root

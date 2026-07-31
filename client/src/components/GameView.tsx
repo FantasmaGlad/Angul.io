@@ -358,6 +358,28 @@ export default function GameView({
         const len = Math.hypot(dx, dy);
         const dir = len > 0 ? { x: dx / len, y: dy / len } : { x: 1, y: 0 };
         prediction.applyDash(dir, 4050);
+
+        // Envoi réseau IMMÉDIAT du dash, hors de la cadence normale de `scheduleInput` (plus bas) —
+        // sans ça, l'input `dash: true` n'aurait été envoyé qu'au PROCHAIN tick programmé (jusqu'à
+        // un tick serveur complet de délai, indépendant de l'instant réel de la pression), alors que
+        // le serveur traite `handleInput` immédiatement à la réception (voir room.ts) : le serveur
+        // recevait donc systématiquement le dash plus tard que ce que `reconcile()` (prediction.ts)
+        // supposait via la seule latence réseau estimée — d'où un mini rollback résiduel au tout
+        // début de chaque dash (retour utilisateur), même après le correctif de réapplication de
+        // l'impulsion. `input.consumeDash()` ici (au lieu d'attendre `scheduleInput`) évite que ce
+        // même dash ne soit renvoyé une seconde fois au tick programmé suivant.
+        if (selfPlayerId) {
+          const ownPosition = prediction.getOwnPosition() ?? latestCamera;
+          const { target, intensity } = input.getTarget({ ...latestCamera, ...ownPosition });
+          connection.send({
+            type: 'input',
+            target,
+            intensity,
+            split: input.consumeSplit(),
+            dash: input.consumeDash(),
+            eject: input.consumeEject(),
+          });
+        }
       },
     );
     inputRef.current = input;
@@ -490,6 +512,17 @@ export default function GameView({
         }
         lastComboLevel = comboLevel;
       } else if (message.type === 'died') {
+        // Éteint IMMÉDIATEMENT l'écran de connexion, sans attendre son délai minimum de 2s (voir
+        // `hideConnectingOverlaySoon`) — une mort confirme sans ambiguïté que le blob a bien été
+        // synchronisé avec le monde, rien à masquer de plus. Sans ça, mourir vite (fréquent contre
+        // des bots agressifs en Hardcore, souvent en moins d'une seconde) laissait l'écran de mort
+        // exister dans le DOM mais rester VISUELLEMENT CACHÉ derrière l'écran de connexion — encore
+        // au-dessus (`z-index` 300 contre 100) — jusqu'à l'expiration de ce délai minimum : le
+        // joueur restait bloqué à regarder les 3 points sans rien comprendre pendant jusqu'à 2
+        // secondes avant que l'écran de mort n'apparaisse enfin (retour utilisateur : "le problème
+        // de l'écran persiste").
+        connectingOverlayHidden = true;
+        setConnecting(false);
         audioManager.stopMusic();
         justDied = true;
         isDeadNow = true;
@@ -854,8 +887,14 @@ export default function GameView({
       {connecting && (
         <div className="connecting-overlay">
           <div className="connecting-card">
-            <div className="connecting-spinner" />
-            <p className="connecting-text">Connexion au salon…</p>
+            <p className="connecting-text">
+              Connexion à l'arène
+              <span className="connecting-dots" aria-hidden="true">
+                <span className="connecting-dot" />
+                <span className="connecting-dot" />
+                <span className="connecting-dot" />
+              </span>
+            </p>
           </div>
         </div>
       )}

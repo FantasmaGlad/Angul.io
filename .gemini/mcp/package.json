@@ -1,0 +1,13 @@
+{
+  "name": "angulio-project-map-gemini-mcp",
+  "version": "1.0.0",
+  "description": "Serveur MCP local pour Gemini / Antigravity exposant la cartographie du dépôt Angul.io.",
+  "private": true,
+  "type": "module",
+  "main": "server.mjs",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.4.3"
+  }
+}

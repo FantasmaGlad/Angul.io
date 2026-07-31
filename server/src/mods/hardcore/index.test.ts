@@ -230,7 +230,7 @@ describe('createHardcoreMod — Dash (touche F)', () => {
 
     const dashState = (mod as any).getDashState(world, 'p1');
     expect(dashState.charges).toBe(4);
-    expect(dashState.canDash).toBe(false); // Cooldown 1s
+    expect(dashState.canDash).toBe(true); // Aucun délai minimum entre deux dashs (demande utilisateur)
   });
 
   it('interdit le dash si le joueur est divisé (> 1 morceau)', () => {

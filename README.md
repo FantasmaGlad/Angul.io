@@ -361,7 +361,16 @@ reconnecte naturellement et détecte le changement à ce moment-là.
 
 `EntitySnapshot` utilise des clés à une lettre (`i,k,x,y,r,m,p`) — mesuré : la diffusion d'état
 complet à 50 joueurs avec des clés explicites coûtait ~387 Mbit/s d'upload serveur. Pas de delta
-compression ni d'interest management par défaut au-delà du culling viewport côté client.
+compression ni d'interest management serveur par défaut au-delà du culling viewport côté client
+(le joueur en partie reçoit toujours le salon entier). Exception client-only : le fond spectateur
+de l'accueil (`SpectatorBackground.tsx`, caméra dézoomée sur toute la carte — rien à culler
+géométriquement) sous-échantillonne la nourriture à ~10 % dans `renderEngine.ts`
+(`subsampleForSpectator`), jamais les créatures (joueurs/bots, toujours affichées intégralement) —
+un simple décor d'arrière-plan n'a pas besoin de chaque pastille individuelle. Le sous-échantillon
+est indexé par le hash **FNV-1a** de l'id d'entité (PAS un hash polynomial simple `hash*31+char` :
+mesuré, ce dernier reste quasi-monotone sur les id entiers séquentiels courts que génère le serveur
+(`String(nextEntityId++)`, voir `World.spawnEntity`), donc pas du tout dispersé par rapport au
+seuil de coupure — soit ~0 %, soit ~100 % de rétention selon la plage d'id, jamais réellement 10 %).
 
 ### Pipeline de simulation → réseau → rendu
 
@@ -398,8 +407,19 @@ chaque tick réseau.
 
 Si tu ajoutes une mécanique qui déplace un morceau du joueur en dehors de `step()`/`integrate()`
 (un nouveau type d'impulsion, par ex.), regarde comment `applyDash` journalise son impulsion dans
-`pendingDashes` pour que `reconcile()` puisse la rejouer — sans ça, le premier `state` reçu après
-l'impulsion l'annule visuellement avant qu'elle ne "revienne" d'un coup au tick suivant.
+`pendingDashes` pour que `reconcile()` puisse la rejouer — sans ça, un `state` reçu APRÈS
+l'impulsion mais reflétant un état serveur ANTÉRIEUR à sa réception (le serveur ne l'a pas encore
+traitée) écrase la vélocité boostée sans la restituer, un rollback visible dès le début de
+l'impulsion. La réapplication doit avoir lieu dans TOUS les cas (que la vélocité autoritaire du
+`state` soit connue ou non), filtrée par timestamp (`pendingDash.atMs >= sinceMs`) pour ne jamais
+compter deux fois une impulsion déjà intégrée par le serveur.
+
+Le dash lui-même est envoyé au réseau **immédiatement** au moment de la pression (dans le
+gestionnaire d'input de `GameView.tsx`), pas au prochain tick programmé de `scheduleInput` (jusqu'à
+un tick serveur complet de délai en plus) : le serveur traite `handleInput` dès réception, donc
+tout délai d'envoi côté client se traduit directement en délai de traitement côté serveur — et
+donc en fenêtre d'incertitude supplémentaire pour la réconciliation ci-dessus. `input.consumeDash()`
+est appelé dans ce même envoi immédiat pour que le tick programmé suivant ne le retransmette pas.
 
 ---
 

@@ -125,7 +125,11 @@ export function createHardcoreMod(
           const piece = pieces[0]!;
           const state = getOrCreateDashState(playerId);
           const now = performance.now();
-          if (state.charges > 0 && now - state.lastDashTimeMs >= 1000) {
+          // Aucun délai minimum entre deux dashs (demande utilisateur) — seul le nombre de charges
+          // disponibles limite la cadence, plus haut/bas selon leur recharge (4s/charge, voir
+          // `onTick` ci-dessous). `lastDashTimeMs` reste mis à jour (diagnostic éventuel) mais n'est
+          // plus utilisé pour gater ce dash.
+          if (state.charges > 0) {
             state.charges -= 1;
             state.lastDashTimeMs = now;
 
@@ -143,8 +147,7 @@ export function createHardcoreMod(
     getDashState(world: World, playerId: PlayerId) {
       const pieces = world.getPiecesByOwner(playerId);
       const state = getOrCreateDashState(playerId);
-      const now = performance.now();
-      const canDash = pieces.length === 1 && state.charges > 0 && now - state.lastDashTimeMs >= 1000;
+      const canDash = pieces.length === 1 && state.charges > 0;
       const rechargeProgress = state.charges < HARDCORE_MAX_DASHES ? clamp(state.rechargeProgressMs / 4000, 0, 1) : 1;
       return {
         charges: state.charges,
