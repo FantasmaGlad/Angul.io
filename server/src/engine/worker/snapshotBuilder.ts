@@ -16,11 +16,12 @@ import { activeComboLevel } from '../xp.js';
  * échantillonnée (les pastilles individuelles n'apportent presque rien visuellement à cette
  * échelle) plutôt qu'envoyée en totalité — les morceaux de joueurs/bots, eux, restent tous
  * envoyés (peu nombreux, visuellement significatifs pour un fond "vue d'ensemble du serveur"). */
-export const SPECTATOR_TICK_DIVISOR = 3;
+export const SPECTATOR_TICK_DIVISOR = 4;
 /** pastilles de nourriture pour spectateur : 1 sur N (id % N === 0) envoyée — le reste est omis.
- * Réglé à 4 (régression corrigée : ces deux constantes étaient tombées à 1, c'est-à-dire aucune
- * réduction du tout, malgré ce commentaire — voir plan_performance_reseau.md §4.1). */
-export const SPECTATOR_FOOD_SAMPLE_EVERY = 4;
+ * Relevé à 6 (était 4, régression déjà corrigée à ce niveau — voir plan_performance_reseau.md
+ * §4.1) : audit lag lobby — un visiteur d'accueil supplémentaire ne doit quasiment rien coûter,
+ * combiné au sous-échantillonnage côté client (voir renderEngine.ts `subsampleForSpectator`). */
+export const SPECTATOR_FOOD_SAMPLE_EVERY = 6;
 
 export function isVisibleToSpectator(entity: Entity): boolean {
   if (entity.kind !== 'particle') return true;
@@ -197,11 +198,15 @@ export function buildStateMessage(
   }
   const self = Object.keys(selfFields).length > 0 ? selfFields : undefined;
 
+  // Classement identique pour tout le monde (voir net/ws/broadcast.ts `sharedStatePrefix`, qui
+  // sérialise `leaderboard` une seule fois par tick et le réutilise pour tous les joueurs) :
+  // `playerId` par entrée plutôt qu'un `isSelf` calculé ici pour LE joueur `playerId` du paramètre
+  // — sinon ce booléen se retrouve figé sur le premier joueur traité ce tick pour tous les autres.
   const leaderboard: LeaderboardEntry[] = topScores.map((entry, idx) => ({
     rank: idx + 1,
     nickname: entry.nickname,
     score: entry.score,
-    isSelf: entry.id === playerId,
+    playerId: entry.id,
   }));
 
   return {

@@ -4,13 +4,13 @@ export const SKINS = [
   'Baamix LSD',
   'Banane Épic',
   'Calamoche',
+  'Monstera',
   'Mouche Moche',
   'Pieuvre Défoncée',
   'Radiateur',
   'Robibou',
   'Scoobi',
-  'Scoobi-1',
-  'Scoobi-2',
+  'Skibidi',
   'Souris Parapluis',
 ] as const;
 
@@ -26,13 +26,13 @@ export const SKIN_IMAGE_MAP: Record<string, string> = {
   'Baamix LSD': '/assets/Profil/Baamix LSD.png',
   'Banane Épic': '/assets/Profil/Banane Épic.png',
   Calamoche: '/assets/Profil/Calamoche.png',
+  Monstera: '/assets/Profil/Monstera.png',
   'Mouche Moche': '/assets/Profil/Mouche Moche.png',
   'Pieuvre Défoncée': '/assets/Profil/Pieuvre Défoncée.png',
   Radiateur: '/assets/Profil/Radiateur.png',
   Robibou: '/assets/Profil/Robibou.png',
   Scoobi: '/assets/Profil/Scoobi.png',
-  'Scoobi-1': '/assets/Profil/Scoobi-1.png',
-  'Scoobi-2': '/assets/Profil/Scoobi-2.png',
+  Skibidi: '/assets/Profil/Skibidi.png',
   'Souris Parapluis': '/assets/Profil/Souris Parapluis.png',
 };
 

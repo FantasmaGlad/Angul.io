@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "angulio-project-map": {
+      "command": "node",
+      "args": [".gemini/mcp/server.mjs"]
+    }
+  }
+}

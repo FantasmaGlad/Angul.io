@@ -56,6 +56,12 @@ Variables d'environnement server pertinentes pour le développement d'un mod :
 | `DATABASE_URL` | absent | Active comptes joueurs + persistance des scores |
 | `ADMIN_PASSWORD_HASH` | absent | Active l'interface admin (mot de passe unique, argon2) |
 
+**Outillage IA** : un serveur MCP local (`.claude/mcp/server.mjs`, enregistré par `.mcp.json` à la
+racine) expose une cartographie interrogeable du dépôt (`.claude/project-structure.json`) — voir
+[structure.md §1bis](structure.md#1bis-outillage-ia-serveur-mcp-local-coordination-multi-plateformes)
+pour le détail et la règle de coordination si d'autres outils IA (Gemini, Cursor, Windsurf…)
+viennent un jour s'ajouter à ce dépôt.
+
 ---
 
 ## 2. Architecture générale

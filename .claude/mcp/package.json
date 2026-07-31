@@ -1,0 +1,13 @@
+{
+  "name": "angulio-project-map-mcp",
+  "version": "1.0.0",
+  "description": "Serveur MCP local (outillage Claude Code) exposant la cartographie du depot Angul.io — pas un package du monorepo du jeu, jamais reference par ses workspaces npm.",
+  "private": true,
+  "type": "module",
+  "main": "server.mjs",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.4.3"
+  }
+}

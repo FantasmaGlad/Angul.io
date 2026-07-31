@@ -262,6 +262,11 @@ export class Room {
   removePlayer(id: PlayerId): void {
     this.mod.onPlayerLeave?.(this.world, id);
     this.world.removePlayer(id);
+    // Sans ça, `frozenPlayerIds` accumulait une entrée par joueur ayant un jour été gelé
+    // (admin, ou délai de grâce à la déconnexion, voir net/ws/connectionHandler.ts) sans jamais
+    // la libérer, pour un salon de longue durée — fuite mineure mais désormais bien plus
+    // fréquente qu'avant (une entrée par déconnexion, pas seulement par action admin manuelle).
+    this.frozenPlayerIds.delete(id);
     if (!this.botManager?.isBot(id)) {
       this.botManager?.adjustPopulation();
     }

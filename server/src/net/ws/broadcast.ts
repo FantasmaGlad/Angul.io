@@ -46,6 +46,17 @@ export interface RoomRuntime {
    * `admitStateFrame`) — sert uniquement à alterner "envoie/saute" un tick sur deux tant que la
    * socket reste encombrée ; absent d'un joueur = pas actuellement dégradé. */
   stateSkipStreakByPlayer: Map<PlayerId, number>;
+  /** Jeton de reprise courant par joueur (voir shared/src/protocol.ts `WelcomeMessage.resumeToken`
+   * / `ClientJoinMessage.resumeToken`) — assigné à chaque join/resume réussi, retrouvé dans
+   * `pendingLeaves` pour reconnaître une reconnexion transitoire plutôt qu'un nouveau joueur (voir
+   * connectionHandler.ts, correctif "déconnexion = perte immédiate de la vie/XP"). */
+  resumeTokenByPlayer: Map<PlayerId, string>;
+  /** Déconnexions en délai de grâce (voir `GRACE_PERIOD_MS`, connectionHandler.ts) : le joueur
+   * reste dans le monde (gelé, `Room.setFrozen`) le temps que ce timer expire, retiré de cette map
+   * dès qu'il reconnecte avec le bon `resumeToken` (annule le timer) ou que la grâce expire (leave
+   * définitif, comportement historique). Clé = `resumeToken`, pas `playerId` : c'est la seule
+   * information que le client peut présenter pour prouver "c'est bien moi qui reviens". */
+  pendingLeaves: Map<string, { playerId: PlayerId; timer: ReturnType<typeof setTimeout> }>;
 }
 
 /** Relaie les événements d'un salon (`RoomHandle`, voir engine/worker/roomHost.ts) vers les
@@ -68,6 +79,8 @@ export function wireRoom(
     latencyByPlayer: new Map(),
     nicknameByPlayer: new Map(),
     stateSkipStreakByPlayer: new Map(),
+    resumeTokenByPlayer: new Map(),
+    pendingLeaves: new Map(),
   };
   runtimes.set(managed.id, runtime);
 
@@ -168,8 +181,27 @@ export function wireRoom(
     if (!socket) return;
 
     void (async () => {
-      const card =
-        accountId !== undefined ? await accountsService?.getDeathScreenCard(accountId) : undefined;
+      // Filet de sécurité (correctif "écran de mort qui ne s'affiche jamais") : `getDeathScreenCard`
+      // fait une vraie requête PostgreSQL — si elle échoue (pool saturé, coupure momentanée vers la
+      // DB), une rejection non catchée ici empêcherait le `send()` plus bas de s'exécuter (le
+      // joueur reste bloqué en jeu sans blob, sans jamais voir d'écran de mort), et ferait en plus
+      // planter tout le process (Node ≥15 termine par défaut sur une rejection non gérée, voir
+      // `process.on('unhandledRejection', ...)` dans index.ts pour le filet de dernier recours).
+      // Ne concerne que les comptes connectés (`accountId !== undefined`) : un invité saute cette
+      // requête et n'est jamais affecté, d'où le symptôme rapporté "surtout les messages
+      // personnalisés" qui ne s'affichent pas.
+      let card: { message: string; bannerId: string } | undefined;
+      if (accountId !== undefined) {
+        try {
+          card = await accountsService?.getDeathScreenCard(accountId);
+        } catch (error: unknown) {
+          logEvent('death_card_fetch_failed', {
+            roomId: managed.id,
+            playerId,
+            reason: (error as Error).message,
+          });
+        }
+      }
       // Réplique de bot (demande utilisateur) : un bot nommé (BOT_IDENTITIES) a sa propre punchline
       // de victoire, affichée à la place de l'écran de mort personnalisé du joueur — celui-ci reste
       // utilisé pour toute autre cause de mort (joueur humain, reset de salon). `botKillGifPath`

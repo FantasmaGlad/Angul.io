@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import {
   getRandomSkin,
@@ -36,6 +37,14 @@ const WS_CLOSE_TOO_MANY_SPECTATORS = 1013;
  * plage privée 4000-4999 (RFC 6455), comme les codes joueur de `@angulio/shared`, mais réservé au
  * canal admin (jamais transmis à un client joueur, pas de constante partagée nécessaire). */
 const WS_CLOSE_ADMIN_UNAUTHORIZED = 4401;
+/** Délai de grâce (ms) avant qu'une déconnexion ne devienne définitive (voir `pendingLeaves`,
+ * broadcast.ts) — correctif "déconnexion = perte immédiate de la vie/XP en cours" (retour
+ * utilisateur) : une micro-coupure Wi-Fi/4G, ou l'App Nap de Safari/macOS qui suspend un onglet en
+ * arrière-plan, ne doit pas coûter la vie en cours si le joueur revient vite. Volontairement court
+ * (le joueur reste un blob IMMOBILE mais toujours mangeable pendant ce délai, voir `Room.setFrozen`
+ * via l'action admin 'freeze' réutilisée ici) : ni trop court (raterait une vraie micro-coupure),
+ * ni trop long (un abandon volontaire resterait visible trop longtemps comme un blob figé). */
+const DEFAULT_GRACE_PERIOD_MS = 8000;
 
 export function handleWsConnection(
   socket: WebSocket,
@@ -46,6 +55,9 @@ export function handleWsConnection(
   wsRateLimiter: RateLimiter,
   admin: AdminAuth | undefined,
   buildVersion: string,
+  // Surchargeable pour les tests (délai de grâce court plutôt que d'attendre 8s dans une suite
+  // vitest) — voir GameServerOptions.disconnectGraceMs, net/server.ts.
+  disconnectGraceMs: number = DEFAULT_GRACE_PERIOD_MS,
 ): void {
   const requestUrl = new URL(request.url ?? '/', 'http://localhost');
   const isAdmin = requestUrl.searchParams.get('admin') === '1';
@@ -179,6 +191,38 @@ export function handleWsConnection(
 
   let playerId: PlayerId | undefined;
 
+  /** Termine une vie DÉFINITIVEMENT (identique à une vraie mort côté crédit XP/score, voir
+   * RoomInstance.leave) — factorisé pour être appelable soit à l'expiration naturelle du délai de
+   * grâce (voir `close` plus bas), soit immédiatement si un NOUVEAU join réclame le même pseudo
+   * pendant qu'un fantôme (ancienne connexion) est encore en grâce (voir la branche `join` plus
+   * bas) : un pseudo ne doit jamais rester indisponible jusqu'à `disconnectGraceMs` pour quelqu'un
+   * d'autre à cause d'une reconnexion qui, de toute façon, n'arrivera jamais avec ce pseudo précis
+   * (elle utiliserait son propre `resumeToken`, pas un nouveau join "à vide"). */
+  // Async (et non fire-and-forget en interne) : le pré-contrôle "fantôme" de la branche `join`
+  // ci-dessous a besoin d'ATTENDRE que `managed.handle.leave` ait réellement retiré le joueur du
+  // monde avant de poursuivre son propre `join` — sans ça, le nouveau join pourrait encore trouver
+  // l'ancien joueur "présent" (retrait pas encore effectif) et le rejeter à tort comme pseudo pris.
+  // Le handler `close` (fire-and-forget, `void finalizeLeave(...)`) n'a pas besoin d'attendre.
+  const finalizeLeave = async (pId: PlayerId): Promise<void> => {
+    logEvent('player_leave', { roomId: managed.id, playerId: pId });
+
+    const leavingAccountId = runtime.accountIdByPlayer.get(pId);
+    const joinedAt = runtime.joinedAtByPlayer.get(pId);
+    if (leavingAccountId !== undefined && joinedAt !== undefined) {
+      void accounts?.addPlaytime(leavingAccountId, (Date.now() - joinedAt) / 1000);
+    }
+
+    runtime.accountIdByPlayer.delete(pId);
+    runtime.colorByPlayer.delete(pId);
+    runtime.joinedAtByPlayer.delete(pId);
+    runtime.latencyByPlayer.delete(pId);
+    runtime.nicknameByPlayer.delete(pId);
+    runtime.resumeTokenByPlayer.delete(pId);
+
+    const result = await managed.handle.leave(pId);
+    recordAccountStatsOnLeave(accounts, managed, leavingAccountId, pId, result);
+  };
+
   socket.on('message', (raw: Buffer): void => {
     void handleMessage(raw);
   });
@@ -198,6 +242,71 @@ export function handleWsConnection(
       const nickname = message.nickname.trim().slice(0, MAX_NICKNAME_LENGTH) || 'Joueur';
 
       if (!playerId) {
+        // Reconnexion transitoire reconnue (voir GRACE_PERIOD_MS/pendingLeaves, broadcast.ts) :
+        // reprend la vie EN COURS (même playerId, même masse — jamais retirée du monde, juste
+        // gelée le temps de la grâce) plutôt que d'en créer une nouvelle. Un jeton absent/inconnu/
+        // expiré retombe silencieusement sur un join normal ci-dessous (comportement historique).
+        const resumeToken =
+          typeof message.resumeToken === 'string' ? message.resumeToken : undefined;
+        const pending = resumeToken ? runtime.pendingLeaves.get(resumeToken) : undefined;
+
+        if (pending) {
+          clearTimeout(pending.timer);
+          // `resumeToken` est forcément défini ici : `pending` ne peut être truthy que si l'appel
+          // `runtime.pendingLeaves.get(resumeToken)` ci-dessus l'a été avec un `resumeToken`
+          // défini (TypeScript ne relie pas cette implication à travers la variable `pending`).
+          runtime.pendingLeaves.delete(resumeToken!);
+
+          playerId = pending.playerId;
+          runtime.sockets.set(playerId, socket);
+          managed.handle.connectViewer(playerId, false);
+          void managed.handle.adminAction({ kind: 'unfreeze', playerId });
+
+          const newResumeToken = randomUUID();
+          runtime.resumeTokenByPlayer.set(playerId, newResumeToken);
+
+          logEvent('player_resume', { roomId: managed.id, playerId });
+          send(socket, {
+            type: 'welcome',
+            playerId,
+            mapSize: managed.handle.mapSize,
+            tickRateHz: roomManager.tickRateHz,
+            movement: managed.handle.movement,
+            modId: managed.modId,
+            nextResetAtMs: roomManager.nextResetAtMsOf(managed),
+            buildVersion,
+            resumeToken: newResumeToken,
+          });
+
+          // Backfill identique au join normal ci-dessous : reconstruit les maps pseudo/couleur
+          // côté client au cas où d'autres joueurs auraient rejoint/quitté pendant la grâce.
+          for (const [pId, existingNickname] of runtime.nicknameByPlayer.entries()) {
+            if (pId === playerId) continue;
+            const existingColor = runtime.colorByPlayer.get(pId) ?? skinForNickname(existingNickname);
+            send(socket, { type: 'player', playerId: pId, nickname: existingNickname, color: existingColor });
+          }
+          const ownNickname = runtime.nicknameByPlayer.get(playerId) ?? nickname;
+          const ownColor = runtime.colorByPlayer.get(playerId) ?? skinForNickname(ownNickname);
+          send(socket, { type: 'player', playerId, nickname: ownNickname, color: ownColor });
+          return;
+        }
+
+        // Un fantôme en délai de grâce (voir `pendingLeaves`/close ci-dessous) qui détient déjà CE
+        // pseudo ne doit jamais bloquer un NOUVEAU join (pas une reprise : celle-ci a déjà été
+        // traitée ci-dessus via `resumeToken`) jusqu'à l'expiration de `disconnectGraceMs` — une
+        // vraie reconnexion sans jeton (nouvel onglet, ou double montage React StrictMode en dev)
+        // doit pouvoir reprendre IMMÉDIATEMENT ce pseudo plutôt que se voir opposer un "pseudo déjà
+        // utilisé" par un fantôme qui, de toute façon, ne reviendra jamais avec ce même pseudo sans
+        // son propre `resumeToken`. Termine ce fantôme sur-le-champ avant de tenter le join normal.
+        for (const [ghostToken, pending] of runtime.pendingLeaves.entries()) {
+          const ghostNickname = runtime.nicknameByPlayer.get(pending.playerId);
+          if (ghostNickname && ghostNickname.toLowerCase() === nickname.toLowerCase()) {
+            clearTimeout(pending.timer);
+            runtime.pendingLeaves.delete(ghostToken);
+            await finalizeLeave(pending.playerId);
+          }
+        }
+
         // Premier Join sur cette connexion — décisions (plafond de joueurs humains, éviction de
         // bot, pseudo déjà pris) désormais prises atomiquement par `RoomHandle.join` (voir
         // RoomInstance.join, engine/worker/) plutôt qu'ici : pour un salon hébergé par un worker,
@@ -245,6 +354,8 @@ export function handleWsConnection(
         // sienne propre disponible immédiatement, sans dépendre de l'ordre d'arrivée de
         // l'événement `onPlayerJoin` correspondant.
         runtime.colorByPlayer.set(playerId, avatarColor);
+        const newResumeToken = randomUUID();
+        runtime.resumeTokenByPlayer.set(playerId, newResumeToken);
         logEvent('player_join', { roomId: managed.id, playerId, nickname });
         send(socket, {
           type: 'welcome',
@@ -255,6 +366,7 @@ export function handleWsConnection(
           modId: managed.modId,
           nextResetAtMs: roomManager.nextResetAtMsOf(managed),
           buildVersion,
+          resumeToken: newResumeToken,
         });
 
         for (const existingPlayer of result.existingPlayers) {
@@ -327,31 +439,34 @@ export function handleWsConnection(
   socket.on('close', () => {
     if (!playerId) return;
     const leavingPlayerId = playerId;
-    logEvent('player_leave', { roomId: managed.id, playerId: leavingPlayerId });
 
-    // Capturé avant nettoyage de `runtime` ci-dessous : `leave()` est asynchrone (round-trip
-    // possible vers un worker, voir WorkerRoomHost), la callback qui écrit en base ne doit pas
-    // lire `accountIdByPlayer` après sa suppression, sans quoi le compte ne serait jamais
-    // crédité (l'id de compte serait déjà introuvable au moment de l'écriture).
-    const accountId = runtime.accountIdByPlayer.get(leavingPlayerId);
-    const joinedAt = runtime.joinedAtByPlayer.get(leavingPlayerId);
-    if (accountId !== undefined && joinedAt !== undefined) {
-      void accounts?.addPlaytime(accountId, (Date.now() - joinedAt) / 1000);
-    }
-
+    // La socket est bel et bien partie : on arrête tout de suite de lui envoyer des ticks et on
+    // oublie son historique de dégradation réseau (`admitStateFrame`) — mais PAS le reste
+    // (compte/couleur/pseudo/jeton), gardé le temps du délai de grâce pour une éventuelle reprise.
     managed.handle.disconnectViewer(leavingPlayerId);
     runtime.sockets.delete(leavingPlayerId);
-    runtime.accountIdByPlayer.delete(leavingPlayerId);
-    runtime.colorByPlayer.delete(leavingPlayerId);
-    runtime.joinedAtByPlayer.delete(leavingPlayerId);
-    runtime.latencyByPlayer.delete(leavingPlayerId);
-    runtime.nicknameByPlayer.delete(leavingPlayerId);
     runtime.stateSkipStreakByPlayer.delete(leavingPlayerId);
 
-    void (async () => {
-      const result = await managed.handle.leave(leavingPlayerId);
-      recordAccountStatsOnLeave(accounts, managed, accountId, leavingPlayerId, result);
-    })();
+    // Délai de grâce (voir GRACE_PERIOD_MS) : le joueur reste dans le monde, gelé (toujours
+    // mangeable, immobile) plutôt que retiré instantanément — correctif "déconnexion = perte
+    // immédiate de la vie/XP en cours" (retour utilisateur), une simple micro-coupure réseau ne
+    // doit plus coûter la vie si le joueur revient dans les temps (voir plus haut, branche
+    // `pending` du traitement de `join`).
+    const resumeToken = runtime.resumeTokenByPlayer.get(leavingPlayerId);
+    if (!resumeToken) {
+      // Ne devrait plus arriver (un jeton est toujours assigné au join/à la reprise, voir plus
+      // haut) — filet de sécurité : sans jeton à présenter au retour, pas de délai de grâce
+      // possible, on retombe sur le comportement historique (leave immédiat).
+      void finalizeLeave(leavingPlayerId);
+      return;
+    }
+
+    void managed.handle.adminAction({ kind: 'freeze', playerId: leavingPlayerId });
+    const timer = setTimeout(() => {
+      runtime.pendingLeaves.delete(resumeToken);
+      void finalizeLeave(leavingPlayerId);
+    }, disconnectGraceMs);
+    runtime.pendingLeaves.set(resumeToken, { playerId: leavingPlayerId, timer });
   });
 }
 

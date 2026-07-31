@@ -29,7 +29,7 @@ import {
   type NetworkInfo,
 } from '../debugOverlay.js';
 import { audioManager } from '../audio.js';
-import { attachInput } from '../input.js';
+import { attachInput, type InputTracker } from '../input.js';
 import { keyLabel, loadKeybinds } from '../keybinds.js';
 import { GameConnection } from '../net.js';
 import { LocalPrediction } from '../prediction.js';
@@ -47,6 +47,7 @@ import {
 } from '../settings.js';
 import { ownAggregate, speedBetween } from '../stats.js';
 import Minimap from './Minimap.js';
+import VirtualControls from './VirtualControls.js';
 
 /** Repli avant que `welcome` (et donc `serverTickRateHz`) ne soit connu — l'envoi des inputs se
  * cale ensuite dynamiquement sur la cadence réelle du salon (voir `scheduleInput` plus bas) au
@@ -62,6 +63,14 @@ const LATENCY_EMA_ALPHA = 0.25;
  * surestimée plutôt que sous-estimée (voir le commentaire sur `smoothedLatencyMs`). */
 const LATENCY_SAFETY_MARGIN_MS = 15;
 const MAP_UNITS_TO_METERS = 0.01;
+
+/** `LeaderboardEntry` du protocole + `isSelf` calculé côté client (comparaison à `selfPlayerId`)
+ * plutôt que reçu du serveur — voir shared/src/protocol.ts `LeaderboardEntry.playerId` pour
+ * pourquoi ce booléen ne peut plus être calculé côté serveur (bug de classement mélangé entre
+ * joueurs, corrigé). */
+interface DisplayLeaderboardEntry extends LeaderboardEntry {
+  isSelf: boolean;
+}
 
 interface DeathState {
   isDead: boolean;
@@ -159,12 +168,16 @@ export default function GameView({
   });
 
   const connectionRef = useRef<GameConnection | null>(null);
+  /** Réf impérative vers l'`InputTracker` de la partie en cours — permet à `VirtualControls.tsx`
+   * (joystick/bouton d'action tactile, hors de cet effet) de piloter la même instance sans passer
+   * par un state React (l'input est lu à chaque frame, pas une donnée d'affichage). */
+  const inputRef = useRef<InputTracker | null>(null);
   /** `modId` du salon courant, appris au premier `welcome` — nécessaire hors de la boucle
    * d'effet (voir bouton "Rejouer" ci-dessous, `musicUrlForMod`) pour relancer la musique
    * SYNCHRONEMENT au clic plutôt que d'attendre le prochain `welcome` (round-trip réseau qui
    * casse le geste utilisateur requis par certains navigateurs pour l'autoplay avec son). */
   const modIdRef = useRef<string | undefined>(undefined);
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [leaderboard, setLeaderboard] = useState<DisplayLeaderboardEntry[]>([]);
   const [deathState, setDeathState] = useState<DeathState>(DEFAULT_DEATH_STATE);
   const [playerPos, setPlayerPos] = useState<{ x: number; y: number } | undefined>(undefined);
   const [playerMass, setPlayerMass] = useState<number | undefined>(undefined);
@@ -199,9 +212,19 @@ export default function GameView({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // Rendu net sur écran HiDPI/Retina (audit Safari/macOS) : sans ce correctif, le canvas
+    // dessinait à résolution CSS (1 pixel canvas = 1 pixel CSS) puis était upscalé par le
+    // navigateur — flou visible sur tout écran Retina (quasi tous les Mac), pas spécifique à
+    // Safari mais surtout remarqué là. `canvas.width/height` (attributs, la "surface" physique de
+    // dessin) passent à `dpr` fois la taille CSS ; `ctx.setTransform` compense ce facteur pour que
+    // TOUT le reste (render.ts, input.ts) continue de raisonner en coordonnées CSS-pixel via
+    // `canvas.clientWidth/clientHeight` (déjà fixé à 100vw/100vh par `#game` en CSS, voir
+    // styles.css) — la taille AFFICHÉE ne change pas, seule la résolution interne augmente.
     function resizeCanvas(): void {
-      canvas!.width = window.innerWidth;
-      canvas!.height = window.innerHeight;
+      const dpr = window.devicePixelRatio || 1;
+      canvas!.width = Math.round(window.innerWidth * dpr);
+      canvas!.height = Math.round(window.innerHeight * dpr);
+      ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
@@ -332,6 +355,7 @@ export default function GameView({
         prediction.applyDash(dir, 4050);
       },
     );
+    inputRef.current = input;
 
     const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
     const tokenParam = authToken ? `&token=${encodeURIComponent(authToken)}` : '';
@@ -339,6 +363,14 @@ export default function GameView({
       `${wsProtocol}://${location.host}/?roomId=${encodeURIComponent(roomIdOrInviteCode)}${tokenParam}`,
     );
     connectionRef.current = connection;
+
+    // Filet de sécurité Safari/macOS (audit rendu+réseau) : au retour au premier plan après une
+    // mise en arrière-plan prolongée, vérifie/relance activement la connexion plutôt que de
+    // compter uniquement sur l'événement `close` du socket (voir `GameConnection.ensureConnected`).
+    const onVisibilityChange = (): void => {
+      if (document.visibilityState === 'visible') connection.ensureConnected();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     const renderEngine = new RenderEngine();
     const prediction = new LocalPrediction();
@@ -362,6 +394,11 @@ export default function GameView({
             return;
           }
         }
+        // Jeton à représenter si cette connexion venait à se couper (voir net.ts
+        // `GameConnection.setResumeToken` / connectionHandler.ts `pendingLeaves`) — permet au
+        // serveur de reconnaître un retour rapide et de reprendre la vie en cours plutôt que de la
+        // considérer perdue (correctif "déconnexion = perte immédiate de l'XP en cours").
+        connection.setResumeToken(message.resumeToken);
         currentModId = message.modId;
         modIdRef.current = message.modId;
         selfPlayerId = message.playerId;
@@ -413,7 +450,9 @@ export default function GameView({
         renderEngine.pushSnapshot(message.entities, message.tick, serverTickRateHz);
         serverTpsCurrent = tickRateTracker.record(latestSnapshotAt);
         if (message.leaderboard) {
-          setLeaderboard(message.leaderboard);
+          setLeaderboard(
+            message.leaderboard.map((entry) => ({ ...entry, isSelf: entry.playerId === selfPlayerId })),
+          );
         }
         if (message.self?.dash !== undefined) {
           setDashInfo(message.self.dash);
@@ -615,8 +654,8 @@ export default function GameView({
       let entities = renderEngine.getInterpolatedEntities(
         frameDt,
         latestCamera,
-        canvas!.width,
-        canvas!.height,
+        canvas!.clientWidth,
+        canvas!.clientHeight,
         selfPlayerId,
         false,
       );
@@ -764,6 +803,8 @@ export default function GameView({
       closedByUs = true;
       window.removeEventListener('resize', resizeCanvas);
       window.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      inputRef.current = null;
       input.detach();
       audioManager.stopMusic();
       if (inputTimer) clearTimeout(inputTimer);
@@ -952,6 +993,10 @@ export default function GameView({
 
       {/* Minimap (quadrillage 3x3 : 1-3 horizontal, A-C vertical) */}
       <Minimap position={playerPos} playerMass={playerMass} mapSize={mapSizeState} />
+
+      {/* Joystick virtuel + bouton d'action tactile (demande utilisateur, mobile) — masqué en CSS
+          hors appareil à pointeur "grossier" (`(pointer: coarse)`, voir styles.css). */}
+      <VirtualControls inputRef={inputRef} hasDash={dashInfo !== undefined} />
 
       <pre className="debug-overlay" ref={debugOverlayRef} />
     </>

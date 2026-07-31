@@ -232,33 +232,41 @@ describe('startGameServer', () => {
     socket.close();
   });
 
-  it('retire le joueur de la room à la fermeture du socket', async () => {
-    const removedPlayerIds: string[] = [];
-    const mod: GameMod = {
-      id: 'test',
-      onPlayerJoin: (world, playerId) => {
-        world.spawnPiece(playerId, { x: 0, y: 0 }, 50);
-      },
-      onPlayerLeave: (_world, playerId) => {
-        removedPlayerIds.push(playerId);
-      },
-    };
-    const manager = makeManager(() => ({ mod, mapSize: 1000 }));
-    const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
-    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
-    const port = await handle.whenReady;
+  it(
+    'retire le joueur de la room à l’expiration du délai de grâce suivant la fermeture du socket ' +
+      '(correctif "déconnexion = perte immédiate de la vie/XP en cours", pas retiré immédiatement)',
+    async () => {
+      const removedPlayerIds: string[] = [];
+      const mod: GameMod = {
+        id: 'test',
+        onPlayerJoin: (world, playerId) => {
+          world.spawnPiece(playerId, { x: 0, y: 0 }, 50);
+        },
+        onPlayerLeave: (_world, playerId) => {
+          removedPlayerIds.push(playerId);
+        },
+      };
+      const manager = makeManager(() => ({ mod, mapSize: 1000 }));
+      const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
+      handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0, disconnectGraceMs: 20 });
+      const port = await handle.whenReady;
 
-    const socket = await connectedClient(port, summary.id);
-    const messages = collectMessages(socket);
-    socket.send(JSON.stringify({ type: 'join', nickname: 'Dan' }));
-    await waitUntil(() => messages.some((m) => m.type === 'welcome'));
-    const welcome = messages.find((m) => m.type === 'welcome')!;
+      const socket = await connectedClient(port, summary.id);
+      const messages = collectMessages(socket);
+      socket.send(JSON.stringify({ type: 'join', nickname: 'Dan' }));
+      await waitUntil(() => messages.some((m) => m.type === 'welcome'));
+      const welcome = messages.find((m) => m.type === 'welcome')!;
 
-    socket.close();
-    await new Promise((resolve) => setTimeout(resolve, 50));
+      socket.close();
+      // Immédiatement après la fermeture : encore en délai de grâce, le joueur reste dans le monde
+      // (gelé, toujours mangeable) — pas encore retiré.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(removedPlayerIds).toEqual([]);
 
-    expect(removedPlayerIds).toEqual([welcome.playerId]);
-  });
+      await waitUntil(() => removedPlayerIds.length > 0);
+      expect(removedPlayerIds).toEqual([welcome.playerId]);
+    },
+  );
 
   it('arrondit position/rayon à 1 décimale et la masse à l’entier (Lot 1.8)', async () => {
     const mod: GameMod = {
@@ -513,7 +521,10 @@ describe('startGameServer', () => {
     it('accepte un pseudo repris après le départ du premier joueur qui l’utilisait', async () => {
       const manager = makeManager(testResolver());
       const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
-      handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
+      // `disconnectGraceMs` court : le pseudo ne se libère qu'à l'expiration du délai de grâce
+      // (voir connectionHandler.ts, correctif "déconnexion = perte immédiate de l'XP en cours"),
+      // pas au ferme de socket lui-même — 8s par défaut en production, bien trop long pour ce test.
+      handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0, disconnectGraceMs: 20 });
       const port = await handle.whenReady;
 
       const first = await connectedClient(port, summary.id);
@@ -916,7 +927,16 @@ describe.skipIf(!DATABASE_URL)('startGameServer (avec comptes joueurs)', () => {
     const accounts = new AccountsService(pool);
     const admin = withAdmin ? new AdminAuth(await hashPassword('adminpass123')) : undefined;
     const manager = makeManager();
-    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0, accounts, admin });
+    // `disconnectGraceMs` court (8s par défaut en production, voir connectionHandler.ts) : ce bloc
+    // de tests vérifie le crédit XP/score à la déconnexion juste après `socket.close()`, pas le
+    // délai de grâce lui-même (couvert par server.test.ts, autre describe).
+    handle = startGameServer(manager, {
+      port: 0,
+      rateLimitMaxAttempts: 0,
+      accounts,
+      admin,
+      disconnectGraceMs: 20,
+    });
     const port = await handle.whenReady;
     return { port, accounts, manager };
   }

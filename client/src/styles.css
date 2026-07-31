@@ -100,6 +100,10 @@ canvas {
      transform de pic directement en style inline (transition désactivée le temps du saut), puis le
      retire — c'est CETTE transition qui anime alors le retour à `scale(1)`. */
   transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+  /* Un doigt posé/glissé sur le canvas ne doit jamais faire défiler/zoomer la page (pas de geste
+     de navigation à intercepter ici, tout le pilotage passe par VirtualControls.tsx ou la souris)
+     — audit mobile, complète `body { overflow: hidden }` qui ne couvre pas le rebond iOS Safari. */
+  touch-action: none;
 }
 
 .spectator-background {
@@ -444,8 +448,12 @@ select {
   padding: 16px 32px;
   border-bottom: 1px solid rgba(46, 49, 51, 0.12);
   background: rgba(255, 255, 255, 0.78);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  /* 16px -> 8px (audit lag lobby) : ce flou est recalculé par le compositeur GPU en continu
+     puisque le fond animé (SpectatorBackground.tsx, canvas position:fixed) bouge en dessous
+     jusqu'à 18fps — un rayon de flou plus petit coûte sensiblement moins cher, quasi invisible
+     visuellement à cette opacité de fond. */
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .brand-mark-btn {
@@ -1156,7 +1164,6 @@ select {
 
 @media (max-width: 900px) {
   .home-columns {
-    grid-template-columns: 1fr;
     max-width: 480px;
     margin: 0 auto;
   }
@@ -2369,5 +2376,187 @@ a.btn-primary {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-ink);
+}
+
+/* --- Contrôles tactiles mobile (VirtualControls.tsx, demande utilisateur) -------------------
+   Joystick virtuel (assets/Joystick/JoystickFond.png + Joystick.png) en bas à gauche + bouton
+   d'action (Dash/Split selon le mode) en bas à droite. Masqués par défaut, affichés uniquement
+   sur appareil à pointeur "grossier" (`(pointer: coarse)`) — jamais sur desktop souris/clavier,
+   même avec un écran tactile secondaire (ex. laptop tactile avec souris branchée). */
+.virtual-controls {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .virtual-controls {
+    display: block;
+  }
+}
+
+.virtual-joystick-base {
+  position: fixed;
+  left: max(20px, env(safe-area-inset-left));
+  bottom: max(20px, env(safe-area-inset-bottom));
+  width: 132px;
+  height: 132px;
+  z-index: 60;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.virtual-joystick-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0.55;
+  pointer-events: none;
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+.virtual-joystick-knob {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 56px;
+  height: 56px;
+  transform: translate(-50%, -50%);
+  object-fit: contain;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.35));
+  pointer-events: none;
+  -webkit-user-drag: none;
+  user-drag: none;
+  will-change: transform;
+}
+
+.virtual-action-button {
+  position: fixed;
+  right: max(24px, env(safe-area-inset-right));
+  bottom: max(28px, env(safe-area-inset-bottom));
+  z-index: 60;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: rgba(241, 241, 243, 0.85);
+  border: 2px solid var(--border-strong);
+  box-shadow: var(--shadow-modal);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 0;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.virtual-action-button:active {
+  background: var(--accent);
+  transform: scale(0.94);
+}
+.virtual-action-icon {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  pointer-events: none;
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+.virtual-action-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--text-soft);
+  pointer-events: none;
+}
+
+/* --- HUD de jeu compacté (téléphone : petit écran ET/OU pointeur tactile) --------------------
+   `(max-width: 700px)` couvre aussi une fenêtre desktop étroite (souris) ; `(pointer: coarse)`
+   couvre une tablette/tél. large en paysage — les deux se recouvrent volontairement (virgule =
+   OU en media query). Sans ce bloc, panneau de stats (190px) + classement (220px) + minimap
+   (280×280px) + barre de dash chevauchent largement sur un écran de ~375-414px de large (audit
+   mobile). */
+@media (max-width: 700px), (pointer: coarse) {
+  .game-overlay {
+    top: max(8px, env(safe-area-inset-top));
+    left: max(8px, env(safe-area-inset-left));
+    gap: 6px;
+  }
+  .stats-panel {
+    min-width: 0;
+    padding: 8px 10px;
+    font-size: 11px;
+  }
+  .stat-row {
+    font-size: 11px;
+    gap: 10px;
+    padding: 2px 0;
+  }
+  .hud-quit-button {
+    padding: 6px 12px;
+    font-size: 11px;
+  }
+
+  .leaderboard-overlay {
+    top: max(8px, env(safe-area-inset-top));
+    right: max(8px, env(safe-area-inset-right));
+    width: 132px;
+    padding: 8px;
+  }
+  .leaderboard-header {
+    font-size: 9px;
+    margin-bottom: 5px;
+  }
+  .leaderboard-row {
+    font-size: 10px;
+    padding: 2px 3px;
+    gap: 4px;
+  }
+
+  /* Minimap déplacée en haut (au lieu de bas-droite) pour ne jamais chevaucher le joystick
+     virtuel (bas-gauche) ni le bouton d'action (bas-droite) — voir .virtual-joystick-base/
+     .virtual-action-button ci-dessus. */
+  .minimap-container {
+    top: 96px;
+    right: max(8px, env(safe-area-inset-right));
+    bottom: auto;
+    width: 108px;
+    height: 108px;
+    padding: 2px;
+  }
+  .minimap-header,
+  .minimap-rows-labels {
+    font-size: 9px;
+  }
+  .minimap-cell {
+    font-size: 8px;
+  }
+
+  .dash-hud-wrapper {
+    top: max(8px, env(safe-area-inset-top));
+  }
+  .dash-hud-badge {
+    padding: 5px 12px;
+    gap: 6px;
+  }
+  .dash-segment-box {
+    width: 24px;
+    height: 9px;
+  }
+
+  /* Corrige le zoom automatique de Safari iOS au focus d'un champ sous 16px (pseudo, code de
+     salon, formulaires de compte...) — un bug mobile classique, indépendant de tout élément de
+     jeu précis. */
+  input,
+  select {
+    font-size: 16px;
+  }
+
+  .home-columns {
+    padding: 20px 16px;
+  }
 }
 

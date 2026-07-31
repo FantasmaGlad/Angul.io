@@ -21,6 +21,7 @@ export default defineConfig({
       '/assets/Logos': 'http://localhost:8080',
       '/assets/Sons': 'http://localhost:8080',
       '/assets/Profil': 'http://localhost:8080',
+      '/assets/Joystick': 'http://localhost:8080',
       '/': {
         target: 'ws://localhost:8080',
         ws: true,

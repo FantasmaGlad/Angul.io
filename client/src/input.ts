@@ -35,6 +35,19 @@ export interface InputTracker {
   /** true une seule fois par pression de la touche/bouton "éjecter de la masse" (demande
    * utilisateur), consommé après lecture. */
   consumeEject(): boolean;
+  /** Pilotage par joystick virtuel tactile (VirtualJoystick.tsx, mobile) — `direction` un vecteur
+   * DÉJÀ normalisé (magnitude 1, ou `null` quand le pouce relâche le joystick) et `intensity` ∈
+   * [0,1] la déflexion réelle (distance du pouce au centre / rayon max, voir VirtualJoystick.tsx).
+   * Priorité ABSOLUE sur souris/manette tant qu'actif (`direction !== null`) — symétrique à la
+   * manette, qui prend déjà le pas sur la souris (voir `getTarget`) : un joueur qui touche l'écran
+   * pilote forcément volontairement, jamais un signal parasite à arbitrer contre autre chose. */
+  setVirtualJoystick(direction: Vector2 | null, intensity: number): void;
+  /** Déclenche une division comme une vraie pression clavier/manette (bouton tactile dédié,
+   * voir VirtualJoystick.tsx) — met à jour `consumeSplit()` ET déclenche `onSplitRequested`
+   * (retour visuel immédiat), exactement comme `onKeyDown`. */
+  triggerSplit(): void;
+  /** Équivalent tactile de `triggerSplit` pour le dash. */
+  triggerDash(): void;
   /** Retire les écouteurs attachés par `attachInput` — à appeler quand le canvas associé est
    * démonté (ex. retour à l'accueil, GameView.tsx) pour ne pas accumuler d'écouteurs `keydown`
    * au fil des parties successives (chaque partie remonte un nouveau canvas). */
@@ -63,8 +76,11 @@ export function attachInput(
 ): InputTracker {
   const keybinds: KeybindConfig = loadKeybinds();
 
-  let mouseX = canvas.width / 2;
-  let mouseY = canvas.height / 2;
+  // `clientWidth`/`clientHeight` (taille CSS affichée), PAS `canvas.width/height` (résolution
+  // physique de dessin, qui peut valoir `dpr` fois plus sur écran HiDPI depuis le correctif Retina
+  // de GameView.tsx `resizeCanvas`) — `e.clientX`/`clientY` (souris) sont toujours en pixels CSS.
+  let mouseX = canvas.clientWidth / 2;
+  let mouseY = canvas.clientHeight / 2;
   let splitRequested = false;
   let dashRequested = false;
   let ejectRequested = false;
@@ -77,6 +93,10 @@ export function attachInput(
    * comme source d'input tant que vrai (demande utilisateur : "si une manette est branchée,
    * désactiver la souris"), y compris visuellement (curseur masqué sur le canvas). */
   let gamepadActive = false;
+  /** Direction (normalisée) + intensité du joystick virtuel tactile — voir `setVirtualJoystick`
+   * sur `InputTracker`. `null` = pouce relâché (joystick inactif, retombe sur souris/manette). */
+  let virtualJoystickDirection: Vector2 | null = null;
+  let virtualJoystickIntensity = 0;
 
 
   const onKeyDown = (event: KeyboardEvent): void => {
@@ -94,8 +114,8 @@ export function attachInput(
     }
   };
 
-  let smoothedMouseX = canvas.width / 2;
-  let smoothedMouseY = canvas.height / 2;
+  let smoothedMouseX = canvas.clientWidth / 2;
+  let smoothedMouseY = canvas.clientHeight / 2;
   let smoothedStickX = 0;
   let smoothedStickY = 0;
   let lastFrameTickTime = performance.now();
@@ -192,6 +212,18 @@ export function attachInput(
 
   return {
     getTarget(camera: Camera): { target: Vector2; intensity: number } {
+      // Joystick virtuel tactile : priorité absolue, avant même la manette — voir le commentaire
+      // de `setVirtualJoystick` sur `InputTracker`.
+      if (virtualJoystickDirection) {
+        return {
+          target: {
+            x: camera.x + virtualJoystickDirection.x * GAMEPAD_TARGET_OFFSET_WORLD_PX,
+            y: camera.y + virtualJoystickDirection.y * GAMEPAD_TARGET_OFFSET_WORLD_PX,
+          },
+          intensity: virtualJoystickIntensity,
+        };
+      }
+
       // Manette connectée (détectée par le navigateur dès qu'un bouton/axe a été actionné une
       // première fois) : priorité totale sur la souris, y compris au repos (stick centré ->
       // cible = position actuelle, zone morte de pilotage) — la souris est explicitement
@@ -218,8 +250,8 @@ export function attachInput(
         };
       }
 
-      const dx = smoothedMouseX - canvas.width / 2;
-      const dy = smoothedMouseY - canvas.height / 2;
+      const dx = smoothedMouseX - canvas.clientWidth / 2;
+      const dy = smoothedMouseY - canvas.clientHeight / 2;
       const distPx = Math.hypot(dx, dy);
       const MOUSE_DEADZONE_PX = 10;
 
@@ -254,6 +286,18 @@ export function attachInput(
       const value = ejectRequested;
       ejectRequested = false;
       return value;
+    },
+    setVirtualJoystick(direction: Vector2 | null, intensity: number): void {
+      virtualJoystickDirection = direction;
+      virtualJoystickIntensity = intensity;
+    },
+    triggerSplit(): void {
+      splitRequested = true;
+      onSplitRequested?.();
+    },
+    triggerDash(): void {
+      dashRequested = true;
+      onDashRequested?.();
     },
     detach(): void {
       canvas.removeEventListener('mousemove', onMouseMove);

@@ -6,7 +6,7 @@
   "main": "./src/main.tsx",
   "scripts": {
     "dev": "vite",
-    "prebuild": "mkdir -p public/assets/Sons/Musiques public/assets/Logos public/assets/Profil && cp -r ../assets/Sons/Musiques/* public/assets/Sons/Musiques/ && cp -r ../assets/Logos/* public/assets/Logos/ && cp -r ../assets/Profil/* public/assets/Profil/",
+    "prebuild": "mkdir -p public/assets/Sons/Musiques public/assets/Logos public/assets/Profil public/assets/Joystick && cp -r ../assets/Sons/Musiques/* public/assets/Sons/Musiques/ && cp -r ../assets/Logos/* public/assets/Logos/ && cp -r ../assets/Profil/* public/assets/Profil/ && cp -r ../assets/Joystick/* public/assets/Joystick/",
     "typecheck": "tsc -p tsconfig.json",
     "build": "npm run prebuild && npm run typecheck && vite build"
   },

@@ -2,7 +2,10 @@
 <html lang="fr">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- viewport-fit=cover (audit mobile) : nécessaire pour que env(safe-area-inset-*) (voir
+         styles.css, joystick/bouton d'action tactile) reflète les vraies zones sûres d'un écran à
+         encoche/coins arrondis plutôt que de valoir 0 partout. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Angul.io</title>
     <!-- Lot 7.1 (PWA) : manifeste + icônes — permet au navigateur de proposer l'installation
          ("Ajouter à l'écran d'accueil"). `apple-touch-icon` couvre le comportement d'ajout à

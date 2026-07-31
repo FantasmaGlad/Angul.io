@@ -51,6 +51,11 @@ export class GameConnection {
    * lui-même : sans ce rejeu, une reconnexion transparente laisserait le joueur connecté mais
    * jamais réellement dans la partie. */
   private lastJoinMessage: ClientMessage | undefined;
+  /** Jeton reçu dans le dernier `welcome` (voir `WelcomeMessage.resumeToken`, mis à jour par
+   * `setResumeToken` — appelé par GameView.tsx à chaque `welcome`) — rejoué avec le `join` lors
+   * d'une reconnexion transitoire pour que le serveur reprenne la vie en cours au lieu d'en créer
+   * une nouvelle (voir connectionHandler.ts, correctif "déconnexion = perte immédiate de XP"). */
+  private resumeToken: string | undefined;
   private closedByUs = false;
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -81,7 +86,10 @@ export class GameConnection {
       this.pendingMessages.length = 0;
 
       if (isReconnect && this.lastJoinMessage) {
-        const payload = JSON.stringify(this.lastJoinMessage);
+        const joinMessage = this.resumeToken
+          ? { ...this.lastJoinMessage, resumeToken: this.resumeToken }
+          : this.lastJoinMessage;
+        const payload = JSON.stringify(joinMessage);
         this.recordOutgoing(payload);
         socket.send(payload);
       }
@@ -111,6 +119,28 @@ export class GameConnection {
     }
 
     for (const listener of this.closeListeners) listener(event);
+  }
+
+  /** Force une tentative de reconnexion immédiate si le socket n'est ni ouvert ni déjà en train
+   * de s'ouvrir (voir GameView.tsx, appelé sur `visibilitychange` au retour au premier plan) —
+   * filet de sécurité Safari/macOS : l'onglet peut suspendre l'activité en arrière-plan (App Nap)
+   * sans forcément déclencher l'événement `close` du socket à temps, laissant la reconnexion
+   * automatique habituelle (basée sur `close`, voir `handleClose`) attendre indéfiniment. Sans
+   * effet si tout va bien (socket déjà ouvert/en cours d'ouverture, ou fermeture volontaire). */
+  public ensureConnected(): void {
+    if (this.closedByUs) return;
+    if (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING) return;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = undefined;
+    }
+    this.socket = this.createSocket(true);
+  }
+
+  /** À appeler à chaque `welcome` reçu (voir GameView.tsx) — mémorise le jeton de reprise à
+   * représenter au serveur si cette connexion venait à se couper. */
+  setResumeToken(token: string | undefined): void {
+    this.resumeToken = token;
   }
 
   private recordIncoming(data: string) {

@@ -33,6 +33,14 @@ export interface ClientJoinMessage {
    * retombait sur un skin aléatoire à CHAQUE connexion d'un invité, ignorant son choix (retour
    * utilisateur : skin incohérent d'une connexion à l'autre). */
   skin?: string;
+  /** Jeton reçu dans un `welcome` précédent (voir `WelcomeMessage.resumeToken`) — permet au
+   * serveur de reconnaître une reconnexion transitoire (coupure Wi-Fi, App Nap Safari...) plutôt
+   * qu'un tout nouveau joueur, et de reprendre la vie en cours (même `playerId`, même masse) au
+   * lieu d'en créer une nouvelle (voir connectionHandler.ts, correctif "déconnexion = perte
+   * d'XP/de vie immédiate"). Absent pour un tout premier join, ou un jeton expiré/inconnu (délai
+   * de grâce écoulé, voir server/net/ws/broadcast.ts `GRACE_PERIOD_MS`) : le serveur retombe alors
+   * silencieusement sur un join normal. */
+  resumeToken?: string;
 }
 
 export interface ClientInputMessage {
@@ -106,13 +114,26 @@ export interface WelcomeMessage {
    * du process change forcément cette valeur) et de se recharger automatiquement plutôt que de
    * continuer à exécuter un bundle périmé (voir GameView.tsx, comparaison au `welcome` précédent). */
   buildVersion?: string;
+  /** Jeton à renvoyer dans un futur `ClientJoinMessage.resumeToken` si cette connexion venait à
+   * se couper (voir connectionHandler.ts) — permet de reprendre la vie en cours (même masse,
+   * mêmes morceaux) plutôt que de la perdre immédiatement sur une simple coupure transitoire.
+   * Absent pour un spectateur/viewer admin (rien à reprendre, pas de vie de joueur). */
+  resumeToken?: string;
 }
 
 export interface LeaderboardEntry {
   rank: number;
   nickname: string;
   score: number;
-  isSelf?: boolean;
+  /** Identifiant du joueur de cette entrée — le client compare à son propre `playerId` pour
+   * savoir s'il doit se surligner ("c'est moi"), voir GameView.tsx. Volontairement PAS un
+   * booléen `isSelf` calculé côté serveur (ancien design) : `entities`/`leaderboard` sont
+   * construits UNE SEULE FOIS par tick puis réutilisés tels quels pour tous les joueurs du salon
+   * (voir net/ws/broadcast.ts `sharedStatePrefix`) — un `isSelf` par destinataire y était
+   * incompatible (chaque joueur recevait alors le `isSelf` calculé pour le PREMIER joueur traité
+   * ce tick, surlignant le mauvais joueur dans le classement). `playerId` est identique pour
+   * tout le monde, donc partageable sans ce bug. */
+  playerId: string;
 }
 
 export interface WorldStateMessage {

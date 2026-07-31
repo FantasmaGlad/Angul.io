@@ -13,8 +13,19 @@ import { RoomManager } from './engine/roomManager.js';
 import { createLocalRoomHost } from './engine/worker/roomHost.js';
 import { createWorkerRoomHost } from './engine/worker/workerRoomHost.js';
 import { startGameServer } from './net/server.js';
+import { logEvent } from './log.js';
 
 import os from 'node:os';
+
+// Filet de sécurité de dernier recours (correctif "écran de mort qui ne s'affiche jamais",
+// voir net/ws/broadcast.ts `onPlayerDeath`) : Node ≥15 termine le process par défaut sur une
+// promesse rejetée non catchée nulle part — un seul appel DB raté au mauvais tick pouvait ainsi
+// faire tomber TOUT le serveur (tous les salons). On logge et on continue plutôt que de crasher ;
+// les points d'appel connus restent malgré tout catchés localement (voir broadcast.ts), ceci ne
+// sert qu'à couvrir un futur code async qui oublierait de le faire.
+process.on('unhandledRejection', (reason) => {
+  logEvent('unhandled_rejection', { reason: reason instanceof Error ? reason.message : String(reason) });
+});
 
 const TICK_RATE_HZ = process.env.TICK_RATE_HZ ? Number(process.env.TICK_RATE_HZ) : 30;
 const PORT = Number(process.env.PORT ?? 8080);

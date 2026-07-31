@@ -41,6 +41,46 @@ les fichiers.
 
 ---
 
+## 1bis. Outillage IA (serveur MCP local, coordination multi-plateformes)
+
+Un serveur MCP local (`.claude/mcp/server.mjs`, enregistré auprès de Claude Code par `.mcp.json` à
+la racine) expose `.claude/project-structure.json` — une cartographie du dépôt **interrogeable par
+un agent** (outils `find_file`/`list_topics`/`get_topic_files`/`get_full_map`/`list_workspaces`) :
+retrouver "où se trouve le code qui gère X" sans devoir grep tout le dépôt à l'aveugle à chaque
+nouvelle session. `.mcp.json`, `.claude/mcp/**` (hors `node_modules/`) et
+`.claude/project-structure.json` sont **volontairement COMMITÉS**, à rebours du reste du bloc "AI &
+Assistant files" du `.gitignore` : ce n'est pas une préférence personnelle (contrairement à
+`.claude/settings.local.json`, permissions locales, resté ignoré) mais un outil de projet partagé —
+n'importe quel contributeur ou agent, sur n'importe quelle machine, doit pouvoir en bénéficier dès
+le clone, quelle que soit la plateforme IA utilisée (Claude Code, mais aussi potentiellement Gemini
+CLI, Cursor, Windsurf… si le projet vient à en utiliser d'autres un jour).
+
+`.claude/launch.json` (config de lancement de l'aperçu navigateur + une section `_deployment`
+documentant l'infra de production RÉELLE : hostname/IP LAN, accès sudo, procédure de déploiement)
+reste volontairement **non commité** : contrairement à la cartographie ci-dessus, ce fichier
+contient des détails d'infrastructure réels (pas seulement une aide à la navigation du code) —
+à reconsidérer au cas par cas si le besoin de le partager entre plusieurs machines/agents se
+présente, mais pas fait par défaut.
+
+**Règle de coordination inter-plateformes** : si ce dépôt vient un jour à utiliser un autre outil
+IA avec son propre répertoire de configuration/contexte de projet (`.gemini/`, `.cursor/`,
+`.windsurf/`, ou tout autre — voir le bloc "AI & Assistant files" du `.gitignore`), et que ce
+répertoire porte lui aussi une cartographie ou un contexte de projet utile à *n'importe quel*
+agent (pas une préférence purement locale à cet outil précis) — applique la même logique que
+ci-dessus : committe la partie partageable (comme `.claude/mcp/**`/`project-structure.json` ici),
+garde locale la partie vraiment personnelle/spécifique à la machine (comme
+`.claude/settings.local.json`/`launch.json`), et mets à jour ce document (§1bis) pour le
+documenter. Objectif : que la coordination entre plateformes reste complète et permanente au fil
+du temps, pas seulement pour Claude Code.
+
+**Règle de mise à jour** : comme pour ce fichier lui-même (voir l'en-tête), si tu ajoutes/déplaces/
+renomme un fichier/module qui mériterait une entrée dans `.claude/project-structure.json` (un
+nouveau composant, un nouveau sujet thématique), mets-le à jour dans le même commit — le serveur
+MCP ne fait que servir ce fichier tel quel, il devient trompeur aussi vite qu'une doc humaine
+non maintenue.
+
+---
+
 ## 2. Arborescence complète
 
 ```
@@ -48,15 +88,28 @@ Angul.io/
 ├── README.md                          Vue d'ensemble technique + guide de modding (LE document de référence)
 ├── structure.md                       Ce fichier
 ├── LICENSE                            AGPL-3.0-or-later
-├── install.sh                         Bootstrap d'un nœud de production
+├── scripts/install.sh                 Bootstrap d'un nœud de production (voir §8 cahier des charges)
 ├── eslint.config.js                   Config ESLint racine (couvre les 4 workspaces)
 ├── .prettierrc.json / .prettierignore Config formatage
-├── .gitignore                         Note : *.md gitignored sauf README.md (voir §1)
+├── .gitignore                         Note : *.md gitignored sauf README.md (voir §1) ; voir §1bis
+│                                       pour ce qui EST commité sous .claude/ malgré le nom du bloc
 ├── package.json / package-lock.json   Racine du monorepo (workspaces, scripts globaux)
 ├── tsconfig.json / tsconfig.base.json Config TypeScript partagée
 ├── vitest.config.ts / vitest.setup.ts Config des tests (tous workspaces)
 ├── .github/workflows/ci.yml           CI GitHub Actions (build/lint/format/test)
-├── .claude/launch.json                Config de lancement server+client pour l'aperçu navigateur
+├── .mcp.json                           Enregistre le serveur MCP local ci-dessous auprès de Claude
+│                                       Code — voir §1bis, COMMITÉ (contrairement au reste des
+│                                       fichiers d'assistants IA)
+├── .claude/
+│   ├── launch.json                    Config de lancement server+client pour l'aperçu navigateur
+│                                       + section _deployment (infra de prod réelle) — NON commité,
+│                                       volontairement (voir §1bis)
+│   ├── settings.local.json            Permissions locales Claude Code — NON commité (personnel)
+│   ├── project-structure.json         Cartographie machine-readable du dépôt, servie par le MCP
+│                                       ci-dessous — voir §1bis, COMMITÉ
+│   └── mcp/                           Serveur MCP local exposant cette cartographie aux agents —
+│       ├── server.mjs                       voir §1bis, COMMITÉ (source, pas node_modules/)
+│       └── package.json / package-lock.json
 ├── assets/                            Sources d'assets graphiques/audio (voir §3)
 │
 ├── shared/                            Code TypeScript partagé

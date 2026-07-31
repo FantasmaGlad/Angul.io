@@ -60,13 +60,13 @@ export function colorForSkinFallback(skinId: string): string {
     'Baamix LSD': '#FFE135',
     'Banane Épic': '#FFC300',
     Calamoche: '#40A9FF',
+    Monstera: '#2E8B57',
     'Mouche Moche': '#9254DE',
     'Pieuvre Défoncée': '#7A3FA0',
     Radiateur: '#9254DE',
     Robibou: '#E05A47',
     Scoobi: '#C9702E',
-    'Scoobi-1': '#C9A227',
-    'Scoobi-2': '#B23A2E',
+    Skibidi: '#B23A2E',
     'Souris Parapluis': '#73D13D',
   };
   return map[skinId] ?? '#3a6b35';
@@ -209,10 +209,18 @@ export function renderFrame(
   selfPlayerId?: string,
 ): RenderFrameResult {
   let drawCalls = 0;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // Taille CSS ("logique"), pas `canvas.width/height` (la résolution physique de dessin, voir
+  // GameView.tsx `resizeCanvas` — peut valoir `dpr` fois plus sur un écran HiDPI/Retina) : tout
+  // ce module raisonne en coordonnées CSS-pixel, compensées vers la résolution physique par
+  // `ctx.setTransform(dpr, ...)` posé une fois au resize. `clientWidth`/`clientHeight` restent
+  // corrects pour SpectatorBackground.tsx aussi (pas de traitement DPR là, donc identiques à
+  // `canvas.width/height` dans ce cas).
+  const canvasWidth = canvas.clientWidth;
+  const canvasHeight = canvas.clientHeight;
+  ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
-  const toScreenX = (x: number) => (x - camera.x) * camera.scale + canvas.width / 2;
-  const toScreenY = (y: number) => (y - camera.y) * camera.scale + canvas.height / 2;
+  const toScreenX = (x: number) => (x - camera.x) * camera.scale + canvasWidth / 2;
+  const toScreenY = (y: number) => (y - camera.y) * camera.scale + canvasHeight / 2;
 
   drawGrid(ctx, canvas, camera, toScreenX, toScreenY);
   drawCalls++;
@@ -242,8 +250,8 @@ export function renderFrame(
     const screenY = toScreenY(entity.y);
     const screenRadius = entity.r * camera.scale;
 
-    if (screenX + screenRadius < 0 || screenX - screenRadius > canvas.width) continue;
-    if (screenY + screenRadius < 0 || screenY - screenRadius > canvas.height) continue;
+    if (screenX + screenRadius < 0 || screenX - screenRadius > canvasWidth) continue;
+    if (screenY + screenRadius < 0 || screenY - screenRadius > canvasHeight) continue;
 
     const foodRadius = Math.max(1, screenRadius);
     if (entity.m === MULTICOLOR_FOOD_MASS) {
@@ -277,8 +285,8 @@ export function renderFrame(
     const screenY = toScreenY(entity.y);
     const screenRadius = entity.r * camera.scale;
 
-    if (screenX + screenRadius < 0 || screenX - screenRadius > canvas.width) continue;
-    if (screenY + screenRadius < 0 || screenY - screenRadius > canvas.height) continue;
+    if (screenX + screenRadius < 0 || screenX - screenRadius > canvasWidth) continue;
+    if (screenY + screenRadius < 0 || screenY - screenRadius > canvasHeight) continue;
 
     const skinId = colorFor(entity, nicknames, colors);
     const radius = Math.max(1, screenRadius);
@@ -393,23 +401,55 @@ function botNicknameFontSizePx(
  * gros) — dessiné individuellement (chaque dégradé est lié à une position écran, impossible à
  * regrouper dans un seul `Path2D` comme les couleurs plates ci-dessus), ce qui reste sans
  * impact perceptible vu sa rareté (1 à 15% des pellets selon le mode). */
-function drawMulticolorFood(
-  ctx: CanvasRenderingContext2D,
-  screenX: number,
-  screenY: number,
-  screenRadius: number,
-): void {
-  const gradient = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, screenRadius);
+/** Résolution du sprite pré-rendu du pellet Multicolor (voir `getMulticolorFoodSprite`) — même
+ * convention que `CIRCULAR_SPRITE_SIZE_PX` ci-dessus. */
+const MULTICOLOR_SPRITE_SIZE_PX = 160;
+let multicolorFoodSprite: HTMLCanvasElement | null | undefined;
+
+/** Sprite du pellet Multicolor, dessiné une seule fois (canvas hors-écran) puis réutilisé via
+ * `drawImage` — `createRadialGradient` était sinon reconstruit à CHAQUE frame où le pellet est
+ * visible (rare, mais WebKit/Safari est réputé plus lent à recréer des dégradés qu'à faire un
+ * `drawImage`, voir audit Safari/macOS). Même principe que `getCircularSkinImage` pour les skins :
+ * un dégradé ne peut pas être repositionné une fois créé, donc on le fige dans un sprite carré
+ * fixe et on laisse `drawImage` l'étirer à la position/au rayon réels. */
+function getMulticolorFoodSprite(): HTMLCanvasElement | null {
+  if (multicolorFoodSprite !== undefined) return multicolorFoodSprite;
+
+  const sprite = document.createElement('canvas');
+  sprite.width = MULTICOLOR_SPRITE_SIZE_PX;
+  sprite.height = MULTICOLOR_SPRITE_SIZE_PX;
+  const spriteCtx = sprite.getContext('2d');
+  if (!spriteCtx) {
+    multicolorFoodSprite = null;
+    return null;
+  }
+
+  const center = MULTICOLOR_SPRITE_SIZE_PX / 2;
+  const gradient = spriteCtx.createRadialGradient(center, center, 0, center, center, center);
   gradient.addColorStop(0, '#ffffff');
   gradient.addColorStop(0.35, '#ffd23a');
   gradient.addColorStop(0.6, '#ff5ca8');
   gradient.addColorStop(0.8, '#5ca8ff');
   gradient.addColorStop(1, '#7a3fa0');
 
-  ctx.beginPath();
-  ctx.arc(screenX, screenY, screenRadius, 0, Math.PI * 2);
-  ctx.fillStyle = gradient;
-  ctx.fill();
+  spriteCtx.beginPath();
+  spriteCtx.arc(center, center, center, 0, Math.PI * 2);
+  spriteCtx.fillStyle = gradient;
+  spriteCtx.fill();
+
+  multicolorFoodSprite = sprite;
+  return sprite;
+}
+
+function drawMulticolorFood(
+  ctx: CanvasRenderingContext2D,
+  screenX: number,
+  screenY: number,
+  screenRadius: number,
+): void {
+  const sprite = getMulticolorFoodSprite();
+  if (!sprite) return;
+  ctx.drawImage(sprite, screenX - screenRadius, screenY - screenRadius, screenRadius * 2, screenRadius * 2);
 }
 
 /**
@@ -458,10 +498,13 @@ function drawGrid(
   toScreenX: (x: number) => number,
   toScreenY: (y: number) => number,
 ): void {
-  const worldLeft = camera.x - canvas.width / 2 / camera.scale;
-  const worldRight = camera.x + canvas.width / 2 / camera.scale;
-  const worldTop = camera.y - canvas.height / 2 / camera.scale;
-  const worldBottom = camera.y + canvas.height / 2 / camera.scale;
+  // Taille CSS ("logique"), voir le commentaire équivalent dans `renderFrame`.
+  const canvasWidth = canvas.clientWidth;
+  const canvasHeight = canvas.clientHeight;
+  const worldLeft = camera.x - canvasWidth / 2 / camera.scale;
+  const worldRight = camera.x + canvasWidth / 2 / camera.scale;
+  const worldTop = camera.y - canvasHeight / 2 / camera.scale;
+  const worldBottom = camera.y + canvasHeight / 2 / camera.scale;
 
   const firstX = Math.floor(worldLeft / GRID_SPACING_WORLD_PX) * GRID_SPACING_WORLD_PX;
   const firstY = Math.floor(worldTop / GRID_SPACING_WORLD_PX) * GRID_SPACING_WORLD_PX;
@@ -473,12 +516,12 @@ function drawGrid(
   for (let x = firstX; x <= worldRight; x += GRID_SPACING_WORLD_PX) {
     const screenX = toScreenX(x);
     ctx.moveTo(screenX, 0);
-    ctx.lineTo(screenX, canvas.height);
+    ctx.lineTo(screenX, canvasHeight);
   }
   for (let y = firstY; y <= worldBottom; y += GRID_SPACING_WORLD_PX) {
     const screenY = toScreenY(y);
     ctx.moveTo(0, screenY);
-    ctx.lineTo(canvas.width, screenY);
+    ctx.lineTo(canvasWidth, screenY);
   }
 
   ctx.stroke();

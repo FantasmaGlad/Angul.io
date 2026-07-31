@@ -28,7 +28,7 @@ set -euo pipefail
 # Usage :
 #   1. Renseigner DUCKDNS_SUBDOMAIN, DUCKDNS_TOKEN et ADMIN_PASSWORD (ou ADMIN_PASSWORD_HASH)
 #      en haut de ce script au premier déploiement.
-#   2. sudo ./install.sh
+#   2. sudo ./scripts/install.sh
 # ==============================================================================
 
 # --- Configuration à adapter --------------------------------------------------

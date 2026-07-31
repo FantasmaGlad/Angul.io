@@ -10,13 +10,17 @@ import {
   minFrameIntervalMs as computeMinFrameIntervalMs,
 } from '../settings.js';
 
-const NO_NICKNAMES = new Map<string, string>();
 const ROOM_SWITCH_DEBOUNCE_MS = 10;
 
 interface SpectatorState {
   mapSize: number;
   camera: Camera;
   renderEngine: RenderEngine;
+  /** Pseudo/couleur par joueur (messages `type: 'player'`) — sans ça, `colorFor` (render.ts)
+   * retombe sur un hash de l'id de joueur brut au lieu du vrai skin assigné au join, d'où un skin
+   * différent entre le fond de l'accueil et la partie réelle (retour utilisateur, corrigé ici). */
+  nicknames: Map<string, string>;
+  colors: Map<string, string>;
 }
 
 /** Ajuste la carte à l'espace RÉELLEMENT visible du viewport, pas au viewport entier — la nav du
@@ -56,6 +60,8 @@ export default function SpectatorBackground({ roomId, zooming }: SpectatorBackgr
     mapSize: 15000,
     camera: { x: 7500, y: 7500, scale: 0.1 },
     renderEngine: new RenderEngine(),
+    nicknames: new Map(),
+    colors: new Map(),
   });
   /** `buildVersion` du tout premier `welcome` reçu par ce composant (voir protocol.ts) — persiste
    * à travers les reconnexions déclenchées par un changement de `roomId` (bascule de mode sur
@@ -84,10 +90,21 @@ export default function SpectatorBackground({ roomId, zooming }: SpectatorBackgr
     let rafId = 0;
     let lastFrameAt = 0;
 
-    const SPECTATOR_MAX_FPS = 30;
+    // Simple décor d'arrière-plan dézoomé : 30fps n'apportait rien de perceptible par rapport à
+    // 18fps, pour un coût CPU/GPU proportionnellement plus élevé (retour utilisateur : lag du
+    // lobby vu de l'extérieur).
+    const SPECTATOR_MAX_FPS = 18;
     const SPECTATOR_MIN_INTERVAL_MS = 1000 / SPECTATOR_MAX_FPS;
 
     function frame(now: number): void {
+      // Onglet en arrière-plan : `requestAnimationFrame` continue d'être planifié (nécessaire pour
+      // reprendre proprement dès que l'onglet redevient visible) mais le travail de rendu
+      // (interpolation + dessin canvas) est sauté — un fond décoratif invisible ne doit rien
+      // coûter en tâche de fond, plutôt que de compter uniquement sur le throttling du navigateur.
+      if (document.hidden) {
+        rafId = requestAnimationFrame(frame);
+        return;
+      }
       const playerMinInterval = computeMinFrameIntervalMs(loadVsyncEnabled(), loadFpsSliderIndex());
       const minInterval = Math.max(SPECTATOR_MIN_INTERVAL_MS, playerMinInterval);
       if (now - lastFrameAt >= minInterval) {
@@ -103,7 +120,7 @@ export default function SpectatorBackground({ roomId, zooming }: SpectatorBackgr
           undefined,
           true,
         );
-        renderFrame(ctx!, canvas!, entities, camera, NO_NICKNAMES);
+        renderFrame(ctx!, canvas!, entities, camera, stateRef.current.nicknames, stateRef.current.colors);
       }
       rafId = requestAnimationFrame(frame);
     }
@@ -149,9 +166,16 @@ export default function SpectatorBackground({ roomId, zooming }: SpectatorBackgr
           tickRateHz = message.tickRateHz;
           stateRef.current.mapSize = message.mapSize;
           stateRef.current.renderEngine.reset();
+          // Nouveau salon (bascule de mode à l'accueil) : les joueurs de l'ancien salon n'existent
+          // plus, repartir d'une map vide plutôt que de garder des skins/pseudos périmés.
+          stateRef.current.nicknames.clear();
+          stateRef.current.colors.clear();
           const canvas = canvasRef.current;
           if (canvas) stateRef.current.camera = computeFitCamera(message.mapSize, canvas);
           setIsSwitching(false);
+        } else if (message.type === 'player') {
+          stateRef.current.nicknames.set(message.playerId, message.nickname);
+          if (message.color) stateRef.current.colors.set(message.playerId, message.color);
         } else if (message.type === 'state') {
           stateRef.current.renderEngine.pushSnapshot(message.entities, message.tick, tickRateHz);
         }

@@ -25,6 +25,35 @@ const JITTER_SMOOTHING = 0.1;
  * peu de latence supplémentaire sur les entités distantes (jamais sur le blob du joueur, prédit
  * localement — voir prediction.ts). */
 const JITTER_MARGIN_FACTOR = 3;
+/** Plafond d'entités traitées en mode spectateur (fond animé de l'accueil, voir
+ * SpectatorBackground.tsx) — sans culling viewport possible (la caméra spectateur cadre TOUTE la
+ * carte, rien à exclure géométriquement), le coût d'interpolation/lissage était sinon proportionnel
+ * au nombre d'entités du salon ENTIER (potentiellement plusieurs milliers avec bots+nourriture),
+ * pour un simple décor d'arrière-plan (retour utilisateur : lag du fond spectateur). */
+const SPECTATOR_MAX_ENTITIES = 400;
+
+/** Hash simple et stable d'un id d'entité — permet un sous-échantillonnage DÉTERMINISTE (la même
+ * entité est gardée ou exclue d'une frame à l'autre tant qu'elle existe), contrairement à un
+ * découpage par index de tableau qui changerait de sujet à chaque variation du nombre d'entités
+ * (flicker constant, une nourriture différente "sampled" chaque frame). */
+function hashEntityId(id: string): number {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+}
+
+/** Sous-échantillonne au plafond `SPECTATOR_MAX_ENTITIES` par seuil de hash plutôt que par index —
+ * voir `hashEntityId`. Le seuil est recalculé à partir de la taille courante à chaque appel, donc
+ * reste approximativement proportionnel même si le nombre total d'entités fluctue (bots/nourriture
+ * qui apparaissent/disparaissent). */
+function subsampleForSpectator(entities: EntitySnapshot[]): EntitySnapshot[] {
+  if (entities.length <= SPECTATOR_MAX_ENTITIES) return entities;
+  const fraction = SPECTATOR_MAX_ENTITIES / entities.length;
+  const threshold = Math.floor(fraction * 0xffffffff);
+  return entities.filter((entity) => hashEntityId(entity.i) <= threshold);
+}
 
 export class RenderEngine {
   public snapshotQueue: SnapshotItem[] = [];
@@ -190,14 +219,20 @@ export class RenderEngine {
     // SpectatorBackground.tsx) voit déjà tout le salon par construction — culler n'y changerait
     // rien, seulement gaspillerait le calcul du viewport.
     const fromEntities = isSpectator
-      ? rawFromEntities
+      ? subsampleForSpectator(rawFromEntities)
       : cullEntitiesForViewport(rawFromEntities, camera, viewportWidth, viewportHeight, selfPlayerId);
     const toEntities = isSpectator
-      ? rawToEntities
+      ? subsampleForSpectator(rawToEntities)
       : cullEntitiesForViewport(rawToEntities, camera, viewportWidth, viewportHeight, selfPlayerId);
 
     // Pour éviter tout pop visuel d'entité entre snapA et snapB, l'interpolation se fait d'abord
     const interpolated = interpolateEntities(fromEntities, toEntities, t);
+
+    // Lissage exponentiel sauté en mode spectateur : un simple décor d'arrière-plan dézoomé n'a
+    // pas besoin du lissage fin anti-tressautement (utile surtout à 60/144/240 FPS sur le blob
+    // suivi de près par la caméra du JOUEUR) — économise une allocation + un lookup Map par
+    // entité par frame, sans perte visuelle perceptible sur un fond flouté/dézoomé.
+    if (isSpectator) return interpolated;
 
     // Lissage exponentiel style Agar.io officiel : élimine le tressautement à 60/144/240 FPS
     const dtSec = Math.min(0.05, Math.max(0.001, frameDt / 1000));

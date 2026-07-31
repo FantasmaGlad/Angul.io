@@ -19,6 +19,11 @@ export interface GameServerOptions {
   adminStaticDir?: string;
   /** Limite de tentatives par minute (Défaut : 3). Définir à 0 pour désactiver (ex : tests). */
   rateLimitMaxAttempts?: number;
+  /** Délai de grâce (ms) avant qu'une déconnexion ne devienne définitive (voir
+   * connectionHandler.ts `DEFAULT_GRACE_PERIOD_MS`, correctif "déconnexion = perte immédiate de
+   * l'XP en cours") — surchargeable pour les tests (délai court plutôt que d'attendre 8s dans une
+   * suite vitest). Défaut : 8000ms. */
+  disconnectGraceMs?: number;
   /** Identifiant de build transmis dans chaque `welcome` (voir protocol.ts) — un client qui
    * reçoit une valeur différente de celle de son `welcome` précédent sait qu'il a reconnecté vers
    * un nouveau déploiement (nouveau process serveur) et se recharge automatiquement (voir
@@ -112,6 +117,7 @@ export function startGameServer(
       wsRateLimiter,
       options.admin,
       buildVersion,
+      options.disconnectGraceMs,
     );
   });
 

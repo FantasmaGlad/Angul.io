@@ -15,9 +15,15 @@ admin/public/
 .DS_Store
 coverage/
 
-# AI & Assistant files
-.claude/
-.mcp.json
+# AI & Assistant files — .mcp.json et .claude/mcp/**  + project-structure.json SONT commités
+# (voir structure.md) : c'est un outillage de projet partagé (cartographie du dépôt interrogeable
+# par n'importe quel agent IA sur n'importe quel poste/plateforme), pas une préférence locale.
+# .claude/settings.local.json (permissions locales) et .claude/launch.json (contient des détails
+# d'infra réelle : IP/hostname/accès sudo du serveur de prod — volontairement PAS commités, à
+# reconsidérer au cas par cas) restent ignorés, comme le reste de ce bloc pour les autres outils IA.
+.claude/*
+!.claude/mcp/
+!.claude/project-structure.json
 .gemini/
 .antigravity/
 .cursor/

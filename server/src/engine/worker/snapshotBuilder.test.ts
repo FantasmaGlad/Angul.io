@@ -195,7 +195,7 @@ describe('buildStateMessage', () => {
     expect(message.type).toBe('state');
     if (message.type !== 'state') throw new Error('unreachable');
     expect(message.entities).toBe(entities); // partagé tel quel, jamais recopié/refiltré
-    expect(message.leaderboard.find((entry) => entry.isSelf)?.nickname).toBe('Alice');
+    expect(message.leaderboard.find((entry) => entry.playerId === 'p1')?.nickname).toBe('Alice');
   });
 
   it('n’attribue aucun `self` à un spectateur (aucun morceau ne lui appartient)', () => {

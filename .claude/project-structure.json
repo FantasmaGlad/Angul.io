@@ -1,0 +1,1396 @@
+{
+  "version": 1,
+  "generatedFrom": "structure.md",
+  "lastReviewed": "2026-07-31",
+  "note": "Cartographie machine-readable du depot, en complement de structure.md (lisible par un humain) et README.md (architecture/modding en detail). Sert de source pour le serveur MCP .claude/mcp/server.mjs (voir .mcp.json). Ce fichier ET .claude/mcp/** SONT commites (voir structure.md §1bis) — outillage de projet partage, pas une preference locale. Mets a jour CE fichier ET structure.md dans le meme commit si tu ajoutes/deplaces/supprimes un fichier important — sinon les deux deviennent trompeurs.",
+  "workspaces": [
+    {
+      "name": "shared",
+      "path": "shared/",
+      "dependsOn": [],
+      "description": "Code TypeScript partage : types, protocole reseau, formules geometrie/mouvement, identites de bots, palette d'avatars."
+    },
+    {
+      "name": "server",
+      "path": "server/",
+      "dependsOn": [
+        "shared"
+      ],
+      "description": "Serveur de jeu : moteur de simulation (engine/), mods (mods/), reseau HTTP+WebSocket (net/), comptes (accounts/), admin (admin/)."
+    },
+    {
+      "name": "client",
+      "path": "client/",
+      "dependsOn": [
+        "shared"
+      ],
+      "description": "Client web joueur : rendu Canvas2D + interface React, PWA. Application independante de admin/."
+    },
+    {
+      "name": "admin",
+      "path": "admin/",
+      "dependsOn": [
+        "shared"
+      ],
+      "description": "Interface d'administration (React) : Salons & Ecrans, Espace Creatif, gestion des comptes joueurs."
+    }
+  ],
+  "entries": [
+    {
+      "path": "README.md",
+      "workspace": "root",
+      "tags": [
+        "architecture",
+        "modding",
+        "gamemod",
+        "mods",
+        "reseau",
+        "protocole",
+        "reference"
+      ],
+      "description": "LE document de reference technique : architecture du moteur, interface GameMod, systeme de mods, schema JSON complet des configs, architecture reseau, pipeline rendu/prediction client."
+    },
+    {
+      "path": "structure.md",
+      "workspace": "root",
+      "tags": [
+        "cartographie",
+        "fichiers",
+        "navigation"
+      ],
+      "description": "Cartographie fichier-par-fichier lisible par un humain (equivalent MD de ce fichier JSON)."
+    },
+    {
+      "path": "scripts/install.sh",
+      "workspace": "root",
+      "tags": [
+        "deploiement",
+        "bootstrap"
+      ],
+      "description": "Script de bootstrap d'un noeud de production."
+    },
+    {
+      "path": ".mcp.json",
+      "workspace": "root",
+      "tags": [
+        "mcp",
+        "outillage-ia",
+        "agent"
+      ],
+      "description": "Enregistre le serveur MCP local (.claude/mcp/server.mjs) aupres de Claude Code. Commite (voir structure.md §1bis) — contrairement au reste du bloc 'AI & Assistant files' du .gitignore, ce n'est pas une preference locale."
+    },
+    {
+      "path": ".claude/mcp/server.mjs",
+      "workspace": "root",
+      "tags": [
+        "mcp",
+        "outillage-ia",
+        "agent",
+        "cartographie"
+      ],
+      "description": "Serveur MCP local exposant ce fichier (.claude/project-structure.json) a n'importe quel agent via find_file/list_topics/get_topic_files/get_full_map/list_workspaces — evite de regrep tout le depot a l'aveugle a chaque session. Commite, voir structure.md §1bis."
+    },
+    {
+      "path": ".claude/project-structure.json",
+      "workspace": "root",
+      "tags": [
+        "mcp",
+        "outillage-ia",
+        "cartographie"
+      ],
+      "description": "Ce fichier lui-meme — cartographie machine-readable servie par .claude/mcp/server.mjs. Voir structure.md §1bis pour la regle de coordination multi-plateformes IA (.gemini/, .cursor/, .windsurf/... si le projet en vient a utiliser un jour)."
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "workspace": "root",
+      "tags": [
+        "ci",
+        "github-actions"
+      ],
+      "description": "CI GitHub Actions (build/lint/format/test)."
+    },
+    {
+      "path": ".claude/launch.json",
+      "workspace": "root",
+      "tags": [
+        "dev",
+        "preview",
+        "deploiement",
+        "production",
+        "ssh"
+      ],
+      "description": "Config de lancement server+client pour l'apercu navigateur (preview_start) + section _deployment documentant le serveur de production (Wyse/systemd) et la procedure de sync/build/restart/verification."
+    },
+    {
+      "path": "assets/",
+      "workspace": "root",
+      "tags": [
+        "assets",
+        "images",
+        "audio",
+        "avatars"
+      ],
+      "description": "Sources d'assets graphiques/audio non transformees (skins joueurs, logo, joystick, musiques) — referencees depuis client/public/assets/* au build (voir client/package.json prebuild)."
+    },
+    {
+      "path": "shared/src/index.ts",
+      "workspace": "shared",
+      "tags": [
+        "exports"
+      ],
+      "description": "Point d'entree du package @angulio/shared, re-exporte tout."
+    },
+    {
+      "path": "shared/src/vector.ts",
+      "workspace": "shared",
+      "tags": [
+        "math",
+        "geometrie"
+      ],
+      "description": "Vecteurs 2D (add, sub, scale, distance, dot...)."
+    },
+    {
+      "path": "shared/src/geometry.ts",
+      "workspace": "shared",
+      "tags": [
+        "math",
+        "geometrie",
+        "masse",
+        "aire",
+        "rayon",
+        "collision"
+      ],
+      "description": "Formules masse<->aire<->rayon, aire de chevauchement de cercles."
+    },
+    {
+      "path": "shared/src/movement.ts",
+      "workspace": "shared",
+      "tags": [
+        "mouvement",
+        "vitesse",
+        "acceleration",
+        "prediction"
+      ],
+      "description": "Modele vitesse/accel en fonction de la masse — IDENTIQUE client (prediction) et serveur (autorite)."
+    },
+    {
+      "path": "shared/src/protocol.ts",
+      "workspace": "shared",
+      "tags": [
+        "reseau",
+        "protocole",
+        "websocket",
+        "messages"
+      ],
+      "description": "Types des messages WebSocket client<->serveur (ClientMessage, ServerMessage, EntitySnapshot...)."
+    },
+    {
+      "path": "shared/src/adminProtocol.ts",
+      "workspace": "shared",
+      "tags": [
+        "reseau",
+        "admin",
+        "protocole"
+      ],
+      "description": "Types des messages du canal WebSocket admin dedie (?admin=1)."
+    },
+    {
+      "path": "shared/src/botIdentities.ts",
+      "workspace": "shared",
+      "tags": [
+        "bots",
+        "noms",
+        "identites"
+      ],
+      "description": "Dictionnaire des identites de bots (pseudo + couleur), BOT_IDENTITIES."
+    },
+    {
+      "path": "shared/src/botKillMessages.ts",
+      "workspace": "shared",
+      "tags": [
+        "bots",
+        "ecran-de-mort"
+      ],
+      "description": "Repliques affichees a l'ecran de mort quand tue par un bot nomme."
+    },
+    {
+      "path": "shared/src/avatarPalette.ts",
+      "workspace": "shared",
+      "tags": [
+        "avatars",
+        "skins",
+        "profil",
+        "bots"
+      ],
+      "description": "SKINS/SKIN_IMAGE_MAP (roster d'avatars, source de verite unique), DEFAULT_SKIN, isValidSkin, skinForNickname (choix deterministe), getRandomSkin. Si assets/Profil/ change, mettre a jour SKINS/SKIN_IMAGE_MAP ici."
+    },
+    {
+      "path": "shared/src/deathBanners.ts",
+      "workspace": "shared",
+      "tags": [
+        "ecran-de-mort",
+        "bannieres"
+      ],
+      "description": "Catalogue des bannieres de l'ecran de mort (deblocage par niveau)."
+    },
+    {
+      "path": "server/src/index.ts",
+      "workspace": "server",
+      "tags": [
+        "entrypoint",
+        "boot",
+        "constantes"
+      ],
+      "description": "Point d'entree process : assemble tout, lit TICK_RATE_HZ/ROOM_WORKERS/PORT/DATABASE_URL/ADMIN_PASSWORD_HASH, demarre le serveur, cree les salons de base."
+    },
+    {
+      "path": "server/src/log.ts",
+      "workspace": "server",
+      "tags": [
+        "logs",
+        "journalisation"
+      ],
+      "description": "Journalisation structuree (JSON sur stdout), logEvent()."
+    },
+    {
+      "path": "server/db/schema.sql",
+      "workspace": "server",
+      "tags": [
+        "base-de-donnees",
+        "postgresql",
+        "schema"
+      ],
+      "description": "Schema PostgreSQL de reference (documentation) : players, player_best_scores, admin_users."
+    },
+    {
+      "path": "server/migrations/",
+      "workspace": "server",
+      "tags": [
+        "base-de-donnees",
+        "migrations"
+      ],
+      "description": "Migrations node-pg-migrate (source de verite executable)."
+    },
+    {
+      "path": "server/configs/vanilla.json",
+      "workspace": "server",
+      "tags": [
+        "config",
+        "mode-de-jeu",
+        "vanilla"
+      ],
+      "description": "Config JSON du mode par defaut — schema complet documente dans README.md section 5."
+    },
+    {
+      "path": "server/configs/hardcore.json",
+      "workspace": "server",
+      "tags": [
+        "config",
+        "mode-de-jeu",
+        "hardcore",
+        "dash"
+      ],
+      "description": "Config JSON du mode Hardcore : absorption x2, Dash uniquement (split desactive via player.splitEnabled=false), perte totale de score a la mort."
+    },
+    {
+      "path": "server/scripts/hashPassword.mjs",
+      "workspace": "server",
+      "tags": [
+        "scripts",
+        "admin",
+        "mot-de-passe"
+      ],
+      "description": "Genere un hash argon2 pour ADMIN_PASSWORD_HASH."
+    },
+    {
+      "path": "server/scripts/loadtest.mjs",
+      "workspace": "server",
+      "tags": [
+        "scripts",
+        "charge",
+        "test"
+      ],
+      "description": "Bots WebSocket pour valider la charge serveur."
+    },
+    {
+      "path": "server/scripts/loadtest_spectators.mjs",
+      "workspace": "server",
+      "tags": [
+        "scripts",
+        "charge",
+        "spectateurs"
+      ],
+      "description": "Charge de spectateurs (canal admin/POV)."
+    },
+    {
+      "path": "server/src/engine/types.ts",
+      "workspace": "server",
+      "tags": [
+        "moteur",
+        "entite",
+        "types"
+      ],
+      "description": "Entity (position/velocite/masse/rayon/previousPosition pour le test de collision balaye), PlayerId, PlayerState."
+    },
+    {
+      "path": "server/src/engine/world.ts",
+      "workspace": "server",
+      "tags": [
+        "moteur",
+        "world",
+        "collision",
+        "spatial-hash",
+        "tunneling"
+      ],
+      "description": "Monde de simulation : entites + grille spatiale + findOverlappingPairs (narrow-phase, fonction la plus chaude du serveur) + findTunnelingPairs (test de collision balaye anti-tunneling pour morceaux rapides)."
+    },
+    {
+      "path": "server/src/engine/spatialHash.ts",
+      "workspace": "server",
+      "tags": [
+        "moteur",
+        "collision",
+        "broad-phase"
+      ],
+      "description": "Grille de collision broad-phase (evite le O(n^2)), queryNearbySwept pour le correctif tunneling."
+    },
+    {
+      "path": "server/src/engine/mod.ts",
+      "workspace": "server",
+      "tags": [
+        "moteur",
+        "gamemod",
+        "interface",
+        "modding"
+      ],
+      "description": "Interface GameMod — LE contrat de modding, tous les hooks optionnels (voir README section 3)."
+    },
+    {
+      "path": "server/src/engine/modRegistry.ts",
+      "workspace": "server",
+      "tags": [
+        "moteur",
+        "modding",
+        "resolveMod"
+      ],
+      "description": "Resout un modId -> { mod, mapSize, movement, room... }, detecte automatiquement server/configs/*.json."
+    },
+    {
+      "path": "server/src/engine/room.ts",
+      "workspace": "server",
+      "tags": [
+        "moteur",
+        "room",
+        "tick",
+        "boucle-de-jeu"
+      ],
+      "description": "Un salon = une simulation independante (tick fixe), capture previousPosition avant integration (correctif tunneling), actions admin (kill/freeze/split/remerge/spawnFood...)."
+    },
+    {
+      "path": "server/src/engine/roomManager.ts",
+      "workspace": "server",
+      "tags": [
+        "moteur",
+        "salons",
+        "registre"
+      ],
+      "description": "Registre des salons (creer/lister/rejoindre/expirer)."
+    },
+    {
+      "path": "server/src/engine/resetSchedule.ts",
+      "workspace": "server",
+      "tags": [
+        "moteur",
+        "reset",
+        "planification"
+      ],
+      "description": "Planification du reset auto (quotidien/intervalle/cale horloge)."
+    },
+    {
+      "path": "server/src/engine/godmode.ts",
+      "workspace": "server",
+      "tags": [
+        "moteur",
+        "admin",
+        "blob-dieu"
+      ],
+      "description": "Convention 'Blob Dieu' (invincible, mange tout — outil admin)."
+    },
+    {
+      "path": "server/src/engine/xp.ts",
+      "workspace": "server",
+      "tags": [
+        "moteur",
+        "xp",
+        "combo"
+      ],
+      "description": "XP/combo (masse mangee, joueurs manges, multiplicateur)."
+    },
+    {
+      "path": "server/src/engine/worker/roomHost.ts",
+      "workspace": "server",
+      "tags": [
+        "moteur",
+        "scalabilite",
+        "worker-threads"
+      ],
+      "description": "Interface RoomHost + LocalRoomHost (mono-thread, tests)."
+    },
+    {
+      "path": "server/src/engine/worker/workerRoomHost.ts",
+      "workspace": "server",
+      "tags": [
+        "moteur",
+        "scalabilite",
+        "worker-threads"
+      ],
+      "description": "RoomHost reparti sur N worker_threads (production, defaut)."
+    },
+    {
+      "path": "server/src/engine/worker/roomInstance.ts",
+      "workspace": "server",
+      "tags": [
+        "moteur",
+        "room",
+        "join",
+        "respawn",
+        "skin"
+      ],
+      "description": "Une Room vivant DANS un worker — join()/respawn() (reutilise le skin deja assigne au joueur plutot que de le redoriver, voir avatarPalette.ts)."
+    },
+    {
+      "path": "server/src/engine/worker/roomWorker.ts",
+      "workspace": "server",
+      "tags": [
+        "moteur",
+        "worker-threads"
+      ],
+      "description": "Point d'entree du worker_thread (boucle de messages)."
+    },
+    {
+      "path": "server/src/engine/worker/snapshotBuilder.ts",
+      "workspace": "server",
+      "tags": [
+        "reseau",
+        "snapshot",
+        "spectateur",
+        "tick-rate"
+      ],
+      "description": "Construit l'EntitySnapshot[] envoye au reseau, SPECTATOR_TICK_DIVISOR (cadence reduite pour spectateurs/admin)."
+    },
+    {
+      "path": "server/src/engine/bots/botTypes.ts",
+      "workspace": "server",
+      "tags": [
+        "bots",
+        "challengers",
+        "config",
+        "pyramide"
+      ],
+      "description": "Profils (fuis/neutre/agressif/fou) + pyramide Challenger (ChallengerConfig/DEFAULT_CHALLENGER_CONFIG, rampedChallengerTarget — decroissance lineaire maxWithHumans->minWithHumans avec le nb d'humains)."
+    },
+    {
+      "path": "server/src/engine/bots/botEvaluator.ts",
+      "workspace": "server",
+      "tags": [
+        "bots",
+        "ia"
+      ],
+      "description": "IA decisionnelle des bots (utility evaluation)."
+    },
+    {
+      "path": "server/src/engine/bots/botManager.ts",
+      "workspace": "server",
+      "tags": [
+        "bots",
+        "population",
+        "spawn",
+        "challengers",
+        "idle-despawn"
+      ],
+      "description": "Population de bots : normaux (uniquement a 0 humain) + Challengers (permanents, decroissance avec le nb d'humains, plafond dur maxTotal) + despawn d'inactivite (idleDespawn)."
+    },
+    {
+      "path": "server/src/mods/parametric/config.ts",
+      "workspace": "server",
+      "tags": [
+        "mods",
+        "config",
+        "schema",
+        "json"
+      ],
+      "description": "Schema TypeScript complet de la config JSON d'un mod parametrique (ParametricModConfig, BotConfig) — voir README section 5 pour la reference exhaustive."
+    },
+    {
+      "path": "server/src/mods/parametric/loadConfig.ts",
+      "workspace": "server",
+      "tags": [
+        "mods",
+        "config"
+      ],
+      "description": "Lit/valide server/configs/<modId>.json."
+    },
+    {
+      "path": "server/src/mods/parametric/physics.ts",
+      "workspace": "server",
+      "tags": [
+        "mods",
+        "physique",
+        "vitesse",
+        "absorption",
+        "split"
+      ],
+      "description": "Formules derivees de la config : velocityForMass, absorptionDurationSec, eatOverlapFraction, splitEnabled, decroissance passive."
+    },
+    {
+      "path": "server/src/mods/parametric/pieceState.ts",
+      "workspace": "server",
+      "tags": [
+        "mods",
+        "etat"
+      ],
+      "description": "Etat par-morceau (cible, cooldowns) hors du World generique."
+    },
+    {
+      "path": "server/src/mods/parametric/border.ts",
+      "workspace": "server",
+      "tags": [
+        "mods",
+        "bords-de-carte"
+      ],
+      "description": "4 types de bord de carte (mur/rebond/toroidal/toxique)."
+    },
+    {
+      "path": "server/src/mods/parametric/index.ts",
+      "workspace": "server",
+      "tags": [
+        "mods",
+        "gamemod",
+        "split",
+        "fusion",
+        "manger",
+        "repulsion",
+        "eject"
+      ],
+      "description": "createParametricMod() — implemente GameMod depuis la config : mouvement/split (trySplitPiece, garde splitEnabled)/fusion/absorption a seuil (beginConsumption/advanceConsumptions)/repulsion amortie (applyRepulsion, REPULSION_CORRECTION_FACTOR)/ejection de masse/decroissance/nourriture."
+    },
+    {
+      "path": "server/src/mods/hardcore/index.ts",
+      "workspace": "server",
+      "tags": [
+        "mods",
+        "hardcore",
+        "dash",
+        "gamemod"
+      ],
+      "description": "createHardcoreMod() — COMPOSE parametric : absorption x massGainMultiplier, Dash (DASH_IMPULSE_SPEED=4050), perte totale du score a la mort."
+    },
+    {
+      "path": "server/src/accounts/accountsRepository.ts",
+      "workspace": "server",
+      "tags": [
+        "comptes",
+        "sql",
+        "postgresql"
+      ],
+      "description": "Requetes SQL (players, player_best_scores)."
+    },
+    {
+      "path": "server/src/accounts/passwords.ts",
+      "workspace": "server",
+      "tags": [
+        "comptes",
+        "securite",
+        "argon2"
+      ],
+      "description": "Hachage/verification argon2."
+    },
+    {
+      "path": "server/src/accounts/levels.ts",
+      "workspace": "server",
+      "tags": [
+        "comptes",
+        "xp",
+        "niveau"
+      ],
+      "description": "Formule XP -> niveau."
+    },
+    {
+      "path": "server/src/accounts/sessionStore.ts",
+      "workspace": "server",
+      "tags": [
+        "comptes",
+        "sessions",
+        "token"
+      ],
+      "description": "Sessions en memoire (token -> session, TTL 24h)."
+    },
+    {
+      "path": "server/src/accounts/service.ts",
+      "workspace": "server",
+      "tags": [
+        "comptes",
+        "logique-metier",
+        "avatar",
+        "inscription",
+        "connexion"
+      ],
+      "description": "Logique metier inscription/connexion/profil, updateAvatarColor (valide via isValidAvatarColor/isValidSkin)."
+    },
+    {
+      "path": "server/src/admin/adminAuth.ts",
+      "workspace": "server",
+      "tags": [
+        "admin",
+        "authentification"
+      ],
+      "description": "Authentification admin (mot de passe unique ou comptes nommes)."
+    },
+    {
+      "path": "server/src/admin/adminUsersRepository.ts",
+      "workspace": "server",
+      "tags": [
+        "admin",
+        "sql"
+      ],
+      "description": "Requetes SQL (table admin_users)."
+    },
+    {
+      "path": "server/src/net/rateLimiter.ts",
+      "workspace": "server",
+      "tags": [
+        "reseau",
+        "rate-limit"
+      ],
+      "description": "Rate limiter par fenetre glissante."
+    },
+    {
+      "path": "server/src/net/server.ts",
+      "workspace": "server",
+      "tags": [
+        "reseau",
+        "entrypoint",
+        "http",
+        "websocket"
+      ],
+      "description": "Point d'assemblage HTTP + WebSocket (startGameServer)."
+    },
+    {
+      "path": "server/src/net/metrics.ts",
+      "workspace": "server",
+      "tags": [
+        "reseau",
+        "sante",
+        "metriques"
+      ],
+      "description": "Snapshot sante serveur (event loop, ticks) pour /api/admin/health."
+    },
+    {
+      "path": "server/src/net/botKillGif.ts",
+      "workspace": "server",
+      "tags": [
+        "bots",
+        "ecran-de-mort",
+        "gif"
+      ],
+      "description": "Resout le GIF affiche a l'ecran de mort quand tue par un bot."
+    },
+    {
+      "path": "server/src/net/http/httpUtils.ts",
+      "workspace": "server",
+      "tags": [
+        "reseau",
+        "http",
+        "utilitaires"
+      ],
+      "description": "Lecture JSON, extraction IP/token Bearer, reponses JSON."
+    },
+    {
+      "path": "server/src/net/http/staticServer.ts",
+      "workspace": "server",
+      "tags": [
+        "reseau",
+        "http",
+        "fichiers-statiques",
+        "path-traversal"
+      ],
+      "description": "Serveur de fichiers statiques (anti path-traversal), repli case-insensitive + repli vers assets/ racine si absent de client/public/."
+    },
+    {
+      "path": "server/src/net/http/router.ts",
+      "workspace": "server",
+      "tags": [
+        "reseau",
+        "http",
+        "routage"
+      ],
+      "description": "Routage HTTP central deleguant aux handlers — decode explicitement url.pathname (decodeURIComponent) avant de servir un fichier statique (sinon un nom de fichier avec espace/accent 404 silencieusement)."
+    },
+    {
+      "path": "server/src/net/http/routes/lobby.ts",
+      "workspace": "server",
+      "tags": [
+        "reseau",
+        "http",
+        "salons",
+        "api"
+      ],
+      "description": "GET/POST /api/rooms, GET /api/modes, GET /api/stats."
+    },
+    {
+      "path": "server/src/net/http/routes/auth.ts",
+      "workspace": "server",
+      "tags": [
+        "reseau",
+        "http",
+        "comptes",
+        "api"
+      ],
+      "description": "POST /api/auth/register, /login, /logout, GET/PATCH /api/account/me."
+    },
+    {
+      "path": "server/src/net/http/routes/avatars.ts",
+      "workspace": "server",
+      "tags": [
+        "reseau",
+        "http",
+        "avatars",
+        "api"
+      ],
+      "description": "GET /api/avatars — scanne assets/Profil/ dynamiquement, repli sur SKINS/SKIN_IMAGE_MAP (shared/src/avatarPalette.ts) si le dossier est illisible."
+    },
+    {
+      "path": "server/src/net/http/routes/health.ts",
+      "workspace": "server",
+      "tags": [
+        "reseau",
+        "http",
+        "admin",
+        "sante"
+      ],
+      "description": "GET /api/admin/health (metriques de charge par salon)."
+    },
+    {
+      "path": "server/src/net/http/routes/admin.ts",
+      "workspace": "server",
+      "tags": [
+        "reseau",
+        "http",
+        "admin",
+        "api"
+      ],
+      "description": "POST /api/admin/login, /logout, GET/PATCH /api/admin/players."
+    },
+    {
+      "path": "server/src/net/http/routes/adminRooms.ts",
+      "workspace": "server",
+      "tags": [
+        "reseau",
+        "http",
+        "admin",
+        "api"
+      ],
+      "description": "Actions admin par salon (kick/freeze/godmode/spawn food...)."
+    },
+    {
+      "path": "server/src/net/ws/connectionHandler.ts",
+      "workspace": "server",
+      "tags": [
+        "reseau",
+        "websocket",
+        "join",
+        "input",
+        "skin",
+        "validation"
+      ],
+      "description": "Connexions WS joueur/spectateur, validation stricte d'inputs, resolution de l'avatarColor au join (compte > skin invite explicite > aleatoire)."
+    },
+    {
+      "path": "server/src/net/ws/broadcast.ts",
+      "workspace": "server",
+      "tags": [
+        "reseau",
+        "websocket",
+        "diffusion",
+        "ecran-de-mort",
+        "skin"
+      ],
+      "description": "Boucle onTick -> EntitySnapshot[] par salon, onPlayerJoin (assigne/rediffuse le skin, prefere une valeur deja connue plutot que de la rederiver), onPlayerDeath (ecran de mort personnalise, toujours les vraies stats)."
+    },
+    {
+      "path": "client/index.html",
+      "workspace": "client",
+      "tags": [
+        "entrypoint",
+        "favicon",
+        "pwa"
+      ],
+      "description": "Point d'entree Vite (source) — favicon.ico + icons/icon-192.png, manifest PWA."
+    },
+    {
+      "path": "client/static/",
+      "workspace": "client",
+      "tags": [
+        "assets",
+        "pwa",
+        "favicon",
+        "source-de-verite"
+      ],
+      "description": "Assets statiques SOURCE (icons/*.png, favicon.ico, manifest.json, service-worker.js) copies tels quels par le build via publicDir:'static' (vite.config.ts) — PAS client/public/, qui est entierement genere."
+    },
+    {
+      "path": "client/public/",
+      "workspace": "client",
+      "tags": [
+        "build",
+        "genere"
+      ],
+      "description": "GENERE par `vite build` — jamais edite a la main, gitignore. Note: le prebuild copie assets/Profil|Logos|Sons ici, mais vite build (emptyOutDir:true) les efface ensuite — sans consequence car staticServer.ts a un repli vers assets/ racine."
+    },
+    {
+      "path": "client/src/main.tsx",
+      "workspace": "client",
+      "tags": [
+        "entrypoint",
+        "react"
+      ],
+      "description": "Point d'entree React (createRoot, <App/>)."
+    },
+    {
+      "path": "client/src/App.tsx",
+      "workspace": "client",
+      "tags": [
+        "etat-racine",
+        "routage",
+        "session",
+        "lobby",
+        "skin"
+      ],
+      "description": "Etat racine (accueil/jeu/sous-page selon l'URL, session, lobby), effectiveAvatarColor/guestSkin passe a GameView/ProfilePage."
+    },
+    {
+      "path": "client/src/router.ts",
+      "workspace": "client",
+      "tags": [
+        "routage"
+      ],
+      "description": "Routeur maison (pushState + popstate, pas de dependance)."
+    },
+    {
+      "path": "client/src/styles.css",
+      "workspace": "client",
+      "tags": [
+        "design",
+        "css"
+      ],
+      "description": "Design tokens + toutes les classes CSS (dont .debug-overlay F3, .avatar-swiper-*, .profile-dashboard-grid)."
+    },
+    {
+      "path": "client/src/modes.ts",
+      "workspace": "client",
+      "tags": [
+        "modes",
+        "affichage"
+      ],
+      "description": "Metadonnees d'affichage par mode (nom/description/couleur)."
+    },
+    {
+      "path": "client/src/keybinds.ts",
+      "workspace": "client",
+      "tags": [
+        "controles",
+        "touches"
+      ],
+      "description": "Configuration des touches (split/dash/eject), persistee localStorage."
+    },
+    {
+      "path": "client/src/settings.ts",
+      "workspace": "client",
+      "tags": [
+        "preferences",
+        "fps",
+        "vsync"
+      ],
+      "description": "Preferences locales (Vsync, plafond FPS)."
+    },
+    {
+      "path": "client/src/audio.ts",
+      "workspace": "client",
+      "tags": [
+        "audio",
+        "musique"
+      ],
+      "description": "Gestionnaire de musique/sons (un seul flux actif a la fois)."
+    },
+    {
+      "path": "client/src/pwa.ts",
+      "workspace": "client",
+      "tags": [
+        "pwa",
+        "service-worker"
+      ],
+      "description": "Enregistrement du service worker."
+    },
+    {
+      "path": "client/src/auth.ts",
+      "workspace": "client",
+      "tags": [
+        "comptes",
+        "api-client",
+        "avatar"
+      ],
+      "description": "Client API comptes (login/register/logout/profile/avatar)."
+    },
+    {
+      "path": "client/src/lobby.ts",
+      "workspace": "client",
+      "tags": [
+        "salons",
+        "api-client"
+      ],
+      "description": "Client API salons (liste/creation/modes/stats serveur)."
+    },
+    {
+      "path": "client/src/support.ts",
+      "workspace": "client",
+      "tags": [
+        "contenu"
+      ],
+      "description": "Contenu de la page Soutenir (lien de don, texte)."
+    },
+    {
+      "path": "client/src/net.ts",
+      "workspace": "client",
+      "tags": [
+        "reseau",
+        "websocket",
+        "reconnexion"
+      ],
+      "description": "GameConnection : connexion WebSocket au serveur de jeu, reconnexion auto, close() attend l'ouverture avant de fermer un socket CONNECTING (evite l'erreur console 'closed before established')."
+    },
+    {
+      "path": "client/src/input.ts",
+      "workspace": "client",
+      "tags": [
+        "controles",
+        "souris",
+        "clavier",
+        "manette"
+      ],
+      "description": "Capture souris/clavier/manette -> cible + intensite + actions."
+    },
+    {
+      "path": "client/src/prediction.ts",
+      "workspace": "client",
+      "tags": [
+        "prediction",
+        "reconciliation",
+        "dash"
+      ],
+      "description": "PREDICTION LOCALE + reconciliation du blob du joueur, applyDash (DASH_IMPULSE_SPEED=4050, synchronise avec le serveur)."
+    },
+    {
+      "path": "client/src/renderEngine.ts",
+      "workspace": "client",
+      "tags": [
+        "interpolation",
+        "reseau",
+        "spectateur",
+        "tick-rate"
+      ],
+      "description": "INTERPOLATION reseau des entites distantes, snapshotQueue (buffer, expose pour le F3 interpSnapshots), sensible a serverTickRateHz (voir welcome.tickRateHz reduit pour spectateurs)."
+    },
+    {
+      "path": "client/src/render.ts",
+      "workspace": "client",
+      "tags": [
+        "rendu",
+        "canvas",
+        "camera",
+        "pseudo",
+        "skin"
+      ],
+      "description": "Rendu Canvas2D (camera, dessin, culling viewport), colorFor/getSkinImage/DEFAULT_SKIN, pseudo affiche seulement si masse du morceau >= 100."
+    },
+    {
+      "path": "client/src/stats.ts",
+      "workspace": "client",
+      "tags": [
+        "stats",
+        "agregation"
+      ],
+      "description": "Agregation des morceaux du joueur (masse, barycentre, vitesse)."
+    },
+    {
+      "path": "client/src/debugOverlay.ts",
+      "workspace": "client",
+      "tags": [
+        "debug",
+        "f3",
+        "diagnostic"
+      ],
+      "description": "Ecran de diagnostic F3 (FPS, reseau, tick, gigue, systeme) — chaque valeur doit etre une mesure reelle, jamais inventee."
+    },
+    {
+      "path": "client/src/components/Home.tsx",
+      "workspace": "client",
+      "tags": [
+        "accueil",
+        "composition"
+      ],
+      "description": "Composition racine de l'accueil : TopNav + 3 colonnes + BottomBar + SpectatorBackground."
+    },
+    {
+      "path": "client/src/components/TopNav.tsx",
+      "workspace": "client",
+      "tags": [
+        "navigation",
+        "accueil"
+      ],
+      "description": "Nav haute : marque, liens Classement/A Propos, cercle de compte (avatar via SKIN_IMAGE_MAP)."
+    },
+    {
+      "path": "client/src/components/ModeRoomList.tsx",
+      "workspace": "client",
+      "tags": [
+        "accueil",
+        "modes",
+        "salons"
+      ],
+      "description": "Colonne gauche : selecteur de mode + classement des salons publics de ce mode."
+    },
+    {
+      "path": "client/src/components/PlayPanel.tsx",
+      "workspace": "client",
+      "tags": [
+        "accueil",
+        "jouer"
+      ],
+      "description": "Colonne centre : compteur de joueurs connectes, pseudo, bouton Rejoindre, logo hero (logoangulionobg.png)."
+    },
+    {
+      "path": "client/src/components/CreateRoomPanel.tsx",
+      "workspace": "client",
+      "tags": [
+        "accueil",
+        "salon-prive"
+      ],
+      "description": "Colonne droite : creation de salon prive (Premium) + rejoindre par code."
+    },
+    {
+      "path": "client/src/components/BottomBar.tsx",
+      "workspace": "client",
+      "tags": [
+        "accueil",
+        "footer"
+      ],
+      "description": "Pied de page : version, marque, lien Soutenir."
+    },
+    {
+      "path": "client/src/components/SpectatorBackground.tsx",
+      "workspace": "client",
+      "tags": [
+        "accueil",
+        "spectateur",
+        "websocket"
+      ],
+      "description": "Fond anime : connexion WS lecture seule (?spectate=1), reutilise render.ts."
+    },
+    {
+      "path": "client/src/components/Minimap.tsx",
+      "workspace": "client",
+      "tags": [
+        "jeu",
+        "minimap"
+      ],
+      "description": "Mini-carte 3x3 (secteurs A1-C3) affichee en jeu."
+    },
+    {
+      "path": "client/src/components/AssetPreloader.tsx",
+      "workspace": "client",
+      "tags": [
+        "preload",
+        "assets",
+        "skins"
+      ],
+      "description": "Precharge les images de skins (derive de SKIN_IMAGE_MAP) + musiques avant affichage du jeu."
+    },
+    {
+      "path": "client/src/components/ErrorBoundary.tsx",
+      "workspace": "client",
+      "tags": [
+        "erreurs",
+        "filet-de-securite"
+      ],
+      "description": "Filet de securite React (evite un ecran blanc total sur exception de rendu)."
+    },
+    {
+      "path": "client/src/components/AudioSettings.tsx",
+      "workspace": "client",
+      "tags": [
+        "reglages",
+        "audio"
+      ],
+      "description": "Reglages son (accessible depuis Parametres)."
+    },
+    {
+      "path": "client/src/components/KeybindSettings.tsx",
+      "workspace": "client",
+      "tags": [
+        "reglages",
+        "touches"
+      ],
+      "description": "Remapping des touches (accessible depuis Parametres)."
+    },
+    {
+      "path": "client/src/components/GameView.tsx",
+      "workspace": "client",
+      "tags": [
+        "jeu",
+        "canvas",
+        "websocket",
+        "hud",
+        "f3",
+        "dash"
+      ],
+      "description": "LE seul composant qui touche au canvas en partie — boucle de rendu, connexion WebSocket (envoie guestSkin au join initial), HUD (stats/leaderboard/minimap/dash/ecran de mort), toggle F3."
+    },
+    {
+      "path": "client/src/pages/PageLayout.tsx",
+      "workspace": "client",
+      "tags": [
+        "sous-page",
+        "layout"
+      ],
+      "description": "Coquille commune des sous-pages (titre + bouton retour accueil)."
+    },
+    {
+      "path": "client/src/pages/AccountPage.tsx",
+      "workspace": "client",
+      "tags": [
+        "sous-page",
+        "comptes",
+        "route:/compte"
+      ],
+      "description": "Connexion/inscription/deconnexion."
+    },
+    {
+      "path": "client/src/pages/ProfilePage.tsx",
+      "workspace": "client",
+      "tags": [
+        "sous-page",
+        "profil",
+        "avatar",
+        "skin",
+        "ecran-de-mort",
+        "route:/profil"
+      ],
+      "description": "Niveau/XP/Premium/cosmetiques/scores + AvatarSwiper (caroussel de skins, plafonne en largeur) + personnalisation ecran de mort. Pas de libelle au-dessus du caroussel."
+    },
+    {
+      "path": "client/src/pages/SettingsPage.tsx",
+      "workspace": "client",
+      "tags": [
+        "sous-page",
+        "reglages",
+        "route:/parametres"
+      ],
+      "description": "Plafond FPS/Vsync, son, touches (reglages locaux a l'appareil)."
+    },
+    {
+      "path": "client/src/pages/LeaderboardPage.tsx",
+      "workspace": "client",
+      "tags": [
+        "sous-page",
+        "classement",
+        "route:/classement"
+      ],
+      "description": "Classement global."
+    },
+    {
+      "path": "client/src/pages/SupportPage.tsx",
+      "workspace": "client",
+      "tags": [
+        "sous-page",
+        "don",
+        "route:/soutenir"
+      ],
+      "description": "Explication du don libre + lien de don."
+    },
+    {
+      "path": "client/src/pages/AboutPage.tsx",
+      "workspace": "client",
+      "tags": [
+        "sous-page",
+        "a-propos",
+        "route:/a-propos"
+      ],
+      "description": "Nom du projet, version, licence."
+    },
+    {
+      "path": "admin/src/main.tsx",
+      "workspace": "admin",
+      "tags": [
+        "entrypoint",
+        "react"
+      ],
+      "description": "Point d'entree + etat racine (login, vue active)."
+    },
+    {
+      "path": "admin/src/adminApi.ts",
+      "workspace": "admin",
+      "tags": [
+        "admin",
+        "api-client"
+      ],
+      "description": "Client API admin HTTP (comptes, salons, actions)."
+    },
+    {
+      "path": "admin/src/adminSocket.ts",
+      "workspace": "admin",
+      "tags": [
+        "admin",
+        "websocket"
+      ],
+      "description": "Canal WebSocket admin dedie (?admin=1) — POV + Espace Creatif."
+    },
+    {
+      "path": "admin/src/entityCanvas.ts",
+      "workspace": "admin",
+      "tags": [
+        "admin",
+        "rendu",
+        "canvas"
+      ],
+      "description": "Rendu Canvas partage POV/Espace Creatif (60 FPS, interpolation)."
+    },
+    {
+      "path": "admin/src/components/Sidebar.tsx",
+      "workspace": "admin",
+      "tags": [
+        "admin",
+        "navigation"
+      ],
+      "description": "Navigation laterale entre les vues."
+    },
+    {
+      "path": "admin/src/components/PlayersView.tsx",
+      "workspace": "admin",
+      "tags": [
+        "admin",
+        "comptes"
+      ],
+      "description": "Recherche/edition de comptes joueurs."
+    },
+    {
+      "path": "admin/src/components/RoomsView.tsx",
+      "workspace": "admin",
+      "tags": [
+        "admin",
+        "salons",
+        "pov"
+      ],
+      "description": "Salons & Ecrans (POV spectateur par salon, kick/transfert)."
+    },
+    {
+      "path": "admin/src/components/CreativeView.tsx",
+      "workspace": "admin",
+      "tags": [
+        "admin",
+        "espace-creatif"
+      ],
+      "description": "Espace Creatif (freeze/godmode/spawn food/masse par joueur...)."
+    }
+  ],
+  "topics": {
+    "outillage-ia/mcp": [
+      ".mcp.json",
+      ".claude/mcp/server.mjs",
+      ".claude/project-structure.json",
+      "structure.md"
+    ],
+    "gameplay/physique": [
+      "server/src/mods/parametric/index.ts",
+      "server/src/mods/parametric/physics.ts",
+      "shared/src/movement.ts",
+      "shared/src/geometry.ts"
+    ],
+    "split/fusion": [
+      "server/src/mods/parametric/index.ts",
+      "server/src/mods/parametric/config.ts"
+    ],
+    "dash": [
+      "server/src/mods/hardcore/index.ts",
+      "client/src/prediction.ts",
+      "client/src/components/GameView.tsx"
+    ],
+    "bots": [
+      "server/src/engine/bots/botManager.ts",
+      "server/src/engine/bots/botTypes.ts",
+      "server/src/engine/bots/botEvaluator.ts"
+    ],
+    "avatars/skins": [
+      "shared/src/avatarPalette.ts",
+      "server/src/net/http/routes/avatars.ts",
+      "client/src/pages/ProfilePage.tsx",
+      "client/src/render.ts",
+      "server/src/net/ws/connectionHandler.ts",
+      "server/src/net/ws/broadcast.ts"
+    ],
+    "reseau/protocole": [
+      "shared/src/protocol.ts",
+      "client/src/net.ts",
+      "server/src/net/ws/connectionHandler.ts",
+      "server/src/net/ws/broadcast.ts"
+    ],
+    "reseau/interpolation-prediction": [
+      "client/src/renderEngine.ts",
+      "client/src/prediction.ts",
+      "server/src/engine/worker/snapshotBuilder.ts"
+    ],
+    "collision/tunneling": [
+      "server/src/engine/world.ts",
+      "server/src/engine/spatialHash.ts",
+      "server/src/engine/room.ts"
+    ],
+    "spectateur/lobby": [
+      "client/src/components/SpectatorBackground.tsx",
+      "server/src/engine/worker/snapshotBuilder.ts",
+      "server/src/net/ws/connectionHandler.ts"
+    ],
+    "fichiers-statiques/http": [
+      "server/src/net/http/router.ts",
+      "server/src/net/http/staticServer.ts"
+    ],
+    "modding/gamemod": [
+      "server/src/engine/mod.ts",
+      "server/src/engine/modRegistry.ts",
+      "server/src/mods/parametric/config.ts",
+      "README.md"
+    ],
+    "comptes/auth": [
+      "server/src/accounts/service.ts",
+      "server/src/net/http/routes/auth.ts",
+      "client/src/auth.ts"
+    ],
+    "admin": [
+      "server/src/admin/adminAuth.ts",
+      "server/src/net/http/routes/admin.ts",
+      "server/src/net/http/routes/adminRooms.ts",
+      "admin/src/adminSocket.ts",
+      "admin/src/components/CreativeView.tsx"
+    ],
+    "f3-debug": [
+      "client/src/debugOverlay.ts",
+      "client/src/components/GameView.tsx",
+      "client/src/styles.css"
+    ],
+    "pwa/favicon": [
+      "client/index.html",
+      "client/static/icons/",
+      "client/static/favicon.ico",
+      "client/static/service-worker.js",
+      "client/static/manifest.json"
+    ]
+  }
+}
