@@ -152,28 +152,42 @@ export function wireRoom(
     logEvent('player_died', { roomId: managed.id, playerId });
 
     const accountId = runtime.accountIdByPlayer.get(playerId);
-    if (accountsService && accountId !== undefined) {
-      if (info.finalScore > 0) {
-        accountsService
-          .recordBestMass(accountId, managed.modId, info.finalScore)
-          .catch((error: unknown) => {
-            logEvent('account_stats_write_failed', {
-              roomId: managed.id,
-              playerId,
-              reason: (error as Error).message,
+    // Identifiant de réclamation (voir `AccountsService.createScoreClaim`) — UNIQUEMENT pour un
+    // invité (aucun `accountId` connu au moment de la mort) : un joueur déjà connecté est crédité
+    // directement ci-dessous, rien à réclamer plus tard pour lui. `undefined` si rien à sauvegarder
+    // (score et XP nuls) — voir la garde interne à `createScoreClaim`.
+    let claimId: string | undefined;
+    if (accountsService) {
+      if (accountId !== undefined) {
+        if (info.finalScore > 0) {
+          accountsService
+            .recordBestMass(accountId, managed.modId, info.finalScore)
+            .catch((error: unknown) => {
+              logEvent('account_stats_write_failed', {
+                roomId: managed.id,
+                playerId,
+                reason: (error as Error).message,
+              });
             });
-          });
-      }
-      if (info.transformedScore > 0 || info.transformedXp > 0) {
-        accountsService
-          .recordGameResult(accountId, managed.modId, info.transformedScore, info.transformedXp)
-          .catch((error: unknown) => {
-            logEvent('account_stats_write_failed', {
-              roomId: managed.id,
-              playerId,
-              reason: (error as Error).message,
+        }
+        if (info.transformedScore > 0 || info.transformedXp > 0) {
+          accountsService
+            .recordGameResult(accountId, managed.modId, info.transformedScore, info.transformedXp)
+            .catch((error: unknown) => {
+              logEvent('account_stats_write_failed', {
+                roomId: managed.id,
+                playerId,
+                reason: (error as Error).message,
+              });
             });
-          });
+        }
+      } else {
+        claimId = accountsService.createScoreClaim(
+          managed.modId,
+          info.finalScore,
+          info.transformedScore,
+          info.transformedXp,
+        );
       }
     }
 
@@ -223,6 +237,7 @@ export function wireRoom(
         survivalTimeSec: info.survivalTimeSec,
         xpEarned: info.xpEarned,
         customCard,
+        claimId,
       });
     })();
   });

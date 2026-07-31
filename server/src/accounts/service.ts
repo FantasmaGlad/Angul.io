@@ -13,6 +13,7 @@ import {
   type DeathScreenPatch,
 } from './accountsRepository.js';
 import { hashPassword, verifyPassword } from './passwords.js';
+import { createPendingScoreClaims, type PendingScoreClaims } from './pendingScoreClaims.js';
 import { createSessionStore, type SessionStore } from './sessionStore.js';
 
 const MIN_PSEUDO_LENGTH = 3;
@@ -136,10 +137,12 @@ export class AccountError extends Error {}
 export class AccountsService {
   private readonly repository: AccountsRepository;
   private readonly sessions: SessionStore;
+  private readonly scoreClaims: PendingScoreClaims;
 
   constructor(pool: Pool) {
     this.repository = new AccountsRepository(pool);
     this.sessions = createSessionStore();
+    this.scoreClaims = createPendingScoreClaims();
   }
 
   async register(pseudo: string, password: string): Promise<AuthResult> {
@@ -289,6 +292,37 @@ export class AccountsService {
     mass: number,
   ): Promise<void> {
     await this.repository.recordBestMass(accountId, modeId, Math.round(mass));
+  }
+
+  /** Appelé à la mort d'un joueur INVITÉ (pas de compte au moment de la mort, voir broadcast.ts
+   * `onPlayerDeath`) — mémorise le score/XP de cette vie sous un identifiant opaque plutôt que de
+   * les perdre (retour utilisateur : proposer de créer un compte pour sauvegarder son score en fin
+   * de partie). Le MONTANT ne transite jamais vers le client en clair (seul cet identifiant l'est,
+   * voir `DiedMessage.claimId`) : un client authentifié pourrait sinon appeler directement
+   * `claimScore` avec un score arbitraire et frauder le classement/les stats de compte. `undefined`
+   * si rien à sauvegarder (score et XP nuls). */
+  createScoreClaim(
+    modId: string,
+    finalScore: number,
+    transformedScore: number,
+    transformedXp: number,
+  ): string | undefined {
+    if (finalScore <= 0 && transformedScore <= 0 && transformedXp <= 0) return undefined;
+    return this.scoreClaims.create(modId, finalScore, transformedScore, transformedXp);
+  }
+
+  /** Réclame un score en attente (voir `createScoreClaim`) pour le compte qui vient de se créer ou
+   * de se connecter — `false` si `claimId` est inconnu/déjà réclamé/expiré (silencieux côté
+   * appelant, voir routes/auth.ts : un claim périmé n'est jamais une erreur bloquante pour
+   * l'inscription/connexion elle-même). Usage unique par construction (`PendingScoreClaims.consume`). */
+  async claimScore(claimId: string, accountId: number): Promise<boolean> {
+    const claim = this.scoreClaims.consume(claimId);
+    if (!claim) return false;
+    if (claim.finalScore > 0) await this.recordBestMass(accountId, claim.modId, claim.finalScore);
+    if (claim.transformedScore > 0 || claim.transformedXp > 0) {
+      await this.recordGameResult(accountId, claim.modId, claim.transformedScore, claim.transformedXp);
+    }
+    return true;
   }
 
   /** Lot 6.4 — un compte non-Premium (ou un invité, `accountId` `undefined`) ne peut pas créer

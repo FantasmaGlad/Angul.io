@@ -212,10 +212,19 @@ export interface PlayerDiedMessage {
    * `player_best_scores`). */
   finalScore: number;
   survivalTimeSec: number;
-  /** XP gagnée pendant cette vie (voir engine/xp.ts) — 0 pour un invité (pas de compte à
-   * créditer, mais affiché quand même : la progression "aurait été" gagnée). */
+  /** XP gagnée pendant cette vie (voir engine/xp.ts) — TOUJOURS le montant brut, y compris pour un
+   * invité (qui n'a simplement personne à qui le créditer tant qu'il n'a pas de compte, voir
+   * `claimId` ci-dessous). */
   xpEarned: number;
   customCard: DeathCustomCard;
+  /** Identifiant OPAQUE (voir `AccountsService.createScoreClaim`) permettant de réclamer le
+   * score/XP de CETTE vie via `POST /api/account/claim-score` si le joueur crée un compte ou se
+   * connecte juste après — présent UNIQUEMENT pour un invité (`accountId` inconnu du serveur au
+   * moment de la mort) ayant un score/XP non nul à sauvegarder ; absent pour un joueur déjà
+   * connecté (déjà crédité directement, voir broadcast.ts) ou un invité sans rien à sauvegarder.
+   * Ne PORTE JAMAIS le montant lui-même (voir le commentaire de `createScoreClaim` : le client ne
+   * doit jamais pouvoir dicter au serveur combien créditer). */
+  claimId?: string;
 }
 
 /** Bannière/notification visuelle diffusée par l'admin (§4.6 cahier_des_charges_admin.md,

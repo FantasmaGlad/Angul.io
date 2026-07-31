@@ -35,12 +35,18 @@ export interface TopScoreEntry {
 }
 
 /** Classement calculé une seule fois par tick (voir buildStateMessage, appelé une fois par
- * socket) — indépendant du destinataire, seul `isSelf` varie par joueur. */
-export function computeTopScores(
-  world: World,
-  players: PlayerState[],
-  maxMassMap?: Map<PlayerId, number>,
-): TopScoreEntry[] {
+ * socket) — indépendant du destinataire, seul `isSelf` varie par joueur.
+ *
+ * Score = masse ACTUELLE, jamais le pic historique de la vie en cours — contrairement au score de
+ * fin de partie (`RoomInstance.handleDeath`, `finalScore`/crédit de compte), qui lui reste
+ * volontairement le pic (récompense la meilleure performance de la vie, pas son issue). Avant ce
+ * correctif, ce classement EN DIRECT utilisait `Math.max(masse actuelle, pic historique)` — un
+ * joueur qui perdait de la masse (mangé partiellement, split...) gardait son ancien rang/score
+ * inchangé jusqu'à sa mort, indépendamment de ce qu'il possédait réellement à l'instant présent
+ * (retour utilisateur : "quand un joueur perd de la masse, son classement n'est pas mis à jour").
+ * Un classement affiché EN JEU doit refléter l'état RÉEL de la partie à chaque instant, comme le
+ * reste du HUD (masse/vitesse) — le pic historique n'a de sens qu'au moment où la vie se termine. */
+export function computeTopScores(world: World, players: PlayerState[]): TopScoreEntry[] {
   return players
     .filter((p) => !isGodPlayerId(p.id)) // Blob Dieu (§4.2 cahier_des_charges_admin.md) : invisible du classement
     .map((p) => {
@@ -49,9 +55,7 @@ export function computeTopScores(
         const piece = world.getEntity(pieceId);
         if (piece) currentMass += piece.mass;
       }
-      const peakMass = maxMassMap?.get(p.id) ?? currentMass;
-      const score = Math.max(currentMass, peakMass);
-      return { id: p.id, nickname: p.nickname, score: Math.floor(score) };
+      return { id: p.id, nickname: p.nickname, score: Math.floor(currentMass) };
     })
     .filter((p) => p.score > 0)
     .sort((a, b) => b.score - a.score)

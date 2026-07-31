@@ -151,10 +151,9 @@ describe('createHardcoreMod — onCollision (nourriture et fusion, comportement 
 });
 
 describe('createHardcoreMod — transformScoreForAccount', () => {
-  it('renvoie toujours {score:0, xp:0} (perte totale de la progression de la partie à la mort)', () => {
+  it("ne surcharge pas transformScoreForAccount : score et XP sont crédités normalement à la mort, comme tout autre mode (retire l'ancienne punition d'exemple)", () => {
     const mod = createHardcoreMod(testConfig());
-    expect(mod.transformScoreForAccount?.(500, 300)).toEqual({ score: 0, xp: 0 });
-    expect(mod.transformScoreForAccount?.(0, 0)).toEqual({ score: 0, xp: 0 });
+    expect(mod.transformScoreForAccount).toBeUndefined();
   });
 });
 

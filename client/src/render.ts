@@ -1,4 +1,4 @@
-import { clamp, DEFAULT_SKIN, isBotId, SKIN_IMAGE_MAP, skinForNickname, type EntitySnapshot } from '@angulio/shared';
+import { clamp, DEFAULT_SKIN, SKIN_IMAGE_MAP, skinForNickname, type EntitySnapshot } from '@angulio/shared';
 import { ownAggregate } from './stats.js';
 
 const skinImageCache = new Map<string, HTMLImageElement>();
@@ -335,9 +335,12 @@ export function renderFrame(
     if (showNickname) {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      const fontSize = isBotId(entity.p!)
-        ? botNicknameFontSizePx(ctx, nickname!, screenRadius)
-        : Math.max(10, screenRadius * 0.3);
+      // Ajusté à la largeur réelle du pseudo (`fitNicknameFontSizePx`, mesuré via
+      // `ctx.measureText`) pour TOUT joueur, bot ou humain (demande utilisateur) — un pseudo de
+      // joueur humain peut aller jusqu'à 20 caractères (`maxLength`, PlayPanel.tsx), largement
+      // assez pour déborder du cercle avec l'ancien ratio fixe (`screenRadius * 0.3`, jamais
+      // mesuré) sur un petit morceau, contrairement aux pseudos de bots déjà correctement ajustés.
+      const fontSize = fitNicknameFontSizePx(ctx, nickname!, screenRadius);
       // Gras (demande utilisateur) — plus lisible par-dessus un skin/fond de blob coloré qu'un
       // trait fin, notamment aux petites tailles de police.
       ctx.font = `bold ${fontSize}px sans-serif`;
@@ -372,31 +375,34 @@ export function renderFrame(
   };
 }
 
-/** Taille de police plancher pour un pseudo de bot — en-deçà, le texte devient illisible ; sur un
- * tout petit morceau on accepte alors un léger débordement plutôt qu'un texte invisible. */
-const BOT_NICKNAME_MIN_FONT_PX = 6;
+/** Taille de police plancher pour un pseudo (bot ou joueur humain) — en-deçà, le texte devient
+ * illisible ; sur un tout petit morceau on accepte alors un léger débordement plutôt qu'un texte
+ * invisible. */
+const NICKNAME_MIN_FONT_PX = 6;
 /** Point de départ avant ajustement à la largeur réelle du pseudo (`ctx.measureText`) — un
- * multiplicateur fixe du rayon ne suffit pas : les pseudos de robots vont de 2 à ~12 caractères
- * (voir BOT_IDENTITIES, ex. "Or" contre "Lapis-Lazuli"), un pseudo long déborderait du cercle à
- * taille fixe. */
-const BOT_NICKNAME_START_FONT_RATIO = 0.32;
+ * multiplicateur fixe du rayon ne suffit pas : un pseudo va de 2 caractères (bot le plus court,
+ * voir BOT_IDENTITIES) à 20 (longueur max d'un pseudo humain, voir `maxLength` PlayPanel.tsx), un
+ * pseudo long déborderait du cercle à taille fixe (retour utilisateur, pseudos humains). */
+const NICKNAME_START_FONT_RATIO = 0.32;
 
-/** Calcule la taille de police (px) qui fait tenir `nickname` dans le cercle du bot (diamètre
- * `screenRadius * 2`, avec une marge pour ne pas toucher le bord) — mesuré via `ctx.measureText`
- * plutôt qu'un ratio fixe, pour rester correct quelle que soit la longueur du pseudo. */
-function botNicknameFontSizePx(
+/** Calcule la taille de police (px) qui fait tenir `nickname` ENTIÈREMENT dans le cercle du
+ * morceau (diamètre `screenRadius * 2`, avec une marge pour ne pas toucher le bord) — mesuré via
+ * `ctx.measureText` plutôt qu'un ratio fixe, pour rester correct quelle que soit la longueur du
+ * pseudo, bot ou humain (demande utilisateur : un ratio fixe non mesuré, utilisé auparavant pour
+ * les pseudos humains seulement, laissait déborder tout pseudo un peu long sur un petit morceau). */
+function fitNicknameFontSizePx(
   ctx: CanvasRenderingContext2D,
   nickname: string,
   screenRadius: number,
 ): number {
   const availableWidth = screenRadius * 1.7;
-  let fontSize = Math.max(BOT_NICKNAME_MIN_FONT_PX, screenRadius * BOT_NICKNAME_START_FONT_RATIO);
+  let fontSize = Math.max(NICKNAME_MIN_FONT_PX, screenRadius * NICKNAME_START_FONT_RATIO);
   // `bold` ici aussi (voir l'appelant) : mesurer en `normal` sous-estimerait la largeur réelle du
-  // texte en gras effectivement dessiné, laissant déborder légèrement les pseudos de bots longs.
+  // texte en gras effectivement dessiné, laissant déborder légèrement les pseudos longs.
   ctx.font = `bold ${fontSize}px sans-serif`;
   const textWidth = ctx.measureText(nickname).width;
   if (textWidth > availableWidth && textWidth > 0) {
-    fontSize = Math.max(BOT_NICKNAME_MIN_FONT_PX, fontSize * (availableWidth / textWidth));
+    fontSize = Math.max(NICKNAME_MIN_FONT_PX, fontSize * (availableWidth / textWidth));
   }
   return fontSize;
 }

@@ -29,6 +29,7 @@ import {
   type NetworkInfo,
 } from '../debugOverlay.js';
 import { audioManager } from '../audio.js';
+import { savePendingScoreClaim } from '../auth.js';
 import { attachInput, type InputTracker } from '../input.js';
 import { keyLabel, loadKeybinds } from '../keybinds.js';
 import { GameConnection } from '../net.js';
@@ -40,6 +41,7 @@ import {
   type Camera,
 } from '../render.js';
 import { RenderEngine } from '../renderEngine.js';
+import { navigate } from '../router.js';
 import {
   loadFpsSliderIndex,
   loadVsyncEnabled,
@@ -79,6 +81,10 @@ interface DeathState {
   xpEarned: number;
   killerNickname?: string;
   customCard: DeathCustomCard;
+  /** Voir `DiedMessage.claimId` (protocol.ts) — présent uniquement pour un invité ayant un
+   * score/XP non nul à sauvegarder, sert à afficher la proposition "créer un compte" sur l'écran
+   * de fin de partie (voir plus bas). */
+  claimId?: string;
 }
 
 const DEFAULT_DEATH_STATE: DeathState = {
@@ -323,10 +329,30 @@ export default function GameView({
 
     let dashZoomBonus = 0;
     let currentModId: string | undefined;
+    // Dernier `self.dash.canDash` connu (voir la branche `state` plus bas) — lu SYNCHRONEMENT par
+    // le callback de dash ci-dessous pour ne jouer l'effet visuel/l'impulsion locale QUE si le
+    // serveur accepterait réellement ce dash (charge disponible, un seul morceau). Avant ce
+    // correctif, presser Dash sans charge disponible zoomait la caméra ET appliquait quand même
+    // l'impulsion de vélocité en PRÉDICTION LOCALE — le serveur, lui, ignorait silencieusement cet
+    // input (`onPlayerInput`, hardcore/index.ts, `state.charges > 0` déjà à false) : le blob
+    // fonçait donc en avant pendant quelques frames sur la seule foi de la prédiction, avant un
+    // rollback net et visible dès le `state` suivant confirmant l'absence de tout changement de
+    // vélocité côté serveur — l'"animation avortée" et les lags visuels rapportés par l'utilisateur.
+    let currentCanDash = false;
 
     const input = attachInput(
       canvas,
       () => {
+        // Split entièrement désactivé pour ce mode (`splitEnabled: false`, voir
+        // server/configs/hardcore.json et parametric/physics.ts `splitEnabled()`) : le serveur
+        // n'effectuera jamais ce split, quelle que soit la masse — jouer le pincement caméra ici
+        // n'aurait aucune fonction à confirmer/annuler (contrairement au Dash, purement
+        // décoratif dans ce cas), mais reste une animation qui ne correspond à rien de réel. Le
+        // seuil de masse minimum (`minSplitMass`) n'est en revanche pas exposé au client : un
+        // split refusé pour ce motif (mode où il est activé) rejoue encore ce pincement — un
+        // faux-positif bien plus rare et sans conséquence de rendu (contrairement au Dash), non
+        // traité ici.
+        if (currentModId === 'hardcore') return;
         if (!canvas) return;
         const rect = canvas.getBoundingClientRect();
         const centerX = rect.left + rect.width / 2;
@@ -348,6 +374,13 @@ export default function GameView({
       },
       () => {
         if (currentModId !== 'hardcore') return;
+        // Aucune charge disponible (recharge en cours) ou déjà divisé (plus d'un morceau, voir
+        // `getDashState`, hardcore/index.ts) : le serveur ignorerait silencieusement cet input de
+        // toute façon — jouer quand même le zoom caméra/l'impulsion de prédiction locale ici
+        // produirait un aller "fantôme" jamais confirmé par le serveur, corrigé en rollback visible
+        // dès le `state` suivant (voir le commentaire de `currentCanDash`). Rien à faire du tout
+        // plutôt qu'une animation qui n'aboutira jamais.
+        if (!currentCanDash) return;
         dashZoomBonus = 0.10;
         if (!canvas) return;
         const rect = canvas.getBoundingClientRect();
@@ -505,6 +538,7 @@ export default function GameView({
         }
         if (message.self?.dash !== undefined) {
           setDashInfo(message.self.dash);
+          currentCanDash = message.self.dash.canDash;
         }
         const comboLevel = message.self?.combo?.level;
         if (comboLevel !== undefined && comboLevel !== lastComboLevel) {
@@ -526,6 +560,13 @@ export default function GameView({
         audioManager.stopMusic();
         justDied = true;
         isDeadNow = true;
+        // Score/XP d'invité en attente de compte (demande utilisateur : proposer de créer un
+        // compte pour sauvegarder son score en fin de partie) — persisté en `localStorage` pour
+        // survivre à la navigation vers /compte (voir AccountPage.tsx, qui le réclame après une
+        // inscription/connexion réussie). Le serveur n'inclut `claimId` QUE pour un invité avec un
+        // score/XP non nul à sauvegarder (voir DiedMessage.claimId, protocol.ts) : rien à faire ici
+        // pour un joueur déjà connecté (déjà crédité directement côté serveur) ou sans score.
+        if (message.claimId) savePendingScoreClaim(message.claimId);
         setDeathState({
           isDead: true,
           finalScore: message.finalScore,
@@ -533,6 +574,7 @@ export default function GameView({
           xpEarned: message.xpEarned,
           killerNickname: message.killerNickname,
           customCard: message.customCard ?? { bannerId: '', message: DEFAULT_DEATH_MESSAGE },
+          claimId: message.claimId,
         });
         setTimeout(() => {
           justDied = false;
@@ -1048,6 +1090,25 @@ export default function GameView({
                 <span className="death-stat-value">+{Math.round(deathState.xpEarned)}</span>
               </div>
             </div>
+
+            {/* Invité avec un score à sauvegarder (demande utilisateur) — `claimId` n'est présent
+                que dans ce cas précis (voir DiedMessage.claimId, protocol.ts) : jamais affiché à
+                un joueur déjà connecté (déjà crédité), ni à un invité sans score/XP gagné. */}
+            {deathState.claimId && (
+              <div className="death-save-score-cta">
+                <p>Crée un compte pour enregistrer ce score et ton XP !</p>
+                <button
+                  className="btn-primary-action"
+                  type="button"
+                  onClick={() => {
+                    navigate('/compte');
+                    onExit();
+                  }}
+                >
+                  Créer un compte / Se connecter
+                </button>
+              </div>
+            )}
 
             <div className="death-actions">
               <button

@@ -22,6 +22,7 @@ import {
 import { handleAdminHealth } from './routes/health.js';
 import { handleGetAvatars } from './routes/avatars.js';
 import {
+  handleClaimScore,
   handleGetProfile,
   handleLogout,
   handleRegisterOrLogin,
@@ -124,6 +125,11 @@ export async function handleHttpRequest(
 
   if (url.pathname === '/api/account/death-screen' && req.method === 'PATCH') {
     await handleUpdateDeathScreen(accounts, deathScreenRateLimiter, req, res);
+    return;
+  }
+
+  if (url.pathname === '/api/account/claim-score' && req.method === 'POST') {
+    await handleClaimScore(accounts, req, res);
     return;
   }
 

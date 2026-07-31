@@ -335,7 +335,7 @@
         "hardcore",
         "dash"
       ],
-      "description": "Config JSON du mode Hardcore : absorption x2, Dash uniquement (split desactive via player.splitEnabled=false), perte totale de score a la mort."
+      "description": "Config JSON du mode Hardcore : absorption x2, Dash uniquement (split desactive via player.splitEnabled=false)."
     },
     {
       "path": "server/scripts/hashPassword.mjs",
@@ -628,7 +628,7 @@
         "dash",
         "gamemod"
       ],
-      "description": "createHardcoreMod() — COMPOSE parametric : absorption x massGainMultiplier, Dash (DASH_IMPULSE_SPEED=4050), perte totale du score a la mort."
+      "description": "createHardcoreMod() — COMPOSE parametric : absorption x massGainMultiplier, Dash (DASH_IMPULSE_SPEED=4050). Score/XP credites normalement a la mort (transformScoreForAccount non surcharge, contrairement a une ancienne version)."
     },
     {
       "path": "server/src/accounts/accountsRepository.ts",
@@ -669,6 +669,17 @@
         "token"
       ],
       "description": "Sessions en memoire (token -> session, TTL 24h)."
+    },
+    {
+      "path": "server/src/accounts/pendingScoreClaims.ts",
+      "workspace": "server",
+      "tags": [
+        "comptes",
+        "invite",
+        "score",
+        "xp"
+      ],
+      "description": "Score/XP d'une vie d'invite en attente d'un compte (createScoreClaim/consume, symetrique de sessionStore.ts) — identifiant opaque uniquement, jamais le montant transmis au client (anti-triche)."
     },
     {
       "path": "server/src/accounts/service.ts",
@@ -1420,8 +1431,11 @@
     ],
     "comptes/auth": [
       "server/src/accounts/service.ts",
+      "server/src/accounts/pendingScoreClaims.ts",
       "server/src/net/http/routes/auth.ts",
-      "client/src/auth.ts"
+      "server/src/net/ws/broadcast.ts",
+      "client/src/auth.ts",
+      "client/src/pages/AccountPage.tsx"
     ],
     "admin": [
       "server/src/admin/adminAuth.ts",

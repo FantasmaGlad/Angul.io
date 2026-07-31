@@ -79,6 +79,55 @@ export function handleLogout(
   respondJson(res, 200, { success: true });
 }
 
+/** Réclame le score/XP d'une vie jouée en invité (voir `AccountsService.createScoreClaim`,
+ * `DiedMessage.claimId`) pour le compte qui vient de se créer ou de se connecter — appelé par le
+ * client juste après `register`/`login` s'il trouve un claim en attente en `localStorage` (voir
+ * AccountPage.tsx). Aucun montant dans le corps de la requête : uniquement l'identifiant opaque,
+ * le serveur seul connaît/valide le score réel associé (voir le commentaire de
+ * `createScoreClaim` sur pourquoi). Un claim inconnu/déjà réclamé/expiré n'est jamais une erreur
+ * (`claimed: false`) — l'inscription/connexion elle-même a déjà réussi à ce stade, ce n'est pas à
+ * cette route de la faire échouer. */
+export async function handleClaimScore(
+  accounts: AccountsService | undefined,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  if (!accounts) {
+    respondJson(res, 503, {
+      error: 'Comptes joueurs indisponibles (base de données non configurée).',
+    });
+    return;
+  }
+
+  const accountId = accounts.resolveToken(getBearerToken(req));
+  if (accountId === undefined) {
+    respondJson(res, 401, { error: 'Non authentifié.' });
+    return;
+  }
+
+  let body: unknown;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    respondJson(res, 400, { error: (error as Error).message });
+    return;
+  }
+
+  const claimId = isRecord(body) && typeof body.claimId === 'string' ? body.claimId : '';
+  if (!claimId) {
+    respondJson(res, 400, { error: 'claimId manquant.' });
+    return;
+  }
+
+  try {
+    const claimed = await accounts.claimScore(claimId, accountId);
+    respondJson(res, 200, { claimed });
+  } catch (error) {
+    logEvent('account_error', { action: 'claim_score', reason: (error as Error).message });
+    respondJson(res, 500, { error: 'Erreur serveur.' });
+  }
+}
+
 export async function handleGetProfile(
   accounts: AccountsService | undefined,
   req: IncomingMessage,

@@ -585,6 +585,35 @@ describe('startGameServer', () => {
       spectator.close();
     });
 
+    it('un spectateur reçoit un tick qui avance de 1 par message, jamais le tick de simulation brut (correctif dérive ~3s du fond spectateur)', async () => {
+      // tickRateHz=20 (réel) / SPECTATOR_TICK_DIVISOR (4) = 5Hz annoncés dans `welcome` à ce
+      // spectateur — si le champ `tick` de chaque `state` reçu n'était PAS renuméroté en tick
+      // spectateur séquentiel (voir roomInstance.ts `handleTick`), il avancerait de
+      // SPECTATOR_TICK_DIVISOR (4) par message au lieu de 1, désynchronisant la ligne de temps de
+      // lecture du client (RenderEngine) de son hypothèse `1000/tickRateHz` ms par unité de tick —
+      // la cause du retard croissant rapporté par l'utilisateur (~3s au bout de quelques secondes
+      // d'observation).
+      const manager = makeManager(testResolver());
+      const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
+      handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
+      const port = await handle.whenReady;
+
+      const spectator = new WebSocket(`ws://localhost:${port}/?roomId=${summary.id}&spectate=1`);
+      const messages = collectMessages(spectator);
+      await waitForOpen(spectator);
+
+      const stateTicks = (): number[] =>
+        messages.filter((m) => m.type === 'state').map((m) => m.tick as number);
+      await waitUntil(() => stateTicks().length >= 3);
+
+      const ticks = stateTicks();
+      for (let i = 1; i < ticks.length; i++) {
+        expect(ticks[i]! - ticks[i - 1]!).toBe(1);
+      }
+
+      spectator.close();
+    });
+
     it('GET /api/stats renvoie le nombre total de joueurs connectés, tous salons confondus', async () => {
       const manager = makeManager(testResolver());
       const roomA = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
@@ -1076,23 +1105,86 @@ describe.skipIf(!DATABASE_URL)('startGameServer (avec comptes joueurs)', () => {
         profile = await accounts.getProfile(accountId);
       }
 
-      // Meilleur score de masse : crédité dans LES DEUX modes (jamais transformé/annulé par
-      // `transformScoreForAccount`, voir mods/hardcore/index.ts — seule l'XP l'est).
+      // Meilleur score de masse ET XP : crédités normalement dans LES DEUX modes — Hardcore ne
+      // surcharge plus `transformScoreForAccount` (ancienne punition d'exemple retirée, voir
+      // mods/hardcore/index.ts), son comportement de crédit est désormais identique à Vanilla.
       expect(profile?.bestScores).toEqual([{ modeId: modId, bestScore: 5000 }]);
-
-      if (modId === 'hardcore') {
-        // "Perte totale de la progression XP de la partie en cas de mort" (cahier des charges
-        // §3.4 #2, mods/hardcore/index.ts `transformScoreForAccount`) : comportement VOULU, pas
-        // un bug — l'XP affichée à l'écran de mort (`died.xpEarned` ci-dessus) n'est jamais
-        // créditée au compte en Hardcore.
-        expect(profile?.xp).toBe(0);
-      } else {
-        expect(profile?.xp).toBe(777);
-      }
+      expect(profile?.xp).toBe(777);
 
       socket.close();
     },
   );
+
+  it("un invité qui meurt avec un score reçoit un claimId, réclamable après inscription (demande utilisateur : sauvegarder le score d'une partie jouée sans compte)", async () => {
+    // VRAI mod (`resolveMod`, comme le test ci-dessus) — pas le mod factice `{id:'test'}` de
+    // `startServer()`/`makeManager()` (sans `onPlayerJoin`, aucun morceau n'apparaît jamais).
+    const accounts = new AccountsService(pool);
+    const host = createLocalRoomHost(resolveMod);
+    const manager = new RoomManager(host, 20, { emptyRoomGraceMs: 10_000_000 });
+    managers.push(manager);
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0, accounts });
+    const port = await handle.whenReady;
+    const summary = manager.createRoom({ name: 'Claim', modId: 'vanilla', visibility: 'public' });
+
+    // Connexion INVITÉE (pas de `token` dans l'URL, voir connectionHandler.ts) — `accountId` reste
+    // inconnu du serveur pour ce joueur, contrairement au test précédent.
+    const socket = await connectedClient(port, summary.id);
+    const messages = collectMessages(socket);
+    socket.send(JSON.stringify({ type: 'join', nickname: 'GuestScorer' }));
+    await waitUntil(() => messages.some((m) => m.type === 'welcome'));
+    const welcome = messages.find((m) => m.type === 'welcome')!;
+    const playerId = String(welcome.playerId);
+
+    const room = manager.getManagedRoom(summary.id)!.room;
+    const world = room.world;
+    room.tick(); // player.alive -> true
+
+    const player = world.getPlayer(playerId)!;
+    const piece = world.getEntity(player.pieceIds[0]!)!;
+    world.setMass(piece, 3000);
+    player.lifeStats.xpEarned = 456;
+    room.tick(); // fait progresser maxMassByPlayer au-delà du spawn initial
+
+    for (const pieceId of [...player.pieceIds]) world.removeEntity(pieceId);
+    room.tick(); // détecte la mort -> onPlayerDeath -> broadcast.ts
+
+    await waitUntil(() => messages.some((m) => m.type === 'died'));
+    const died = messages.find((m) => m.type === 'died')!;
+    expect(died.finalScore).toBe(3000);
+    expect(died.xpEarned).toBe(456);
+    // LE POINT CENTRAL : un identifiant opaque, JAMAIS le score/XP en clair (voir le commentaire
+    // de `AccountsService.createScoreClaim` sur pourquoi — un client authentifié pourrait sinon
+    // frauder son propre crédit de compte en appelant directement l'endpoint de réclamation).
+    expect(typeof died.claimId).toBe('string');
+    socket.close();
+
+    // Inscription juste après la mort (scénario voulu : proposer de créer un compte sur l'écran
+    // de fin de partie) — puis réclamation du score en attente avec le tout nouveau token.
+    const pseudo = uniquePseudo('guestscorer');
+    const { token } = await accounts.register(pseudo, 'motdepasse123');
+    const accountId = accounts.resolveToken(token)!;
+
+    const claimResponse = await fetch(`http://localhost:${port}/api/account/claim-score`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ claimId: died.claimId }),
+    });
+    expect(claimResponse.status).toBe(200);
+    expect(await claimResponse.json()).toEqual({ claimed: true });
+
+    const profile = await accounts.getProfile(accountId);
+    expect(profile?.bestScores).toEqual([{ modeId: 'vanilla', bestScore: 3000 }]);
+    expect(profile?.xp).toBe(456);
+
+    // Usage UNIQUE (voir `PendingScoreClaims.consume`) : une seconde tentative avec le MÊME
+    // claimId échoue silencieusement, ne recrédite jamais deux fois.
+    const secondAttempt = await fetch(`http://localhost:${port}/api/account/claim-score`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ claimId: died.claimId }),
+    });
+    expect(await secondAttempt.json()).toEqual({ claimed: false });
+  });
 
   it('POST /api/admin/login : 503 sans ADMIN_PASSWORD_HASH, 401 si mauvais mot de passe, 200 + token sinon', async () => {
     const { port } = await startServer(false);

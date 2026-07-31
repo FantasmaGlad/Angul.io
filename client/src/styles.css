@@ -572,6 +572,26 @@ select {
   box-sizing: border-box;
 }
 
+/* Repli de défilement pour viewport COURT en hauteur (téléphone en paysage, ou tout écran plus
+   bas que le contenu de l'accueil) — demande utilisateur : la mise en page était jusqu'ici
+   hardcodée pour une hauteur de viewport confortable, sans aucun repli si le contenu (logo +
+   formulaire + classement) dépassait la hauteur réellement disponible, faisant déborder des
+   boutons (ex. "Jouer") hors champ SANS AUCUN MOYEN d'y accéder (`body { overflow: hidden }`,
+   voulu pour le jeu en plein écran, ne laisse par défaut aucun scroll de secours ici). Seuil en
+   HAUTEUR (`max-height`), pas en largeur : le problème vient de l'espace vertical disponible, pas
+   de la largeur de l'écran (voir les media queries `max-width`/`pointer: coarse` existantes,
+   ciblant un souci différent). `align-items: flex-start` (au lieu de `center`) sous ce seuil :
+   centrer un contenu qui déborde son conteneur scrollable coupe classiquement le HAUT du contenu
+   hors de portée du scroll dans la plupart des moteurs — un point d'ancrage en haut, lui, reste
+   entièrement atteignable en scrollant vers le bas. */
+@media (max-height: 640px) {
+  .home-columns {
+    align-items: flex-start;
+    overflow-y: auto;
+    padding: 16px 16px 24px;
+  }
+}
+
 .home-column {
   background: rgba(241, 241, 243, 0.82);
   backdrop-filter: blur(20px);
@@ -1957,6 +1977,29 @@ a.btn-primary {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+/* CTA "créer un compte pour sauvegarder ce score" (demande utilisateur) — affiché uniquement à un
+   invité ayant un score/XP non nul en attente de réclamation (voir GameView.tsx,
+   `deathState.claimId`). Visuellement distinct des stats/actions (bordure accent) pour ressortir
+   sans dominer l'écran de mort. */
+.death-save-score-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--surface-hover);
+}
+.death-save-score-cta p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  text-align: center;
 }
 
 /* Minimap Overlay (3x3 Grid: 1-3 horizontal, A-C vertical) */

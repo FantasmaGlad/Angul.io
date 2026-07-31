@@ -142,7 +142,7 @@ C'est le **seul** point de contact entre `engine/` et un mod. Tous les hooks son
 | `onPlayerDeath(world, playerId)` | transition "a des morceaux" → "n'en a plus" | nettoyage d'état spécifique au mod |
 | `getAccelerationForMass(mass)` | à la demande (réseau) | alimente le panneau de stats client |
 | `getDashState(world, playerId)` | à la demande (réseau) | HUD dash (Hardcore uniquement) |
-| `transformScoreForAccount(rawScore, rawXp)` | à la mort/déconnexion, avant écriture en base | ex. Hardcore renvoie `{0, 0}` : aucune progression persistée |
+| `transformScoreForAccount(rawScore, rawXp)` | à la mort/déconnexion, avant écriture en base | transforme le score/XP brut de la vie avant crédit au compte (identité par défaut, voir `Room.transformScoreForAccount`) — aucun mode actuel ne le surcharge |
 
 Un mod n'implémente que ce dont il a besoin — `engine/room.ts` appelle chaque hook avec `?.()`.
 
@@ -193,10 +193,6 @@ export function createHardcoreMod(config: ParametricModConfig): GameMod {
     onPlayerInput(world, playerId, input) {
       base.onPlayerInput?.(world, playerId, input); // le mouvement de base s'applique TOUJOURS
       // ... ajoute la logique du Dash, absente de Vanilla ...
-    },
-
-    transformScoreForAccount() {
-      return { score: 0, xp: 0 }; // "mort = perte totale de la progression de la partie"
     },
   };
 }

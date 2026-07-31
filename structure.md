@@ -158,7 +158,7 @@ Angul.io/
 │   ├── migrations/                    Migrations node-pg-migrate (source de vérité exécutable)
 │   ├── configs/                       Configs JSON des mods paramétriques (voir README §Modding)
 │   │   ├── vanilla.json                     Mode par défaut
-│   │   └── hardcore.json                    Absorption x2, Dash uniquement (split désactivé), perte totale de score à la mort
+│   │   └── hardcore.json                    Absorption x2, Dash uniquement (split désactivé)
 │   ├── scripts/
 │   │   ├── hashPassword.mjs                 Génère un hash argon2 pour ADMIN_PASSWORD_HASH
 │   │   ├── loadtest.mjs                     Bots WebSocket pour valider la charge
@@ -211,6 +211,8 @@ Angul.io/
 │       │   ├── passwords.ts / .test.ts            Hachage/vérification argon2
 │       │   ├── levels.ts / .test.ts               Formule XP → niveau
 │       │   ├── sessionStore.ts / .test.ts         Sessions en mémoire (token → session, TTL 24h)
+│       │   ├── pendingScoreClaims.ts              Score/XP d'une vie d'invité en attente d'un compte
+│       │   │                                       (createScoreClaim/consume, symétrique de sessionStore.ts)
 │       │   └── service.ts / .test.ts              Logique métier (inscription/connexion/profil)
 │       ├── admin/
 │       │   ├── adminAuth.ts / .test.ts            Authentification admin (mot de passe unique ou comptes nommés)

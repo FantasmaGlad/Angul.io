@@ -104,6 +104,21 @@ export async function updateAvatarColor(
   return (await response.json()) as AccountProfile;
 }
 
+/** Réclame le score/XP d'une vie jouée en invité (voir `PENDING_SCORE_CLAIM_STORAGE_KEY` plus bas)
+ * pour le compte qui vient de se créer ou de se connecter — `claimed: false` (jamais une erreur
+ * levée) si le claim est inconnu/déjà réclamé/expiré côté serveur, voir routes/auth.ts
+ * `handleClaimScore`. */
+export async function claimScore(token: string, claimId: string): Promise<boolean> {
+  const response = await fetch('/api/account/claim-score', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ claimId }),
+  });
+  if (!response.ok) return false;
+  const body = (await response.json().catch(() => ({}))) as { claimed?: boolean };
+  return body.claimed ?? false;
+}
+
 /** Personnalisation de l'écran de mort (cahier des charges fourni) — renvoie le profil à jour. */
 export async function updateDeathScreen(
   token: string,
@@ -142,4 +157,22 @@ export function loadSession(): AuthResult | undefined {
 export function clearSession(): void {
   localStorage.removeItem(TOKEN_STORAGE_KEY);
   localStorage.removeItem(PSEUDO_STORAGE_KEY);
+}
+
+const PENDING_SCORE_CLAIM_STORAGE_KEY = 'angulio.pendingScoreClaim';
+
+/** Persiste l'identifiant de réclamation reçu à la mort (voir `DiedMessage.claimId`,
+ * GameView.tsx) — survit à la navigation vers `/compte` (et à un rechargement de page) pour être
+ * réclamé dès l'inscription/la connexion réussie (voir AccountPage.tsx). Jamais le score lui-même
+ * (voir le commentaire de `claimScore`) : uniquement cet identifiant opaque. */
+export function savePendingScoreClaim(claimId: string): void {
+  localStorage.setItem(PENDING_SCORE_CLAIM_STORAGE_KEY, claimId);
+}
+
+export function loadPendingScoreClaim(): string | undefined {
+  return localStorage.getItem(PENDING_SCORE_CLAIM_STORAGE_KEY) ?? undefined;
+}
+
+export function clearPendingScoreClaim(): void {
+  localStorage.removeItem(PENDING_SCORE_CLAIM_STORAGE_KEY);
 }

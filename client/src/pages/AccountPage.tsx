@@ -1,5 +1,14 @@
 import { useEffect, useState } from 'react';
-import { clearSession, login, register, saveSession, type AuthResult } from '../auth.js';
+import {
+  claimScore,
+  clearPendingScoreClaim,
+  clearSession,
+  loadPendingScoreClaim,
+  login,
+  register,
+  saveSession,
+  type AuthResult,
+} from '../auth.js';
 import { navigate } from '../router.js';
 import PageLayout from './PageLayout.js';
 
@@ -29,6 +38,16 @@ export default function AccountPage({ authSession, onAuthChange }: AccountPagePr
         saveSession(result);
         setPassword('');
         onAuthChange(result);
+        // Score/XP d'une vie jouée en invité juste avant de créer ce compte/se connecter (demande
+        // utilisateur, voir GameView.tsx `deathState.claimId`) — best-effort : un claim
+        // inconnu/déjà réclamé/expiré ne doit jamais bloquer l'inscription/connexion elle-même,
+        // déjà réussie à ce stade. Nettoyé dans TOUS les cas (succès ou échec) pour ne pas
+        // retenter indéfiniment un claim déjà périmé à chaque connexion future.
+        const pendingClaimId = loadPendingScoreClaim();
+        if (pendingClaimId) {
+          clearPendingScoreClaim();
+          void claimScore(result.token, pendingClaimId).catch(() => {});
+        }
         navigate('/profil');
       } catch (err) {
         setError((err as Error).message);

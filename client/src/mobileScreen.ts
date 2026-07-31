@@ -36,18 +36,38 @@ function lockLandscape(): void {
   orientation.lock('landscape').catch(() => {});
 }
 
+/** Plein écran SEUL, sans verrouillage d'orientation — à utiliser pour tout tap sur le LOBBY
+ * (demande utilisateur : pouvoir passer en plein écran juste en tapant l'écran/le logo, sans
+ * lancer de partie, voir Home.tsx). Ne verrouille JAMAIS le paysage ici : la mise en page de
+ * l'accueil (nav + 3 colonnes + pied de page) est pensée pour un défilement portrait normal, pas
+ * pour un viewport paysage étroit en hauteur — verrouiller le paysage dès le lobby y faisait
+ * déborder des éléments (ex. le bouton "Jouer", retour utilisateur) faute de scroll de secours
+ * (`body { overflow: hidden }`). Le verrouillage paysage reste réservé à l'ENTRÉE EN PARTIE
+ * (`enterMobileFullscreenLandscape` ci-dessous), où le HUD est réellement conçu pour ça (voir
+ * `.rotate-device-hint`). DOIT être appelé de façon SYNCHRONE dans le gestionnaire de clic (jamais
+ * après un `await`/`setTimeout`) : la plupart des navigateurs exigent un geste utilisateur direct
+ * pour `requestFullscreen()`, un appel différé serait silencieusement rejeté. */
+export function enterMobileFullscreen(): void {
+  if (!isTouchDevice()) return;
+  if (document.fullscreenElement) return;
+  document.documentElement.requestFullscreen?.().catch(() => {});
+}
+
 /** Plein écran + verrouillage paysage au lancement d'une partie sur téléphone (demande
  * utilisateur) — DOIT être appelé de façon SYNCHRONE dans le gestionnaire de clic qui démarre la
  * partie (jamais après un `await`/`setTimeout`) : la plupart des navigateurs exigent un geste
  * utilisateur direct pour `requestFullscreen()`, un appel différé serait silencieusement rejeté.
  * Meilleur effort uniquement : Safari iOS ne supporte ni le plein écran d'un élément arbitraire
  * (en dehors d'une balise `<video>`), ni le verrouillage d'orientation — ignoré silencieusement
- * là-bas, voir styles.css `.rotate-device-hint` pour le repli visuel sur cette plateforme. */
+ * là-bas, voir styles.css `.rotate-device-hint` pour le repli visuel sur cette plateforme.
+ *
+ * Réservée à l'ENTRÉE EN PARTIE (App.tsx) — PAS au lobby (voir `enterMobileFullscreen` ci-dessus,
+ * qui ne verrouille jamais l'orientation) : la mise en page du lobby n'est pas conçue pour un
+ * viewport paysage étroit en hauteur, contrairement au HUD de jeu. */
 export function enterMobileFullscreenLandscape(): void {
   if (!isTouchDevice()) return;
 
-  // Déjà en plein écran (ex. appelé de nouveau à chaque tap sur le lobby, voir Home.tsx) — évite
-  // une requête `requestFullscreen()` redondante à chaque interaction ; ne retente que le
+  // Déjà en plein écran — évite une requête `requestFullscreen()` redondante ; ne retente que le
   // verrouillage d'orientation seul, lui idempotent et sans effet de bord perceptible.
   if (document.fullscreenElement) {
     lockLandscape();

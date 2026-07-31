@@ -287,7 +287,7 @@ export class RoomInstance {
     }
 
     const allEntities = world.allEntities();
-    const topScores = computeTopScores(world, Array.from(world.allPlayers()), this.maxMassByPlayer);
+    const topScores = computeTopScores(world, Array.from(world.allPlayers()));
 
     for (const player of allPlayers) {
       let currentMass = 0;
@@ -322,7 +322,24 @@ export class RoomInstance {
           sharedSpectatorMessage = buildStateMessage({
             room: this.room,
             playerId: 'spectator',
-            tick,
+            // Renumérote en tick SPECTATEUR séquentiel (divise le tick de simulation brut par
+            // SPECTATOR_TICK_DIVISOR, toujours un entier exact ici — voir `shouldSendSpectatorTick`
+            // ci-dessus) plutôt que de transmettre le tick de simulation brut tel quel. Sans ce
+            // correctif : le `welcome.tickRateHz` annoncé à un spectateur est délibérément le taux
+            // RÉDUIT (divisé par SPECTATOR_TICK_DIVISOR, voir connectionHandler.ts) pour
+            // dimensionner correctement le buffer d'interpolation côté client — mais
+            // `RenderEngine.pushSnapshot` (client) suppose que CHAQUE unité du champ `tick` dure
+            // `1000/tickRateHz` (donc ~133ms au taux réduit), alors que le tick de simulation BRUT
+            // avance toujours de `SPECTATOR_TICK_DIVISOR` (4) entre deux envois spectateur — un
+            // delta de 4 interprété comme 4×133ms (~533ms) alors que seuls 4×33ms (~133ms) de temps
+            // réel se sont réellement écoulés : la ligne de temps de lecture du spectateur (ancrée
+            // une seule fois par connexion, jamais réinitialisée en cours de session) DÉRIVE alors
+            // de façon NON BORNÉE au fil de la session — mesuré : plusieurs secondes de retard
+            // croissant sur la partie réelle (retour utilisateur : "~3 secondes de retard" + rendu
+            // au ralenti, le buffer d'interpolation restant anormalement plein). Diviser le tick ICI
+            // fait en sorte qu'une unité de `tick` corresponde exactement à un envoi spectateur, en
+            // cohérence avec le `tickRateHz` réduit annoncé — plus aucune divergence possible.
+            tick: Math.floor(tick / SPECTATOR_TICK_DIVISOR),
             entities: spectatorEntities,
             topScores,
           }).message;

@@ -24,10 +24,11 @@ const DEFAULT_HARDCORE_CONFIG: HardcoreModConfig = { massGainMultiplier: 2 };
  * n'est PAS réductible à un fichier de config : un mod peut être écrit en **composant** un mod
  * existant plutôt qu'en dupliquant tout son mouvement/split/fusion/bords/decay (identiques ici
  * à Vanilla, cf. cahier des charges §3.4 #2 — rien à y changer) — ne réécrit que ce qui diffère
- * réellement : le gain de masse multiplié à l'absorption d'un autre joueur (`onCollision`), la
- * conséquence d'une mort (`transformScoreForAccount`), et le Dash (`onPlayerInput`/`onTick`/
- * `getDashState`, absent de Vanilla) — Hardcore relaie `base.onTick?.(world, dt)` ci-dessous pour
- * le reste (mouvement/decay/nourriture), inchangé par rapport à Vanilla.
+ * réellement : le gain de masse multiplié à l'absorption d'un autre joueur (`onCollision`), et le
+ * Dash (`onPlayerInput`/`onTick`/`getDashState`, absent de Vanilla) — Hardcore relaie
+ * `base.onTick?.(world, dt)` ci-dessous pour le reste (mouvement/decay/nourriture), inchangé par
+ * rapport à Vanilla. Ne réécrit PAS `transformScoreForAccount` : score et XP sont crédités
+ * normalement à la mort, comme dans tout autre mode (identité, voir `Room.transformScoreForAccount`).
  */
 export function createHardcoreMod(
   config: ParametricModConfig,
@@ -235,13 +236,6 @@ export function createHardcoreMod(
       } else if (b.mass > a.mass) {
         handleEatAttempt(world, b, a);
       }
-    },
-
-    transformScoreForAccount() {
-      // "Perte totale de la progression XP de la partie en cas de mort" (§3.4 #2) : contrairement
-      // aux autres modes, une vie qui se termine (mort ou déconnexion, Lot 3.5) ne crédite ni
-      // score ni XP — comme si la vie n'avait pas eu lieu.
-      return { score: 0, xp: 0 };
     },
   };
 }

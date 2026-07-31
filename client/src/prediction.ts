@@ -187,10 +187,20 @@ const RECONCILE_JITTER_TOLERANCE_TICKS = 1.5;
  * hériter du plafond, bien plus large, dimensionné pour l'autre. */
 const RECONCILE_ACCEL_BIAS_MAX_PX = 3.0;
 /** Plafond (px) du terme de tolérance à la gigue ci-dessus (`replayChunkJitterPx` dans
- * `reconcile`) — borne de sécurité du même ordre qu'un tick à vitesse de croisière élevée, pour
- * qu'un mod/test à la vitesse démesurée ne fasse pas s'envoler CE terme précis ; grand devant son
- * usage normal (un mode réaliste dépasse rarement quelques dizaines de px/tick). */
-const RECONCILE_JITTER_TOLERANCE_MAX_PX = 60.0;
+ * `reconcile`) — borne de sécurité, pas un usage normal en soi. Doit couvrir la vitesse RÉELLE la
+ * plus élevée du jeu, pas seulement la vitesse de croisière : depuis que `replayChunkJitterPx` se
+ * base sur `length(predicted.velocity)` (vitesse réelle, voir son commentaire) plutôt que sur la
+ * seule masse, l'impulsion de Dash (4050px/s) produit un terme brut d'environ
+ * `4050 × (1/30) × 1.5 ≈ 200px` à 30Hz — un ancien plafond de 60px l'écrêtait sévèrement,
+ * laissant EXACTEMENT le bruit de découpage temporel normal pendant tout un Dash retomber dans la
+ * branche "lissage visuel" (`visualOffset`) au lieu d'être ignoré comme le bruit qu'il est : une
+ * micro-correction visible à CHAQUE `state` reçu tant que la vitesse reste élevée, perçue comme un
+ * mini rollback continu (retour utilisateur : "mini roll back tout au long du dash", pas
+ * seulement à son déclenchement). Relevé à 220px : couvre confortablement la vitesse de Dash la
+ * plus élevée du jeu, avec une marge pour la latence/gigue réseau réelle (voir
+ * `RECONCILE_JITTER_TOLERANCE_TICKS`) ; un mod/test futur à vitesse encore plus démesurée reste
+ * borné par CETTE constante, jamais illimité. */
+const RECONCILE_JITTER_TOLERANCE_MAX_PX = 220.0;
 /** Pas de temps interne FIXE auquel `step()` intègre la simulation locale (voir le commentaire
  * d'en-tête, "fix your timestep") — indépendant du `dt` réel de la frame de rendu. Assez fin pour
  * qu'aucun sous-pas ne soit perceptible individuellement, même sur un écran très haut
@@ -335,9 +345,19 @@ export class LocalPrediction {
         accelerationForMass(predicted.mass, movement) * tickSeconds * tickSeconds * 0.5 *
           RECONCILE_IGNORE_SAFETY_FACTOR,
       );
+      // Vitesse RÉELLE du morceau (`predicted.velocity`, jusqu'à 4050px/s pendant un Dash), pas la
+      // vitesse de croisière théorique dérivée de sa seule masse (`velocityForMass`) — le bruit de
+      // découpage temporel du rejeu (voir le commentaire ci-dessus) est proportionnel à la distance
+      // RÉELLEMENT parcourue par tick, qui explose pendant un Dash bien au-delà de cette vitesse de
+      // croisière. Utiliser `velocityForMass` ici sous-estimait ce bruit d'un facteur ~15x pendant
+      // un Dash (4050px/s contre ~245-300px/s de croisière) : une part de ce bruit, pourtant
+      // parfaitement normal à cette vitesse, dépassait alors le seuil de tolérance ET parfois même
+      // `RECONCILE_SNAP_THRESHOLD_PX` — un saut/téléportation visuelle plutôt qu'un lissage, surtout
+      // sensible au tout début du Dash (vitesse au plus haut, voir retour utilisateur : "lag
+      // persiste surtout à haute vitesse et au début de l'animation du dash").
       const replayChunkJitterPx = Math.min(
         RECONCILE_JITTER_TOLERANCE_MAX_PX,
-        velocityForMass(predicted.mass, movement) * tickSeconds * RECONCILE_JITTER_TOLERANCE_TICKS,
+        length(predicted.velocity) * tickSeconds * RECONCILE_JITTER_TOLERANCE_TICKS,
       );
       const dynamicIgnoreThresholdPx = Math.max(
         RECONCILE_IGNORE_FLOOR_PX,
