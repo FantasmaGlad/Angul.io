@@ -999,6 +999,17 @@ export default function GameView({
       <VirtualControls inputRef={inputRef} hasDash={dashInfo !== undefined} />
 
       <pre className="debug-overlay" ref={debugOverlayRef} />
+
+      {/* Repli visuel "Tournez votre appareil" (demande utilisateur : jeu verrouillé en paysage
+          sur téléphone) — invisible par défaut, affiché en CSS uniquement en portrait sur
+          pointeur tactile (voir styles.css `.rotate-device-hint`). Couvre le cas Safari iOS, qui
+          ne supporte ni le plein écran d'élément arbitraire ni le verrouillage d'orientation
+          (voir mobileScreen.ts) : le verrouillage programmatique ne fonctionne alors pas, mais ce
+          message invite quand même l'utilisateur à tourner son téléphone lui-même. */}
+      <div className="rotate-device-hint" aria-hidden="true">
+        <span className="material-symbols-outlined rotate-device-icon">screen_rotation</span>
+        <p>Tourne ton téléphone pour jouer en mode paysage</p>
+      </div>
     </>
   );
 }

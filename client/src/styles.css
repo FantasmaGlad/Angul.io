@@ -2378,6 +2378,50 @@ a.btn-primary {
   color: var(--accent-ink);
 }
 
+/* --- Repli "Tournez votre appareil" (GameView.tsx, demande utilisateur : jeu verrouillé en
+   paysage sur téléphone) — le verrouillage programmatique (mobileScreen.ts) échoue silencieusement
+   sur Safari iOS (aucun support), ce message reste alors le seul moyen de guider l'utilisateur. */
+.rotate-device-hint {
+  display: none;
+}
+
+@media (pointer: coarse) and (orientation: portrait) {
+  .rotate-device-hint {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    z-index: 500;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    background: rgba(10, 14, 23, 0.96);
+    color: #fff;
+    text-align: center;
+    padding: 24px;
+  }
+  .rotate-device-icon {
+    font-size: 64px;
+    animation: rotate-hint-spin 1.8s ease-in-out infinite;
+  }
+  .rotate-device-hint p {
+    font-size: 15px;
+    font-weight: 600;
+    max-width: 260px;
+    margin: 0;
+  }
+}
+
+@keyframes rotate-hint-spin {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(-90deg);
+  }
+}
+
 /* --- Contrôles tactiles mobile (VirtualControls.tsx, demande utilisateur) -------------------
    Joystick virtuel (assets/Joystick/JoystickFond.png + Joystick.png) en bas à gauche + bouton
    d'action (Dash/Split selon le mode) en bas à droite. Masqués par défaut, affichés uniquement

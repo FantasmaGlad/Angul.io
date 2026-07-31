@@ -13,6 +13,13 @@
          validation complète du support iOS reste différée (voir plan_implementation.md 7.5). -->
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#ffffff" />
+    <!-- Audit mobile : masque la barre Safari iOS une fois l'app ajoutée à l'écran d'accueil
+         (`display: standalone` du manifeste ne suffit pas sur iOS, qui n'a pas de support natif
+         du manifeste PWA — voir manifest.json). Sans effet dans un onglet Safari classique (non
+         ajouté à l'écran d'accueil) : iOS n'expose aucun moyen JS de forcer ça depuis un onglet. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="icon" type="image/png" href="/icons/icon-192.png" />
     <link rel="apple-touch-icon" href="/icons/icon-512.png" />

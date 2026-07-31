@@ -5,6 +5,7 @@ import AssetPreloader from './components/AssetPreloader.js';
 import Home from './components/Home.js';
 import GameView from './components/GameView.js';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
+import { enterMobileFullscreenLandscape, exitMobileFullscreenLandscape } from './mobileScreen.js';
 import { navigate, usePath } from './router.js';
 import {
   fetchAvailableModes,
@@ -163,6 +164,10 @@ export default function App() {
 
   const enterGame = useCallback(
     (roomIdOrInviteCode: string, inviteCodeToShow?: string) => {
+      // Synchrone, avant tout `await`/`setTimeout` (demande utilisateur, mobile) : la plupart des
+      // navigateurs n'honorent `requestFullscreen()` que dans la pile d'appel directe d'un geste
+      // utilisateur (clic) — voir mobileScreen.ts.
+      enterMobileFullscreenLandscape();
       setLeaving(true);
       const nicknameToUse = nickname.trim() || 'Joueur';
       // Laisse jouer la transition CSS (zoom out de l'UI, zoom in du fond spectateur, voir
@@ -180,6 +185,12 @@ export default function App() {
   // salon `permanent` plutôt que le premier de la liste (qui ne fonctionnait que par coïncidence
   // d'ordre — voir RoomSummary.permanent, server/src/engine/roomManager.ts).
   const handlePlay = useCallback(() => {
+    // Synchrone ici (avant le `await fetchPublicRooms()` plus bas) plutôt que de compter sur le
+    // rappel équivalent au tout début d'`enterGame` : certains navigateurs (Safari) n'accordent le
+    // geste utilisateur nécessaire à `requestFullscreen()` qu'à la pile d'appel SYNCHRONE du clic,
+    // pas après un premier `await` — voir mobileScreen.ts. Idempotent, sans effet néfaste si
+    // `enterGame` la redéclenche une seconde fois juste après (déjà en plein écran/verrouillé).
+    enterMobileFullscreenLandscape();
     void (async () => {
       setHomeError('');
       try {
@@ -206,6 +217,7 @@ export default function App() {
 
   const handleExit = useCallback(
     (message?: string) => {
+      exitMobileFullscreenLandscape();
       setSession(null);
       if (message) setHomeError(message);
       void refreshLobby();
