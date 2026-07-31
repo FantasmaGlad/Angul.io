@@ -148,7 +148,8 @@ Angul.io/
 │       ├── adminProtocol.ts           Types des messages du canal WebSocket admin dédié (`?admin=1`)
 │       ├── botIdentities.ts           Dictionnaire des identités de bots (pseudo + couleur)
 │       ├── botKillMessages.ts         Répliques affichées à l'écran de mort quand tué par un bot
-│       ├── avatarPalette.ts           Palette de couleurs d'avatar (14 skins) + repli déterministe par pseudo
+│       ├── avatarPalette.ts           Palette de couleurs d'avatar (10 skins, roster remplacé en v5.5) + repli
+│       │                               déterministe par pseudo
 │       └── deathBanners.ts            Catalogue des bannières de l'écran de mort (déblocage par niveau)
 │
 ├── server/                            Serveur de jeu

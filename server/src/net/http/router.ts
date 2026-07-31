@@ -55,7 +55,7 @@ export async function handleHttpRequest(
   const url = new URL(req.url ?? '/', 'http://localhost');
   // `URL.pathname` (API WHATWG) garde le chemin PERCENT-ENCODÉ tel quel (`%20`, `%C3%89`...) — ce
   // n'est PAS déjà décodé, contrairement à ce qu'on pourrait attendre. Un chemin de fichier statique
-  // contenant un espace/caractère accentué (ex. un skin d'avatar, `assets/Profil/Banane Épic.png`)
+  // contenant un espace/caractère accentué (ex. un skin d'avatar, `assets/Profil/Samouraï.png`)
   // ne correspondait donc jamais au vrai nom de fichier sur disque (`stat()`/comparaison insensible
   // à la casse de `serveStatic` comparés à un `%20` littéral) — retour utilisateur : 404 sur un
   // skin dont le nom de fichier contient un espace. Repli sur le chemin brut si le décodage échoue

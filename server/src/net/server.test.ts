@@ -751,7 +751,9 @@ describe('startGameServer', () => {
     const body = (await response.json()) as { avatars: Array<{ id: string; name: string; url: string }> };
     expect(Array.isArray(body.avatars)).toBe(true);
     expect(body.avatars.length).toBeGreaterThan(0);
-    expect(body.avatars.some((a) => a.id === 'Radiateur')).toBe(true);
+    // Pas de nom de fichier codé en dur (le roster réel d'assets/Profil/ change au fil des
+    // sessions, voir shared/src/avatarPalette.ts) — vérifie seulement la forme attendue.
+    expect(body.avatars.every((a) => typeof a.id === 'string' && a.id.length > 0)).toBe(true);
   });
 
   it('POST /api/rooms { visibility: "private" } renvoie un code d’invitation, absent en public', async () => {

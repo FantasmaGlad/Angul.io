@@ -267,7 +267,7 @@
         "profil",
         "bots"
       ],
-      "description": "SKINS/SKIN_IMAGE_MAP (roster d'avatars, source de verite unique — 14 skins depuis v5.5 : +Cacahuete/Fekeboude en string/Olivia), DEFAULT_SKIN, isValidSkin, skinForNickname (choix deterministe), getRandomSkin. Si assets/Profil/ change, mettre a jour SKINS/SKIN_IMAGE_MAP ici. Un skin qui en sort (asset supprime) est detecte et remplace au hasard par AccountsService.ensureValidAvatarColor (service.ts, comptes) et App.tsx (guestSkin, invites) — jamais laisse comme avatar casse."
+      "description": "SKINS/SKIN_IMAGE_MAP (roster d'avatars, source de verite unique — roster complet remplace en v5.5 : Baamix/La Mouche/Monstera/Oli/Pieuvrito/Requin/Samourai/Scoobi/Seigneur/Skibidi, 10 skins), DEFAULT_SKIN, isValidSkin, skinForNickname (choix deterministe), getRandomSkin. Si assets/Profil/ change, mettre a jour SKINS/SKIN_IMAGE_MAP ici (et client/src/render.ts colorForSkinFallback). Un skin qui en sort (asset supprime) est detecte et remplace au hasard par AccountsService.ensureValidAvatarColor (service.ts, comptes) et App.tsx (guestSkin, invites) — jamais laisse comme avatar casse."
     },
     {
       "path": "shared/src/deathBanners.ts",

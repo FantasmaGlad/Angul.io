@@ -1,20 +1,16 @@
 /** Skins d'avatar choisissables et utilisables en jeu pour les joueurs et les bots.
  * Les fichiers PNG correspondants sont hébergés sous `/assets/Profil/`. */
 export const SKINS = [
-  'Baamix LSD',
-  'Banane Épic',
-  'Cacahuete',
-  'Calamoche',
-  'Fékeboudé en string',
+  'Baamix',
+  'La Mouche',
   'Monstera',
-  'Mouche Moche',
-  'Olivia',
-  'Pieuvre Défoncée',
-  'Radiateur',
-  'Robibou',
+  'Oli',
+  'Pieuvrito',
+  'Requin',
+  'Samouraï',
   'Scoobi',
+  'Seigneur',
   'Skibidi',
-  'Souris Parapluis',
 ] as const;
 
 export type SkinId = (typeof SKINS)[number];
@@ -26,20 +22,16 @@ export type SkinId = (typeof SKINS)[number];
 export const DEFAULT_SKIN: SkinId = SKINS[0];
 
 export const SKIN_IMAGE_MAP: Record<string, string> = {
-  'Baamix LSD': '/assets/Profil/Baamix LSD.png',
-  'Banane Épic': '/assets/Profil/Banane Épic.png',
-  Cacahuete: '/assets/Profil/Cacahuete.png',
-  Calamoche: '/assets/Profil/Calamoche.png',
-  'Fékeboudé en string': '/assets/Profil/Fékeboudé en string.png',
+  Baamix: '/assets/Profil/Baamix.png',
+  'La Mouche': '/assets/Profil/La Mouche.png',
   Monstera: '/assets/Profil/Monstera.png',
-  'Mouche Moche': '/assets/Profil/Mouche Moche.png',
-  Olivia: '/assets/Profil/Olivia.png',
-  'Pieuvre Défoncée': '/assets/Profil/Pieuvre Défoncée.png',
-  Radiateur: '/assets/Profil/Radiateur.png',
-  Robibou: '/assets/Profil/Robibou.png',
+  Oli: '/assets/Profil/Oli.png',
+  Pieuvrito: '/assets/Profil/Pieuvrito.png',
+  Requin: '/assets/Profil/Requin.png',
+  Samouraï: '/assets/Profil/Samouraï.png',
   Scoobi: '/assets/Profil/Scoobi.png',
+  Seigneur: '/assets/Profil/Seigneur.png',
   Skibidi: '/assets/Profil/Skibidi.png',
-  'Souris Parapluis': '/assets/Profil/Souris Parapluis.png',
 };
 
 /** Palette d'avatars — exportée pour compatibilité avec l'existant (`ProfilePage`, `AccountsService`...) */

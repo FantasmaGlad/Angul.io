@@ -57,17 +57,16 @@ function getCircularSkinImage(skinId: string): HTMLCanvasElement | null {
 export function colorForSkinFallback(skinId: string): string {
   if (skinId.startsWith('#')) return skinId;
   const map: Record<string, string> = {
-    'Baamix LSD': '#FFE135',
-    'Banane Épic': '#FFC300',
-    Calamoche: '#40A9FF',
+    Baamix: '#FFE135',
+    'La Mouche': '#9254DE',
     Monstera: '#2E8B57',
-    'Mouche Moche': '#9254DE',
-    'Pieuvre Défoncée': '#7A3FA0',
-    Radiateur: '#9254DE',
-    Robibou: '#E05A47',
+    Oli: '#FFC300',
+    Pieuvrito: '#7A3FA0',
+    Requin: '#40A9FF',
+    Samouraï: '#E05A47',
     Scoobi: '#C9702E',
+    Seigneur: '#9254DE',
     Skibidi: '#B23A2E',
-    'Souris Parapluis': '#73D13D',
   };
   return map[skinId] ?? '#3a6b35';
 }
