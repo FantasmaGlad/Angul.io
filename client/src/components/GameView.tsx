@@ -8,6 +8,7 @@ import type {
 import {
   DEFAULT_DEATH_BANNER_ID,
   DEFAULT_DEATH_MESSAGE,
+  dashSpeedForMass,
   isCustomImageBanner,
   WS_CLOSE_NICKNAME_TAKEN,
   WS_CLOSE_ROOM_EXPIRED,
@@ -390,7 +391,10 @@ export default function GameView({
         const dy = lastMouseY - centerY;
         const len = Math.hypot(dx, dy);
         const dir = len > 0 ? { x: dx / len, y: dy / len } : { x: 1, y: 0 };
-        prediction.applyDash(dir, 4050);
+        // Impulsion atténuée avec la masse (cahier des charges §4a) — même formule partagée que
+        // le serveur (voir mods/hardcore/index.ts), pour ne jamais diverger/roll back au dash.
+        const ownMassForDash = ownAggregate(latestSnapshot, selfPlayerId)?.mass ?? 50;
+        prediction.applyDash(dir, dashSpeedForMass(ownMassForDash));
 
         // Envoi réseau IMMÉDIAT du dash, hors de la cadence normale de `scheduleInput` (plus bas) —
         // sans ça, l'input `dash: true` n'aurait été envoyé qu'au PROCHAIN tick programmé (jusqu'à
@@ -831,6 +835,11 @@ export default function GameView({
       const drawStart = performance.now();
       const renderInfo = renderFrame(ctx!, canvas!, entities, camera, nicknames, colors, selfPlayerId);
       const drawTimeMs = performance.now() - drawStart;
+      // Purge définitive des pastilles mangées ce cadre (voir renderEngine.ts `forgetFood`) —
+      // sans ça, le filtrage visuel de `renderFrame` ne les masque que le temps que le blob reste
+      // dessus, elles réapparaissent dès qu'il s'en éloigne (correctif "pastille mangée qui met
+      // plusieurs secondes à disparaître").
+      if (renderInfo.eatenFoodIds.length > 0) renderEngine.forgetFood(renderInfo.eatenFoodIds);
 
       if (hudRef.current) {
         const status = isReconnecting

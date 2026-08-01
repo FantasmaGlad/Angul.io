@@ -205,7 +205,7 @@
         "rayon",
         "collision"
       ],
-      "description": "Formules masse<->aire<->rayon, aire de chevauchement de cercles."
+      "description": "Formules masse<->aire<->rayon (blobGrowthFactor : croissance visuelle a 2 regimes, rapide puis plate, v5.8), aire de chevauchement de cercles."
     },
     {
       "path": "shared/src/camera.ts",
@@ -217,7 +217,7 @@
         "interet",
         "v5.7"
       ],
-      "description": "Formule de zoom (masse->echelle) et rayon d'interet reseau (interestRadiusForMass) — IDENTIQUE client (computeCamera, render.ts) et serveur (interestFilter.ts), pour ne jamais desynchroniser ce qui est visible et ce qui est envoye. Voir cahier_des_charges_perf_reseau_grande_carte.md."
+      "description": "Formule de zoom (masse->echelle) et rayon d'interet reseau (interestRadiusForMass) — IDENTIQUE client (computeCamera, render.ts) et serveur (interestFilter.ts), pour ne jamais desynchroniser ce qui est visible et ce qui est envoye. Voir cahier_des_charges_perf_reseau_grande_carte.md. v5.8 : computeScaleForMass derive desormais l'inverse exact de blobGrowthFactor (geometry.ts), + rezoom global x1.5."
     },
     {
       "path": "shared/src/movement.ts",
@@ -228,7 +228,7 @@
         "acceleration",
         "prediction"
       ],
-      "description": "Modele vitesse/accel en fonction de la masse — IDENTIQUE client (prediction) et serveur (autorite)."
+      "description": "Modele vitesse/accel/decel/dash en fonction de la masse — IDENTIQUE client (prediction) et serveur (autorite). v5.8 : decelerationForMass (taux de freinage dedie, distinct de l'acceleration) et dashSpeedForMass (dash Hardcore attenue si gros)."
     },
     {
       "path": "shared/src/protocol.ts",

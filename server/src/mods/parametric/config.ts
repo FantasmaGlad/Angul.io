@@ -17,6 +17,15 @@ import type { RoomResetSchedule } from '../../engine/resetSchedule.js';
  * (cahier_des_charges.md §3.5 / metriques.md v0.1).
  */
 
+/** Un palier de perte de masse passive (voir `ParametricModConfig['decay']['tiers']` et
+ * `decayLambda`, physics.ts) : à partir de `minMass`, un morceau perd `rate` (fraction, ex. 0.01 =
+ * 1%) de sa masse toutes les `intervalSec` secondes tant qu'il reste dans ce palier. */
+export interface DecayTier {
+  minMass: number;
+  rate: number;
+  intervalSec: number;
+}
+
 /** Un type de pellet de nourriture (voir `ParametricModConfig['food']['pelletTypes']`). */
 export interface FoodPelletType {
   /** Purement informatif (lisibilité des fichiers de config/journal) — jamais transmis au
@@ -58,8 +67,13 @@ export interface ParametricModConfig {
     velocityFloor: number;
     /** A0 (px/s²) — accélération (taux de rapprochement vers la vitesse cible) pour M0. */
     accelerationBase: number;
-    /** alpha — exposant d'atténuation : a(m) = A0*(M0/m)^alpha. */
+    /** alpha — exposant d'atténuation : a(m) = A0*(M0/m)^alpha. Régit la MISE EN MOUVEMENT
+     * uniquement — voir `decelerationMassExponent` pour le freinage. */
     accelerationMassExponent: number;
+    /** delta — exposant d'atténuation dédié au FREINAGE (relâchement de l'input) — voir
+     * `MovementConfig.decelerationMassExponent` (shared/src/movement.ts) pour le détail. Absent =
+     * repli sur `accelerationMassExponent` (un seul exposant partagé, comportement historique). */
+    decelerationMassExponent?: number;
   };
 
   split: {
@@ -116,17 +130,22 @@ export interface ParametricModConfig {
     absorptionDurationSec?: number;
   };
 
-  /** Perte de masse passive — Mm (`floor`) et Ml (les taux/seuil) de la feuille Excel,
-   * §1 du dictionnaire. Le seuil (`threshold`) n'est plus lié à `player.startMass` (v0.1) :
-   * c'est une valeur absolue propre au mode. */
+  /** Perte de masse passive — Mm (`floor`) de la feuille Excel §1 du dictionnaire, `tiers`
+   * remplaçant les paliers Ml d'origine par un système à N paliers arbitraires (voir
+   * `decayLambda`, physics.ts) — nécessaire pour que la sévérité de la décroissance passive
+   * diffère réellement d'un mode à l'autre (cahier des charges §4d : douce en Vanilla, punitive en
+   * Hardcore), ce que l'ancien schéma à 2 paliers fixes ne permettait pas correctement. */
   decay: {
-    /** Ml — masse en-dessous de laquelle le taux de perte passe de `rateAboveThreshold` à
-     * `rateBelowThreshold`. Vanilla : 100 (= son propre `minSplitMass`). */
-    threshold: number;
-    rateAboveThreshold: number;
-    intervalAboveThresholdSec: number;
-    rateBelowThreshold: number;
-    intervalBelowThresholdSec: number;
+    /** Paliers de perte, PAS nécessairement triés (le palier retenu est celui de `minMass` le
+     * plus élevé restant <= la masse courante) — voir `DecayTier`. Un premier palier
+     * `{ minMass: 0, rate: 0, ... }` désactive explicitement toute perte en-dessous du premier
+     * vrai seuil punitif. */
+    tiers: DecayTier[];
+    /** Délai (s) depuis la dernière prise de masse en-dessous duquel la perte passive ne
+     * s'applique jamais, quel que soit le palier — laisse un joueur qui vient de manger
+     * tranquille un court instant plutôt que de le pénaliser en continu. Un mode plus punitif
+     * (Hardcore) utilise une valeur plus courte. */
+    graceSec: number;
     /** Mm — masse minimale que la perte passive ne peut jamais franchir. */
     floor: number;
   };

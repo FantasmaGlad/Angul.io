@@ -26,6 +26,7 @@ import {
   absorptionDurationSec,
   applyPassiveDecay,
   accelerationForMass,
+  decelerationForMass,
   eatOverlapFraction,
   ejectEnabled,
   foodTargetCount,
@@ -519,7 +520,16 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         // la zone morte (intensity=0, accelIntensity=1) où l'on garde l'accélération pleine pour
         // décélérer réellement la vélocité résiduelle vers 0 (voir inputVectorOf).
         const targetVelocity = scale(direction, velocityForMass(entity.mass, config) * intensity);
-        const maxChange = accelerationForMass(entity.mass, config) * accelIntensity * dt;
+        // Freinage (vitesse cible < vitesse actuelle, ex. relâchement de l'input) vs mise en
+        // mouvement (vitesse cible >= vitesse actuelle) : deux taux DISTINCTS depuis le cahier des
+        // charges §4a ("que le blob ralentisse moins vite en fonction de sa masse") — un gros blob
+        // reste aussi réactif qu'avant pour accélérer, mais conserve désormais nettement plus son
+        // élan en freinant (voir `decelerationForMass`/`MovementConfig.decelerationMassExponent`).
+        const isDecelerating = length(targetVelocity) < length(entity.velocity);
+        const rate = isDecelerating
+          ? decelerationForMass(entity.mass, config)
+          : accelerationForMass(entity.mass, config);
+        const maxChange = rate * accelIntensity * dt;
         entity.velocity = moveToward(entity.velocity, targetVelocity, maxChange);
 
         const decayedMass = applyPassiveDecay(entity.mass, dt, config, state.timeSinceLastEatenS);

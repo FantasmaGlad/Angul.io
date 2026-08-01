@@ -149,6 +149,11 @@ export function computeCamera(
 export interface RenderFrameResult {
   drawCalls: number;
   batches: number;
+  /** Ids des pastilles considérées "mangées" ce cadre (voir `partitionEatenFood` ci-dessous) —
+   * l'appelant (GameView.tsx) les fait DÉFINITIVEMENT oublier via `RenderEngine.forgetFood`,
+   * plutôt que ce filtrage ne reste qu'une astuce d'affichage locale à la frame (voir son
+   * commentaire). */
+  eatenFoodIds: string[];
 }
 
 /** Marge (en pixels *monde*) ajoutée autour du viewport pour le culling — évite qu'une entité en
@@ -224,21 +229,7 @@ export function renderFrame(
   drawGrid(ctx, canvas, camera, toScreenX, toScreenY);
   drawCalls++;
 
-  // Récupération des créatures pour la disparition instantanée des pastilles dès la collision à 5%
-  const creatures = entities.filter((e) => e.k === 'c');
-
-  const visibleEntities = entities.filter((entity) => {
-    if (entity.k !== 'f') return true;
-    for (const c of creatures) {
-      const dx = entity.x - c.x;
-      const dy = entity.y - c.y;
-      const hitRadius = c.r * 1.05 + entity.r;
-      if (dx * dx + dy * dy <= hitRadius * hitRadius) {
-        return false; // Disparition instantanée sans animation dès l'impact
-      }
-    }
-    return true;
-  });
+  const { visible: visibleEntities, eatenIds: eatenFoodIds } = partitionEatenFood(entities);
 
   const foodEntities = visibleEntities.filter((e) => e.k === 'f');
   const foodPathsByColor = new Map<string, Path2D>();
@@ -371,7 +362,38 @@ export function renderFrame(
   return {
     drawCalls,
     batches: foodPathsByColor.size + 1,
+    eatenFoodIds,
   };
+}
+
+/** Sépare `entities` en (pastilles visibles, ids de pastilles "mangées" ce cadre) — une pastille
+ * est considérée mangée dès qu'elle chevauche une créature (joueur/bot) à 5% de marge, quel que
+ * soit le propriétaire de cette créature (repli approximatif : une pastille mangée par un AUTRE
+ * joueur disparaît aussi de mon écran dès qu'elle touche son morceau, cohérent avec l'autorité
+ * serveur). Extrait en fonction pure (plutôt qu'inline dans `renderFrame`) pour que l'appelant
+ * (RenderEngine.forgetFood, voir renderEngine.ts) puisse purger ces ids DÉFINITIVEMENT de l'état
+ * de delta réseau (`knownFood`) — sans ça, ce filtrage ne masquait la pastille que pour LE CADRE
+ * COURANT (elle réapparaît dès que le blob s'en éloigne, la nourriture mangée n'étant retirée du
+ * delta serveur qu'à la prochaine resynchronisation périodique, jusqu'à ~5s plus tard — voir
+ * cahier_des_charges_perf_reseau_grande_carte.md §3.5, correctif "pastilles mangées qui mettent
+ * plusieurs secondes à disparaître"). */
+function partitionEatenFood(entities: EntitySnapshot[]): { visible: EntitySnapshot[]; eatenIds: string[] } {
+  const creatures = entities.filter((e) => e.k === 'c');
+  const eatenIds: string[] = [];
+  const visible = entities.filter((entity) => {
+    if (entity.k !== 'f') return true;
+    for (const c of creatures) {
+      const dx = entity.x - c.x;
+      const dy = entity.y - c.y;
+      const hitRadius = c.r * 1.05 + entity.r;
+      if (dx * dx + dy * dy <= hitRadius * hitRadius) {
+        eatenIds.push(entity.i);
+        return false; // Disparition instantanée sans animation dès l'impact
+      }
+    }
+    return true;
+  });
+  return { visible, eatenIds };
 }
 
 /** Taille de police plancher pour un pseudo (bot ou joueur humain) — en-deçà, le texte devient

@@ -153,6 +153,18 @@ export class RenderEngine {
    * respectif, inchangés par ce correctif. */
   private knownFood = new Map<string, EntitySnapshot>();
 
+  /** Oublie définitivement les pastilles `ids` (voir `render.ts` `partitionEatenFood`) — appelé
+   * par GameView dès qu'une pastille est détectée mangée à l'écran (chevauchement avec une
+   * créature), pour que `pushSnapshot` cesse de la refusionner dans `mergedEntities` à partir du
+   * prochain tick. Sans ça, une pastille mangée restait indéfiniment dans `knownFood` (le delta
+   * réseau ne la retire jamais explicitement, seule une resynchronisation complète le fait, voir
+   * son commentaire) : elle réapparaissait dès que le blob s'en éloignait (le filtrage de
+   * `render.ts` ne la masque que tant qu'il reste dans son rayon de collision), jusqu'à la
+   * prochaine resynchro (~5s) — bug "pastille mangée qui met plusieurs secondes à disparaître". */
+  public forgetFood(ids: Iterable<string>): void {
+    for (const id of ids) this.knownFood.delete(id);
+  }
+
   /** `entitiesFull` — voir `WorldStateMessage.entitiesFull` (shared/src/protocol.ts) : `true`
    * (défaut, comportement historique) si `entities` est la liste COMPLÈTE et autoritaire de la
    * nourriture actuellement pertinente (spectateur/vue admin, resynchronisation périodique, repli

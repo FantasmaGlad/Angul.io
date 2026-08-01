@@ -391,8 +391,9 @@ dans le cahier des charges admin local (non committé, voir §1).
 | `npm run lint` | ESLint sur tout le dépôt (y compris `.tsx`) |
 | `npm run format` / `format:check` | Prettier (écrit / vérifie seulement) |
 
-Serveur : `TICK_RATE_HZ` (défaut 30), `ROOM_WORKERS` (défaut = nombre de cœurs, `0` = mono-thread
-sans worker_threads, utile en debug) — voir `server/src/index.ts` et README §Réseau.
+Serveur : `TICK_RATE_HZ` (défaut 20, v5.8 — était 30), `ROOM_WORKERS` (défaut = nombre de cœurs,
+`0` = mono-thread sans worker_threads, utile en debug) — voir `server/src/index.ts` et README
+§Réseau.
 
 ---
 

@@ -20,12 +20,13 @@ export function testConfig(overrides: Partial<ParametricModConfig> = {}): Parame
     merge: { baseTimeSec: 30, massFactor: 0, overlapMinFraction: 0.3 },
     eating: { massAdvantage: 0.05, minMassToEatFood: 2 },
     decay: {
-      threshold: 100,
-      rateAboveThreshold: 0.02,
-      intervalAboveThresholdSec: 5,
-      rateBelowThreshold: 0.01,
-      intervalBelowThresholdSec: 5,
       floor: 2,
+      graceSec: 10,
+      tiers: [
+        { minMass: 0, rate: 0.002, intervalSec: 10 },
+        { minMass: 500, rate: 0.005, intervalSec: 10 },
+        { minMass: 2000, rate: 0.01, intervalSec: 10 },
+      ],
     },
     arena: { width: 15000, height: 15000, borderType: 'STRICT_WALL' },
     food: {

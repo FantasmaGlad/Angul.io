@@ -28,32 +28,62 @@ const SPAWN_RADIUS = 31.5;
  * la garantie ultime, y compris pour un mode qui n'imposerait aucun plancher de masse. */
 const MIN_RADIUS_FRACTION = 2 / 3;
 
+/** Masse (multiple de REFERENCE_MASS) à laquelle `blobGrowthFactor` passe du régime "rapide" au
+ * régime "plat" — 10x la masse de spawn : au-delà, un blob est considéré "établi" (a largement
+ * dépassé sa masse de départ), voir le commentaire de `blobGrowthFactor`. */
+const GROWTH_BREAKPOINT_MASS = REFERENCE_MASS * 10;
+/** Exposant du régime rapide (mass <= GROWTH_BREAKPOINT_MASS) — plus raide que l'ancien exposant
+ * fixe (0.5, Aire ∝ masse) : chaque pastille mangée en tout début de partie se voit plus
+ * nettement (demande utilisateur : "que le blob grossisse plus rapidement au début"). */
+const GROWTH_EXPONENT_EARLY = 0.62;
+/** Exposant du régime tardif (mass > GROWTH_BREAKPOINT_MASS) — plus plat que l'ancien exposant
+ * fixe : un très gros blob continue de grossir (jamais de plafond dur, contrairement à une courbe
+ * saturante type Michaelis-Menten qui aurait plafonné sa taille), mais chaque tranche de masse
+ * supplémentaire se voit proportionnellement de moins en moins (demande utilisateur : "moins à la
+ * fin") — remplace l'auto-similarité de l'ancienne courbe (même forme à toute échelle : x10 en
+ * masse donnait TOUJOURS √10 en rayon, que ce x10 parte de 50 ou de 50 000) par une vraie
+ * décroissance des rendements. */
+const GROWTH_EXPONENT_LATE = 0.38;
+/** Valeur du facteur de croissance au point de rupture — ancre la continuité de VALEUR entre les
+ * deux régimes (voir `blobGrowthFactor`). Une discontinuité de valeur ici reproduirait exactement
+ * le bug historique corrigé par le passage à une formule unique (voir ancien commentaire : ~4.9px
+ * à mass=24, ~55px à mass=25) — à ne jamais réintroduire, contrairement à un simple coude de pente
+ * (imperceptible en jeu, une masse ne saute jamais brutalement d'un côté à l'autre du point de
+ * rupture). */
+const GROWTH_FACTOR_AT_BREAKPOINT = Math.pow(GROWTH_BREAKPOINT_MASS / REFERENCE_MASS, GROWTH_EXPONENT_EARLY);
+
 /**
- * Rayon(masse) = SPAWN_RADIUS · √(masse / REFERENCE_MASS), plancher à SPAWN_RADIUS · 2/3.
+ * Facteur de croissance visuelle NORMALISÉ (= rayon(masse) / SPAWN_RADIUS) — vaut 1 à
+ * REFERENCE_MASS, croît selon deux régimes continus en valeur : rapide (exposant 0.62) jusqu'à
+ * `GROWTH_BREAKPOINT_MASS`, puis plat (exposant 0.38) au-delà (voir les constantes ci-dessus pour
+ * le détail de chaque exposant). Réutilisé tel quel par `shared/src/camera.ts`
+ * (`computeScaleForMass`) : la caméra dézoome à l'inverse exact de ce facteur, pour que la taille
+ * À L'ÉCRAN du blob reste cohérente quel que soit le régime de croissance actif — une seule courbe
+ * de forme, jamais deux formules qui pourraient diverger l'une de l'autre.
+ */
+export function blobGrowthFactor(mass: number): number {
+  const x = Math.max(0, mass) / REFERENCE_MASS;
+  if (mass <= GROWTH_BREAKPOINT_MASS) return Math.pow(x, GROWTH_EXPONENT_EARLY);
+  return GROWTH_FACTOR_AT_BREAKPOINT * Math.pow(mass / GROWTH_BREAKPOINT_MASS, GROWTH_EXPONENT_LATE);
+}
+
+/**
+ * Rayon(masse) = SPAWN_RADIUS · blobGrowthFactor(masse), plancher à SPAWN_RADIUS · 2/3 — voir
+ * `blobGrowthFactor` pour la forme de la courbe (BLOBS uniquement, joueurs/bots).
  *
- * Formule UNIQUE (remplace l'ancien branchement mass<=24/mass>24, qui produisait une
- * discontinuité brutale à la frontière — ~4.9px à mass=24, ~55px à mass=25 avant le correctif
- * précédent) : Rayon ∝ √masse (Aire ∝ masse) est la relation standard de ce genre de jeu
- * (agar.io...), qui remplace une courbe bien plus plate (exposant 0.38) rendant la croissance en
- * mangeant presque imperceptible (x10 en masse ne donnait qu'~1.6x en rayon — demande
- * utilisateur : "même en faisant x10 sur notre taille on grossit très peu"). Avec cette formule,
- * x10 en masse donne √10≈3.16x en rayon.
- *
- * Sert AUSSI aux pastilles de nourriture (masses 1-24, kArea inutilisé dans les deux cas — voir
- * `massToArea` pour son seul usage restant, indépendant du rayon) : leur ancien rayon (√masse
- * seul, sans ancrage — ~1 à 5px MONDE) était bien en-deçà du rayon de collision réellement
- * nécessaire à l'échelle des cartes actuelles (jusqu'à 20000px) — le vrai rayon physique
- * (`entity.r`, utilisé pour la collision serveur ET envoyé tel quel au client pour le rendu)
- * était invisible/imperceptible au zoom courant, donnant l'impression de "sauter par-dessus" des
- * pastilles dont le cercle de collision réel ne correspondait à rien de visible. Cette même
- * formule leur donne désormais un rayon RÉEL (physique ET visuel, les deux restant ainsi toujours
- * cohérents entre eux) proportionnel à leur masse — ~4.5px à masse 1, ~22px à masse 24.
+ * Les pastilles de nourriture (`isParticle`, masses 1-24, kArea inutilisé dans les deux cas — voir
+ * `massToArea` pour son seul usage restant, indépendant du rayon) gardent la racine carrée pure
+ * d'origine (Aire ∝ masse) : statiques et de masse bornée, la refonte "grossissement visuel"
+ * ci-dessus ne les concerne pas (rien ne les fait jamais grossir après leur spawn) — seul le
+ * plancher diffère (2.0px fixe, pas une fraction de SPAWN_RADIUS, voir historique : leur ancien
+ * rayon sans ancrage était invisible/imperceptible au zoom courant).
  */
 export function massToRadius(mass: number, kArea: number = PI, isParticle: boolean = false): number {
-  const natural = SPAWN_RADIUS * Math.sqrt(Math.max(0, mass) / REFERENCE_MASS);
   if (isParticle) {
+    const natural = SPAWN_RADIUS * Math.sqrt(Math.max(0, mass) / REFERENCE_MASS);
     return Math.max(2.0, natural);
   }
+  const natural = SPAWN_RADIUS * blobGrowthFactor(mass);
   return Math.max(SPAWN_RADIUS * MIN_RADIUS_FRACTION, natural);
 }
 

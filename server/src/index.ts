@@ -27,7 +27,18 @@ process.on('unhandledRejection', (reason) => {
   logEvent('unhandled_rejection', { reason: reason instanceof Error ? reason.message : String(reason) });
 });
 
-const TICK_RATE_HZ = process.env.TICK_RATE_HZ ? Number(process.env.TICK_RATE_HZ) : 30;
+// 20Hz (était 30) — la physique tourne à pas de temps FIXE dérivé de ce taux (`dt =
+// tickIntervalMs/1000`, jamais le temps réel écoulé, voir Room.tick()) : baisser ce taux ne
+// change RIEN à la simulation elle-même, seulement sa granularité temporelle. Réduit d'1/3 le
+// coût CPU (physique + collision + sérialisation réseau, tout tourne moins souvent) sans
+// dégrader la fluidité perçue : le rendu client interpole déjà entre deux `state` consécutifs à
+// la cadence de l'écran (60-240 FPS, voir renderEngine.ts `getInterpolatedEntities`), et le
+// tunneling à haute vitesse (Dash, ~200px/tick à 20Hz au lieu de ~135px à 30Hz) reste couvert par
+// la passe dédiée `World.findTunnelingPairs`/`queryNearbySwept` (déjà générique, pas bornée à un
+// taux de tick particulier). Seul coût réel : ~17ms de latence d'input supplémentaire au pire cas
+// (imperceptible) — voir cahier_des_charges_admin.md §2.3 pour le lien avec le lag du canva admin
+// (le "digest" ne doit PAS dépendre de ce taux, cf. son propre correctif, hors périmètre ici).
+const TICK_RATE_HZ = process.env.TICK_RATE_HZ ? Number(process.env.TICK_RATE_HZ) : 20;
 const PORT = Number(process.env.PORT ?? 8080);
 const BASE_ROOM_MAX_PLAYERS = 30;
 

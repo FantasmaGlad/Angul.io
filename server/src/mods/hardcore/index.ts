@@ -1,4 +1,4 @@
-import { add, circleOverlapArea, clamp, distance, isBotId, PI, scale, type Vector2 } from '@angulio/shared';
+import { add, circleOverlapArea, clamp, dashSpeedForMass, distance, isBotId, PI, scale, type Vector2 } from '@angulio/shared';
 import type { GameMod } from '../../engine/mod.js';
 import { isGodPlayerId } from '../../engine/godmode.js';
 import type { Entity, PlayerId, PlayerInput } from '../../engine/types.js';
@@ -138,8 +138,10 @@ export function createHardcoreMod(
             const dy = input.target.y - piece.position.y;
             const len = Math.hypot(dx, dy);
             const dir: Vector2 = len > 0 ? { x: dx / len, y: dy / len } : { x: 1, y: 0 };
-            const DASH_IMPULSE_SPEED = 4050;
-            piece.velocity = add(piece.velocity, scale(dir, DASH_IMPULSE_SPEED));
+            // Impulsion atténuée avec la masse (cahier des charges §4a : "moins puissant lorsqu'il
+            // est gros") — même formule partagée que la prédiction locale du client (voir
+            // client/src/prediction.ts `applyDash`), jamais de rollback visuel au dash.
+            piece.velocity = add(piece.velocity, scale(dir, dashSpeedForMass(piece.mass)));
           }
         }
       }
@@ -209,8 +211,7 @@ export function createHardcoreMod(
           const dy = dashTarget.y - piece.position.y;
           const len = Math.hypot(dx, dy);
           const dir: Vector2 = len > 0 ? { x: dx / len, y: dy / len } : { x: 1, y: 0 };
-          const DASH_IMPULSE_SPEED = 4050;
-          piece.velocity = add(piece.velocity, scale(dir, DASH_IMPULSE_SPEED));
+          piece.velocity = add(piece.velocity, scale(dir, dashSpeedForMass(piece.mass)));
         }
       }
     },

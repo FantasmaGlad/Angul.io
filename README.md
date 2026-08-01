@@ -50,7 +50,7 @@ Variables d'environnement server pertinentes pour le développement d'un mod :
 
 | Variable | Défaut | Effet |
 |---|---|---|
-| `TICK_RATE_HZ` | `30` | Cadence de simulation, identique pour **tous** les salons du process |
+| `TICK_RATE_HZ` | `20` (v5.8, était 30) | Cadence de simulation, identique pour **tous** les salons du process — la physique intègre à pas fixe dérivé de cette valeur (`dt = 1/TICK_RATE_HZ`, jamais le temps réel écoulé), donc ce taux ne change pas le comportement de la simulation, seulement sa granularité temporelle et le coût CPU/réseau |
 | `ROOM_WORKERS` | nb de cœurs CPU | Nombre de `worker_threads` hébergeant les salons ; `0` = mono-thread (utile pour déboguer un mod avec un débogueur synchrone) |
 | `PORT` | `8080` | Port HTTP/WebSocket |
 | `DATABASE_URL` | absent | Active comptes joueurs + persistance des scores |
@@ -259,8 +259,9 @@ fichiers en démarrant le serveur en local avant de déployer.
 | | `speedMultiplier` | number | Multiplicateur de vitesse global du mode |
 | | `speedMassExponent` | number | Exposant d'atténuation de la vitesse avec la masse |
 | | `velocityFloor` | number | Vitesse plancher, jamais nulle même à masse énorme |
-| | `accelerationBase` | number | Accélération (px/s²) à la masse M0 |
-| | `accelerationMassExponent` | number | Exposant d'atténuation de l'accélération avec la masse |
+| | `accelerationBase` | number | Accélération/décélération (px/s²) à la masse M0 |
+| | `accelerationMassExponent` | number | Exposant d'atténuation de la MISE EN MOUVEMENT (vitesse cible > vitesse actuelle) avec la masse |
+| | `decelerationMassExponent?` | number | Exposant d'atténuation DÉDIÉ au FREINAGE (vitesse cible < vitesse actuelle, relâchement de l'input) — v5.8 : un exposant plus grand ici fait perdre plus de puissance de freinage à mesure que la masse grandit, donc un gros blob garde son élan plus longtemps sans pénaliser sa réactivité au pilotage (voir `decelerationForMass`, `shared/src/movement.ts`). Absent = repli sur `accelerationMassExponent` (comportement historique, un seul exposant partagé) |
 | `split` | `ejectEfficiency` | number | Ratio masse gagnée par le morceau éjecté / masse perdue (1.0 = conservation stricte) |
 | | `ejectSpeedFactor` | number | Facteur (× vitesse du morceau) de la vitesse d'éjection au split |
 | `eject` | `amount` | number | Masse envoyée par éjection de masse (touche dédiée, pas le split) |
@@ -272,9 +273,8 @@ fichiers en démarrant le serveur en local avant de déployer.
 | | `foodEfficiency?` | number | Multiplicateur de masse gagnée par la nourriture |
 | | `eatOverlapFraction?` | number | Fraction (0-1) de recouvrement au-delà de laquelle l'absorption se déclenche — défaut `0.7`. En-dessous, chevauchement libre, aucun effet (comme un vrai agar.io) |
 | `absorptionDurationSec?` | number | Durée (s) de l'absorption une fois le seuil franchi — la cible rétrécit PROGRESSIVEMENT sur cette durée plutôt que de disparaître en un seul tick (pour que la victime comprenne ce qui lui arrive) — défaut `0.3`. Une fois déclenchée, l'issue est scellée : la cible ne peut plus s'en sortir même si elle se dégage du chevauchement entre-temps |
-| `decay` | `threshold` | number | Masse en-dessous de laquelle le taux de perte passive change |
-| | `rateAboveThreshold`/`rateBelowThreshold` | number | Taux de perte (fraction) par intervalle, au-dessus/en-dessous du seuil |
-| | `intervalAboveThresholdSec`/`intervalBelowThresholdSec` | number | Période (s) de chaque taux |
+| `decay` | `tiers` | `{minMass, rate, intervalSec}[]` | Paliers de perte de masse passive (v5.8, cahier des charges §4d) — le palier retenu est celui de `minMass` le plus élevé restant <= la masse courante ; `rate` = fraction perdue par `intervalSec`. Propre à chaque mode : Vanilla reste peu punitif, Hardcore nettement plus (voir `server/configs/*.json`, `decayLambda` dans `physics.ts`) |
+| | `graceSec` | number | Délai (s) depuis la dernière prise de masse en-dessous duquel aucune perte passive ne s'applique |
 | | `floor` | number | Masse plancher que la perte passive ne peut jamais franchir |
 | `arena` | `width`/`height` | number | Taille de la carte (px) |
 | | `borderType` | `'STRICT_WALL'\|'ELASTIC_BOUNCE'\|'TOROIDAL'\|'TOXIC_ZONE'` | Comportement aux bords — **`TOXIC_ZONE` lève une exception à l'exécution, pas encore implémenté** |
@@ -408,6 +408,20 @@ filtrés. La grille de collision (`World.spatialHash`, cellSize=50) n'est PAS r�
 quelle pour ces requêtes à grand rayon (coût prohibitif) : un index grossier dédié à la nourriture
 (cellSize=1000) est reconstruit une fois par tick dans `interestFilter.ts`.
 
+**Correctif "pastille mangée qui réapparaît"** (v5.8) : `RenderEngine.knownFood` (client) est un
+cache PERSISTANT de la nourriture en delta (voir ci-dessus) — une pastille mangée n'y était jamais
+explicitement retirée, seule masquée pour LA FRAME COURANTE par l'astuce de disparition instantanée
+(`render.ts`, chevauchement avec une créature) : dès que le blob s'en éloignait, elle réapparaissait
+jusqu'à la prochaine resynchronisation périodique (jusqu'à ~5s). `renderFrame` retourne désormais les
+ids détectés "mangés" ce cadre (`RenderFrameResult.eatenFoodIds`), purgés définitivement de
+`knownFood` via `RenderEngine.forgetFood` (`GameView.tsx`).
+
+**Fluidité du fond spectateur** (v5.8) : `SPECTATOR_TICK_DIVISOR` (`snapshotBuilder.ts`) abaissé de
+4 à 2 (10Hz réels à `TICK_RATE_HZ=20`, contre 7.5Hz avant même la baisse de tick rate) — demande
+utilisateur, rendu du lobby jugé pas assez fluide. Sans coût réseau significatif : la nourriture,
+seule composante volumineuse, reste sous-échantillonnée indépendamment de cette cadence
+(`SPECTATOR_FOOD_SAMPLE_EVERY`).
+
 Exception client-only, orthogonale à ce qui précède : le fond spectateur de l'accueil
 (`SpectatorBackground.tsx`, caméra dézoomée sur toute la carte — rien à culler géométriquement)
 sous-échantillonne la nourriture à ~10 % dans `renderEngine.ts` (`subsampleForSpectator`), jamais
@@ -499,6 +513,20 @@ gigue réseau) pour ce nouveau chemin de code.
 
 Le serveur suit la même discipline : `Room.tick()` (§3) est unique et ignore tout ce qu'un mod
 fait en interne. Un mod ne devrait jamais avoir besoin de modifier `engine/`.
+
+**Formules de croissance/zoom/freinage/dash révisées** (v5.8) : `blobGrowthFactor`
+(`shared/src/geometry.ts`) remplace l'ancienne courbe auto-similaire (rayon ∝ √masse à tout niveau
+d'échelle) par deux régimes continus en valeur — croissance rapide (exposant 0.62) jusqu'à 10× la
+masse de spawn, puis plate (exposant 0.38) au-delà, sans jamais plafonner. `computeScaleForMass`
+(`camera.ts`) est désormais l'inverse EXACT de cette même courbe (au lieu d'une racine carrée
+indépendante qui n'y coïncidait que par coïncidence), plus un rezoom global ×1.5 (`BASE_SCALE`) —
+la taille apparente à l'écran du blob reste ainsi cohérente quel que soit le régime de croissance
+actif. Côté mouvement, `accelerationForMass`/`decelerationForMass` (`shared/src/movement.ts`) sont
+désormais deux taux distincts (un seul exposant partagé auparavant) : un gros blob reste aussi
+réactif qu'avant pour accélérer, mais conserve nettement plus son élan en relâchant l'input — configs
+via `physics.decelerationMassExponent` (repli sur `accelerationMassExponent` si absent). Le Dash
+Hardcore (`dashSpeedForMass`) perd en puissance avec la masse (plancher 40% de `DASH_BASE_SPEED`),
+même formule partagée serveur (`mods/hardcore/index.ts`) et prédiction locale (`prediction.ts`).
 
 ---
 

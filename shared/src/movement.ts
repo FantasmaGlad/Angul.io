@@ -20,10 +20,21 @@ export interface MovementConfig {
   speedMassExponent: number;
   /** Vfloor (px/s) — vitesse plancher, jamais nulle même pour une masse énorme. */
   velocityFloor: number;
-  /** A0 (px/s²) — accélération (taux de rapprochement vers la vitesse cible) pour `startMass`. */
+  /** A0 (px/s²) — accélération (taux de rapprochement vers la vitesse cible) pour `startMass`.
+   * Régit désormais UNIQUEMENT la mise en mouvement (vitesse cible > vitesse actuelle) — voir
+   * `decelerationMassExponent` pour le freinage. */
   accelerationBase: number;
   /** alpha — exposant d'atténuation : a(m) = A0*(startMass/m)^alpha. */
   accelerationMassExponent: number;
+  /** delta — exposant d'atténuation DÉDIÉ au freinage (vitesse cible < vitesse actuelle,
+   * relâchement de l'input) : d(m) = A0*(startMass/m)^delta, même base `accelerationBase` mais un
+   * exposant propre — voir `decelerationForMass`. Absent = repli sur `accelerationMassExponent`
+   * (comportement historique, un seul exposant partagé pour les deux). Cahier des charges §4a :
+   * "que le blob ralentisse moins vite en fonction de sa masse" — un exposant PLUS GRAND ici fait
+   * perdre au freinage bien plus de puissance que ne l'accélération à mesure que la masse grandit,
+   * donc un gros blob conserve son élan nettement plus longtemps qu'il ne met de temps à
+   * atteindre sa vitesse de pointe, sans toucher à sa réactivité au pilotage. */
+  decelerationMassExponent?: number;
   /** M0 — masse de référence du mode (`player.startMass`), utilisée par les deux formules. */
   startMass: number;
   /** Taille de la carte en pixels monde (ex: 10000). */
@@ -62,7 +73,51 @@ export function velocityForMass(mass: number, config: MovementConfig): number {
 }
 
 /** a(m) = A0·(M0/m)^alpha — taux de rapprochement (px/s²) vers la vitesse cible, pas une vitesse
- * instantanée. */
+ * instantanée. Utilisé uniquement quand cette vitesse cible dépasse la vitesse actuelle (mise en
+ * mouvement) — voir `decelerationForMass` pour le freinage. */
 export function accelerationForMass(mass: number, config: MovementConfig): number {
   return config.accelerationBase * Math.pow(config.startMass / mass, config.accelerationMassExponent);
+}
+
+/** d(m) = A0·(M0/m)^delta — même forme que `accelerationForMass`, avec l'exposant DÉDIÉ
+ * `decelerationMassExponent` (repli sur `accelerationMassExponent` si absent, comportement
+ * historique). Utilisé quand la vitesse cible est INFÉRIEURE à la vitesse actuelle (relâchement de
+ * l'input, freinage) — voir le commentaire de `MovementConfig.decelerationMassExponent`. */
+export function decelerationForMass(mass: number, config: MovementConfig): number {
+  const exponent = config.decelerationMassExponent ?? config.accelerationMassExponent;
+  return config.accelerationBase * Math.pow(config.startMass / mass, exponent);
+}
+
+/** Vitesse de base (px/s) de l'impulsion de Dash (Hardcore uniquement, voir
+ * server/src/mods/hardcore/index.ts) — pleine puissance pour un blob à `DASH_REFERENCE_MASS`,
+ * valeur historique inchangée. */
+export const DASH_BASE_SPEED = 4050;
+/** Masse de référence pour l'atténuation du Dash — le Dash est une mécanique Hardcore fixe, pas
+ * paramétrable par mode comme le reste du mouvement (`MovementConfig.startMass`) : ancrée sur la
+ * masse de spawn commune aux deux modes (voir server/configs/*.json `player.startMass`). */
+const DASH_REFERENCE_MASS = 50;
+/** Exposant d'atténuation du Dash — volontairement doux (0.15, bien en-deçà de
+ * `accelerationMassExponent`/`decelerationMassExponent`) : le Dash doit rester perceptiblement
+ * moins puissant pour un gros blob (cahier des charges §4a) sans devenir anecdotique dès qu'on
+ * dépasse un peu la masse de spawn. */
+const DASH_MASS_EXPONENT = 0.15;
+/** Puissance plancher du Dash pour un blob énorme (fraction de `DASH_BASE_SPEED`) — jamais
+ * neutralisé complètement ("moins puissant", pas "inutile") : reste toujours utile pour fuir/
+ * attaquer, même pour le plus gros blob de la partie. */
+const DASH_MIN_POWER_FRACTION = 0.4;
+
+/** Impulsion de Dash (px/s) pour un morceau de masse `mass` — pleine puissance
+ * (`DASH_BASE_SPEED`) à `DASH_REFERENCE_MASS` ou en-dessous, décroissante ensuite jusqu'au
+ * plancher `DASH_MIN_POWER_FRACTION` (cahier des charges §4a : "en hardcore que son dash soit
+ * moins puissant lorsqu'il est gros"). Fonction pure partagée entre le serveur (autorité, voir
+ * `mods/hardcore/index.ts`) et la prédiction locale du client (`client/src/prediction.ts`
+ * `applyDash`) — même raisonnement que le reste de ce fichier : une seule formule des deux côtés
+ * élimine tout risque de rollback visuel au moment du dash. */
+export function dashSpeedForMass(mass: number): number {
+  const factor = Math.pow(DASH_REFERENCE_MASS / Math.max(1, mass), DASH_MASS_EXPONENT);
+  return DASH_BASE_SPEED * clampUnitOrLess(factor, DASH_MIN_POWER_FRACTION);
+}
+
+function clampUnitOrLess(value: number, floor: number): number {
+  return Math.max(floor, Math.min(1, value));
 }

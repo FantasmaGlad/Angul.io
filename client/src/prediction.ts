@@ -1,6 +1,7 @@
 import {
   accelerationForMass,
   add,
+  decelerationForMass,
   distance,
   length,
   massToRadius,
@@ -577,7 +578,15 @@ export class LocalPrediction {
     const accelIntensity = 1;
 
     const targetVelocity = scale(direction, velocityForMass(piece.mass, movement) * effectiveIntensity);
-    const maxChange = accelerationForMass(piece.mass, movement) * accelIntensity * dtSeconds;
+    // Miroir exact du serveur (voir mods/parametric/index.ts `onTick`) : freinage vs mise en
+    // mouvement utilisent des taux distincts (cahier des charges §4a) — sans ce miroir, la
+    // prédiction locale divergerait du serveur dès qu'un gros blob relâche l'input, et
+    // `reconcile()` la corrigerait en rollback visible à chaque `state` reçu.
+    const isDecelerating = length(targetVelocity) < length(piece.velocity);
+    const rate = isDecelerating
+      ? decelerationForMass(piece.mass, movement)
+      : accelerationForMass(piece.mass, movement);
+    const maxChange = rate * accelIntensity * dtSeconds;
     piece.velocity = moveToward(piece.velocity, targetVelocity, maxChange);
     piece.position = add(piece.position, scale(piece.velocity, dtSeconds));
 

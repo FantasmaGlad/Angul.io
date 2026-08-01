@@ -13,7 +13,8 @@
     "speedMassExponent": 0.0333,
     "velocityFloor": 20,
     "accelerationBase": 6750,
-    "accelerationMassExponent": 0.35
+    "accelerationMassExponent": 0.35,
+    "decelerationMassExponent": 0.7
   },
   "split": {
     "ejectEfficiency": 1.0,
@@ -34,12 +35,15 @@
     "absorptionDurationSec": 0
   },
   "decay": {
-    "threshold": 100,
-    "rateAboveThreshold": 0.02,
-    "intervalAboveThresholdSec": 5,
-    "rateBelowThreshold": 0.01,
-    "intervalBelowThresholdSec": 5,
-    "floor": 20
+    "floor": 20,
+    "graceSec": 6,
+    "tiers": [
+      { "minMass": 0, "rate": 0, "intervalSec": 10 },
+      { "minMass": 500, "rate": 0.01, "intervalSec": 10 },
+      { "minMass": 2000, "rate": 0.02, "intervalSec": 8 },
+      { "minMass": 10000, "rate": 0.03, "intervalSec": 5 },
+      { "minMass": 25000, "rate": 0.05, "intervalSec": 2 }
+    ]
   },
   "arena": {
     "width": 50000,

@@ -4,6 +4,7 @@ import type { BotConfig } from '../../mods/parametric/config.js';
 import type { ModResolver } from '../roomManager.js';
 import type { TickPayload } from './protocol.js';
 import { applyRoomBotCountOverride, RoomInstance } from './roomInstance.js';
+import { SPECTATOR_TICK_DIVISOR } from './snapshotBuilder.js';
 
 const BASE_BOTS: BotConfig = {
   enabled: true,
@@ -157,7 +158,7 @@ describe('RoomInstance — filtrage par intérêt (handleTick)', () => {
     instance.connectViewer('spectator-1', true);
 
     const payloads = capture(instance);
-    for (let i = 0; i < 4; i++) instance.room.tick(); // SPECTATOR_TICK_DIVISOR = 4
+    for (let i = 0; i < SPECTATOR_TICK_DIVISOR; i++) instance.room.tick();
 
     const spectatorMessages = payloads.filter((p) => p.playerId === 'spectator-1');
     expect(spectatorMessages.length).toBeGreaterThan(0);

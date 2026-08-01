@@ -16,7 +16,14 @@ import { activeComboLevel } from '../xp.js';
  * échantillonnée (les pastilles individuelles n'apportent presque rien visuellement à cette
  * échelle) plutôt qu'envoyée en totalité — les morceaux de joueurs/bots, eux, restent tous
  * envoyés (peu nombreux, visuellement significatifs pour un fond "vue d'ensemble du serveur"). */
-export const SPECTATOR_TICK_DIVISOR = 4;
+/** v5.8 (était 4) : réduit à 2 pour un fond d'accueil plus fluide (demande utilisateur — la baisse
+ * de TICK_RATE_HZ 30->20 dans la même version aurait sinon fait chuter la cadence RÉELLE des
+ * spectateurs de 7.5Hz à 5Hz, une régression perceptible en plus de rendre le rendu déjà jugé pas
+ * assez fluide). À 20Hz de base, /2 donne 10Hz réels — mieux que l'ancien 7.5Hz, tout en restant
+ * bon marché : la nourriture, seule composante volumineuse, reste très sous-échantillonnée
+ * (`SPECTATOR_FOOD_SAMPLE_EVERY`, 1/6 des particules) indépendamment de cette cadence, donc doubler
+ * la fréquence d'envoi ne double pas vraiment le coût réseau/CPU par visiteur du lobby. */
+export const SPECTATOR_TICK_DIVISOR = 2;
 /** pastilles de nourriture pour spectateur : 1 sur N (id % N === 0) envoyée — le reste est omis.
  * Relevé à 6 (était 4, régression déjà corrigée à ce niveau — voir plan_performance_reseau.md
  * §4.1) : audit lag lobby — un visiteur d'accueil supplémentaire ne doit quasiment rien coûter,

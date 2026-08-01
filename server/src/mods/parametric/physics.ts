@@ -1,5 +1,6 @@
 import {
   accelerationForMass as sharedAccelerationForMass,
+  decelerationForMass as sharedDecelerationForMass,
   velocityForMass as sharedVelocityForMass,
   type MovementConfig,
 } from '@angulio/shared';
@@ -26,9 +27,17 @@ export function velocityForMass(mass: number, config: ParametricModConfig): numb
 
 /** a(m) = A0·(M0/m)^alpha — taux de rapprochement (px/s²) vers la vitesse cible, pas une
  * vitesse instantanée : remplace l'ancien mécanisme de "boost" de split ad hoc (metriques.md
- * v0.1 §4) par un seul modèle générique valable pour tout le mouvement. */
+ * v0.1 §4) par un seul modèle générique valable pour tout le mouvement. Mise en mouvement
+ * uniquement — voir `decelerationForMass` pour le freinage. */
 export function accelerationForMass(mass: number, config: ParametricModConfig): number {
   return sharedAccelerationForMass(mass, toMovementConfig(config));
+}
+
+/** d(m) = A0·(M0/m)^delta — voir `MovementConfig.decelerationMassExponent`
+ * (shared/src/movement.ts) : taux de rapprochement dédié au FREINAGE (vitesse cible < vitesse
+ * actuelle), distinct de `accelerationForMass` pour la mise en mouvement. */
+export function decelerationForMass(mass: number, config: ParametricModConfig): number {
+  return sharedDecelerationForMass(mass, toMovementConfig(config));
 }
 
 /** Repli si `config.player.splitEnabled` est absent — le split reste activé par défaut (Vanilla ne
@@ -75,38 +84,32 @@ export function absorptionDurationSec(config: ParametricModConfig): number {
   return config.eating.absorptionDurationSec ?? DEFAULT_ABSORPTION_DURATION_SEC;
 }
 
+/** Palier applicable à `mass` : le `DecayTier` de `minMass` le plus élevé restant <= `mass` (les
+ * tiers n'ont pas besoin d'être pré-triés). `undefined` si aucun tier ne couvre cette masse (config
+ * invalide — ne devrait jamais arriver en pratique, tout mode déclare un premier palier à
+ * `minMass: 0`). */
+function applicableDecayTier(mass: number, config: ParametricModConfig) {
+  let best: ParametricModConfig['decay']['tiers'][number] | undefined;
+  for (const tier of config.decay.tiers) {
+    if (mass >= tier.minMass && (!best || tier.minMass > best.minMass)) best = tier;
+  }
+  return best;
+}
+
+/** Perte de masse passive — cahier des charges §4d ("formule de perte de masse en fonction de la
+ * taille") : chaque mode définit désormais ses PROPRES paliers (`config.decay.tiers`) plutôt
+ * qu'une courbe unique codée en dur partagée par tous les modes (comportement précédent : les
+ * champs `config.decay.threshold`/`rateAboveThreshold`/... existaient mais n'étaient jamais lus
+ * ici) — c'est ce qui permet à Vanilla de rester peu punitif et à Hardcore de l'être nettement
+ * plus, à parité de masse. */
 function decayLambda(mass: number, config: ParametricModConfig, timeSinceLastEatenS = 10): number {
   const floor = config.decay.floor ?? 2;
-  const decayDelayS = mass > 20000 ? 0.5 : 10;
-  if (mass <= floor || timeSinceLastEatenS < decayDelayS) return 0;
+  if (mass <= floor || timeSinceLastEatenS < config.decay.graceSec) return 0;
 
-  let rate = 0.002;
-  let intervalSec = 10;
+  const tier = applicableDecayTier(mass, config);
+  if (!tier || tier.rate <= 0) return 0;
 
-  if (mass > 20000) {
-    const dizaines = Math.floor(mass / 10000);
-    rate = dizaines * 0.01;
-    intervalSec = 0.5;
-  } else if (mass > 10000) {
-    // Incrémenter la perte de 1% par 5s pour chaque dizaine de milliers de masse (ex: 30 000 -> 3% en 5s)
-    const dizaines = Math.floor(mass / 10000);
-    rate = dizaines * 0.01;
-    intervalSec = 5;
-  } else if (mass > 2000) {
-    // 1% par 10s au dessus de 2000 jusqu'à 10 000
-    rate = 0.01;
-    intervalSec = 10;
-  } else if (mass >= 500) {
-    // 0.5% par 10s entre 500 et 2000
-    rate = 0.005;
-    intervalSec = 10;
-  } else {
-    // 0.2% par 10s en dessous de 500
-    rate = 0.002;
-    intervalSec = 10;
-  }
-
-  return -Math.log(1 - rate) / intervalSec;
+  return -Math.log(1 - tier.rate) / tier.intervalSec;
 }
 
 export function applyPassiveDecay(

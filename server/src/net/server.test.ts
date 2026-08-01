@@ -586,13 +586,13 @@ describe('startGameServer', () => {
     });
 
     it('un spectateur reçoit un tick qui avance de 1 par message, jamais le tick de simulation brut (correctif dérive ~3s du fond spectateur)', async () => {
-      // tickRateHz=20 (réel) / SPECTATOR_TICK_DIVISOR (4) = 5Hz annoncés dans `welcome` à ce
-      // spectateur — si le champ `tick` de chaque `state` reçu n'était PAS renuméroté en tick
-      // spectateur séquentiel (voir roomInstance.ts `handleTick`), il avancerait de
-      // SPECTATOR_TICK_DIVISOR (4) par message au lieu de 1, désynchronisant la ligne de temps de
-      // lecture du client (RenderEngine) de son hypothèse `1000/tickRateHz` ms par unité de tick —
-      // la cause du retard croissant rapporté par l'utilisateur (~3s au bout de quelques secondes
-      // d'observation).
+      // tickRateHz=20 (réel) / SPECTATOR_TICK_DIVISOR (2, v5.8 — était 4) = 10Hz annoncés dans
+      // `welcome` à ce spectateur — si le champ `tick` de chaque `state` reçu n'était PAS
+      // renuméroté en tick spectateur séquentiel (voir roomInstance.ts `handleTick`), il
+      // avancerait de SPECTATOR_TICK_DIVISOR par message au lieu de 1, désynchronisant la ligne de
+      // temps de lecture du client (RenderEngine) de son hypothèse `1000/tickRateHz` ms par unité
+      // de tick — la cause du retard croissant rapporté par l'utilisateur (~3s au bout de quelques
+      // secondes d'observation).
       const manager = makeManager(testResolver());
       const summary = manager.createRoom({ name: 'A', modId: 'test', visibility: 'public' });
       handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
