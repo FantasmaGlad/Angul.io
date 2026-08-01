@@ -16,8 +16,12 @@ export default function ModeRoomList({
   onSelectMode,
   onJoinRoom,
 }: ModeRoomListProps) {
+  // N'affiche que les modes disposant d'au moins un salon public actif/créé
+  const activeModes = modes.filter((modeId) => rooms.some((r) => r.modId === modeId));
+  const effectiveMode = activeModes.includes(selectedMode) ? selectedMode : (activeModes[0] ?? selectedMode);
+
   const filtered = rooms
-    .filter((room) => room.modId === selectedMode)
+    .filter((room) => room.modId === effectiveMode)
     .sort((a, b) => b.playerCount - a.playerCount);
 
   return (
@@ -25,12 +29,12 @@ export default function ModeRoomList({
       <div className="mode-selector-header">
         <span className="section-title">SELECTION DU MODE</span>
         <div className="mode-tabs-vertical">
-          {modes.map((modeId) => {
+          {activeModes.map((modeId) => {
             const meta = modeMeta(modeId);
             const count = rooms
               .filter((r) => r.modId === modeId)
               .reduce((sum, r) => sum + r.playerCount, 0);
-            const isSelected = selectedMode === modeId;
+            const isSelected = effectiveMode === modeId;
 
             return (
               <button

@@ -16,6 +16,9 @@ export function toMovementConfig(config: ParametricModConfig): MovementConfig {
     mapSize: config.arena.width,
     borderType: config.arena.borderType,
     mergeOverlapMinFraction: config.merge.overlapMinFraction,
+    splitEnabled: config.player.splitEnabled,
+    maxSplits: config.player.maxSplits,
+    minSplitMass: config.player.minSplitMass,
   };
 }
 

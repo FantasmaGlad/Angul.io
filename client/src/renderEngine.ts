@@ -249,6 +249,7 @@ export class RenderEngine {
     viewportHeight: number,
     selfPlayerId?: string,
     isSpectator = false,
+    mapSize?: number,
   ): EntitySnapshot[] {
     const stateIntervalMs = 1000 / (this.serverTickRateHz || 30);
     const minDelayMs = Math.max(70, stateIntervalMs * 1.25);
@@ -291,11 +292,6 @@ export class RenderEngine {
 
     let t = 0;
     if (snapA && snapB && snapB.serverTimeMs > snapA.serverTimeMs) {
-      // `intervalMs` est ici TOUJOURS un multiple exact de l'intervalle de tick nominal (dérivé
-      // du numéro de tick, jamais de l'heure d'arrivée) — contrairement à une approche basée sur
-      // l'heure d'arrivée, une rafale réseau ne peut plus le rendre artificiellement petit. Au-delà
-      // de t=1 (buffer à sec), l'extrapolation par vélocité déduite est donc fiable par
-      // construction, plafonnée à MAX_EXTRAPOLATION_MS pour ne pas dériver sur une coupure longue.
       const intervalMs = snapB.serverTimeMs - snapA.serverTimeMs;
       const maxT = 1 + MAX_EXTRAPOLATION_MS / intervalMs;
       t = clamp((renderTime - snapA.serverTimeMs) / intervalMs, 0, maxT);

@@ -116,6 +116,7 @@ export default function SpectatorBackground({ roomId, zooming }: SpectatorBackgr
           canvas!.height,
           undefined,
           true,
+          stateRef.current.mapSize,
         );
         renderFrame(ctx!, canvas!, entities, camera, stateRef.current.nicknames, stateRef.current.colors);
       }

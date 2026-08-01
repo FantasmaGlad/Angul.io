@@ -505,6 +505,18 @@ export class LocalPrediction {
     this.pendingDashes.push({ atMs: performance.now(), impulse: scale(direction, speedImpulse) });
   }
 
+  /** Indique si au moins un morceau du joueur satisfait les conditions de masse et de limite pour un split. */
+  canSplit(movement?: MovementConfig): boolean {
+    if (!movement || movement.splitEnabled === false) return false;
+    const maxSplits = movement.maxSplits ?? 16;
+    const minSplitMass = movement.minSplitMass ?? 36;
+    if (this.pieces.size >= maxSplits) return false;
+    for (const piece of this.pieces.values()) {
+      if (piece.mass >= minSplitMass) return true;
+    }
+    return false;
+  }
+
   /** Crédite immédiatement `addedMass` au morceau `pieceId` — appelé dès qu'une pastille est
    * détectée recouverte à l'écran (voir `partitionEatenFood`, client/src/render.ts), SANS attendre
    * le `state` serveur qui l'entérinera.

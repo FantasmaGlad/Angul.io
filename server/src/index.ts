@@ -78,8 +78,13 @@ const baseRooms = BASE_ROOMS.map((base) => {
     modId: base.modId,
     visibility: 'public',
     permanent: true,
-    maxPlayers: room?.maxPlayers ?? BASE_ROOM_MAX_PLAYERS,
-    resetSchedule: room?.resetSchedule ?? TWO_HOUR_RESET_SCHEDULE,
+    maxPlayers: base.maxPlayers ?? room?.maxPlayers ?? BASE_ROOM_MAX_PLAYERS,
+    mapSize: base.mapSize,
+    resetSchedule: base.resetDurationMin !== undefined
+      ? (base.resetDurationMin > 0
+          ? { type: 'everyNMinutes', minutes: base.resetDurationMin, timeZone: 'Europe/Paris' }
+          : undefined)
+      : (room?.resetSchedule ?? TWO_HOUR_RESET_SCHEDULE),
   });
 });
 

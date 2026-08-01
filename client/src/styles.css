@@ -998,11 +998,6 @@ select {
   font-family: var(--font-mono);
   color: var(--text-soft);
 }
-.rank-list li:first-child .rank-index {
-  color: var(--accent-ink);
-  background: var(--accent);
-  border-color: var(--accent-strong);
-}
 .rank-name {
   flex: 1;
   min-width: 0;

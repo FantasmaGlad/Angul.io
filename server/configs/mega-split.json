@@ -52,8 +52,8 @@
     "respawnRatePerSecond": 300,
     "pelletTypes": [
       {
-        "color": "vert",
-        "mass": 1,
+        "color": "rose",
+        "mass": 50,
         "weight": 100
       }
     ]

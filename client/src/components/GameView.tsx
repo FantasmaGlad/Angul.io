@@ -371,6 +371,7 @@ export default function GameView({
         // faux-positif bien plus rare et sans conséquence de rendu (contrairement au Dash), non
         // traité ici.
         if (currentModId === 'hardcore') return;
+        if (movementConfig && !prediction.canSplit(movementConfig)) return;
         if (!canvas) return;
         const rect = canvas.getBoundingClientRect();
         const centerX = rect.left + rect.width / 2;
@@ -872,6 +873,7 @@ export default function GameView({
         canvas!.clientHeight,
         selfPlayerId,
         false,
+        mapSize,
       );
       if (selfPlayerId) entities = prediction.applyTo(entities, selfPlayerId);
 

@@ -16,6 +16,9 @@ const LOCAL_ROOMS_CONFIG_PATH = fileURLToPath(new URL('../rooms.local.json', imp
 export interface BaseRoomConfig {
   name: string;
   modId: string;
+  mapSize?: number;
+  maxPlayers?: number;
+  resetDurationMin?: number;
 }
 
 export function loadBaseRoomsConfig(): BaseRoomConfig[] {

@@ -48,6 +48,12 @@ export interface MovementConfig {
    * repos partiellement chevauchante que le serveur, plutôt qu'une séparation totale erronée (voir
    * `restingDistanceForOverlap`, geometry.ts). */
   mergeOverlapMinFraction: number;
+  /** split.enabled du mod actif (défaut true). */
+  splitEnabled?: boolean;
+  /** split.maxPieces du mod actif (défaut 16). */
+  maxSplits?: number;
+  /** split.minMassToSplit du mod actif (défaut 36). */
+  minSplitMass?: number;
 }
 
 /** Repli utilisé uniquement quand un `ModResolver` ne fournit pas de config de mouvement (ex.

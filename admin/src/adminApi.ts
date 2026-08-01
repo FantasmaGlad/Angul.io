@@ -166,6 +166,9 @@ export async function listRooms(token: string): Promise<AdminRoomView[]> {
 export interface BaseRoomConfig {
   name: string;
   modId: string;
+  mapSize?: number;
+  maxPlayers?: number;
+  resetDurationMin?: number;
 }
 
 /** Salons permanents de l'accueil (§8.4/§13 cahier_des_charges_admin.md, `server/rooms.json`) —

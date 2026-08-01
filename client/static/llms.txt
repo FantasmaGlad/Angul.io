@@ -1,0 +1,13 @@
+# Angul.io — Jeu Multijoueur Temps Réel (HTML5 Canvas & WebGL)
+
+> Angul.io est un jeu vidéo multijoueur navigateur en temps réel. Les joueurs pilotent des créatures (blobs) dans une arène dynamique, absorbent de la nourriture, affrontent d'autres joueurs et des bots IA, et utilisent des mécaniques physiques enrichies (Dash, Division/Split, Modes Hardcore, Infini et Mega Split).
+
+## Caractéristiques
+- **Variété de Modes** : Vanilla, Hardcore, Infini (carte toroïdale) et Mega Split (jusqu'à 64 morceaux et pastilles géantes).
+- **Moteur de Simulation** : Mouvement déterministe à pas fixe, prédiction locale sans latence et réconciliation réseau autoritaire.
+- **Accès Rapide** : Jouable directement dans le navigateur sans installation.
+
+## URLs Officiels
+- **Accueil / Jeu** : https://angul.io/
+- **Classement des Scores** : https://angul.io/leaderboard
+- **À propos du Projet** : https://angul.io/about

@@ -76,7 +76,6 @@ export function handleAdminServerReload(
     const baseRooms = loadBaseRoomsConfig();
     const managedRooms = roomManager.allManagedRooms();
 
-    // Réinitialise / bascule chaque salon permanent existant avec sa nouvelle config
     for (const base of baseRooms) {
       const existing = managedRooms.find((r) => r.name === base.name || r.id === base.name);
       if (existing) {
@@ -88,7 +87,7 @@ export function handleAdminServerReload(
     logEvent('admin_server_reloaded', { baseRoomsCount: baseRooms.length });
     respondJson(res, 200, {
       success: true,
-      message: 'Modifications synchronisées ! Les salons ont été rechargés et réinitialisés.',
+      message: 'Salons d’accueil synchronisés et réinitialisés avec succès !',
     });
   } catch (error) {
     respondJson(res, 500, { error: (error as Error).message });

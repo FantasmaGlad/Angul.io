@@ -87,6 +87,8 @@ export function contentTypeFor(filePath: string): string {
   if (filePath.endsWith('.js')) return 'text/javascript; charset=utf-8';
   if (filePath.endsWith('.css')) return 'text/css; charset=utf-8';
   if (filePath.endsWith('.json')) return 'application/json; charset=utf-8';
+  if (filePath.endsWith('.txt')) return 'text/plain; charset=utf-8';
+  if (filePath.endsWith('.xml')) return 'application/xml; charset=utf-8';
   if (filePath.endsWith('.png')) return 'image/png';
   if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) return 'image/jpeg';
   if (filePath.endsWith('.m4a')) return 'audio/mp4';

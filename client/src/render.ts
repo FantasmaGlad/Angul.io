@@ -516,6 +516,7 @@ export function interpolateEntities(
   previous: EntitySnapshot[] | undefined,
   latest: EntitySnapshot[],
   t: number,
+  mapSize?: number,
 ): EntitySnapshot[] {
   if (!previous || previous.length === 0) return latest;
 
@@ -523,10 +524,27 @@ export function interpolateEntities(
   return latest.map((entity) => {
     const before = previousById.get(entity.i);
     if (!before) return entity;
+    let dx = entity.x - before.x;
+    let dy = entity.y - before.y;
+    if (mapSize && mapSize > 0) {
+      const half = mapSize / 2;
+      if (Math.abs(dx) > half) {
+        dx = dx > 0 ? dx - mapSize : dx + mapSize;
+      }
+      if (Math.abs(dy) > half) {
+        dy = dy > 0 ? dy - mapSize : dy + mapSize;
+      }
+    }
+    let interpX = before.x + dx * t;
+    let interpY = before.y + dy * t;
+    if (mapSize && mapSize > 0) {
+      interpX = ((interpX % mapSize) + mapSize) % mapSize;
+      interpY = ((interpY % mapSize) + mapSize) % mapSize;
+    }
     return {
       ...entity,
-      x: before.x + (entity.x - before.x) * t,
-      y: before.y + (entity.y - before.y) * t,
+      x: interpX,
+      y: interpY,
       r: before.r + (entity.r - before.r) * t,
       m: before.m + (entity.m - before.m) * t,
     };
