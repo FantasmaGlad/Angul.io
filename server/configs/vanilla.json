@@ -9,7 +9,7 @@
   },
   "physics": {
     "v0": 300,
-    "speedMultiplier": 3,
+    "speedMultiplier": 2,
     "speedMassExponent": 0.0333,
     "velocityFloor": 20,
     "accelerationBase": 6750,
@@ -18,7 +18,7 @@
   },
   "split": {
     "ejectEfficiency": 1,
-    "ejectSpeedFactor": 4.5
+    "ejectSpeedFactor": 1.25
   },
   "eject": {
     "amount": 20,

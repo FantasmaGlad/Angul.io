@@ -308,7 +308,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
 
     const result: Entity[] = [piece];
     const angleStep = (PI * 2) / actualCount;
-    const speed = velocityForMass(massPerPiece, config) * 2.2;
+    const speed = velocityForMass(massPerPiece, config) * 1.25;
 
     for (let i = 1; i < actualCount; i++) {
       const angle = i * angleStep;
@@ -627,9 +627,18 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         // reste aussi réactif qu'avant pour accélérer, mais conserve désormais nettement plus son
         // élan en freinant (voir `decelerationForMass`/`MovementConfig.decelerationMassExponent`).
         const isDecelerating = length(targetVelocity) < length(entity.velocity);
-        const rate = isDecelerating
+        const speedV = length(entity.velocity);
+        const speedT = length(targetVelocity);
+        let turnFactor = 1.0;
+        if (speedV > 1 && speedT > 1) {
+          const dotProd = (entity.velocity.x * targetVelocity.x + entity.velocity.y * targetVelocity.y) / (speedV * speedT);
+          if (dotProd < 0.8) {
+            turnFactor = 1.0 + (0.8 - dotProd) * 2.5;
+          }
+        }
+        const rate = (isDecelerating
           ? decelerationForMass(entity.mass, config)
-          : accelerationForMass(entity.mass, config);
+          : accelerationForMass(entity.mass, config)) * turnFactor;
         const maxChange = rate * accelIntensity * dt;
         entity.velocity = moveToward(entity.velocity, targetVelocity, maxChange);
 
@@ -664,9 +673,10 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
           for (let i = 0; i < toSpawn; i++) {
             const vType = config.virus.type;
             const initialMass = vType === 2 ? 300 : 200;
-            const vRadius = Math.sqrt((config.areaConstant * initialMass) / PI);
+            const vRadius = vType === 2 ? 150 : Math.sqrt((config.areaConstant * initialMass) / PI);
             const pos = randomVirusPosition(world, 1, vRadius);
-            world.spawnVirus(pos, initialMass, vType);
+            const v = world.spawnVirus(pos, initialMass, vType);
+            if (vType === 2) v.radius = 150;
           }
         } else {
           virusSpawnCredit = 0;
@@ -739,9 +749,9 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         const [piece, virus] = a.kind === 'piece' ? [a, b] : [b, a];
         const vId = virus.virusId ?? 1;
 
-        if (vId === 1) { // Vert (Mass 200, Div 16)
-          if (piece.mass < 200) return; // Petit joueur inoffensif (se cache dedans)
-          world.setMass(piece, piece.mass + 200);
+        if (vId === 1) { // Vert (Mass 130, Div 16)
+          if (piece.mass < 130) return; // Petit joueur inoffensif (se cache dedans)
+          world.setMass(piece, piece.mass + 130);
           world.removeEntity(virus.id);
           explodePiece(world, piece, 16);
           return;
@@ -759,9 +769,9 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
           return;
         }
 
-        if (vId === 3) { // Bleu (Mass 200, Div 4x4 = 16)
-          if (piece.mass < 200) return; // Se cache dedans
-          world.setMass(piece, piece.mass + 200);
+        if (vId === 3) { // Bleu (Mass 130, Div 4x4 = 16)
+          if (piece.mass < 130) return; // Se cache dedans
+          world.setMass(piece, piece.mass + 130);
           world.removeEntity(virus.id);
           const step1 = explodePiece(world, piece, 4);
           for (const p of step1) {

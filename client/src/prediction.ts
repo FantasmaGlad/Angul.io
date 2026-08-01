@@ -640,9 +640,18 @@ export class LocalPrediction {
     // prédiction locale divergerait du serveur dès qu'un gros blob relâche l'input, et
     // `reconcile()` la corrigerait en rollback visible à chaque `state` reçu.
     const isDecelerating = length(targetVelocity) < length(piece.velocity);
-    const rate = isDecelerating
+    const speedV = length(piece.velocity);
+    const speedT = length(targetVelocity);
+    let turnFactor = 1.0;
+    if (speedV > 1 && speedT > 1) {
+      const dotProd = (piece.velocity.x * targetVelocity.x + piece.velocity.y * targetVelocity.y) / (speedV * speedT);
+      if (dotProd < 0.8) {
+        turnFactor = 1.0 + (0.8 - dotProd) * 2.5;
+      }
+    }
+    const rate = (isDecelerating
       ? decelerationForMass(piece.mass, movement)
-      : accelerationForMass(piece.mass, movement);
+      : accelerationForMass(piece.mass, movement)) * turnFactor;
     const maxChange = rate * accelIntensity * dtSeconds;
     piece.velocity = moveToward(piece.velocity, targetVelocity, maxChange);
     piece.position = add(piece.position, scale(piece.velocity, dtSeconds));
