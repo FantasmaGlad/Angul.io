@@ -29,7 +29,7 @@ describe('createParametricMod — getAccelerationForMass', () => {
   });
 });
 
-describe('createParametricMod — onPlayerJoin', () => {
+describe('createParametricMod — onPlayerJoin & règles d’apparition', () => {
   it('fait apparaître un unique morceau à la masse de départ du config', () => {
     const config = testConfig();
     const mod = createParametricMod(config);
@@ -41,6 +41,69 @@ describe('createParametricMod — onPlayerJoin', () => {
     const pieces = world.getPiecesByOwner('p1');
     expect(pieces).toHaveLength(1);
     expect(pieces[0]?.mass).toBe(config.player.startMass);
+  });
+
+  it('ne fait jamais apparaître un joueur/robot sur un joueur/robot existant', () => {
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+
+    for (let i = 0; i < 20; i++) {
+      const id = `player-${i}`;
+      world.addPlayer(id, `Player ${i}`);
+      mod.onPlayerJoin?.(world, id);
+    }
+
+    const allPieces = world.allEntities().filter((e) => e.kind === 'piece');
+    expect(allPieces.length).toBe(20);
+
+    for (let i = 0; i < allPieces.length; i++) {
+      for (let j = i + 1; j < allPieces.length; j++) {
+        const p1 = allPieces[i];
+        const p2 = allPieces[j];
+        const dist = Math.hypot(p1.position.x - p2.position.x, p1.position.y - p2.position.y);
+        expect(dist).toBeGreaterThanOrEqual(p1.radius + p2.radius);
+      }
+    }
+  });
+
+  it('ne fait jamais apparaître un pellet sur un joueur/robot ni sur un autre pellet', () => {
+    const config = testConfig({ food: { ...testConfig().food, density: 10, respawnRatePerSecond: 100 } });
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+
+    // Spawn 5 joueurs
+    for (let i = 0; i < 5; i++) {
+      const id = `player-${i}`;
+      world.addPlayer(id, `Player ${i}`);
+      mod.onPlayerJoin?.(world, id);
+    }
+
+    // Spawn nourriture via onTick
+    mod.onTick?.(world, 1.0);
+
+    const particles = world.allEntities().filter((e) => e.kind === 'particle');
+    const pieces = world.allEntities().filter((e) => e.kind === 'piece');
+
+    expect(particles.length).toBeGreaterThan(0);
+
+    // Vérifie qu'aucun pellet ne chevauche un joueur/robot
+    for (const p of particles) {
+      for (const piece of pieces) {
+        const dist = Math.hypot(p.position.x - piece.position.x, p.position.y - piece.position.y);
+        expect(dist).toBeGreaterThanOrEqual(p.radius + piece.radius);
+      }
+    }
+
+    // Vérifie qu'aucun pellet ne chevauche un autre pellet
+    for (let i = 0; i < particles.length; i++) {
+      for (let j = i + 1; j < particles.length; j++) {
+        const p1 = particles[i];
+        const p2 = particles[j];
+        const dist = Math.hypot(p1.position.x - p2.position.x, p1.position.y - p2.position.y);
+        expect(dist).toBeGreaterThanOrEqual(p1.radius + p2.radius);
+      }
+    }
   });
 });
 

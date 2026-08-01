@@ -200,11 +200,22 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     };
   }
 
-  function isUnderPlayerPiece(world: World, pos: Vector2): boolean {
+  /** Vérifie si une position de nourriture/pellet chevaucherait une pièce (joueur/bot) ou une particule (autre pellet) existante. */
+  function isPositionOccupiedForFood(
+    world: World,
+    pos: Vector2,
+    foodRadius: number,
+    pelletBuffer: number = 2,
+  ): boolean {
     for (const entity of world.allEntities()) {
       if (entity.kind === 'piece' || entity.ownerId !== undefined) {
         const dist = distance(pos, entity.position);
-        if (dist < entity.radius + 5) {
+        if (dist < entity.radius + foodRadius + 5) {
+          return true;
+        }
+      } else if (entity.kind === 'particle') {
+        const dist = distance(pos, entity.position);
+        if (dist < entity.radius + foodRadius + pelletBuffer) {
           return true;
         }
       }
@@ -212,25 +223,31 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     return false;
   }
 
-  function randomFoodPosition(world: World, margin: number = 1): Vector2 {
-    const MAX_ATTEMPTS = 15;
-    let candidate = randomPositionInMap(margin);
-
-    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      if (!isUnderPlayerPiece(world, candidate)) {
-        return candidate;
+  function randomFoodPosition(world: World, margin: number = 1, foodMass: number = 1): Vector2 {
+    const foodRadius = Math.sqrt((config.areaConstant * foodMass) / PI);
+    const attemptsByBuffer = [5, 2, 0];
+    for (const buffer of attemptsByBuffer) {
+      for (let attempt = 0; attempt < 30; attempt++) {
+        const candidate = randomPositionInMap(margin);
+        if (!isPositionOccupiedForFood(world, candidate, foodRadius, buffer)) {
+          return candidate;
+        }
       }
-      candidate = randomPositionInMap(margin);
     }
-
-    return candidate;
+    return randomPositionInMap(margin);
   }
 
-  function isNearBigPlayerPiece(world: World, pos: Vector2, safeDistance: number = 150): boolean {
+  /** Vérifie si une position de spawn de joueur/robot chevaucherait ou serait trop proche d'un joueur/robot existant. */
+  function isPositionOccupiedForPlayer(
+    world: World,
+    pos: Vector2,
+    spawnRadius: number,
+    safeBuffer: number,
+  ): boolean {
     for (const entity of world.allEntities()) {
       if (entity.kind === 'piece') {
         const dist = distance(pos, entity.position);
-        if (dist < entity.radius + safeDistance) {
+        if (dist < entity.radius + spawnRadius + safeBuffer) {
           return true;
         }
       }
@@ -238,21 +255,41 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     return false;
   }
 
-  function randomSafePlayerPosition(world: World, margin: number): Vector2 {
-    const MAX_ATTEMPTS = 25;
-    let candidate = randomPositionInMap(margin);
-    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      if (!isNearBigPlayerPiece(world, candidate, 150)) {
-        return candidate;
+  function randomSafePlayerPosition(world: World, margin: number, spawnRadius: number): Vector2 {
+    const buffers = [150, 50, 5, 0];
+    for (const buffer of buffers) {
+      for (let attempt = 0; attempt < 30; attempt++) {
+        const candidate = randomPositionInMap(margin);
+        if (!isPositionOccupiedForPlayer(world, candidate, spawnRadius, buffer)) {
+          return candidate;
+        }
       }
-      candidate = randomPositionInMap(margin);
     }
-    return candidate;
+
+    let bestCandidate = randomPositionInMap(margin);
+    let maxMinDist = -1;
+    for (let i = 0; i < 20; i++) {
+      const candidate = randomPositionInMap(margin);
+      let minDist = Infinity;
+      for (const entity of world.allEntities()) {
+        if (entity.kind === 'piece') {
+          const d = distance(candidate, entity.position) - entity.radius;
+          if (d < minDist) minDist = d;
+        }
+      }
+      if (minDist > maxMinDist) {
+        maxMinDist = minDist;
+        bestCandidate = candidate;
+      }
+    }
+    return bestCandidate;
   }
 
   function spawnPlayerPiece(world: World, playerId: PlayerId): void {
-    const margin = Math.sqrt((config.areaConstant * config.player.startMass) / 3);
-    world.spawnPiece(playerId, randomSafePlayerPosition(world, margin), config.player.startMass);
+    const mass = config.player.startMass;
+    const spawnRadius = Math.sqrt((config.areaConstant * mass) / PI);
+    const margin = Math.sqrt((config.areaConstant * mass) / 3);
+    world.spawnPiece(playerId, randomSafePlayerPosition(world, margin, spawnRadius), mass);
   }
 
   /**
@@ -548,7 +585,8 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         const toSpawn = Math.min(Math.floor(foodSpawnCredit), target - particleCount);
         foodSpawnCredit -= toSpawn;
         for (let i = 0; i < toSpawn; i++) {
-          world.spawnParticle(randomFoodPosition(world, 1), randomFoodMass(config));
+          const foodMass = randomFoodMass(config);
+          world.spawnParticle(randomFoodPosition(world, 1, foodMass), foodMass);
         }
       }
 
