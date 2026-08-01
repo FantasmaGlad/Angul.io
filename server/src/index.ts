@@ -79,7 +79,7 @@ const baseRooms = BASE_ROOMS.map((base) => {
     visibility: 'public',
     permanent: true,
     maxPlayers: base.maxPlayers ?? room?.maxPlayers ?? BASE_ROOM_MAX_PLAYERS,
-    mapSize: base.mapSize && base.mapSize !== 15000 ? base.mapSize : modMapSize,
+    mapSize: base.mapSize ?? modMapSize,
     resetSchedule: base.resetDurationMin !== undefined
       ? (base.resetDurationMin > 0
           ? { type: 'everyNMinutes', minutes: base.resetDurationMin, timeZone: 'Europe/Paris' }
