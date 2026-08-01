@@ -122,6 +122,12 @@ export function attachInput(
 
 
   const onKeyDown = (event: KeyboardEvent): void => {
+    const isEjectKey =
+      event.code === keybinds.eject.key ||
+      event.code === 'KeyW' ||
+      event.code === 'KeyZ' ||
+      event.key.toLowerCase() === 'w';
+
     if (event.code === keybinds.split.key) {
       event.preventDefault();
       splitRequested = true;
@@ -130,7 +136,7 @@ export function attachInput(
       event.preventDefault();
       dashRequested = true;
       onDashRequested?.();
-    } else if (event.code === keybinds.eject.key) {
+    } else if (isEjectKey) {
       event.preventDefault();
       ejectRequested = true;
     }

@@ -634,8 +634,8 @@ select {
 }
 
 .hero-logo-img {
-  width: 480px;
-  max-width: 85%;
+  width: 240px;
+  max-width: 45%;
   height: auto;
   object-fit: contain;
   animation: logo-pulse 3.5s ease-in-out infinite;
@@ -661,7 +661,7 @@ select {
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(46, 49, 51, 0.18);
   border-radius: var(--radius-lg);
-  padding: 24px;
+  padding: 16px 20px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;

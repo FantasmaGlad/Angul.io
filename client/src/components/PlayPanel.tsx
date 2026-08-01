@@ -1,7 +1,7 @@
-import type { ChangeEvent } from 'react';
+import { useMemo, type ChangeEvent } from 'react';
 import type { RoomSummary } from '../lobby.js';
 
-const GLOBAL_RANKING_SIZE = 5;
+const GLOBAL_RANKING_SIZE = 3;
 
 interface PlayPanelProps {
   playersOnline: number | undefined;
@@ -22,9 +22,16 @@ export default function PlayPanel({
   rooms,
   onJoinRoom,
 }: PlayPanelProps) {
-  const topRooms = [...rooms]
-    .sort((a, b) => b.playerCount - a.playerCount)
-    .slice(0, GLOBAL_RANKING_SIZE);
+  const topRooms = useMemo(() => {
+    return [...rooms]
+      .sort((a, b) => {
+        if (b.playerCount !== a.playerCount) {
+          return b.playerCount - a.playerCount;
+        }
+        return Math.random() - 0.5;
+      })
+      .slice(0, GLOBAL_RANKING_SIZE);
+  }, [rooms]);
 
   return (
     <section className="play-panel-wrapper">
@@ -41,11 +48,11 @@ export default function PlayPanel({
         </div>
       </div>
 
-      {/* Console de Jeu Card (Fond blanc transparent à partir de juste au dessus de PSEUDO DE JEU) */}
+      {/* Console de Jeu Card (Fond blanc transparent à partir de juste au dessus de PSEUDO) */}
       <div className="play-panel-card">
         <div className="launcher-form">
           <label className="field">
-            <span className="field-label">PSEUDO DE JEU</span>
+            <span className="field-label">PSEUDO</span>
             <input
               className="clean-input"
               value={nickname}

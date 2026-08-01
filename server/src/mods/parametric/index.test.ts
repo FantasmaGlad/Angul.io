@@ -268,17 +268,17 @@ describe('createParametricMod — éjection de masse', () => {
     expect(particles[0]!.ownerId).toBeUndefined(); // mangeable par n'importe qui, pas un morceau possédé
   });
 
-  it('refuse si la masse du morceau est sous 4x la masse envoyée (demande utilisateur)', () => {
+  it('refuse si la masse du morceau est sous 1.25x la masse envoyée', () => {
     const config = testConfig({ eject: { amount: 5 } });
     const mod = createParametricMod(config);
     const world = freshWorld();
     world.addPlayer('p1', 'Alice');
-    world.spawnPiece('p1', { x: 500, y: 500 }, 19.999); // juste sous 5*4=20
+    world.spawnPiece('p1', { x: 500, y: 500 }, 6.24); // juste sous 5*1.25=6.25
 
     mod.onPlayerInput?.(world, 'p1', { target: { x: 600, y: 500 }, intensity: 1, split: false, eject: true });
 
     const [piece] = world.getPiecesByOwner('p1');
-    expect(piece!.mass).toBeCloseTo(19.999, 6); // inchangé
+    expect(piece!.mass).toBeCloseTo(6.24, 6); // inchangé
     expect(world.allEntities().filter((e) => e.kind === 'particle')).toHaveLength(0);
   });
 

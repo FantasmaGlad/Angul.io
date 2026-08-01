@@ -107,7 +107,7 @@ const TARGET_DEAD_ZONE_PX = 3;
  * utilisateur : "impossible d'envoyer de la masse si le joueur est plus petit de 4x la masse
  * d'envoi") — jamais un pourcentage réglable par mode, une règle fixe indépendante de
  * `config.eject.amount`. */
-const EJECT_MIN_MASS_MULTIPLIER = 4;
+const EJECT_MIN_MASS_MULTIPLIER = 1.25;
 /** Anti-spam (pas une mécanique de jeu réglable) : une touche maintenue/répétition clavier OS ne
  * doit pas vider la masse d'un morceau en une fraction de seconde. */
 const EJECT_COOLDOWN_SECONDS = 0.15;

@@ -80,6 +80,21 @@ export function colorForSkinFallback(skinId: string): string {
   return map[skinId] ?? '#3a6b35';
 }
 
+const VIRUS_IMAGE_CACHE: Record<number, HTMLImageElement> = {};
+
+function getVirusImage(vId: 1 | 2 | 3): HTMLImageElement {
+  if (VIRUS_IMAGE_CACHE[vId]) return VIRUS_IMAGE_CACHE[vId];
+  const img = new Image();
+  img.src =
+    vId === 2
+      ? '/assets/Virus/VirusRouge.png'
+      : vId === 3
+        ? '/assets/Virus/VirusBleu.png'
+        : '/assets/Virus/VirusVert.png';
+  VIRUS_IMAGE_CACHE[vId] = img;
+  return img;
+}
+
 /** BASE_SCALE/MIN_SCALE/MAX_SCALE/REFERENCE_MASS (formule complète de zoom en fonction de la
  * masse) vivent désormais dans `@angulio/shared` (`camera.ts`) — le serveur en a besoin pour
  * dériver le rayon d'intérêt réseau à partir de la même masse (filtrage par intérêt, voir
@@ -276,6 +291,40 @@ export function renderFrame(
   for (const [color, path] of foodPathsByColor) {
     ctx.fillStyle = color;
     ctx.fill(path);
+    drawCalls++;
+  }
+
+  // Couche 1.5 : Rendu des virus (sous les joueurs)
+  const virusEntities = visibleEntities.filter((e) => e.k === 'v');
+  for (const entity of virusEntities) {
+    const screenX = toScreenX(entity.x);
+    const screenY = toScreenY(entity.y);
+    const screenRadius = entity.r * camera.scale;
+
+    if (screenX + screenRadius < 0 || screenX - screenRadius > canvasWidth) continue;
+    if (screenY + screenRadius < 0 || screenY - screenRadius > canvasHeight) continue;
+
+    const radius = Math.max(1, screenRadius);
+    const vId = (entity.vId ?? 1) as 1 | 2 | 3;
+    const virusImg = getVirusImage(vId);
+
+    if (virusImg && virusImg.complete && virusImg.naturalWidth > 0) {
+      const drawCenterX = Math.round(screenX);
+      const drawCenterY = Math.round(screenY);
+      const drawRadius = Math.round(radius);
+      ctx.drawImage(
+        virusImg,
+        drawCenterX - drawRadius,
+        drawCenterY - drawRadius,
+        drawRadius * 2,
+        drawRadius * 2,
+      );
+    } else {
+      ctx.beginPath();
+      ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+      ctx.fillStyle = vId === 2 ? '#ff2c2c' : vId === 3 ? '#0047ab' : '#22c55e';
+      ctx.fill();
+    }
     drawCalls++;
   }
 
