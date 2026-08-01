@@ -18,7 +18,7 @@
 // correspond plus à `CACHE_NAME` courant). Incrémenté à nouveau (v2 -> v3) pour la même raison :
 // nouveau logo/favicon (assets/Logos/LogoIcon.png) — sans ce bump, un appareil ayant déjà installé
 // la PWA garderait l'ancien favicon en cache indéfiniment.
-const CACHE_NAME = 'angulio-shell-v3';
+const CACHE_NAME = 'angulio-shell-v4';
 const PRECACHE_URLS = [
   '/manifest.json',
   '/favicon.ico',

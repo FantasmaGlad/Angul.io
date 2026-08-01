@@ -72,14 +72,14 @@ const roomManager = new RoomManager(roomHost, TICK_RATE_HZ);
 // omet cette section.
 const BASE_ROOMS = loadBaseRoomsConfig();
 const baseRooms = BASE_ROOMS.map((base) => {
-  const { room } = resolveMod(base.modId);
+  const { room, mapSize: modMapSize } = resolveMod(base.modId);
   return roomManager.createRoom({
     name: base.name,
     modId: base.modId,
     visibility: 'public',
     permanent: true,
     maxPlayers: base.maxPlayers ?? room?.maxPlayers ?? BASE_ROOM_MAX_PLAYERS,
-    mapSize: base.mapSize,
+    mapSize: base.mapSize && base.mapSize !== 15000 ? base.mapSize : modMapSize,
     resetSchedule: base.resetDurationMin !== undefined
       ? (base.resetDurationMin > 0
           ? { type: 'everyNMinutes', minutes: base.resetDurationMin, timeZone: 'Europe/Paris' }
