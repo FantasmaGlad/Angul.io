@@ -243,6 +243,7 @@ Angul.io/
 │       │   │   ├── physics.ts                     Formules dérivées de la config (vitesse/accel/décroissance…)
 │       │   │   ├── pieceState.ts                  État par-morceau (cible, cooldowns) hors du World générique
 │       │   │   ├── border.ts / .test.ts           4 types de bord de carte (mur/rebond/toroïdal/toxique)
+│       │   │   ├── virus.test.ts                  Tests unitaires des 3 types de virus (Vert/Rouge/Bleu, duplication, réactions en chaîne)
 │       │   │   └── index.ts                       createParametricMod() — implémente GameMod depuis la config
 │       │   └── hardcore/
 │       │       └── index.ts / .test.ts            createHardcoreMod() — COMPOSE parametric (voir README)

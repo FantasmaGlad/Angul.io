@@ -182,6 +182,12 @@ export interface ParametricModConfig {
 
   bots?: BotConfig;
 
+  virus?: {
+    enabled: boolean;
+    type: 1 | 2 | 3;
+    densityPer10k?: number;
+  };
+
   /** Réglages de salon par défaut pour ce mode — utilisés par `server/src/index.ts` pour les
    * salons de base créés au démarrage ; un salon créé depuis le lobby peut les redéfinir
    * individuellement (voir `CreateRoomOptions`, engine/roomManager.ts). Absents = repli sur les

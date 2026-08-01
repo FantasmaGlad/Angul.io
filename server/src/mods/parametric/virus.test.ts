@@ -1,0 +1,155 @@
+import { describe, expect, it } from 'vitest';
+import { World } from '../../engine/world.js';
+import { createParametricMod } from './index.js';
+import type { ParametricModConfig } from './config.js';
+
+function createTestConfig(virusType: 1 | 2 | 3): ParametricModConfig {
+  return {
+    id: `test-virus-${virusType}`,
+    player: {
+      startMass: 50,
+      maxSplits: 64,
+      minSplitMass: 100,
+      splitEnabled: true,
+      ejectEnabled: true,
+    },
+    physics: {
+      v0: 300,
+      speedMultiplier: 1.5,
+      speedMassExponent: 0.5,
+      velocityFloor: 20,
+      accelerationBase: 1000,
+      accelerationMassExponent: 0.5,
+    },
+    split: {
+      ejectEfficiency: 1.0,
+      ejectSpeedFactor: 2.0,
+    },
+    eject: {
+      amount: 20,
+      value: 20,
+    },
+    merge: {
+      baseTimeSec: 30,
+      massFactor: 0.02,
+      overlapMinFraction: 0.33,
+    },
+    eating: {
+      massAdvantage: 0.05,
+      minMassToEatFood: 2,
+    },
+    decay: {
+      tiers: [],
+      graceSec: 10,
+      floor: 50,
+    },
+    arena: {
+      width: 10000,
+      height: 10000,
+      borderType: 'STRICT_WALL',
+    },
+    food: {
+      density: 4,
+      respawnRatePerSecond: 0,
+      pelletTypes: [{ color: '#0047ab', mass: 1, weight: 100 }],
+    },
+    virus: {
+      enabled: true,
+      type: virusType,
+      densityPer10k: 1,
+    },
+    areaConstant: 6,
+  };
+}
+
+describe('Virus Mechanics', () => {
+  it('Virus Vert (ID 1): small players hide inside, large players explode into 16 pieces', () => {
+    const config = createTestConfig(1);
+    const mod = createParametricMod(config);
+    const world = new World({ mapSize: 10000 });
+
+    world.addPlayer('p1', 'Player 1');
+    const smallPiece = world.spawnPiece('p1', { x: 1000, y: 1000 }, 100);
+    const virus = world.spawnVirus({ x: 1000, y: 1000 }, 200, 1);
+
+    // Collision avec petit joueur (masse 100 < 200)
+    mod.onCollision(world, smallPiece, virus, 0.016);
+    expect(world.getEntity(smallPiece.id)).toBeDefined();
+    expect(world.getEntity(virus.id)).toBeDefined();
+
+    // Collision avec grand joueur (masse 250 >= 200)
+    world.addPlayer('p2', 'Player 2');
+    const largePiece = world.spawnPiece('p2', { x: 1000, y: 1000 }, 250);
+    mod.onCollision(world, largePiece, virus, 0.016);
+
+    // Le virus doit être supprimé
+    expect(world.getEntity(virus.id)).toBeUndefined();
+    // Le joueur doit être divisé en 16 morceaux
+    const p2Pieces = world.getPiecesByOwner('p2');
+    expect(p2Pieces.length).toBe(16);
+  });
+
+  it('Virus Rouge (ID 2): consumes small players (<50 mass), explodes large players into 32 pieces', () => {
+    const config = createTestConfig(2);
+    const mod = createParametricMod(config);
+    const world = new World({ mapSize: 10000 });
+
+    const virus = world.spawnVirus({ x: 500, y: 500 }, 50, 2);
+    world.addPlayer('p1', 'Player 1');
+    const tinyPiece = world.spawnPiece('p1', { x: 500, y: 500 }, 30);
+
+    // Virus rouge consomme le petit joueur (<50)
+    mod.onCollision(world, tinyPiece, virus, 0.016);
+    expect(world.getEntity(tinyPiece.id)).toBeUndefined();
+
+    // Grand joueur (masse 100 >= 50) mange le virus rouge
+    world.addPlayer('p2', 'Player 2');
+    const bigPiece = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
+
+    mod.onCollision(world, bigPiece, virus, 0.016);
+    expect(world.getEntity(virus.id)).toBeUndefined();
+    const p2Pieces = world.getPiecesByOwner('p2');
+    expect(p2Pieces.length).toBe(32);
+  });
+
+  it('Virus Bleu (ID 3): performs 4x4 (16) chain reaction split over 2 ticks', () => {
+    const config = createTestConfig(3);
+    const mod = createParametricMod(config);
+    const world = new World({ mapSize: 10000 });
+
+    const virus = world.spawnVirus({ x: 1000, y: 1000 }, 200, 3);
+    world.addPlayer('p1', 'Player 1');
+    const piece = world.spawnPiece('p1', { x: 1000, y: 1000 }, 300);
+
+    // Étape 1 : collision immédiate -> 4 morceaux
+    mod.onCollision(world, piece, virus, 0.016);
+    expect(world.getEntity(virus.id)).toBeUndefined();
+    let pieces = world.getPiecesByOwner('p1');
+    expect(pieces.length).toBe(4);
+
+    // Étape 2 : tick suivant -> chaque morceau re-splitte en 4 -> 16 morceaux au total
+    mod.onTick(world, 0.016);
+    pieces = world.getPiecesByOwner('p1');
+    expect(pieces.length).toBe(16);
+  });
+
+  it('Virus Vert (ID 1): feeding 200 mass via ejected particles duplicates the virus', () => {
+    const config = createTestConfig(1);
+    const mod = createParametricMod(config);
+    const world = new World({ mapSize: 10000 });
+
+    const virus = world.spawnVirus({ x: 2000, y: 2000 }, 200, 1);
+    const initialViruses = world.allEntities().filter((e) => e.kind === 'virus');
+    expect(initialViruses.length).toBe(1);
+
+    // Nourrit le virus de 200 de masse (10 particules de masse 20)
+    for (let i = 0; i < 10; i++) {
+      const particle = world.spawnParticle({ x: 2000, y: 2000 }, 20);
+      particle.velocity = { x: 100, y: 0 };
+      mod.onCollision(world, particle, virus, 0.016);
+    }
+
+    const afterViruses = world.allEntities().filter((e) => e.kind === 'virus');
+    expect(afterViruses.length).toBe(2);
+  });
+});

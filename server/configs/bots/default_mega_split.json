@@ -23,8 +23,8 @@
     "chaseIntensity": 1.0,
     "foodSeekIntensity": 0.9,
     "wanderIntensity": 0.9,
-    "splitCooldownMs": 5000,
-    "splitMassMultiplier": 1.2
+    "splitCooldownMs": 500,
+    "splitMassMultiplier": 1.01
   },
   "wallAvoidance": {
     "marginPx": 300

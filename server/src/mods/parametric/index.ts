@@ -7,6 +7,7 @@ import {
   isBotId,
   length,
   moveToward,
+  normalize,
   PI,
   restingDistanceForOverlap,
   scale,
@@ -292,6 +293,62 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     world.spawnPiece(playerId, randomSafePlayerPosition(world, margin, spawnRadius), mass);
   }
 
+  function explodePiece(world: World, piece: Entity, count: number): Entity[] {
+    if (!piece.ownerId) return [piece];
+    const maxSplits = config.player.maxSplits;
+    const currentCount = world.getPiecesByOwner(piece.ownerId).length;
+    const actualCount = Math.min(count, maxSplits - currentCount + 1);
+    if (actualCount <= 1) return [piece];
+
+    const totalMass = piece.mass;
+    const massPerPiece = totalMass / actualCount;
+    world.setMass(piece, massPerPiece);
+    pieceState(piece).massAtSplit = massPerPiece;
+    pieceState(piece).splitElapsedS = 0;
+
+    const result: Entity[] = [piece];
+    const angleStep = (PI * 2) / actualCount;
+    const speed = velocityForMass(massPerPiece, config) * 2.2;
+
+    for (let i = 1; i < actualCount; i++) {
+      const angle = i * angleStep;
+      const dir = { x: Math.cos(angle), y: Math.sin(angle) };
+      const spawnPos = add(piece.position, scale(dir, piece.radius + 5));
+      const newPiece = world.spawnPiece(piece.ownerId, spawnPos, massPerPiece);
+      newPiece.velocity = scale(dir, speed);
+      const state = pieceState(newPiece);
+      state.massAtSplit = massPerPiece;
+      state.splitElapsedS = 0;
+      result.push(newPiece);
+    }
+    return result;
+  }
+
+  function isPositionOccupiedForVirus(world: World, pos: Vector2, virusRadius: number): boolean {
+    for (const entity of world.allEntities()) {
+      const dist = distance(pos, entity.position);
+      if (dist < entity.radius + virusRadius + 10) return true;
+    }
+    return false;
+  }
+
+  function randomVirusPosition(world: World, margin: number, virusRadius: number): Vector2 {
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const candidate = randomPositionInMap(margin);
+      if (!isPositionOccupiedForVirus(world, candidate, virusRadius)) {
+        return candidate;
+      }
+    }
+    return randomPositionInMap(margin);
+  }
+
+  function targetVirusCount(): number {
+    if (!config.virus?.enabled) return 0;
+    const areaIn10k = (config.arena.width * config.arena.height) / 100_000_000;
+    const density = config.virus.densityPer10k ?? 2;
+    return Math.max(1, Math.round(areaIn10k * density));
+  }
+
   /**
    * Direction ET intensité d'un morceau donné vers la cible du joueur (`inputTarget`, position
    * monde du curseur — voir pieceState.ts). Calculée **par morceau** (à partir de sa propre
@@ -495,6 +552,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
   }
 
   let foodSpawnCredit = 0;
+  let virusSpawnCredit = 0;
 
   return {
     id: config.id,
@@ -590,6 +648,52 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         }
       }
 
+      // Maintenance de la population de virus (taux de 5 virus/s universel jusqu'à la limite)
+      if (config.virus?.enabled) {
+        const virusEntities = world.allEntities().filter((e) => e.kind === 'virus');
+        const vTarget = targetVirusCount();
+        if (virusEntities.length < vTarget) {
+          virusSpawnCredit += 5 * dt;
+          const toSpawn = Math.min(Math.floor(virusSpawnCredit), vTarget - virusEntities.length);
+          virusSpawnCredit -= toSpawn;
+          for (let i = 0; i < toSpawn; i++) {
+            const vType = config.virus.type;
+            const initialMass = vType === 2 ? 50 : 200;
+            const vRadius = Math.sqrt((config.areaConstant * initialMass) / PI);
+            const pos = randomVirusPosition(world, 1, vRadius);
+            world.spawnVirus(pos, initialMass, vType);
+          }
+        } else {
+          virusSpawnCredit = 0;
+        }
+      }
+
+      // 2e étape de la réaction en chaîne pour Virus Bleu (4x4 = 16)
+      for (const entity of world.allEntities()) {
+        if (entity.kind === 'piece') {
+          const state = pieceState(entity);
+          if (state.chainReactionPending) {
+            state.chainReactionPending = false;
+            explodePiece(world, entity, 4);
+          }
+        }
+      }
+
+      // Dégonflement du Virus Rouge (type 2) et régurgitation de pellets ID 1 (+2 à +5 px du bord)
+      for (const virus of world.allEntities()) {
+        if (virus.kind === 'virus' && virus.virusId === 2 && virus.mass > 50) {
+          const massLost = Math.min(virus.mass - 50, 30 * dt);
+          world.setMass(virus, virus.mass - massLost);
+          virus.data.spitCredit = ((virus.data.spitCredit as number) ?? 0) + massLost;
+          while ((virus.data.spitCredit as number) >= 1) {
+            virus.data.spitCredit = (virus.data.spitCredit as number) - 1;
+            const angle = Math.random() * PI * 2;
+            const distOffset = virus.radius + 2 + Math.random() * 3;
+            const pelletPos = add(virus.position, { x: Math.cos(angle) * distOffset, y: Math.sin(angle) * distOffset });
+            world.spawnParticle(pelletPos, 1);
+          }
+        }
+      }
     },
 
     onPostMove(world: World) {
@@ -600,6 +704,66 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
 
     onCollision(world: World, a: Entity, b: Entity, dt: number) {
       if (a.kind === 'particle' && b.kind === 'particle') return;
+
+      // Particule (nourriture ou masse éjectée W) ↔ Virus
+      if ((a.kind === 'particle' && b.kind === 'virus') || (a.kind === 'virus' && b.kind === 'particle')) {
+        const [particle, virus] = a.kind === 'particle' ? [a, b] : [b, a];
+        world.removeEntity(particle.id);
+        const vId = virus.virusId ?? 1;
+
+        if (vId === 1 || vId === 3) {
+          virus.data.fedMass = ((virus.data.fedMass as number) ?? 0) + particle.mass;
+          if (length(particle.velocity) > 0) {
+            virus.data.lastEjectDirection = normalize(particle.velocity);
+          }
+          if ((virus.data.fedMass as number) >= 200) {
+            virus.data.fedMass = 0;
+            const dir = (virus.data.lastEjectDirection as Vector2) ?? { x: 1, y: 0 };
+            const newPos = add(virus.position, scale(dir, virus.radius * 2));
+            const dup = world.spawnVirus(newPos, virus.mass, vId);
+            dup.velocity = scale(dir, 600);
+          }
+        } else if (vId === 2) {
+          world.setMass(virus, virus.mass + particle.mass);
+        }
+        return;
+      }
+
+      // Morceau de joueur / robot ↔ Virus
+      if ((a.kind === 'piece' && b.kind === 'virus') || (a.kind === 'virus' && b.kind === 'piece')) {
+        const [piece, virus] = a.kind === 'piece' ? [a, b] : [b, a];
+        const vId = virus.virusId ?? 1;
+
+        if (vId === 1) { // Vert (Mass 200, Div 16)
+          if (piece.mass < 200) return; // Petit joueur inoffensif (se cache dedans)
+          world.setMass(piece, piece.mass + 200);
+          world.removeEntity(virus.id);
+          explodePiece(world, piece, 16);
+          return;
+        }
+
+        if (vId === 2) { // Rouge (Mass 50, Div 32, mange < 50)
+          if (piece.mass < 50) {
+            finalizeConsumedEntity(world, undefined, piece, piece.mass);
+            return;
+          }
+          world.setMass(piece, piece.mass + virus.mass);
+          world.removeEntity(virus.id);
+          explodePiece(world, piece, 32);
+          return;
+        }
+
+        if (vId === 3) { // Bleu (Mass 200, Div 4x4 = 16)
+          if (piece.mass < 200) return; // Se cache dedans
+          world.setMass(piece, piece.mass + 200);
+          world.removeEntity(virus.id);
+          const step1 = explodePiece(world, piece, 4);
+          for (const p of step1) {
+            pieceState(p).chainReactionPending = true;
+          }
+          return;
+        }
+      }
 
       // Nourriture mangée par un morceau
       if (a.kind === 'particle' || b.kind === 'particle') {

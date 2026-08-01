@@ -37,9 +37,9 @@ export function computeBotInput(
   profile: BotProfileKind,
   memory: BotStateMemory = {},
   behavior: BotBehaviorConfig = DEFAULT_BOT_BEHAVIOR_CONFIG,
-): { input: { target: Vector2; intensity: number; split: boolean }; memory: BotStateMemory } {
+): { input: { target: Vector2; intensity: number; split: boolean; dash?: boolean; eject?: boolean }; memory: BotStateMemory } {
   const defaultInput = {
-    input: { target: { x: 0, y: 0 }, intensity: 0, split: false },
+    input: { target: { x: 0, y: 0 }, intensity: 0, split: false, dash: false, eject: false },
     memory,
   };
 
@@ -97,6 +97,8 @@ export function computeBotInput(
   let targetDir: Vector2 = { x: 0, y: 0 };
   let intensity = 1.0;
   let split = false;
+  let dash = false;
+  let eject = false;
 
   const effectiveProfile = profile === 'challenger' ? 'agressif' : profile;
 
@@ -105,15 +107,15 @@ export function computeBotInput(
       const cfg = behavior.fuis;
       const closePredators = predators.filter((p) => distance(center, p.position) <= cfg.predatorRadiusPx);
       if (closePredators.length > 0) {
-        // Fuite : s'éloigne du barycentre des prédateurs
         let predCenterSum: Vector2 = { x: 0, y: 0 };
         for (const p of closePredators) predCenterSum = add(predCenterSum, p.position);
         const predCenter = scale(predCenterSum, 1 / closePredators.length);
         const awayVec = sub(center, predCenter);
         targetDir = normalize(awayVec);
         intensity = cfg.fleeIntensity;
+        // En fuite d'urgence : utilise le dash
+        if (totalMass >= 50 && Math.random() < 0.3) dash = true;
       } else {
-        // Cherche la nourriture la plus proche
         const nearestFood = findNearest(center, food);
         if (nearestFood) {
           targetDir = normalize(sub(nearestFood.position, center));
@@ -134,7 +136,6 @@ export function computeBotInput(
         targetDir = normalize(sub(center, closePredator.position));
         intensity = cfg.cautionIntensity;
       } else {
-        // Focus sur nourriture
         const nearestFood = findNearest(center, food);
         if (nearestFood) {
           targetDir = normalize(sub(nearestFood.position, center));
@@ -145,6 +146,8 @@ export function computeBotInput(
         }
       }
       split = false;
+      // Éjection occasionnelle si masse suffisante
+      if (totalMass > 180 && Math.random() < 0.05) eject = true;
       break;
     }
 
@@ -154,8 +157,8 @@ export function computeBotInput(
       if (threat) {
         targetDir = normalize(sub(center, threat.position));
         intensity = cfg.fleeIntensity;
+        if (totalMass >= 50 && Math.random() < 0.35) dash = true;
       } else {
-        // Recherche de la meilleure proie
         const targetPrey = findBestPrey(center, prey);
         if (targetPrey) {
           const distToPrey = distance(center, targetPrey.position);
@@ -165,13 +168,14 @@ export function computeBotInput(
           targetDir = normalize(sub(predictedPos, center));
           intensity = cfg.chaseIntensity;
 
-          // Seuil de Split Létal : uniquement si le bot a 1 seul morceau, dist <= threatRadiusPx
-          // et cooldown écoulé.
+          if (totalMass >= 50 && distToPrey <= cfg.threatRadiusPx * 1.5 && Math.random() < 0.25) {
+            dash = true;
+          }
+
           const now = performance.now();
           const cooldownOk =
             memory.lastSplitAtMs === undefined || now - memory.lastSplitAtMs >= cfg.splitCooldownMs;
           if (
-            botPieces.length < 2 &&
             cooldownOk &&
             distToPrey <= cfg.threatRadiusPx &&
             totalMass / 2 >= targetPrey.mass * cfg.splitMassMultiplier
@@ -179,8 +183,12 @@ export function computeBotInput(
             split = true;
             memory.lastSplitAtMs = now;
           }
+
+          // Éjection W pour nourrir/propulser ou shooter
+          if (totalMass > 150 && Math.random() < 0.15) {
+            eject = true;
+          }
         } else {
-          // Nourriture si pas de proie
           const nearestFood = findNearest(center, food);
           if (nearestFood) {
             targetDir = normalize(sub(nearestFood.position, center));
@@ -305,6 +313,8 @@ export function computeBotInput(
       target: targetWorldPos,
       intensity,
       split,
+      dash,
+      eject,
     },
     memory,
   };

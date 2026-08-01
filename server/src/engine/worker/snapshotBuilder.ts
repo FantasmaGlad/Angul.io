@@ -127,6 +127,17 @@ export function toSnapshot(entity: Entity): EntitySnapshot {
       p: entity.ownerId,
     };
   }
+  if (entity.kind === 'virus') {
+    return {
+      i: entity.id,
+      k: 'v',
+      x: round1(entity.position.x),
+      y: round1(entity.position.y),
+      r: round1(entity.radius),
+      m: roundMass(entity.mass),
+      vId: entity.virusId ?? 1,
+    };
+  }
   return {
     i: entity.id,
     k: 'c',

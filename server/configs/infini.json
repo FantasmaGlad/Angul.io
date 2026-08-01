@@ -62,6 +62,11 @@
       }
     ]
   },
+  "virus": {
+    "enabled": true,
+    "type": 3,
+    "densityPer10k": 2
+  },
   "areaConstant": 6,
   "bots": {
     "enabled": true,

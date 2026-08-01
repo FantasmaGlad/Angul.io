@@ -614,10 +614,10 @@ function drawWorldBounds(
     ctx.setLineDash([12 * camera.scale, 8 * camera.scale]);
     ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
   } else if (borderType === 'ELASTIC_BOUNCE' || borderType === 'mega-split') {
-    // Effet néon cyan pour la bordure rebondissante de Mega Split
-    ctx.strokeStyle = 'rgba(0, 240, 255, 0.85)';
+    // Effet néon jaune (même couleur que le pellet #ffde21) pour la bordure rebondissante de Mega Split
+    ctx.strokeStyle = 'rgba(255, 222, 33, 0.85)';
     ctx.lineWidth = Math.max(3, 4 * camera.scale);
-    ctx.shadowColor = 'rgba(0, 240, 255, 0.9)';
+    ctx.shadowColor = 'rgba(255, 222, 33, 0.9)';
     ctx.shadowBlur = 18;
     ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
   } else {

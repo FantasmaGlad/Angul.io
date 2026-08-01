@@ -57,6 +57,12 @@ export class World {
     return entity;
   }
 
+  spawnVirus(position: Vector2, mass: number, virusId: 1 | 2 | 3): Entity {
+    const entity = this.spawnEntity('virus', position, mass);
+    entity.virusId = virusId;
+    return entity;
+  }
+
   private spawnEntity(
     kind: EntityKind,
     position: Vector2,

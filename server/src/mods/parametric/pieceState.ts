@@ -33,6 +33,8 @@ export interface ParametricPieceState {
    * en cours. Une fois posé, ne peut plus être annulé — le morceau est condamné même s'il se
    * dégage du chevauchement entre-temps (comme un vrai agar.io : l'issue est scellée dès que le
    * seuil de recouvrement est atteint, pas re-évaluée en continu). */
+  /** `true` si ce morceau doit subir la 2e étape de division en chaîne (Virus Bleu 4x4=16). */
+  chainReactionPending?: boolean;
   consumedBy?: { attackerPieceId: string; massAtStart: number; gainMultiplier: number };
 }
 

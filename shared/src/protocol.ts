@@ -1,9 +1,9 @@
 import type { MovementConfig } from './movement.js';
 import type { Vector2 } from './vector.js';
 
-/** 'f' = particule de nourriture, 'c' = morceau de joueur ("creature"). Codes courts : ce champ
+/** 'f' = particule de nourriture, 'c' = morceau de joueur ("creature"), 'v' = virus. Codes courts : ce champ
  * est répété pour chaque entité à chaque tick (voir plan Lot 1.8, bande passante). */
-export type WireEntityKind = 'f' | 'c';
+export type WireEntityKind = 'f' | 'c' | 'v';
 
 /**
  * Une entrée du snapshot envoyé au client, à chaque tick, pour chaque entité visible.
@@ -20,8 +20,10 @@ export interface EntitySnapshot {
   y: number;
   r: number;
   m: number;
-  /** Identifiant court du joueur propriétaire, absent pour la nourriture. */
+  /** Identifiant court du joueur propriétaire, absent pour la nourriture et virus. */
   p?: string;
+  /** ID du type de virus (1 = Vert, 2 = Rouge, 3 = Bleu). Present uniquement pour k === 'v'. */
+  vId?: 1 | 2 | 3;
 }
 
 export interface ClientJoinMessage {
