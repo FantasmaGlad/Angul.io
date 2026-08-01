@@ -862,12 +862,11 @@ export default function GameView({
       const targetScale = targetCamera.scale * zoomMultiplier;
 
       // Suivi de caméra ultra-fluide et indépendant du framerate :
-      // - cameraPosLerp (k = 16) : suit le joueur de manière fluide tout en absorbant les téléportations
-      //   brutales du centre de masse lors des splits multiples et dashes.
-      // - cameraScaleLerp (k = 12) : ajuste le zoom lors de la prise de masse (manger) en ~150ms
-      //   sans micro-freeze ni à-coup.
+      // - cameraPosLerp (k = 10) : suit le joueur de manière ultra-fluide, élimine le tremblottement
+      //   lors des virages rapides à haute vitesse et absorbe les téléportations lors des splits multiples.
+      // - cameraScaleLerp (k = 12) : ajuste le zoom lors de la prise de masse (manger) en ~150ms.
       const cameraScaleLerp = 1 - Math.exp(-12 * (frameDt / 1000));
-      const cameraPosLerp = 1 - Math.exp(-16 * (frameDt / 1000));
+      const cameraPosLerp = 1 - Math.exp(-10 * (frameDt / 1000));
 
       let dx = targetCamera.x - latestCamera.x;
       let dy = targetCamera.y - latestCamera.y;

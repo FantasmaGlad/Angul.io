@@ -663,7 +663,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
           virusSpawnCredit -= toSpawn;
           for (let i = 0; i < toSpawn; i++) {
             const vType = config.virus.type;
-            const initialMass = vType === 2 ? 50 : 200;
+            const initialMass = vType === 2 ? 300 : 200;
             const vRadius = Math.sqrt((config.areaConstant * initialMass) / PI);
             const pos = randomVirusPosition(world, 1, vRadius);
             world.spawnVirus(pos, initialMass, vType);
@@ -686,8 +686,8 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
 
       // Dégonflement du Virus Rouge (type 2) et régurgitation de pellets ID 1 (+2 à +5 px du bord)
       for (const virus of world.allEntities()) {
-        if (virus.kind === 'virus' && virus.virusId === 2 && virus.mass > 50) {
-          const massLost = Math.min(virus.mass - 50, 30 * dt);
+        if (virus.kind === 'virus' && virus.virusId === 2 && virus.mass > 300) {
+          const massLost = Math.min(virus.mass - 300, 30 * dt);
           world.setMass(virus, virus.mass - massLost);
           virus.data.spitCredit = ((virus.data.spitCredit as number) ?? 0) + massLost;
           while ((virus.data.spitCredit as number) >= 1) {
@@ -747,11 +747,12 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
           return;
         }
 
-        if (vId === 2) { // Rouge (Mass 50, Div 32, mange < 50)
-          if (piece.mass < 50) {
+        if (vId === 2) { // Rouge (Mass 300, Div 32, mange < 12)
+          if (piece.mass < 12) {
             finalizeConsumedEntity(world, undefined, piece, piece.mass);
             return;
           }
+          if (piece.mass < 300) return; // Se cache dedans
           world.setMass(piece, piece.mass + virus.mass);
           world.removeEntity(virus.id);
           explodePiece(world, piece, 32);

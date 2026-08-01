@@ -308,7 +308,7 @@ export class World {
       if (entity.radius > maxGridRadius) continue;
       const nearbyIds = this.spatialHash.queryNearbyForReach(
         entity.position,
-        entity.radius * PARTICLE_EAT_MARGIN,
+        entity.radius * PARTICLE_EAT_MARGIN + maxGridRadius,
       );
       for (const otherId of nearbyIds) {
         if (!(entity.id < otherId)) continue;
