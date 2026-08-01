@@ -169,3 +169,67 @@ describe('GameConnection', () => {
     }
   });
 });
+
+/** `onOpen` sert au tout premier `ping` de mesure de latence (voir GameView.tsx) : il doit partir
+ * au plus tôt — dès l'ouverture du socket — pour que son aller-retour se superpose à celui du
+ * `join` plutôt que de s'y ajouter en série (correctif "le plus gros lag est juste après la
+ * connexion"). */
+describe('GameConnection — onOpen', () => {
+  beforeEach(() => {
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("notifie à l'ouverture, APRÈS avoir vidé la file (le `join` part toujours en premier)", () => {
+    const connection = new GameConnection('ws://example.test');
+    const fakeSocket = socketOf(connection);
+    const join: ClientMessage = { type: 'join', nickname: 'Alice' };
+    connection.send(join);
+    connection.onOpen(() => connection.send({ type: 'ping', t: 42 }));
+
+    expect(fakeSocket.sent).toEqual([]); // rien tant que le socket n'est pas ouvert
+    fakeSocket.triggerOpen();
+
+    expect(fakeSocket.sent).toEqual([
+      JSON.stringify(join),
+      JSON.stringify({ type: 'ping', t: 42 }),
+    ]);
+  });
+
+  it('notifie immédiatement un auditeur inscrit alors que le socket est DÉJÀ ouvert', () => {
+    const connection = new GameConnection('ws://example.test');
+    const fakeSocket = socketOf(connection);
+    fakeSocket.triggerOpen();
+
+    let notified = 0;
+    connection.onOpen(() => {
+      notified++;
+    });
+
+    expect(notified).toBe(1);
+  });
+
+  it('notifie à nouveau après une reconnexion transitoire (nouvelle mesure de latence)', () => {
+    vi.useFakeTimers();
+    try {
+      const connection = new GameConnection('ws://example.test');
+      socketOf(connection).triggerOpen();
+      let notified = 0;
+      connection.onOpen(() => {
+        notified++;
+      });
+      expect(notified).toBe(1); // rattrapage immédiat (socket déjà ouvert)
+
+      socketOf(connection).triggerClose(1006); // coupure transitoire -> reconnexion programmée
+      vi.runOnlyPendingTimers();
+      socketOf(connection).triggerOpen();
+
+      expect(notified).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

@@ -58,6 +58,21 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
   const [broadcastGlobal, setBroadcastGlobal] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [livePlayerList, setLivePlayerList] = useState<PlayerInspectInfo[]>([]);
+
+  /** Panneau droit "Intervention" (§9.3 cahier_des_charges_admin.md) — rétractable, sous-onglets
+   * séparant spawn / sanctions / salon / mode Dieu, bordure rouge/orange pour signaler "a un
+   * effet sur la partie" (§3.2 : observation ≠ intervention, jamais mélangées visuellement). */
+  const [interveneOpen, setInterveneOpen] = useState(true);
+  const [interveneTab, setInterveneTab] = useState<'spawn' | 'sanctions' | 'salon' | 'god'>('sanctions');
+  /** Formulaire "bot personnalisé" (§9.3/§17) — nom/masse/position, appliqué soit au clic sur la
+   * carte (`spawnMode === 'bot'`), soit instantanément au centre visible via le bouton dédié. */
+  const [customBotNickname, setCustomBotNickname] = useState('');
+  const [customBotMass, setCustomBotMass] = useState('');
+  const [customMassDraft, setCustomMassDraft] = useState('');
+  /** Confirmation à 2 clics pour Kill (§17 : "aucune action destructive ... accessible en moins
+   * de 2 clics confirmés depuis l'état 'rien de sélectionné'") — armé par un premier clic, expire
+   * de lui-même après quelques secondes si le second clic ne vient jamais. */
+  const [killArmed, setKillArmed] = useState(false);
   /** Indicateur de connexion (§10.3 cahier_des_charges_admin.md) — jusqu'ici, une déconnexion
    * n'était visible que via le toast d'erreur (`onClose`), qui disparaît après 3s ; ce point
    * reste affiché tant que la connexion n'est pas rétablie. */
@@ -84,6 +99,8 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
     spawnMode,
     selectedPlayerId,
     followId: selectedPlayerId as string | undefined,
+    customBotNickname,
+    customBotMass,
   });
   useEffect(() => {
     liveRef.current.spawnMode = spawnMode;
@@ -92,6 +109,10 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
     liveRef.current.selectedPlayerId = selectedPlayerId;
     liveRef.current.followId = selectedPlayerId;
   }, [selectedPlayerId]);
+  useEffect(() => {
+    liveRef.current.customBotNickname = customBotNickname;
+    liveRef.current.customBotMass = customBotMass;
+  }, [customBotNickname, customBotMass]);
 
   const showToast = (text: string, type: 'info' | 'error' | 'success' = 'info') => {
     setToastMsg({ text, type });
@@ -280,7 +301,19 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
       }
 
       if (liveRef.current.spawnMode === 'bot') {
-        runAction({ kind: 'spawnBot' }, "Bot créé");
+        const world = screenToWorld(camera, canvas!.width, canvas!.height, event.offsetX, event.offsetY);
+        const nickname = liveRef.current.customBotNickname.trim() || undefined;
+        const mass = Number(liveRef.current.customBotMass);
+        runAction(
+          {
+            kind: 'spawnBot',
+            nickname,
+            mass: Number.isFinite(mass) && mass > 0 ? mass : undefined,
+            x: world.x,
+            y: world.y,
+          },
+          nickname ? `Bot "${nickname}" créé` : 'Bot créé',
+        );
         return;
       }
 
@@ -440,6 +473,39 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
       .catch((err: unknown) => showToast((err as Error).message, 'error'));
   };
 
+  /** Bot personnalisé (§9.3/§17) — instantané au centre de la vue actuelle plutôt qu'au clic,
+   * pour l'admin qui veut juste "un bot nommé X avec Y de masse", sans viser un point précis. */
+  const spawnCustomBotHere = (): void => {
+    const nickname = customBotNickname.trim() || undefined;
+    const mass = Number(customBotMass);
+    runAction(
+      { kind: 'spawnBot', nickname, mass: Number.isFinite(mass) && mass > 0 ? mass : undefined },
+      nickname ? `Bot "${nickname}" créé` : 'Bot créé',
+    );
+  };
+
+  const selectedPlayer = livePlayerList.find((p) => p.playerId === selectedPlayerId);
+
+  /** Confirmation à 2 clics (§17) — un premier clic arme, un second dans les 4s confirme. */
+  const handleKillClick = (): void => {
+    if (!selectedPlayerId) return;
+    if (!killArmed) {
+      setKillArmed(true);
+      setTimeout(() => setKillArmed(false), 4000);
+      return;
+    }
+    runAction({ kind: 'kill', playerId: selectedPlayerId }, 'Joueur éliminé');
+    setKillArmed(false);
+  };
+
+  const applyCustomMass = (): void => {
+    if (!selectedPlayerId) return;
+    const mass = Number(customMassDraft);
+    if (!Number.isFinite(mass) || mass <= 0) return;
+    runAction({ kind: 'setMass', playerId: selectedPlayerId, mass }, `Masse réglée à ${Math.round(mass)}`);
+    setCustomMassDraft('');
+  };
+
   const activeRoom = rooms.find((r) => r.id === roomId);
 
   const filteredPlayers = livePlayerList.filter((p) => {
@@ -504,108 +570,13 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
         </div>
       </div>
 
-      {/* Main Control Toolbar */}
-      <div className="creative-toolbar" style={{ flexShrink: 0 }}>
-        <button
-          className={spawnMode === 'food' ? 'btn-primary' : 'btn-ghost'}
-          type="button"
-          onClick={() => setSpawnMode(spawnMode === 'food' ? 'none' : 'food')}
-          title="Cliquez sur la carte pour poser une pastille"
-        >
-          <span className="material-symbols-outlined" aria-hidden="true">grain</span> Spawn nourriture
-        </button>
-        <button
-          className={spawnMode === 'bot' ? 'btn-primary' : 'btn-ghost'}
-          type="button"
-          onClick={() => runAction({ kind: 'spawnBot' }, "Bot ajouté")}
-        >
-          <span className="material-symbols-outlined" aria-hidden="true">smart_toy</span> Spawn bot
-        </button>
-        {selectedPlayerId && (
-          <button
-            className={spawnMode === 'teleport' ? 'btn-primary' : 'btn-ghost'}
-            type="button"
-            onClick={() => setSpawnMode(spawnMode === 'teleport' ? 'none' : 'teleport')}
-            title="Cliquez sur la carte pour téléporter le joueur sélectionné"
-          >
-            <span className="material-symbols-outlined" aria-hidden="true">near_me</span> Téléporter à l'emplacement
-          </button>
-        )}
-        <button className="btn-ghost" type="button" onClick={() => runAction({ kind: 'clearFood' }, "Pastilles nettoyées")}>
-          <span className="material-symbols-outlined" aria-hidden="true">cleaning_services</span> Vider pastilles
-        </button>
-        <button className="btn-ghost" type="button" onClick={() => runAction({ kind: 'clearBots' }, "Bots retirés")}>
-          <span className="material-symbols-outlined" aria-hidden="true">no_accounts</span> Supprimer bots
-        </button>
-        <button
-          className="btn-ghost"
-          style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
-          type="button"
-          onClick={() => setShowResetConfirm(true)}
-        >
-          <span className="material-symbols-outlined" aria-hidden="true">restart_alt</span> Reset salon
-        </button>
-        <select
-          onChange={(event) => {
-            if (event.target.value) runAction({ kind: 'switchMod', modId: event.target.value }, `Mode changé pour ${event.target.value}`);
-            event.target.value = '';
-          }}
-          defaultValue=""
-          style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-pill)', padding: '8px 12px' }}
-        >
-          <option value="" disabled>Changer de mode…</option>
-          <option value="vanilla">Vanilla</option>
-          <option value="hardcore">Hardcore</option>
-        </select>
-        <button className={godActive ? 'btn-primary' : 'btn-ghost'} type="button" onClick={toggleGodmode}>
-          <span className="material-symbols-outlined" aria-hidden="true">workspace_premium</span> Blob Dieu {godActive ? '(actif)' : ''}
-        </button>
-        {godActive && (
-          <button className="btn-ghost" type="button" onClick={boostGodMass}>
-            <span className="material-symbols-outlined" aria-hidden="true">bolt</span> +10 000 masse
-          </button>
-        )}
-      </div>
-
-      {/* Broadcast Bar */}
-      <div className="creative-broadcast" style={{ flexShrink: 0 }}>
-        <input
-          value={broadcastText}
-          onChange={(event) => setBroadcastText(event.target.value)}
-          placeholder="Message à diffuser aux joueurs..."
-          maxLength={200}
-        />
-        <input
-          type="color"
-          value={broadcastColor}
-          onChange={(event) => setBroadcastColor(event.target.value)}
-          style={{ width: 36, height: 36, padding: 2, cursor: 'pointer' }}
-        />
-        <label className="filter-checkbox" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
-          <input
-            type="checkbox"
-            checked={broadcastGlobal}
-            onChange={(event) => setBroadcastGlobal(event.target.checked)}
-          />
-          Tous les salons
-        </label>
-        <button className="btn-primary" type="button" onClick={sendBroadcast}>
-          <span className="material-symbols-outlined" aria-hidden="true">campaign</span> Diffuser
-        </button>
-      </div>
-
-      {/* Main Studio Body (Split view Canvas + Live Inspector) */}
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 16 }}>
-        {/* Canvas Wrap */}
-        <div className="creative-canvas-wrap" style={{ flex: 1, height: '100%', position: 'relative', margin: 0 }}>
-          <canvas ref={canvasRef} className="creative-canvas" />
-        </div>
-
-        {/* Live Room Inspector Panel */}
+      {/* Zone Observation (§9.2) — panneau gauche, lecture seule : recherche/filtre/suivi caméra.
+          Sélectionner un joueur ici l'expose comme cible aux actions de la zone Intervention. */}
+      <div className="studio-zone-observe" style={{ flex: 1, minHeight: 0, display: 'flex', gap: 16 }}>
         <div
           className="panel"
           style={{
-            width: 340,
+            width: 300,
             flexShrink: 0,
             display: 'flex',
             flexDirection: 'column',
@@ -617,15 +588,14 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-soft)' }}>
-              Inspecteur Joueurs ({filteredPlayers.length})
+            <span className="section-title" style={{ margin: 0 }}>
+              Observation ({filteredPlayers.length})
             </span>
             <span className="badge" style={{ fontSize: 10 }}>
               {liveTickRateHz !== undefined ? `Live ${liveTickRateHz}Hz` : 'Live —'}
             </span>
           </div>
 
-          {/* Search & Type Filter Header */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <input
               type="text"
@@ -667,128 +637,295 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
               Aucun joueur actif dans ce salon. Spawnez des bots ou de la nourriture !
             </p>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {filteredPlayers.map((p) => {
                 const isSelected = selectedPlayerId === p.playerId;
                 const skinImgUrl = p.skin ? SKIN_IMAGE_MAP[p.skin] : undefined;
 
                 return (
-                  <div
+                  <button
                     key={p.playerId}
+                    type="button"
+                    onClick={() => setSelectedPlayerId(isSelected ? undefined : p.playerId)}
                     style={{
-                      background: isSelected ? 'var(--surface-hover)' : 'var(--bg)',
+                      background: isSelected ? 'var(--accent-soft)' : 'var(--bg)',
                       border: `1px solid ${isSelected ? 'var(--accent)' : 'var(--border)'}`,
                       borderRadius: 'var(--radius-md)',
-                      padding: '10px 12px',
+                      padding: '9px 10px',
                       display: 'flex',
-                      flexDirection: 'column',
+                      alignItems: 'center',
                       gap: 8,
+                      textAlign: 'left',
+                      fontFamily: 'inherit',
+                      cursor: 'pointer',
                     }}
+                    title="Sélectionner (suivre la caméra + cibler pour l'Intervention)"
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        {skinImgUrl ? (
-                          <img src={skinImgUrl} alt={p.skin} style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'contain' }} />
+                    {skinImgUrl ? (
+                      <img src={skinImgUrl} alt={p.skin} style={{ width: 26, height: 26, borderRadius: '50%', objectFit: 'contain', flexShrink: 0 }} />
+                    ) : (
+                      <div style={{ width: 26, height: 26, borderRadius: '50%', background: p.isBot ? 'var(--accent-soft)' : '#fef3c7', flexShrink: 0 }} />
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.nickname}</span>
+                        {p.isBot ? (
+                          <span className="badge" style={{ fontSize: 8.5, padding: '1px 5px', background: 'var(--accent-soft)', color: 'var(--accent-strong)', flexShrink: 0 }}>BOT</span>
                         ) : (
-                          <div style={{ width: 28, height: 28, borderRadius: '50%', background: p.isBot ? '#93c5fd' : '#f59e0b' }} />
+                          <span className="badge" style={{ fontSize: 8.5, padding: '1px 5px', background: '#fef3c7', color: '#92400e', flexShrink: 0 }}>JOUEUR</span>
                         )}
-                        <div>
-                          <div style={{ fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}>
-                            {p.nickname}
-                            {p.isBot ? (
-                              <span className="badge" style={{ fontSize: 9, padding: '1px 5px', background: '#dbeafe', color: '#1e40af' }}>BOT</span>
-                            ) : (
-                              <span className="badge" style={{ fontSize: 9, padding: '1px 5px', background: '#fef3c7', color: '#92400e' }}>JOUEUR</span>
-                            )}
-                            {p.isFrozen && (
-                              <span className="badge" style={{ fontSize: 9, padding: '1px 5px', background: '#e0f2fe', color: '#0369a1' }}>GELÉ</span>
-                            )}
-                          </div>
-                        </div>
+                        {p.isFrozen && (
+                          <span className="badge" style={{ fontSize: 8.5, padding: '1px 5px', background: 'rgba(46,49,71,0.08)', color: 'var(--text-soft)', flexShrink: 0 }}>GELÉ</span>
+                        )}
                       </div>
-                      <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--accent)' }}>
-                        {Math.round(p.mass)} m
-                      </span>
                     </div>
-
-                    <div style={{ display: 'flex', gap: 4, flexWrap: 'nowrap', overflowX: 'auto', paddingBottom: 2 }}>
-                      <button
-                        className="btn-ghost"
-                        type="button"
-                        style={{ padding: '3px 7px', fontSize: 11, borderRadius: 'var(--radius-md)', whiteSpace: 'nowrap' }}
-                        onClick={() => setSelectedPlayerId(isSelected ? undefined : p.playerId)}
-                        title="Centrer la caméra sur ce joueur"
-                      >
-                        <span className="material-symbols-outlined" style={{ fontSize: 13 }}>visibility</span>
-                        {isSelected ? 'Détacher' : 'Suivre'}
-                      </button>
-
-                      <button
-                        className="btn-ghost"
-                        type="button"
-                        style={{ padding: '3px 7px', fontSize: 11, borderRadius: 'var(--radius-md)', whiteSpace: 'nowrap' }}
-                        onClick={() => runAction({ kind: p.isFrozen ? 'unfreeze' : 'freeze', playerId: p.playerId }, p.isFrozen ? 'Joueur dégelé' : 'Joueur gelé')}
-                        title={p.isFrozen ? 'Dégeler' : 'Geler'}
-                      >
-                        <span className="material-symbols-outlined" style={{ fontSize: 13 }}>ac_unit</span>
-                        {p.isFrozen ? 'Dégeler' : 'Geler'}
-                      </button>
-
-                      <button
-                        className="btn-ghost"
-                        type="button"
-                        style={{ padding: '3px 7px', fontSize: 11, borderRadius: 'var(--radius-md)', whiteSpace: 'nowrap' }}
-                        onClick={() => runAction({ kind: 'setMass', playerId: p.playerId, mass: p.mass + 500 }, "+500 Masse")}
-                        title="Ajouter +500 de masse (Clic droit pour masse perso)"
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          const val = window.prompt(`Nouvelle masse pour ${p.nickname} ?`, String(Math.round(p.mass)));
-                          if (val && Number.isFinite(Number(val))) runAction({ kind: 'setMass', playerId: p.playerId, mass: Number(val) }, "Masse ajustée");
-                        }}
-                      >
-                        <span className="material-symbols-outlined" style={{ fontSize: 13 }}>add</span>
-                        +500m
-                      </button>
-
-                      <button
-                        className="btn-ghost"
-                        type="button"
-                        style={{ padding: '3px 7px', fontSize: 11, borderRadius: 'var(--radius-md)', whiteSpace: 'nowrap' }}
-                        onClick={() => runAction({ kind: 'split', playerId: p.playerId }, "Split forcé déclenché")}
-                        title="Split forcé"
-                      >
-                        <span className="material-symbols-outlined" style={{ fontSize: 13 }}>call_split</span>
-                        Split
-                      </button>
-
-                      <button
-                        className="btn-ghost"
-                        style={{ color: 'var(--danger)', borderColor: 'var(--danger)', padding: '3px 7px', fontSize: 11, borderRadius: 'var(--radius-md)', whiteSpace: 'nowrap' }}
-                        type="button"
-                        onClick={() => runAction({ kind: 'kill', playerId: p.playerId }, "Joueur éliminé")}
-                        title="Éliminer le joueur"
-                      >
-                        <span className="material-symbols-outlined" style={{ fontSize: 13 }}>skull</span>
-                        Kill
-                      </button>
-
-                      <button
-                        className="btn-ghost"
-                        style={{ color: 'var(--danger)', borderColor: 'var(--danger)', padding: '3px 7px', fontSize: 11, borderRadius: 'var(--radius-md)', whiteSpace: 'nowrap' }}
-                        type="button"
-                        onClick={() => handleKickPlayer(p.playerId, p.nickname)}
-                        title="Expulser du salon"
-                      >
-                        <span className="material-symbols-outlined" style={{ fontSize: 13 }}>logout</span>
-                        Kick
-                      </button>
-                    </div>
-                  </div>
+                    <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-soft)', flexShrink: 0 }}>
+                      {Math.round(p.mass)}m
+                    </span>
+                  </button>
                 );
               })}
             </div>
           )}
         </div>
+
+        {/* Canvas Wrap (§9.1 : reste sombre, "moniteur vidéo") */}
+        <div className="creative-canvas-wrap" style={{ flex: 1, height: '100%', position: 'relative', margin: 0 }}>
+          <canvas ref={canvasRef} className="creative-canvas" />
+        </div>
+
+        {/* Zone Intervention (§9.3) — panneau droit rétractable, bordure rouge/orange : tout ce
+            qui a un effet réel sur la partie, jamais mélangé à l'observation. */}
+        <div
+          className="panel studio-zone-intervene"
+          style={{
+            width: interveneOpen ? 320 : 52,
+            flexShrink: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+            overflowY: interveneOpen ? 'auto' : 'hidden',
+            height: '100%',
+            padding: interveneOpen ? 16 : 10,
+            boxSizing: 'border-box',
+            transition: 'width 0.15s ease',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            {interveneOpen && (
+              <span className="section-title" style={{ margin: 0 }}>
+                Intervention
+              </span>
+            )}
+            <button
+              type="button"
+              className="btn-ghost"
+              style={{ padding: 4, marginLeft: 'auto' }}
+              onClick={() => setInterveneOpen(!interveneOpen)}
+              title={interveneOpen ? 'Réduire' : 'Déplier'}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+                {interveneOpen ? 'chevron_right' : 'chevron_left'}
+              </span>
+            </button>
+          </div>
+
+          {interveneOpen && (
+            <>
+              <div className="intervene-tabs">
+                {(
+                  [
+                    ['spawn', 'Spawn'],
+                    ['sanctions', 'Sanctions'],
+                    ['salon', 'Salon'],
+                    ['god', 'Dieu'],
+                  ] as const
+                ).map(([tab, label]) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    className={interveneTab === tab ? 'btn-primary intervene-tab' : 'btn-ghost intervene-tab'}
+                    onClick={() => setInterveneTab(tab)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {interveneTab === 'spawn' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <button
+                    className={spawnMode === 'food' ? 'btn-primary' : 'btn-ghost'}
+                    type="button"
+                    onClick={() => setSpawnMode(spawnMode === 'food' ? 'none' : 'food')}
+                    title="Cliquez sur la carte pour poser une pastille"
+                  >
+                    <span className="material-symbols-outlined" aria-hidden="true">grain</span> Nourriture au clic
+                  </button>
+                  <button className="btn-ghost" type="button" onClick={() => runAction({ kind: 'clearFood' }, 'Pastilles nettoyées')}>
+                    <span className="material-symbols-outlined" aria-hidden="true">cleaning_services</span> Vider pastilles
+                  </button>
+
+                  <span className="section-title" style={{ marginTop: 6 }}>Bot personnalisé</span>
+                  <input
+                    type="text"
+                    placeholder="Nom (optionnel)"
+                    value={customBotNickname}
+                    onChange={(e) => setCustomBotNickname(e.target.value)}
+                    style={{ fontSize: 12.5, padding: '7px 10px' }}
+                  />
+                  <input
+                    type="number"
+                    placeholder="Masse initiale (optionnel)"
+                    value={customBotMass}
+                    onChange={(e) => setCustomBotMass(e.target.value)}
+                    style={{ fontSize: 12.5, padding: '7px 10px' }}
+                  />
+                  <button className="btn-ghost" type="button" onClick={spawnCustomBotHere}>
+                    <span className="material-symbols-outlined" aria-hidden="true">smart_toy</span> Spawn ici
+                  </button>
+                  <button
+                    className={spawnMode === 'bot' ? 'btn-primary' : 'btn-ghost'}
+                    type="button"
+                    onClick={() => setSpawnMode(spawnMode === 'bot' ? 'none' : 'bot')}
+                    title="Cliquez sur la carte pour placer le bot à cet endroit précis"
+                  >
+                    <span className="material-symbols-outlined" aria-hidden="true">my_location</span> Placer au clic
+                  </button>
+                </div>
+              )}
+
+              {interveneTab === 'sanctions' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {!selectedPlayer ? (
+                    <p className="view-subtitle" style={{ fontStyle: 'italic' }}>
+                      Sélectionnez un joueur dans le panneau Observation pour agir sur lui.
+                    </p>
+                  ) : (
+                    <>
+                      <div style={{ fontWeight: 700, fontSize: 13 }}>
+                        {selectedPlayer.nickname} <span className="id-tag">{Math.round(selectedPlayer.mass)}m</span>
+                      </div>
+                      <button
+                        className="btn-ghost"
+                        type="button"
+                        onClick={() => runAction({ kind: selectedPlayer.isFrozen ? 'unfreeze' : 'freeze', playerId: selectedPlayer.playerId }, selectedPlayer.isFrozen ? 'Joueur dégelé' : 'Joueur gelé')}
+                      >
+                        <span className="material-symbols-outlined" aria-hidden="true">ac_unit</span>
+                        {selectedPlayer.isFrozen ? 'Dégeler' : 'Geler'}
+                      </button>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <input
+                          type="number"
+                          placeholder="Masse exacte"
+                          value={customMassDraft}
+                          onChange={(e) => setCustomMassDraft(e.target.value)}
+                          style={{ flex: 1, fontSize: 12.5, padding: '7px 10px' }}
+                        />
+                        <button className="btn-ghost" type="button" onClick={applyCustomMass}>
+                          Appliquer
+                        </button>
+                      </div>
+                      <button className="btn-ghost" type="button" onClick={() => runAction({ kind: 'split', playerId: selectedPlayer.playerId }, 'Split forcé déclenché')}>
+                        <span className="material-symbols-outlined" aria-hidden="true">call_split</span> Split forcé
+                      </button>
+                      <button className="btn-ghost" type="button" onClick={() => runAction({ kind: 'remerge', playerId: selectedPlayer.playerId }, 'Refusion forcée')}>
+                        <span className="material-symbols-outlined" aria-hidden="true">merge_type</span> Refusion forcée
+                      </button>
+                      <button
+                        className={spawnMode === 'teleport' ? 'btn-primary' : 'btn-ghost'}
+                        type="button"
+                        onClick={() => setSpawnMode(spawnMode === 'teleport' ? 'none' : 'teleport')}
+                        title="Cliquez sur la carte pour attirer le joueur sélectionné vers ce point"
+                      >
+                        <span className="material-symbols-outlined" aria-hidden="true">near_me</span> Téléporter à l'emplacement
+                      </button>
+                      <button
+                        className="btn-ghost btn-danger"
+                        type="button"
+                        onClick={() => handleKickPlayer(selectedPlayer.playerId, selectedPlayer.nickname)}
+                      >
+                        <span className="material-symbols-outlined" aria-hidden="true">logout</span> Kick
+                      </button>
+                      <button
+                        className="btn-ghost btn-danger"
+                        type="button"
+                        onClick={handleKillClick}
+                        style={killArmed ? { background: 'var(--danger)', color: '#fff' } : undefined}
+                      >
+                        <span className="material-symbols-outlined" aria-hidden="true">skull</span>
+                        {killArmed ? 'Confirmer Kill ?' : 'Kill'}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {interveneTab === 'salon' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <select
+                    onChange={(event) => {
+                      if (event.target.value) runAction({ kind: 'switchMod', modId: event.target.value }, `Mode changé pour ${event.target.value}`);
+                      event.target.value = '';
+                    }}
+                    defaultValue=""
+                    style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '8px 12px' }}
+                  >
+                    <option value="" disabled>Changer de mode…</option>
+                    <option value="vanilla">Vanilla</option>
+                    <option value="hardcore">Hardcore</option>
+                  </select>
+                  <button className="btn-ghost" type="button" onClick={() => runAction({ kind: 'clearBots' }, 'Bots retirés')}>
+                    <span className="material-symbols-outlined" aria-hidden="true">no_accounts</span> Supprimer bots
+                  </button>
+                  <button className="btn-ghost btn-danger" type="button" onClick={() => setShowResetConfirm(true)}>
+                    <span className="material-symbols-outlined" aria-hidden="true">restart_alt</span> Reset salon
+                  </button>
+                </div>
+              )}
+
+              {interveneTab === 'god' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <button className={godActive ? 'btn-primary' : 'btn-ghost'} type="button" onClick={toggleGodmode}>
+                    <span className="material-symbols-outlined" aria-hidden="true">workspace_premium</span> Blob Dieu {godActive ? '(actif)' : ''}
+                  </button>
+                  {godActive && (
+                    <button className="btn-ghost" type="button" onClick={boostGodMass}>
+                      <span className="material-symbols-outlined" aria-hidden="true">bolt</span> +10 000 masse
+                    </button>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Broadcast Bar (§9.3 : reste séparé, inchangé dans sa fonction) */}
+      <div className="creative-broadcast" style={{ flexShrink: 0 }}>
+        <input
+          value={broadcastText}
+          onChange={(event) => setBroadcastText(event.target.value)}
+          placeholder="Message à diffuser aux joueurs..."
+          maxLength={200}
+        />
+        <input
+          type="color"
+          value={broadcastColor}
+          onChange={(event) => setBroadcastColor(event.target.value)}
+          style={{ width: 36, height: 36, padding: 2, cursor: 'pointer' }}
+        />
+        <label className="filter-checkbox" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+          <input
+            type="checkbox"
+            checked={broadcastGlobal}
+            onChange={(event) => setBroadcastGlobal(event.target.checked)}
+          />
+          Tous les salons
+        </label>
+        <button className="btn-primary" type="button" onClick={sendBroadcast}>
+          <span className="material-symbols-outlined" aria-hidden="true">campaign</span> Diffuser
+        </button>
       </div>
 
       {/* Context Menu on Right Click */}

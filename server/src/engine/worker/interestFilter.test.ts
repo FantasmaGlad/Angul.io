@@ -44,7 +44,7 @@ describe('resyncOffsetForPlayer / isResyncTick', () => {
   });
 
   it('spreads different players across the interval (not all on offset 0)', () => {
-    const intervalTicks = 150; // 5s à 30Hz
+    const intervalTicks = 150; // 7.5s à 20Hz
     const offsets = new Set(
       Array.from({ length: 20 }, (_, i) => resyncOffsetForPlayer(`player-${i}`, intervalTicks)),
     );

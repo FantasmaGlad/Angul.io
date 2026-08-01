@@ -14,6 +14,7 @@ export function toMovementConfig(config: ParametricModConfig): MovementConfig {
     ...config.physics,
     startMass: config.player.startMass,
     mapSize: config.arena.width,
+    borderType: config.arena.borderType,
     mergeOverlapMinFraction: config.merge.overlapMinFraction,
   };
 }
@@ -70,7 +71,7 @@ export function eatOverlapFraction(config: ParametricModConfig): number {
 /** Repli si `config.eating.absorptionDurationSec` est absent — 0.3s : assez court pour ne jamais
  * ressembler à un ancien "drain" continu (voir `beginConsumption`, mods/parametric/index.ts),
  * assez long pour que la victime se voie visiblement rétrécir avant de disparaître plutôt que de
- * s'effacer en un seul tick de simulation (~33ms à 30Hz — largement sous le seuil de perception
+ * s'effacer en un seul tick de simulation (~50ms à 20Hz — largement sous le seuil de perception
  * humaine pour un événement aussi soudain). */
 const DEFAULT_ABSORPTION_DURATION_SEC = 0.3;
 

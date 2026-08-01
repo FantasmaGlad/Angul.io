@@ -158,11 +158,16 @@ Angul.io/
 ├── server/                            Serveur de jeu
 │   ├── package.json / tsconfig.json
 │   ├── .env / .env.example            DATABASE_URL, ADMIN_PASSWORD_HASH (non commité)
+│   ├── rooms.json                     Salons permanents de l'accueil (nom + mode) — voir src/roomsConfig.ts,
+│   │                                   éditable via l'interface admin (§13 cahier_des_charges_admin.md),
+│   │                                   volontairement HORS de configs/ (pas un mod)
 │   ├── db/schema.sql                  Schéma PostgreSQL de référence (documentation)
 │   ├── migrations/                    Migrations node-pg-migrate (source de vérité exécutable)
 │   ├── configs/                       Configs JSON des mods paramétriques (voir README §Modding)
 │   │   ├── vanilla.json                     Mode par défaut
 │   │   ├── hardcore.json                    Absorption x2, Dash uniquement (split désactivé)
+│   │   ├── infini.json                      Carte 5000x5000, pastilles de masse 2, bords toroïdaux (téléportation fluide)
+│   │   ├── mega-split.json                  64 cellules max, refusion instantanée (0s)
 │   │   └── bots/                            Profils de COMPORTEMENT de robots (même système que ci-dessus,
 │   │       └── default.json                 mais pour le pilotage IA — voir engine/bots/behaviorConfig.ts/
 │   │                                         loadBehaviorConfig.ts) : fuis/neutre/agressif/fou/wallAvoidance.
@@ -175,6 +180,7 @@ Angul.io/
 │   │   └── loadtest_spectators.mjs          Charge de spectateurs (canal admin/POV)
 │   └── src/
 │       ├── index.ts                   Point d'entrée process (assemble tout, démarre le serveur)
+│       ├── roomsConfig.ts / .test.ts  Lit/écrit server/rooms.json (salons permanents de l'accueil, §13)
 │       ├── log.ts / log.test.ts       Journalisation structurée (JSON sur stdout)
 │       ├── db/pool.ts                 Pool de connexions PostgreSQL (paresseux)
 │       ├── engine/                    Moteur de jeu générique — IDENTIQUE pour tout mod (voir README)
@@ -266,7 +272,8 @@ Angul.io/
 │           │       ├── auth.ts              POST /api/auth/register, /login, /logout, GET /api/account/me
 │           │       ├── health.ts            GET /api/admin/health (métriques de charge par salon)
 │           │       ├── admin.ts             POST /api/admin/login, /logout, GET/PATCH /api/admin/players
-│           │       └── adminRooms.ts        Actions admin par salon (kick/freeze/godmode/spawn food…)
+│           │       └── adminRooms.ts        Actions admin par salon (kick/freeze/godmode/spawn food…),
+│           │                                  GET/PUT /api/admin/base-rooms (server/rooms.json, §13)
 │           └── ws/
 │               ├── connectionHandler.ts     Connexions WS joueur/spectateur, validation stricte d'inputs
 │               └── broadcast.ts            Boucle onTick → EntitySnapshot[] par salon (interest management)
@@ -306,16 +313,23 @@ Angul.io/
     ├── vite.config.ts                 base: '/admin/' (préfixe d'URL), pas de publicDir
     ├── public/                        ⚠️ GÉNÉRÉ par `vite build` — jamais édité à la main, gitignored
     └── src/
-        ├── main.tsx / App.tsx         Point d'entrée + état racine (login, vue active)
-        ├── styles.css                 Design tokens (dupliqués de client/src/styles.css)
-        ├── adminApi.ts                Client API admin HTTP (comptes, salons, actions)
-        ├── adminSocket.ts             Canal WebSocket admin dédié (`?admin=1`) — POV + Espace Créatif
-        ├── entityCanvas.ts            Rendu Canvas partagé POV/Espace Créatif (60 FPS, interpolation)
+        ├── main.tsx / App.tsx         Point d'entrée + état racine (login, vue active, 7 vues §4)
+        ├── styles.css                 Design system "glassmorphisme blanc" (cahier_des_charges_admin.md §14)
+        ├── adminApi.ts                Client API admin HTTP (comptes, salons, actions, modes)
+        ├── adminSocket.ts             Canal WebSocket admin dédié (`?admin=1`) — POV + Studio de contrôle
+        ├── entityCanvas.ts            Géométrie/interpolation PURES partagées POV/Studio (indépendantes du rendu)
+        ├── pixiEntityRenderer.ts      Moteur de rendu GPU PixiJS du canva (§10.2, remplace l'ancien Canvas2D)
         └── components/
-            ├── Sidebar.tsx                 Navigation latérale entre les vues
-            ├── PlayersView.tsx             Recherche/édition de comptes joueurs
-            ├── RoomsView.tsx               Salons & Écrans (POV spectateur par salon, kick/transfert)
-            └── CreativeView.tsx            Espace Créatif (freeze/godmode/spawn food/masse par joueur…)
+            ├── Sidebar.tsx                 Navigation latérale, 7 entrées (§4 : opérationnel/gouvernance)
+            ├── ConnectionStatusDot.tsx      Indicateur connexion WS temps réel (§10.3, POV + Studio)
+            ├── DashboardView.tsx            Tableau de bord (§6) : santé serveur, salons, activité récente
+            ├── PlayersView.tsx              Recherche/édition de comptes joueurs (§7)
+            ├── RoomsView.tsx                Salons & Écrans (§8 : carrousel, filtres/tri, kick motivé, POV)
+            ├── CreativeView.tsx             Studio de contrôle (§9 : 3 zones contexte/observation/intervention)
+            ├── ModerationView.tsx           Modération (§11) — v1 : liste des comptes bannis
+            ├── EconomyView.tsx              Économie & Boosts (§12) — placeholder "Bientôt disponible"
+            └── ConfigurationView.tsx        Configuration (§13) : salons permanents de l'accueil éditables
+                                               (server/rooms.json), profils de mods en lecture seule
 ```
 
 ---

@@ -91,6 +91,21 @@ export class SpatialHash {
     return this.queryRadius(position, this.cellSize);
   }
 
+  /** Comme `queryNearby`, mais garantissant de couvrir la PORTÉE PROPRE de l'entité qui interroge
+   * (`reach` = son rayon, marge de contact comprise) plutôt que le seul rayon fixe `cellSize` —
+   * voir `World.findOverlappingPairs` (première passe) pour le bug que ça corrige : une entité de
+   * la grille plus grosse qu'une cellule atteint physiquement plus loin qu'elle ne cherchait,
+   * cassant la symétrie "A trouve B ⟺ B trouve A" dont dépend le dédoublonnage par ordre d'id de
+   * cette passe (une paire sur deux silencieusement perdue).
+   *
+   * Jamais MOINS que `cellSize` (le rayon fixe historique) : pour la nourriture et les petits
+   * morceaux, qui constituent l'écrasante majorité des appels, le nombre de cellules parcourues
+   * reste donc rigoureusement identique à `queryNearby` (3x3) — cet élargissement ne coûte
+   * quelque chose que pour les quelques entités réellement plus grosses qu'une cellule. */
+  queryNearbyForReach(position: Vector2, reach: number): EntityId[] {
+    return this.queryRadius(position, Math.max(this.cellSize, reach));
+  }
+
   /** Comme `queryNearby`, mais avec le rayon de recherche élargi de `extraRadius` (la distance
    * parcourue par l'appelant CE tick, voir `World.findTunnelingPairs`, correctif "tunneling") —
    * permet à une entité qui a beaucoup bougé de retrouver un candidat qu'elle aurait pu traverser

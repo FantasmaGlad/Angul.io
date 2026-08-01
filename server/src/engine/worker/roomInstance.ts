@@ -231,7 +231,14 @@ export class RoomInstance {
         this.room.spawnFood({ x: action.x, y: action.y }, action.mass);
         return { ok: true };
       case 'spawnBot':
-        return { ok: this.room.forceSpawnBot() };
+        return {
+          ok: this.room.forceSpawnBot({
+            nickname: action.nickname,
+            mass: action.mass,
+            x: action.x,
+            y: action.y,
+          }),
+        };
       case 'clearFood':
         return { ok: true, count: this.room.clearFood() };
       case 'clearBots':
@@ -368,7 +375,6 @@ export class RoomInstance {
     let pieces: Entity[] | undefined;
     let particles: Entity[] | undefined;
     let coarseFoodIndex: CoarseFoodIndex | undefined;
-    let wholeRoomFallbackEntities: ReturnType<typeof buildVisibleEntitySnapshots> | undefined;
     const resyncIntervalTicks = Math.round(this.room.tickRateHz * RESYNC_INTERVAL_SEC);
 
     for (const playerId of this.viewerIds) {
@@ -439,13 +445,26 @@ export class RoomInstance {
       let entitiesFull: boolean;
 
       if (ownPieces.length === 0) {
-        // Pas (encore/plus) de morceau — mort, en attente de respawn : repli sur le salon entier
-        // pour ce seul tick, cas transitoire rare (aucun centre/masse dont dériver un rayon
-        // d'intérêt sensé). Purge l'ancien Set de delta : au prochain respawn (position
-        // potentiellement très différente), `!lastSent` forcera une resynchro complète plutôt que
-        // de comparer contre une position périmée.
-        wholeRoomFallbackEntities ??= buildVisibleEntitySnapshots(allEntities, false);
-        entitiesForPlayer = wholeRoomFallbackEntities;
+        // Pas (encore/plus) de morceau — mort en attente de respawn, ou tout juste rejoint et pas
+        // encore apparu : aucun centre/masse dont dériver un rayon d'intérêt sensé. Liste VIDE
+        // pour ce tick, jamais le salon entier.
+        //
+        // L'ancien repli envoyait ici TOUTES les entités du salon (potentiellement des milliers de
+        // pastilles, sérialisées en un seul `JSON.stringify` côté broadcast puis reparsées et
+        // reconstruites en entier dans le `knownFood` du client) — à chaque tick, donc ~20 fois
+        // par seconde et par joueur concerné, pour un destinataire qui n'a par définition rien à
+        // cadrer : sans morceau, sa caméra retombe déjà sur le centre de la carte (voir
+        // `computeCamera`, client/src/render.ts) et son écran est de toute façon recouvert par
+        // l'écran de mort. Le coût, lui, est bien réel et arrive précisément au pire moment
+        // (entrée en partie / respawn, quand le client a déjà tout à faire) — l'un des envois les
+        // plus lourds de toute la session.
+        //
+        // Rien n'est perdu, seulement différé d'un tick : dès que le morceau existe, la branche
+        // ci-dessous envoie un état complet filtré par intérêt (`!lastSent` ci-dessous ⇒ resync
+        // forcée), soit ~50ms plus tard. La purge du Set de delta reste indispensable pour ça :
+        // au prochain respawn (position potentiellement très différente), `!lastSent` doit forcer
+        // cette resynchro complète plutôt que de comparer contre une position périmée.
+        entitiesForPlayer = [];
         entitiesFull = true;
         this.lastSentFoodIdsByPlayer.delete(playerId);
       } else {

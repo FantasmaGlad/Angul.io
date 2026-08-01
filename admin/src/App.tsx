@@ -1,15 +1,26 @@
 import { useCallback, useState } from 'react';
 import { adminLogin, clearAdminSession, loadAdminSession, saveAdminSession } from './adminApi.js';
+import ConfigurationView from './components/ConfigurationView.js';
 import CreativeView from './components/CreativeView.js';
+import DashboardView from './components/DashboardView.js';
+import EconomyView from './components/EconomyView.js';
+import ModerationView from './components/ModerationView.js';
 import PlayersView from './components/PlayersView.js';
 import RoomsView from './components/RoomsView.js';
 import Sidebar from './components/Sidebar.js';
 
-export type ViewName = 'joueurs' | 'salons' | 'creatif';
+export type ViewName =
+  | 'dashboard'
+  | 'joueurs'
+  | 'salons'
+  | 'creatif'
+  | 'moderation'
+  | 'economie'
+  | 'configuration';
 
 export default function App() {
   const [token, setToken] = useState<string | undefined>(() => loadAdminSession());
-  const [view, setView] = useState<ViewName>('joueurs');
+  const [view, setView] = useState<ViewName>('dashboard');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -93,6 +104,13 @@ export default function App() {
     <div className="app-shell">
       <Sidebar view={view} onChangeView={setView} onLogout={handleLogout} />
       <main className="main-content">
+        {view === 'dashboard' && (
+          <DashboardView
+            token={token}
+            onAuthError={handleAuthError}
+            onOpenRoom={handleSelectCreativeRoom}
+          />
+        )}
         {view === 'joueurs' && <PlayersView token={token} onAuthError={handleAuthError} />}
         {view === 'salons' && (
           <RoomsView
@@ -108,6 +126,9 @@ export default function App() {
             initialRoomId={selectedCreativeRoomId}
           />
         )}
+        {view === 'moderation' && <ModerationView token={token} onAuthError={handleAuthError} />}
+        {view === 'economie' && <EconomyView />}
+        {view === 'configuration' && <ConfigurationView token={token} onAuthError={handleAuthError} />}
       </main>
     </div>
   );

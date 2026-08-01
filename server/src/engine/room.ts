@@ -1,6 +1,7 @@
 import { add, scale } from '@angulio/shared';
 import type { BotConfig } from '../mods/parametric/config.js';
 import { BotManager } from './bots/botManager.js';
+import type { CustomBotSpawnOptions } from './bots/botTypes.js';
 import type { GameMod } from './mod.js';
 import {
   DEFAULT_RESET_SCHEDULE,
@@ -389,11 +390,12 @@ export class Room {
     return this.botManager?.clearAll() ?? 0;
   }
 
-  /** Force le spawn immédiat d'un bot supplémentaire (§4.4) — `false` si les bots sont désactivés
-   * pour ce salon. */
-  forceSpawnBot(): boolean {
+  /** Force le spawn immédiat d'un bot supplémentaire (§4.4), optionnellement PERSONNALISÉ
+   * (§9.3/§17 cahier_des_charges_admin.md, "Bots personnalisés" — pseudo/masse/position imposés,
+   * voir `BotManager.forceSpawnOne`) — `false` si les bots sont désactivés pour ce salon. */
+  forceSpawnBot(options?: CustomBotSpawnOptions): boolean {
     if (!this.botManager) return false;
-    this.botManager.forceSpawnOne();
+    this.botManager.forceSpawnOne(options);
     return true;
   }
 

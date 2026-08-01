@@ -39,6 +39,8 @@ export interface MovementConfig {
   startMass: number;
   /** Taille de la carte en pixels monde (ex: 10000). */
   mapSize?: number;
+  /** Type de bord de carte du mode actif (mur, rebond, toroïdal...). */
+  borderType?: 'STRICT_WALL' | 'ELASTIC_BOUNCE' | 'TOROIDAL' | 'TOXIC_ZONE';
   /** `config.merge.overlapMinFraction` du mod actif — fraction minimale de la surface des deux
    * morceaux qui doit se chevaucher pour fusionner (voir `tryMerge`/`onCollision`,
    * mods/parametric/index.ts). Transmise au client uniquement pour que sa propre répulsion locale

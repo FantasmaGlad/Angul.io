@@ -9,6 +9,16 @@ export interface BestScore {
   bestScore: number;
 }
 
+/** Attribution ponctuelle d'un boost à un compte (§12 cahier_des_charges_admin.md) — type réservé
+ * pour la future Économie & Boosts, non exploité en v1 (aucun serveur n'envoie encore ce champ,
+ * voir EconomyView.tsx) : présent uniquement pour éviter une migration de type le jour où la
+ * fonctionnalité sera conçue. */
+export interface BoostInstance {
+  boostId: string;
+  grantedAt: string;
+  expiresAt?: string;
+}
+
 export interface AdminAccountView {
   id: number;
   pseudo: string;
@@ -25,6 +35,10 @@ export interface AdminAccountView {
   lastIp?: string;
   totalPlaytimeSec: number;
   bestScore?: number;
+  /** Réservé §12 — non affiché tant qu'aucun serveur n'envoie de valeur (jamais présent en v1). */
+  currencyBalance?: number;
+  /** Réservé §12 — idem. */
+  activeBoosts?: BoostInstance[];
 }
 
 export interface AdminAccountDetail extends AdminAccountView {
@@ -147,6 +161,40 @@ export async function resetBestScore(token: string, id: number, modeId?: string)
 export async function listRooms(token: string): Promise<AdminRoomView[]> {
   const response = await fetch('/api/admin/rooms', { headers: authHeaders(token) });
   return parseErrorOr<AdminRoomView[]>(response, 'Liste des salons impossible.');
+}
+
+export interface BaseRoomConfig {
+  name: string;
+  modId: string;
+}
+
+/** Salons permanents de l'accueil (§8.4/§13 cahier_des_charges_admin.md, `server/rooms.json`) —
+ * un changement ne prend effet qu'au prochain redémarrage du serveur (voir la note renvoyée par
+ * `updateBaseRooms`, affichée telle quelle côté UI plutôt que de laisser croire à un effet
+ * immédiat). */
+export async function getBaseRooms(token: string): Promise<BaseRoomConfig[]> {
+  const response = await fetch('/api/admin/base-rooms', { headers: authHeaders(token) });
+  return parseErrorOr<BaseRoomConfig[]>(response, 'Liste des salons de base impossible.');
+}
+
+export async function updateBaseRooms(
+  token: string,
+  rooms: BaseRoomConfig[],
+): Promise<{ success: boolean; note: string }> {
+  const response = await fetch('/api/admin/base-rooms', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
+    body: JSON.stringify(rooms),
+  });
+  return parseErrorOr<{ success: boolean; note: string }>(response, 'Mise à jour impossible.');
+}
+
+/** `GET /api/modes` — même route publique que le lobby joueur (pas d'info sensible, juste la
+ * liste des ids de mods chargés côté serveur), réutilisée en lecture seule pour le module
+ * Configuration (§13) : l'édition de profil demande une route admin dédiée, pas encore faite. */
+export async function listModes(): Promise<string[]> {
+  const response = await fetch('/api/modes');
+  return parseErrorOr<string[]>(response, 'Liste des modes impossible.');
 }
 
 export async function runRoomAction(

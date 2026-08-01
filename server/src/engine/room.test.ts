@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createParametricMod } from '../mods/parametric/index.js';
+import { testConfig } from '../mods/parametric/testConfig.js';
 import type { GameMod } from './mod.js';
 import { Room } from './room.js';
 
@@ -379,6 +381,35 @@ describe('Room — actions admin (cahier_des_charges_admin.md §4.3-4.4)', () =>
     // le nombre retiré est correct, mais le salon n'est jamais durablement vide de bots.
     expect(room.clearBots()).toBe(countBefore + 1);
     expect(room.botManager!.activeBotCount).toBeGreaterThan(0);
+  });
+
+  it('forceSpawnBot(options) applique pseudo/masse/position personnalisés (§9.3/§17 cahier_des_charges_admin.md)', () => {
+    const config = testConfig({
+      bots: {
+        enabled: true,
+        targetRatio: 0,
+        updateFrequencyHz: 2,
+        proportions: { fuis: 0, neutre: 100, agressif: 0, fou: 0 },
+        challengers: {
+          enabled: false,
+          baselineCount: 0,
+          minWithHumans: 0,
+          maxWithHumans: 0,
+          rampHumans: 1,
+          massMultipliers: [],
+        },
+      },
+    });
+    const mod = createParametricMod(config);
+    const room = new Room(mod, { mapSize: 2000, tickRateHz: 20, maxPlayers: 10, bots: config.bots });
+
+    expect(room.forceSpawnBot({ nickname: 'Sur-mesure', mass: 500000, x: 111, y: 222 })).toBe(true);
+
+    const player = room.world.allPlayers().find((p) => p.nickname === 'Sur-mesure');
+    expect(player).toBeDefined();
+    const piece = room.world.getPiecesByOwner(player!.id)[0];
+    expect(piece?.mass).toBe(500000);
+    expect(piece?.position).toEqual({ x: 111, y: 222 });
   });
 
   it('switchMod reconstruit world/mod/botManager en place et re-spawne les joueurs humains connectés', () => {

@@ -969,6 +969,7 @@ describe.skipIf(!DATABASE_URL)('startGameServer (avec comptes joueurs)', () => {
       accounts,
       admin,
       disconnectGraceMs: 20,
+      availableModIds: ['vanilla', 'hardcore'],
     });
     const port = await handle.whenReady;
     return { port, accounts, manager };
@@ -1333,6 +1334,53 @@ describe.skipIf(!DATABASE_URL)('startGameServer (avec comptes joueurs)', () => {
     expect(pubRoom.players.some((p) => p.nickname === 'Alice' && p.isBot === false)).toBe(true);
 
     socket.close();
+  });
+
+  it('GET/PUT /api/admin/base-rooms lit et réécrit server/rooms.json, restauré après le test (§13 cahier_des_charges_admin.md)', async () => {
+    const { port } = await startServer();
+
+    const loginResponse = await fetch(`http://localhost:${port}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'adminpass123' }),
+    });
+    const { token: adminToken } = (await loginResponse.json()) as { token: string };
+    const authHeaders = { Authorization: `Bearer ${adminToken}` };
+
+    const getResponse = await fetch(`http://localhost:${port}/api/admin/base-rooms`, {
+      headers: authHeaders,
+    });
+    expect(getResponse.status).toBe(200);
+    const original = (await getResponse.json()) as Array<{ name: string; modId: string }>;
+    expect(original.length).toBeGreaterThanOrEqual(1);
+
+    try {
+      const rejectedPut = await fetch(`http://localhost:${port}/api/admin/base-rooms`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify([{ name: 'Sans mode', modId: 'mode-inexistant' }]),
+      });
+      expect(rejectedPut.status).toBe(400);
+
+      const draft = [{ name: 'Salon Vanilla Test', modId: 'vanilla' }];
+      const putResponse = await fetch(`http://localhost:${port}/api/admin/base-rooms`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify(draft),
+      });
+      expect(putResponse.status).toBe(200);
+
+      const afterPut = await fetch(`http://localhost:${port}/api/admin/base-rooms`, {
+        headers: authHeaders,
+      });
+      expect(await afterPut.json()).toEqual(draft);
+    } finally {
+      await fetch(`http://localhost:${port}/api/admin/base-rooms`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify(original),
+      });
+    }
   });
 
   it('POST /api/admin/rooms/:id/action exécute une action générique (kill) sur un joueur (§4.3)', async () => {

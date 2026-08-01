@@ -70,6 +70,14 @@ body,
   margin: 0;
   padding: 0;
   height: 100%;
+  /* `dvh` (viewport *dynamique*) après le repli `100%` : sur mobile, la hauteur de référence des
+     pourcentages/`vh` est celle du viewport LARGE (barre d'URL supposée rétractée). Tant que la
+     barre du navigateur est visible — cas permanent en paysage, où elle mange une part
+     proportionnellement énorme d'un écran déjà court — la zone réellement visible est plus basse
+     que cette référence, et tout ce qui est dimensionné dessus déborde par le bas. `dvh` suit la
+     hauteur réellement visible. Déclaré APRÈS `100%` : les navigateurs sans support de `dvh`
+     ignorent la déclaration et gardent le repli. */
+  height: 100dvh;
 }
 body {
   overflow: hidden;
@@ -89,6 +97,9 @@ canvas {
   inset: 0;
   width: 100vw;
   height: 100vh;
+  /* Voir `html, body, #root` plus haut : `100vh` vise le viewport large et déborde sous la barre
+     du navigateur mobile. Repli `100vh` conservé juste au-dessus pour les moteurs sans `dvh`. */
+  height: 100dvh;
   z-index: 0;
   background: var(--game-bg);
   /* Effet de "dash" au split (demande utilisateur) : PUR transform CSS post-rendu, jamais une
@@ -1265,6 +1276,9 @@ select {
   position: fixed;
   inset: 0;
   height: 100vh;
+  /* Voir `html, body, #root` : sans `dvh`, le bas du panneau (donc la fin de sa zone de défilement)
+     passait sous la barre du navigateur mobile. */
+  height: 100dvh;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -2871,3 +2885,141 @@ a.btn-primary {
   }
 }
 
+
+/* --- Accueil sur viewport COURT : téléphone en PAYSAGE (demande utilisateur : "l'UI/UX téléphone
+   paysage n'est pas adapté au format téléphone et nécessite de scroller") ---------------------
+
+   Rappel : le jeu se verrouille en paysage sur téléphone (mobileScreen.ts + `.rotate-device-hint`),
+   donc le paysage est l'orientation NORMALE de jeu, pas un cas limite.
+
+   Pourquoi ça débordait. Les deux replis mobiles existants sont indexés sur la LARGEUR :
+     - le compactage du contenu (logo/carte/classement réduits) est sous `@media (max-width: 480px)`
+     - le repli de nav sur plusieurs lignes est sous `@media (max-width: 900px)`
+   Or un téléphone en paysage est LARGE et COURT (~844x390). Il rate donc le compactage (844 > 480)
+   et ne garde QUE le repli de défilement `@media (max-height: 640px)` de `.home-columns` — c'est
+   exactement le "il faut scroller" signalé. Pire, il attrape le repli de nav (844 < 900), pensé
+   pour un écran étroit : la nav passe sur 2 lignes et mange 114px, soit 29% d'un viewport de
+   390px. Elle dépense ainsi l'axe ABONDANT (la largeur) pour économiser l'axe RARE (la hauteur),
+   exactement à l'envers de ce qu'il faut ici.
+
+   Le correctif reprend donc la même stratégie que le correctif portrait (réduire le contenu pour
+   qu'il TIENNE, le défilement restant un simple filet de sécurité), mais indexé sur la HAUTEUR.
+   Budget mesuré à 844x390 : nav 114 -> ~46, pied 54 -> ~34, marges 40 -> ~16, logo+compteur
+   90 -> ~46, carte 285 -> ~190 ; le contenu passe de 427px à ~300px pour ~310px disponibles.
+
+   Bloc placé en FIN DE FICHIER volontairement : à spécificité égale l'ordre du fichier tranche, et
+   il doit gagner contre `@media (max-width: 900px)` (nav) comme contre `@media (pointer: coarse)`
+   (padding de `.home-columns`), tous deux plus haut. Même piège d'ordre que celui déjà documenté
+   sur le bloc `@media (max-width: 480px)`. */
+
+/* Dé-repliage de la nav : réservé aux viewports courts ET assez larges pour tenir sur une ligne,
+   pour ne jamais casser un écran court mais étroit (ex. fenêtre desktop redimensionnée en 500x400),
+   où le repli sur plusieurs lignes reste le bon comportement. */
+@media (max-height: 500px) and (min-width: 600px) {
+  .top-nav {
+    flex-wrap: nowrap;
+    row-gap: 0;
+    padding: 6px 16px;
+    gap: 14px;
+  }
+  /* Annule la mise en 3e ligne pleine largeur héritée de `@media (max-width: 900px)`. */
+  .top-nav-links {
+    order: 0;
+    flex-basis: auto;
+    justify-content: flex-start;
+    gap: 16px;
+  }
+  .top-nav-links button {
+    padding: 2px 0;
+    font-size: 12.5px;
+  }
+  .brand-logo-icon {
+    width: 24px;
+    height: 24px;
+  }
+  .brand-logo-text {
+    font-size: 15px;
+  }
+  .account-cluster {
+    padding: 3px 10px 3px 5px;
+    gap: 8px;
+  }
+}
+
+@media (max-height: 500px) {
+  /* Le contenu tient de nouveau : on peut le recentrer verticalement (le `flex-start` du repli
+     `max-height: 640px` n'existe que pour garder atteignable le HAUT d'un contenu qui déborde). */
+  .home-columns {
+    align-items: center;
+    padding: 8px 16px;
+  }
+  .play-panel-wrapper {
+    gap: 6px;
+  }
+  /* Le logo est la plus grosse dépense verticale de l'accueil (480px de large en base, donc très
+     haut une fois l'image chargée) pour la plus faible valeur d'usage en jeu. */
+  .hero-logo-img {
+    width: 200px;
+    max-width: 42%;
+  }
+  .players-online-header {
+    padding: 0 0 2px;
+    margin-bottom: 0;
+  }
+  .players-online-count {
+    font-size: 22px;
+  }
+  .players-online-label {
+    font-size: 9px;
+    margin-top: 1px;
+  }
+  .play-panel-card {
+    padding: 12px 14px;
+  }
+  .field {
+    margin-bottom: 8px;
+  }
+  .field-label,
+  .section-title {
+    margin-bottom: 4px;
+  }
+  .launcher-form {
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .play-button-main {
+    padding: 10px 16px;
+  }
+  .section-subtitle {
+    margin-bottom: 5px;
+  }
+  .rank-list {
+    gap: 5px;
+  }
+  .rank-row {
+    padding: 6px 10px;
+  }
+  /* Même principe que le top 3 du correctif portrait : les rangs 4-5 restent dans le DOM (aucun
+     changement JS) mais sortent du flux pour ne pas rallonger la colonne. En paysage la contrainte
+     est plus dure qu'en portrait, d'où un top 2. */
+  .rank-list li:nth-child(n + 3) {
+    display: none;
+  }
+  .bottom-bar {
+    padding: 6px 14px;
+    font-size: 10.5px;
+  }
+  .bottom-bar-support {
+    font-size: 10px;
+    padding: 4px 10px;
+  }
+  /* Sous-pages (Compte/Profil/Paramètres...) : leur défilement interne est VOULU (contenu long
+     par nature), on ne récupère ici que la marge perdue en haut/bas, qui coûtait à elle seule
+     80px sur un viewport de 390px. */
+  .subpage {
+    padding: 12px 16px 16px;
+  }
+  .subpage-header {
+    margin-bottom: 10px;
+  }
+}

@@ -4,6 +4,11 @@ import type { AdminAuth } from '../../../admin/adminAuth.js';
 import { ADMIN_TICK_DIVISOR } from '../../../engine/worker/snapshotBuilder.js';
 import type { RoomManager } from '../../../engine/roomManager.js';
 import { logEvent } from '../../../log.js';
+import {
+  loadBaseRoomsConfig,
+  saveBaseRoomsConfig,
+  type BaseRoomConfig,
+} from '../../../roomsConfig.js';
 import type { RoomRuntime } from '../../ws/broadcast.js';
 import { isRecord, readJsonBody, respondJson } from '../httpUtils.js';
 import { requireAdmin } from './admin.js';
@@ -220,4 +225,71 @@ export async function handleAdminBroadcast(
 
   logEvent('admin_broadcast', { roomId: roomId ?? 'global', sent });
   respondJson(res, 200, { success: true, sent });
+}
+
+/** `GET /api/admin/base-rooms` (§13 cahier_des_charges_admin.md) — liste actuelle de
+ * `server/rooms.json` : les salons permanents créés au démarrage du serveur. */
+export function handleAdminGetBaseRooms(
+  admin: AdminAuth | undefined,
+  req: IncomingMessage,
+  res: ServerResponse,
+): void {
+  if (!requireAdmin(admin, req, res)) return;
+  try {
+    respondJson(res, 200, loadBaseRoomsConfig());
+  } catch (error) {
+    respondJson(res, 500, { error: (error as Error).message });
+  }
+}
+
+function isValidBaseRoomsPayload(body: unknown, availableModIds: string[]): body is BaseRoomConfig[] {
+  if (!Array.isArray(body) || body.length === 0) return false;
+  return body.every(
+    (entry) =>
+      isRecord(entry) &&
+      typeof entry.name === 'string' &&
+      entry.name.trim().length > 0 &&
+      typeof entry.modId === 'string' &&
+      availableModIds.includes(entry.modId),
+  );
+}
+
+/** `PUT /api/admin/base-rooms` — `BaseRoomConfig[]` (§13) : réécrit `server/rooms.json`. Ne
+ * recrée/ferme AUCUN salon en direct (§8.4 pas encore implémenté, voir le commentaire de
+ * `saveBaseRoomsConfig`) — le changement s'applique au prochain redémarrage du serveur, annoncé
+ * explicitement dans la réponse pour que l'UI admin ne laisse pas croire à un effet immédiat. */
+export async function handleAdminUpdateBaseRooms(
+  admin: AdminAuth | undefined,
+  availableModIds: string[],
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  if (!requireAdmin(admin, req, res)) return;
+
+  let body: unknown;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    respondJson(res, 400, { error: (error as Error).message });
+    return;
+  }
+
+  if (!isValidBaseRoomsPayload(body, availableModIds)) {
+    respondJson(res, 400, {
+      error: 'Chaque salon nécessite un nom non vide et un modId parmi les modes disponibles.',
+    });
+    return;
+  }
+
+  try {
+    saveBaseRoomsConfig(body);
+    logEvent('admin_base_rooms_updated', { count: body.length });
+    respondJson(res, 200, {
+      success: true,
+      rooms: body,
+      note: 'Effectif au prochain redémarrage du serveur.',
+    });
+  } catch (error) {
+    respondJson(res, 500, { error: (error as Error).message });
+  }
 }

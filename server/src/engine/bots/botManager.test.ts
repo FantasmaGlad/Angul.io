@@ -446,4 +446,90 @@ describe('BotManager', () => {
 
     nowSpy.mockRestore();
   });
+
+  /** Bots PERSONNALISÉS (cahier_des_charges_admin.md §9.3/§17, "création de robots configurables
+   * sur-mesure") — `forceSpawnOne(options)` (voir son commentaire) : les champs nickname/mass/x/y
+   * sont tous optionnels et n'affectent JAMAIS le pilotage IA du bot, seulement son apparence de
+   * spawn. Config commune : `neutre` à 100% pour un profil déterministe hors bot personnalisé,
+   * Challengers désactivés pour isoler le comportement sous test. */
+  function makeCustomBotRoom(proportions = { fuis: 0, neutre: 100, agressif: 0, fou: 0 }) {
+    const config = testConfig({
+      bots: {
+        enabled: true,
+        targetRatio: 0,
+        updateFrequencyHz: 2,
+        proportions,
+        challengers: {
+          enabled: false,
+          baselineCount: 0,
+          minWithHumans: 0,
+          maxWithHumans: 0,
+          rampHumans: 1,
+          massMultipliers: [],
+        },
+      },
+    });
+    const mod = createParametricMod(config);
+    const room = new Room(mod, { mapSize: 2000, tickRateHz: 20, maxPlayers: 30, bots: config.bots });
+    return { config, room };
+  }
+
+  it('applique le pseudo/masse/position personnalisés lors d’un spawn forcé (§9.3/§17)', () => {
+    const { room } = makeCustomBotRoom();
+
+    room.botManager!.forceSpawnOne({ nickname: 'xyz', mass: 500000, x: 300, y: 400 });
+
+    const player = room.world.allPlayers().find((p) => p.nickname === 'xyz');
+    expect(player).toBeDefined();
+    const piece = room.world.getPiecesByOwner(player!.id)[0];
+    expect(piece?.mass).toBe(500000);
+    expect(piece?.position).toEqual({ x: 300, y: 400 });
+  });
+
+  it('résout la collision de pseudo personnalisé en suffixant un compteur, jamais deux bots homonymes', () => {
+    const { room } = makeCustomBotRoom();
+
+    room.botManager!.forceSpawnOne({ nickname: 'xyz' });
+    room.botManager!.forceSpawnOne({ nickname: 'xyz' });
+
+    const nicknames = room.world.allPlayers().map((p) => p.nickname);
+    expect(nicknames).toContain('xyz');
+    expect(nicknames).toContain('xyz (2)');
+  });
+
+  it('ignore x/y si un seul des deux est fourni (pas de repositionnement partiel)', () => {
+    const { room } = makeCustomBotRoom();
+
+    room.botManager!.forceSpawnOne({ nickname: 'onlyX', x: 999 });
+
+    const player = room.world.allPlayers().find((p) => p.nickname === 'onlyX');
+    const piece = room.world.getPiecesByOwner(player!.id)[0];
+    expect(piece?.position.x).not.toBe(999);
+  });
+
+  it('fixe le profil IA à \'neutre\' pour un bot personnalisé, jamais le profil aléatoire d’un spawn forcé sans options', () => {
+    // proportions à 100% "fuis" : seul profil possible si `forcedProfile` n'était pas fixé à
+    // 'neutre' pour un spawn personnalisé.
+    const { room } = makeCustomBotRoom({ fuis: 100, neutre: 0, agressif: 0, fou: 0 });
+
+    room.botManager!.forceSpawnOne({ nickname: 'CustomNeutre' });
+
+    const bots = Array.from((room as any).botManager.activeBots.values()) as Array<{
+      nickname: string;
+      profile: string;
+    }>;
+    const customBot = bots.find((b) => b.nickname === 'CustomNeutre');
+    expect(customBot?.profile).toBe('neutre');
+  });
+
+  it('conserve le comportement existant (masse de départ du mod, sans nom imposé) quand forceSpawnOne() est appelé sans options', () => {
+    const { room, config } = makeCustomBotRoom();
+
+    room.botManager!.forceSpawnOne();
+
+    expect(room.botManager?.activeBotCount).toBe(1);
+    const bot = Array.from((room as any).botManager.activeBots.values())[0] as { id: string };
+    const piece = room.world.getPiecesByOwner(bot.id)[0];
+    expect(piece?.mass).toBe(config.player.startMass);
+  });
 });

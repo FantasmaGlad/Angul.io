@@ -73,6 +73,71 @@ describe('World — findOverlappingPairs', () => {
     expect(world.findOverlappingPairs()).toHaveLength(0);
   });
 
+  describe("portée de recherche d'un morceau plus gros qu'une cellule (retour utilisateur : manger une pastille ne semble pas instantané)", () => {
+    /** Morceau de rayon ≈ 62px : au-dessus de la taille de cellule (50px), donc il atteint
+     * physiquement plus loin que l'ancien rayon de recherche FIXE de la première passe, mais
+     * encore en-dessous du seuil "grande entité" (50 × 1.5 = 75px, voir spatialHash.ts) — donc pas
+     * rattrapé non plus par la passe dédiée aux grandes entités. La bande d'angle mort exacte que
+     * ce correctif ferme. */
+    const PIECE_MASS = 150;
+
+    /** Positionne le morceau PILE sur une frontière de cellule (100 = 2 × cellSize) et la pastille
+     * du côté où la grille 3x3 de l'ancienne requête s'arrêtait le plus court (50px seulement à
+     * gauche, contre 100px à droite) : la pastille est alors en chevauchement franc avec le
+     * morceau (55px < 62 × 1.05 + 4.4 ≈ 69px) tout en tombant dans une cellule que l'ancienne
+     * requête du morceau n'atteignait pas. */
+    function spawnRimCase(pieceFirst: boolean) {
+      const world = new World({ mapSize: 1000 });
+      world.addPlayer('p1', 'Alice');
+      const spawnPiece = () => world.spawnPiece('p1', { x: 100, y: 100 }, PIECE_MASS);
+      const spawnFood = () => world.spawnParticle({ x: 45, y: 100 }, 1);
+      // L'ordre de création fixe l'ordre des ids (compteur croissant, voir World.spawnEntity) —
+      // donc lequel des deux le dédoublonnage `entity.id < otherId` désigne comme "responsable"
+      // de la paire. Le bug ne se manifestait que dans un des deux sens.
+      const piece = pieceFirst ? spawnPiece() : undefined;
+      const food = spawnFood();
+      const finalPiece = piece ?? spawnPiece();
+      world.rebuildSpatialHash();
+      return { world, piece: finalPiece, food };
+    }
+
+    it('détecte une pastille en bordure quand le morceau porte le plus PETIT id (le morceau doit trouver la pastille lui-même)', () => {
+      const { world, piece, food } = spawnRimCase(true);
+      expect(piece.radius).toBeGreaterThan(50);
+      expect(piece.radius).toBeLessThan(75);
+
+      const pairs = world.findOverlappingPairs();
+
+      expect(pairs).toHaveLength(1);
+      const pair = pairs[0];
+      if (!pair) throw new Error('expected one overlapping pair');
+      expect(new Set([pair[0].id, pair[1].id])).toEqual(new Set([piece.id, food.id]));
+    });
+
+    it("détecte la même pastille — une seule fois — quand c'est la pastille qui porte le plus petit id", () => {
+      const { world, piece, food } = spawnRimCase(false);
+
+      const pairs = world.findOverlappingPairs();
+
+      expect(pairs).toHaveLength(1);
+      const pair = pairs[0];
+      if (!pair) throw new Error('expected one overlapping pair');
+      expect(new Set([pair[0].id, pair[1].id])).toEqual(new Set([piece.id, food.id]));
+    });
+
+    it('ne détecte rien pour une pastille hors de portée réelle du morceau', () => {
+      const world = new World({ mapSize: 1000 });
+      world.addPlayer('p1', 'Alice');
+      const piece = world.spawnPiece('p1', { x: 100, y: 100 }, PIECE_MASS);
+      // 20px au-delà du bord du morceau (marge de contact comprise) : la requête élargie la voit
+      // désormais, le test de chevauchement doit continuer de la rejeter.
+      world.spawnParticle({ x: 100 - (piece.radius * 1.05 + 20), y: 100 }, 1);
+      world.rebuildSpatialHash();
+
+      expect(world.findOverlappingPairs()).toHaveLength(0);
+    });
+  });
+
   describe('test balayé (correctif tunneling — retour utilisateur : un petit morceau splitté traversé sans être mangé)', () => {
     it("détecte une collision qui ne se produit qu'EN COURS de trajet ce tick (ni au départ, ni à l'arrivée)", () => {
       const world = new World({ mapSize: 1000 });

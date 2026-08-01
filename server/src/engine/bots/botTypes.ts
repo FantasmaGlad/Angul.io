@@ -21,6 +21,20 @@ export const DEFAULT_CHALLENGER_CONFIG: ChallengerConfig = {
   massMultipliers: [50, 40, 30, 25, 20, 15, 12, 10, 8, 7, 6, 5, 4, 3, 2],
 };
 
+/** Options d'un spawn de bot PERSONNALISÉ (cahier_des_charges_admin.md §9.3/§17, "Bots
+ * personnalisés : création de robots configurables sur-mesure") — toutes optionnelles et
+ * indépendantes du profil de pilotage IA (voir `BotManager.forceSpawnOne`) : ce type ne couvre
+ * QUE l'apparence/position de spawn, jamais le comportement, un bot personnalisé reste piloté par
+ * l'IA comme n'importe quel autre bot. `x`/`y` ne sont appliqués que si les DEUX sont fournis
+ * ensemble (voir `BotManager` méthode privée `spawnBot`) — un seul des deux, sans l'autre, est
+ * ignoré plutôt que de repositionner partiellement le bot. */
+export interface CustomBotSpawnOptions {
+  nickname?: string;
+  mass?: number;
+  x?: number;
+  y?: number;
+}
+
 export interface BotProportions {
   fuis: number;
   neutre: number;
@@ -87,6 +101,18 @@ export function generateBotNickname(
   // simultanés dépassant la taille du pool réservé au profil) : repli déterministe — pas de
   // garantie d'unicité dans ce cas extrême, mais toujours un nom valide.
   return BOT_IDENTITIES[poolStart + startOffset]?.name ?? `${profile}_${index}`;
+}
+
+/** Résout les collisions de pseudo pour un bot PERSONNALISÉ (§9.3/§17, "Bots personnalisés") —
+ * `requested` tel quel s'il est libre, sinon suffixé par un compteur croissant (` (2)`, ` (3)`,
+ * ...) jusqu'à trouver un pseudo non porté par un bot actif de CE salon — même `usedNames` que
+ * `generateBotNickname` ci-dessus (jamais deux bots affichés sous le même nom, ici pour un pseudo
+ * choisi par l'admin plutôt que tiré de `BOT_IDENTITIES`). */
+export function uniqueCustomNickname(requested: string, usedNames: ReadonlySet<string>): string {
+  if (!usedNames.has(requested)) return requested;
+  let suffix = 2;
+  while (usedNames.has(`${requested} (${suffix})`)) suffix++;
+  return `${requested} (${suffix})`;
 }
 
 /** Population de Challengers dès QU'AU MOINS un joueur humain est connecté (`humanCount >= 1`) —

@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import type { EntitySnapshot } from '@angulio/shared';
 import { kickPlayer, listRooms, transferPlayer, type AdminRoomView } from '../adminApi.js';
 import { connectAdminSocket, type AdminSocketHandle } from '../adminSocket.js';
 import { AdminSnapshotBuffer, type Camera } from '../entityCanvas.js';
@@ -14,6 +13,9 @@ interface RoomsViewProps {
 
 const REFRESH_INTERVAL_MS = 3000;
 const POV_ZOOM = 0.6;
+/** Salon signalé (badge rouge, §8.2) au-delà de ce seuil — double le budget confortable d'un
+ * tick 20Hz (50ms/tick). */
+const TICK_WARNING_MS = 100;
 
 /** Onglet "Salons & Écrans" (§3.3 cahier_des_charges_admin.md) — supervision des salons/joueurs
  * en ligne, expulsion, transfert, mode Suivi "POV". */
@@ -30,6 +32,17 @@ export default function RoomsView({ token, onAuthError, onSelectCreativeRoom }: 
     nickname: string;
   } | null>(null);
   const [selectedTargetRoomId, setSelectedTargetRoomId] = useState('');
+  /** Filtres/tri du carrousel (§8.2). */
+  const [modeFilter, setModeFilter] = useState('all');
+  const [sortMode, setSortMode] = useState<'none' | 'occupancy-desc' | 'occupancy-asc'>('none');
+  /** Modale motif (§8.3 : "Kick doit désormais ouvrir la même modale motif ... que §7.2") — le
+   * champ "durée" de §7.2 s'applique au bannissement (compte, avec expiration en base), pas au
+   * kick (juste une fermeture de socket, sans état persistant) : pas de durée ici tant que le
+   * bannissement temporaire lui-même n'existe pas côté serveur (§11, Phase 3). Le motif n'est pas
+   * encore journalisé (pas de stockage tant que §11.2 n'existe pas) — capturé et affiché dans le
+   * statut de confirmation en attendant. */
+  const [kickTarget, setKickTarget] = useState<{ roomId: string; playerId: string; nickname: string } | null>(null);
+  const [kickReason, setKickReason] = useState('');
 
   const refresh = (): void => {
     void (async () => {
@@ -51,17 +64,29 @@ export default function RoomsView({ token, onAuthError, onSelectCreativeRoom }: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  const handleKick = (roomId: string, playerId: string, nickname: string): void => {
+  const handleConfirmKick = (): void => {
+    if (!kickTarget || !kickReason.trim()) return;
     void (async () => {
       try {
-        await kickPlayer(token, roomId, playerId);
-        setStatus(`${nickname} expulsé(e).`);
+        await kickPlayer(token, kickTarget.roomId, kickTarget.playerId);
+        setStatus(`${kickTarget.nickname} expulsé(e) — motif : ${kickReason.trim()}`);
+        setKickTarget(null);
+        setKickReason('');
         refresh();
       } catch (err) {
         setError((err as Error).message);
       }
     })();
   };
+
+  const visibleRooms = rooms
+    .filter((room) => modeFilter === 'all' || room.modId === modeFilter)
+    .sort((a, b) => {
+      if (sortMode === 'occupancy-desc') return b.stats.playerCount - a.stats.playerCount;
+      if (sortMode === 'occupancy-asc') return a.stats.playerCount - b.stats.playerCount;
+      return 0;
+    });
+  const availableModes = Array.from(new Set(rooms.map((room) => room.modId))).sort();
 
   const handleConfirmTransfer = (): void => {
     if (!transferTarget || !selectedTargetRoomId) return;
@@ -108,6 +133,22 @@ export default function RoomsView({ token, onAuthError, onSelectCreativeRoom }: 
         </div>
       </div>
 
+      <div className="filter-row" style={{ marginTop: 0, flexShrink: 0 }}>
+        <select value={modeFilter} onChange={(e) => setModeFilter(e.target.value)}>
+          <option value="all">Tous les modes</option>
+          {availableModes.map((modId) => (
+            <option key={modId} value={modId}>
+              {modId}
+            </option>
+          ))}
+        </select>
+        <select value={sortMode} onChange={(e) => setSortMode(e.target.value as typeof sortMode)}>
+          <option value="none">Ordre par défaut</option>
+          <option value="occupancy-desc">Occupation : plus rempli d'abord</option>
+          <option value="occupancy-asc">Occupation : moins rempli d'abord</option>
+        </select>
+      </div>
+
       {error && <p className="error-text" style={{ margin: 0, flexShrink: 0 }}>{error}</p>}
       {status && <p className="status-text" style={{ margin: 0, flexShrink: 0 }}>{status}</p>}
 
@@ -125,7 +166,7 @@ export default function RoomsView({ token, onAuthError, onSelectCreativeRoom }: 
           scrollSnapType: 'x mandatory',
         }}
       >
-        {rooms.map((room) => (
+        {visibleRooms.map((room) => (
           <section
             className="panel"
             key={room.id}
@@ -143,7 +184,10 @@ export default function RoomsView({ token, onAuthError, onSelectCreativeRoom }: 
           >
             <div className="room-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
               <div>
-                <h3 style={{ fontSize: 16, margin: 0 }}>
+                <h3 style={{ fontSize: 16, margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {room.stats.tickAvgMs > TICK_WARNING_MS && (
+                    <span className="tick-warning-dot" title={`Tick anormalement élevé (${room.stats.tickAvgMs.toFixed(1)}ms)`} />
+                  )}
                   {room.name} <span className="badge">{room.modId}</span>
                 </h3>
                 <p className="view-subtitle" style={{ marginTop: 4 }}>
@@ -227,7 +271,7 @@ export default function RoomsView({ token, onAuthError, onSelectCreativeRoom }: 
                                 className="btn-ghost btn-danger"
                                 type="button"
                                 style={{ padding: '2px 6px', fontSize: 11 }}
-                                onClick={() => handleKick(room.id, player.playerId, player.nickname)}
+                                onClick={() => setKickTarget({ roomId: room.id, playerId: player.playerId, nickname: player.nickname })}
                                 title="Expulser"
                               >
                                 Kick
@@ -293,6 +337,45 @@ export default function RoomsView({ token, onAuthError, onSelectCreativeRoom }: 
                 onClick={handleConfirmTransfer}
               >
                 Transférer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {kickTarget && (
+        <div className="context-menu-backdrop" style={{ zIndex: 150 }} onClick={() => setKickTarget(null)}>
+          <div
+            className="panel"
+            style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              zIndex: 151,
+              width: 380,
+              maxWidth: '90vw',
+              padding: 24,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ fontSize: 16, marginBottom: 8 }}>Expulser {kickTarget.nickname} ?</h3>
+            <p className="view-subtitle" style={{ marginBottom: 12 }}>
+              Motif obligatoire (§8.3/§7.2) — visible dans le journal d'audit dès sa mise en place.
+            </p>
+            <input
+              value={kickReason}
+              onChange={(e) => setKickReason(e.target.value)}
+              placeholder="Motif de l'expulsion…"
+              style={{ width: '100%' }}
+              autoFocus
+            />
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
+              <button className="btn-ghost" type="button" onClick={() => { setKickTarget(null); setKickReason(''); }}>
+                Annuler
+              </button>
+              <button className="btn-primary btn-danger" type="button" disabled={!kickReason.trim()} onClick={handleConfirmKick}>
+                Expulser
               </button>
             </div>
           </div>

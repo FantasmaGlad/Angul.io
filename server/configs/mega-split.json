@@ -1,0 +1,110 @@
+{
+  "id": "mega-split",
+  "player": {
+    "startMass": 50,
+    "maxSplits": 64,
+    "minSplitMass": 50
+  },
+  "physics": {
+    "v0": 300,
+    "speedMultiplier": 1.5,
+    "speedMassExponent": 0.0333,
+    "velocityFloor": 20,
+    "accelerationBase": 6750,
+    "accelerationMassExponent": 0.35,
+    "decelerationMassExponent": 0.7
+  },
+  "split": {
+    "ejectEfficiency": 1.0,
+    "ejectSpeedFactor": 4.5
+  },
+  "eject": {
+    "amount": 5
+  },
+  "merge": {
+    "baseTimeSec": 0,
+    "massFactor": 0,
+    "overlapMinFraction": 0
+  },
+  "eating": {
+    "massAdvantage": 0.05,
+    "minMassToEatFood": 2,
+    "eatOverlapFraction": 0.7,
+    "absorptionDurationSec": 0
+  },
+  "decay": {
+    "floor": 20,
+    "graceSec": 12,
+    "tiers": [
+      { "minMass": 0, "rate": 0, "intervalSec": 10 },
+      { "minMass": 1000, "rate": 0.005, "intervalSec": 15 },
+      { "minMass": 10000, "rate": 0.01, "intervalSec": 10 },
+      { "minMass": 50000, "rate": 0.02, "intervalSec": 5 }
+    ]
+  },
+  "arena": {
+    "width": 20000,
+    "height": 20000,
+    "borderType": "STRICT_WALL"
+  },
+  "food": {
+    "density": 2.5,
+    "respawnRatePerSecond": 300,
+    "pelletTypes": [
+      {
+        "color": "vert",
+        "mass": 1,
+        "weight": 100
+      }
+    ]
+  },
+  "areaConstant": 6,
+  "bots": {
+    "enabled": true,
+    "ambientTargetCount": 6,
+    "maxTotal": 15,
+    "updateFrequencyHz": 2,
+    "proportions": {
+      "fuis": 25,
+      "neutre": 30,
+      "agressif": 30,
+      "fou": 15
+    },
+    "challengers": {
+      "enabled": true,
+      "baselineCount": 6,
+      "maxWithHumans": 15,
+      "minWithHumans": 6,
+      "rampHumans": 5,
+      "massMultipliers": [
+        50,
+        40,
+        30,
+        25,
+        20,
+        15,
+        12,
+        10,
+        8,
+        7,
+        6,
+        5,
+        4,
+        3,
+        2
+      ]
+    },
+    "idleDespawn": {
+      "enabled": true,
+      "afterMinutes": 10
+    }
+  },
+  "room": {
+    "maxPlayers": 30,
+    "resetSchedule": {
+      "type": "everyNMinutes",
+      "minutes": 120,
+      "timeZone": "Europe/Paris"
+    }
+  }
+}

@@ -23,6 +23,18 @@ const MODE_METADATA: Record<string, ModeMeta> = {
       'Manger un autre joueur rapporte 10x plus de masse — mais mourir efface toute la progression de la partie.',
     color: 'var(--c-hardcore)',
   },
+  infini: {
+    label: 'Infini',
+    description:
+      'Carte 5000x5000 aux bords toroïdaux : franchir un mur te téléporte de l\'autre côté sans perte de vitesse.',
+    color: '#a855f7',
+  },
+  'mega-split': {
+    label: 'Mega Split',
+    description:
+      'Jusqu\'à 64 cellules et refusion instantanée à chaque instant.',
+    color: '#ec4899',
+  },
 };
 
 export function modeMeta(modeId: string): ModeMeta {

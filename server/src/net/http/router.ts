@@ -14,10 +14,12 @@ import {
 } from './routes/admin.js';
 import {
   handleAdminBroadcast,
+  handleAdminGetBaseRooms,
   handleAdminKick,
   handleAdminListRooms,
   handleAdminRoomAction,
   handleAdminTransfer,
+  handleAdminUpdateBaseRooms,
 } from './routes/adminRooms.js';
 import { handleAdminHealth } from './routes/health.js';
 import { handleGetAvatars } from './routes/avatars.js';
@@ -175,6 +177,15 @@ export async function handleHttpRequest(
 
   if (url.pathname === '/api/admin/rooms' && req.method === 'GET') {
     await handleAdminListRooms(roomManager, runtimes, admin, req, res);
+    return;
+  }
+
+  if (url.pathname === '/api/admin/base-rooms' && req.method === 'GET') {
+    handleAdminGetBaseRooms(admin, req, res);
+    return;
+  }
+  if (url.pathname === '/api/admin/base-rooms' && req.method === 'PUT') {
+    await handleAdminUpdateBaseRooms(admin, availableModIds, req, res);
     return;
   }
 

@@ -32,7 +32,7 @@
       "dependsOn": [
         "shared"
       ],
-      "description": "Interface d'administration (React) : Salons & Ecrans, Espace Creatif, gestion des comptes joueurs."
+      "description": "Interface d'administration (React), glassmorphisme blanc : Tableau de bord, Joueurs, Salons & Ecrans, Studio de controle, Moderation, Economie & Boosts (placeholder), Configuration."
     }
   ],
   "entries": [
@@ -913,7 +913,27 @@
         "admin",
         "api"
       ],
-      "description": "Actions admin par salon (kick/freeze/godmode/spawn food...)."
+      "description": "Actions admin par salon (kick/freeze/godmode/spawn food...) ; GET/PUT /api/admin/base-rooms (server/rooms.json, cahier_des_charges_admin.md §13)."
+    },
+    {
+      "path": "server/rooms.json",
+      "workspace": "server",
+      "tags": [
+        "admin",
+        "salons",
+        "config"
+      ],
+      "description": "Salons permanents de l'accueil (nom + mode), edites via l'interface admin (Configuration, §13). Hors de server/configs/ (pas un mod)."
+    },
+    {
+      "path": "server/src/roomsConfig.ts",
+      "workspace": "server",
+      "tags": [
+        "admin",
+        "salons",
+        "config"
+      ],
+      "description": "Lit/ecrit server/rooms.json — utilise par index.ts (demarrage) et adminRooms.ts (routes GET/PUT /api/admin/base-rooms)."
     },
     {
       "path": "server/src/net/ws/connectionHandler.ts",
@@ -1379,7 +1399,7 @@
         "admin",
         "websocket"
       ],
-      "description": "Canal WebSocket admin dedie (?admin=1) — POV + Espace Creatif."
+      "description": "Canal WebSocket admin dedie (?admin=1) — POV + Studio de controle."
     },
     {
       "path": "admin/src/entityCanvas.ts",
@@ -1389,7 +1409,18 @@
         "rendu",
         "canvas"
       ],
-      "description": "Rendu Canvas partage POV/Espace Creatif (60 FPS, interpolation)."
+      "description": "Geometrie/interpolation PURES partagees POV/Studio (independantes du moteur de rendu, voir pixiEntityRenderer.ts)."
+    },
+    {
+      "path": "admin/src/pixiEntityRenderer.ts",
+      "workspace": "admin",
+      "tags": [
+        "admin",
+        "rendu",
+        "pixi",
+        "webgl"
+      ],
+      "description": "Moteur de rendu GPU PixiJS du canva admin (cahier_des_charges_admin.md §10.2), remplace l'ancien dessin Canvas2D."
     },
     {
       "path": "admin/src/components/Sidebar.tsx",
@@ -1398,7 +1429,25 @@
         "admin",
         "navigation"
       ],
-      "description": "Navigation laterale entre les vues."
+      "description": "Navigation laterale, 7 entrees (cahier_des_charges_admin.md §4 : operationnel/gouvernance)."
+    },
+    {
+      "path": "admin/src/components/ConnectionStatus.tsx",
+      "workspace": "admin",
+      "tags": [
+        "admin",
+        "websocket"
+      ],
+      "description": "Indicateur de connexion WS temps reel (§10.3), partage POV + Studio de controle."
+    },
+    {
+      "path": "admin/src/components/DashboardView.tsx",
+      "workspace": "admin",
+      "tags": [
+        "admin",
+        "tableau-de-bord"
+      ],
+      "description": "Tableau de bord (§6) : sante serveur, cartes salons, activite recente (placeholder tant que le journal d'audit §11.2 n'existe pas)."
     },
     {
       "path": "admin/src/components/PlayersView.tsx",
@@ -1407,7 +1456,7 @@
         "admin",
         "comptes"
       ],
-      "description": "Recherche/edition de comptes joueurs."
+      "description": "Recherche/edition de comptes joueurs (§7)."
     },
     {
       "path": "admin/src/components/RoomsView.tsx",
@@ -1417,16 +1466,43 @@
         "salons",
         "pov"
       ],
-      "description": "Salons & Ecrans (POV spectateur par salon, kick/transfert)."
+      "description": "Salons & Ecrans (§8 : carrousel, filtres mode/tri occupation/badge tick eleve, kick avec motif, POV, transfert)."
     },
     {
       "path": "admin/src/components/CreativeView.tsx",
       "workspace": "admin",
       "tags": [
         "admin",
-        "espace-creatif"
+        "studio-de-controle"
       ],
-      "description": "Espace Creatif (freeze/godmode/spawn food/masse par joueur...)."
+      "description": "Studio de controle (§9) : 3 zones (contexte / observation lecture seule / intervention retractable a onglets spawn-sanctions-salon-dieu)."
+    },
+    {
+      "path": "admin/src/components/ModerationView.tsx",
+      "workspace": "admin",
+      "tags": [
+        "admin",
+        "moderation"
+      ],
+      "description": "Moderation (§11) — v1 : liste des comptes bannis, motif/duree/journal d'audit en attente du stockage serveur (§11.2)."
+    },
+    {
+      "path": "admin/src/components/EconomyView.tsx",
+      "workspace": "admin",
+      "tags": [
+        "admin",
+        "economie"
+      ],
+      "description": "Economie & Boosts (§12) — placeholder \"Bientot disponible\", aucune logique fonctionnelle."
+    },
+    {
+      "path": "admin/src/components/ConfigurationView.tsx",
+      "workspace": "admin",
+      "tags": [
+        "admin",
+        "configuration"
+      ],
+      "description": "Configuration (§13) : salons permanents de l'accueil editables (GET/PUT /api/admin/base-rooms), profils de mods en lecture seule (GET /api/modes)."
     }
   ],
   "topics": {

@@ -42,6 +42,9 @@ export class GameConnection {
   /** Notifiés à chaque tentative de reconnexion programmée (pas à chaque succès) — purement
    * informatif pour l'UI (voir GameView.tsx, statut "reconnexion en cours"). */
   private readonly reconnectingListeners: Array<(attempt: number) => void> = [];
+  /** Notifiés dès que le socket est réellement ouvert (première connexion ET chaque reconnexion
+   * réussie), une fois la file d'attente vidée — voir `onOpen`. */
+  private readonly openListeners: Array<() => void> = [];
   /** Messages envoyés avant l'ouverture effective du socket (ex. le `join` initial, envoyé dès
    * la création de la connexion depuis le lobby, Lot 2.2) — mis en attente puis vidés à
    * l'ouverture plutôt que silencieusement perdus. */
@@ -93,6 +96,11 @@ export class GameConnection {
         this.recordOutgoing(payload);
         socket.send(payload);
       }
+
+      // Après le `join` (mis en file avant l'ouverture, ou rejoué ci-dessus) : ce que ces
+      // auditeurs envoient est ainsi traité par le serveur APRÈS l'entrée en partie, jamais
+      // avant.
+      for (const listener of this.openListeners) listener();
     });
     socket.addEventListener('message', (event: MessageEvent<string>) => {
       this.recordIncoming(event.data);
@@ -188,6 +196,22 @@ export class GameConnection {
    * pour une décision de logique de jeu. */
   onReconnecting(listener: (attempt: number) => void): void {
     this.reconnectingListeners.push(listener);
+  }
+
+  /** Notifié dès que le socket est OUVERT — c'est-à-dire au plus tôt où un message peut réellement
+   * partir, sans attendre la moindre réponse applicative du serveur. Utilisé pour le tout premier
+   * `ping` (voir GameView.tsx) : mesuré depuis l'ouverture, son aller-retour se superpose à celui
+   * du `join` au lieu de s'y ajouter en série — la première vraie mesure de latence remplace donc
+   * le repli `DEFAULT_LATENCY_MS` (prediction.ts) beaucoup plus tôt, réduisant la fenêtre pendant
+   * laquelle la réconciliation travaille sur une latence supposée et produit une correction
+   * visible peu après l'entrée en partie.
+   *
+   * Appelé IMMÉDIATEMENT si le socket est déjà ouvert au moment de l'inscription : sans ce
+   * rattrapage, un auditeur inscrit après coup (montage de composant retardé, socket ouvert entre
+   * temps) ne serait jamais notifié — l'événement `open` étant, lui, déjà passé. */
+  onOpen(listener: () => void): void {
+    this.openListeners.push(listener);
+    if (this.socket.readyState === WebSocket.OPEN) listener();
   }
 
   send(message: ClientMessage): void {

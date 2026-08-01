@@ -3,6 +3,16 @@ import { SpatialHash } from './spatialHash.js';
 import type { Entity, EntityId, EntityKind, PlayerId, PlayerState } from './types.js';
 import { createLifeStats } from './xp.js';
 
+/** Marge de contact accordée à un MORCEAU face à une PASTILLE (jamais entre deux morceaux, ni
+ * entre deux pastilles) : une pastille est considérée mangée un peu avant un contact
+ * cercle-à-cercle strict (retour utilisateur : le contact strict ratait des pastilles pourtant
+ * visuellement recouvertes). Extrait en constante parce que la portée de recherche du broad-phase
+ * (voir `findOverlappingPairs`, première passe) DOIT couvrir exactement la même distance que le
+ * test de chevauchement lui-même (`isOverlapping`) — deux valeurs indépendantes qui divergeraient
+ * recréeraient précisément le bug de paires manquées que cette portée corrige. Miroir client :
+ * `partitionEatenFood` (client/src/render.ts), même marge. */
+const PARTICLE_EAT_MARGIN = 1.05;
+
 export interface WorldOptions {
   mapSize: number;
   /** Constante de conversion masse -> aire, voir metriques.md §2. Défaut : π (Rayon = √masse). */
@@ -206,8 +216,8 @@ export class World {
    * seule l'entité rapide interroge à rayon élargi, la relation "à proximité" cesse d'être
    * symétrique entre les deux entités). */
   private isOverlapping(a: Entity, b: Entity): boolean {
-    const radA = a.kind === 'piece' && b.kind === 'particle' ? a.radius * 1.05 : a.radius;
-    const radB = b.kind === 'piece' && a.kind === 'particle' ? b.radius * 1.05 : b.radius;
+    const radA = a.kind === 'piece' && b.kind === 'particle' ? a.radius * PARTICLE_EAT_MARGIN : a.radius;
+    const radB = b.kind === 'piece' && a.kind === 'particle' ? b.radius * PARTICLE_EAT_MARGIN : b.radius;
     return distance(a.position, b.position) < radA + radB;
   }
 
@@ -242,7 +252,10 @@ export class World {
    * comptage, aucune paire manquée) :
    *
    * 1. Petites entités entre elles (grille SEULEMENT, voir `SpatialHash` — les grandes entités n'y
-   *    sont jamais insérées, donc cette boucle ne peut jamais les y trouver). Chaque paire NON
+   *    sont jamais insérées, donc cette boucle ne peut jamais les y trouver ; elles sont aussi
+   *    explicitement EXCLUES du rôle d'interrogeur ici, voir la boucle — leurs paires sont
+   *    entièrement couvertes par les catégories 2 et 3, et les émettre ici aussi produirait des
+   *    doublons). Chaque paire NON
    *    ORDONNÉE y est découverte deux fois par construction du broad-phase (une fois depuis
    *    chaque entité, la requête spatiale de l'une retrouvant forcément l'autre) — l'ancienne
    *    implémentation payait cette redondance avec un `Set<string>` de dédoublonnage RECRÉÉ à
@@ -252,6 +265,23 @@ export class World {
    *    GC qui va avec). `entity.id < otherId` (n'importe quel ordre total cohérent suffit, pas
    *    besoin d'un ordre numérique) élimine cette redondance À LA SOURCE : ni Set, ni chaîne, et
    *    la moitié des candidats est écartée AVANT même le calcul de `distance()`, pas après.
+   *
+   *    Ce raccourci n'est valide QUE si la relation "à proximité" est réellement SYMÉTRIQUE. Elle
+   *    ne l'était pas : la requête partait d'un rayon FIXE (`cellSize`, 50px) quelle que soit la
+   *    taille de l'entité qui interroge, alors qu'un morceau de rayon 50-75px (masse ~105-200,
+   *    encore sous le seuil "grande entité" de la catégorie 2) atteint physiquement plus loin que
+   *    ça. Une pastille EN BORDURE d'un tel morceau était donc trouvée par la requête de la
+   *    PASTILLE (petit rayon, mais le morceau, lui, est inséré dans toutes les cellules que couvre
+   *    son grand rayon) sans jamais l'être par celle du MORCEAU — et quand l'ordre des ids
+   *    désignait le morceau comme "responsable" de la paire, elle était purement et simplement
+   *    perdue jusqu'à ce qu'un tick ultérieur remette les deux entités dans une configuration
+   *    favorable (environ une pastille de bordure sur deux, retour utilisateur : "manger une
+   *    pastille ne semble pas instantané"). D'où `queryNearbyForReach` : la portée de recherche
+   *    couvre désormais le rayon PROPRE de l'entité qui interroge (marge de contact comprise,
+   *    `PARTICLE_EAT_MARGIN`), ce qui restaure la symétrie — chacune des deux entités d'une paire
+   *    réellement en chevauchement retrouve l'autre, donc l'ordre des ids ne peut plus en perdre
+   *    aucune. Coût nul pour la nourriture et les petits morceaux (voir `queryNearbyForReach` :
+   *    jamais moins que `cellSize`, donc la même grille 3x3 qu'avant).
    *
    * 2. Chaque grande entité (Blob Challenger...) contre les petites entités réellement à sa
    *    portée — recherche à SA PROPRE taille (+ la plus grande taille possible d'une petite
@@ -265,8 +295,15 @@ export class World {
   findOverlappingPairs(): Array<[Entity, Entity]> {
     const pairs: Array<[Entity, Entity]> = [];
 
+    const maxGridRadius = this.spatialHash.maxGridEntityRadius();
     for (const entity of this.entities.values()) {
-      const nearbyIds = this.spatialHash.queryNearby(entity.position);
+      // Une grande entité n'interroge PAS ici (voir le commentaire ci-dessus, catégorie 1) : la
+      // catégorie 2 émet déjà toutes ses paires, à une portée dimensionnée sur sa propre taille.
+      if (entity.radius > maxGridRadius) continue;
+      const nearbyIds = this.spatialHash.queryNearbyForReach(
+        entity.position,
+        entity.radius * PARTICLE_EAT_MARGIN,
+      );
       for (const otherId of nearbyIds) {
         if (!(entity.id < otherId)) continue;
         const other = this.entities.get(otherId);
@@ -277,7 +314,7 @@ export class World {
     this.findTunnelingPairs(pairs);
 
     const largeEntities = this.spatialHash.getLargeEntities();
-    const maxSmallReach = this.spatialHash.maxGridEntityRadius();
+    const maxSmallReach = maxGridRadius;
     for (const large of largeEntities) {
       const nearbyIds = this.spatialHash.queryRadius(large.position, large.radius + maxSmallReach);
       for (const otherId of nearbyIds) {
@@ -329,8 +366,14 @@ export class World {
         if (!other) continue;
         if (this.isOverlapping(entity, other)) continue; // déjà capturé par la passe principale
 
-        const radA = entity.kind === 'piece' && other.kind === 'particle' ? entity.radius * 1.05 : entity.radius;
-        const radB = other.kind === 'piece' && entity.kind === 'particle' ? other.radius * 1.05 : other.radius;
+        const radA =
+          entity.kind === 'piece' && other.kind === 'particle'
+            ? entity.radius * PARTICLE_EAT_MARGIN
+            : entity.radius;
+        const radB =
+          other.kind === 'piece' && entity.kind === 'particle'
+            ? other.radius * PARTICLE_EAT_MARGIN
+            : other.radius;
         if (this.sweptMinDistance(entity, other) >= radA + radB) continue;
 
         sweptPairKeys ??= new Set();

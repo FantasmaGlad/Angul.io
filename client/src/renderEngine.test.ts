@@ -32,7 +32,7 @@ describe('RenderEngine — ligne de temps ancrée sur le numéro de tick', () =>
     nowSpy.mockReturnValueOnce(35);
     engine.pushSnapshot([entity('1', 500)], 5, 30);
 
-    // Rendu peu après l'arrivée de la rafale (buffer = 100ms à 30Hz) : encore tôt dans
+    // Rendu peu après l'arrivée de la rafale (buffer d'interpolation) : encore tôt dans
     // l'intervalle simulé tick2→tick5, donc proche de x=100, pas un saut à x=500.
     nowSpy.mockReturnValueOnce(135);
     const result = engine.getInterpolatedEntities(16, { x: 0, y: 0, scale: 1 }, 2000, 2000, 'self', true);
@@ -321,5 +321,36 @@ describe('RenderEngine — accumulation persistante de la nourriture (delta rés
 
     const last = engine.snapshotQueue[engine.snapshotQueue.length - 1]!;
     expect(last.entities.some((e) => e.i === 'f1')).toBe(false);
+  });
+});
+
+/** `forgetFood` renvoie les ids RÉELLEMENT retirés — contrat dont dépend le crédit de masse de la
+ * prédiction locale (voir GameView.tsx / `LocalPrediction.addPredictedMass`) : une même pastille
+ * est signalée mangée à chaque frame de rendu tant que les snapshots déjà empilés la contiennent
+ * encore, et la créditer à chaque fois gonflerait la masse prédite d'un ordre de grandeur. */
+describe('RenderEngine — forgetFood renvoie les ids réellement oubliés (dédoublonnage du crédit de masse)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('renvoie les ids connus au premier appel, puis plus rien aux appels suivants pour les mêmes ids', () => {
+    const engine = new RenderEngine();
+    const nowSpy = vi.spyOn(performance, 'now');
+
+    nowSpy.mockReturnValueOnce(0);
+    engine.pushSnapshot([entity('c1', 0), food('f1', 50), food('f2', 60)], 1, 30, true);
+
+    expect(engine.forgetFood(['f1', 'f2']).sort()).toEqual(['f1', 'f2']);
+    expect(engine.forgetFood(['f1', 'f2'])).toEqual([]);
+  });
+
+  it('ignore un id inconnu (pastille d’un autre joueur, jamais reçue par ce client)', () => {
+    const engine = new RenderEngine();
+    const nowSpy = vi.spyOn(performance, 'now');
+
+    nowSpy.mockReturnValueOnce(0);
+    engine.pushSnapshot([entity('c1', 0), food('f1', 50)], 1, 30, true);
+
+    expect(engine.forgetFood(['inconnue', 'f1'])).toEqual(['f1']);
   });
 });

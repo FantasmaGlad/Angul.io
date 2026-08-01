@@ -12,8 +12,10 @@ import {
   generateBotNickname,
   rampedChallengerTarget,
   selectRandomBotProfile,
+  uniqueCustomNickname,
   type BotProfileKind,
   type ChallengerConfig,
+  type CustomBotSpawnOptions,
 } from './botTypes.js';
 
 interface ActiveBot {
@@ -282,12 +284,17 @@ export class BotManager {
    * `respawnChallengerAtWeakestTier` (voir son commentaire) pour qu'un Challenger qui réapparaît
    * après avoir été mangé entre toujours au palier le plus faible actuellement actif, jamais à
    * celui de son rang d'origine. Absent pour un spawn "normal" (peuplement initial du salon /
-   * extension de la pyramide à la connexion d'un humain), qui utilise le barème par rang. */
+   * extension de la pyramide à la connexion d'un humain), qui utilise le barème par rang.
+   *
+   * `customOptions` : bot PERSONNALISÉ (§9.3/§17, voir `forceSpawnOne`) — pseudo/masse/position
+   * imposés APRÈS le spawn normal, jamais utilisé pour les Challengers (`forceSpawnOne` est le
+   * seul appelant à le fournir, toujours avec `forcedProfile` absent ou `'neutre'`). */
   private spawnBot(
     forcedProfile?: BotProfileKind,
     rank?: number,
     challengerConfig?: ChallengerConfig,
     challengerMassOverride?: number,
+    customOptions?: CustomBotSpawnOptions,
   ): void {
     const profile =
       forcedProfile ?? selectRandomBotProfile(this.config.proportions ?? DEFAULT_BOT_PROPORTIONS);
@@ -311,6 +318,13 @@ export class BotManager {
       botId = `bot-${profile}-${index}`;
     }
 
+    // Pseudo personnalisé (§9.3/§17, "Bots personnalisés") : remplace le pseudo généré ci-dessus
+    // — voir `uniqueCustomNickname` pour la garantie d'unicité (mêmes `usedNames` que
+    // `generateBotNickname` juste au-dessus, jamais deux bots affichés sous le même nom).
+    if (customOptions?.nickname) {
+      nickname = uniqueCustomNickname(customOptions.nickname, usedNames);
+    }
+
     // Décalage initial de l'accumulateur pour étaler les calculs d'IA des bots
     const offsetMs = Math.random() * this.updateIntervalMs;
 
@@ -331,13 +345,32 @@ export class BotManager {
     this.activeBots.set(botId, bot);
     this.room.addPlayer(botId, nickname, botSkin);
 
-    if (profile === 'challenger' && rank !== undefined) {
-      const multiplier =
-        challengerMassOverride ?? challengerMassMultiplierForRank(rank, challengerConfig);
-      const pieces = this.room.world.getPiecesByOwner(botId);
-      const firstPiece = pieces[0];
-      if (firstPiece) {
+    const firstPiece = this.room.world.getPiecesByOwner(botId)[0];
+    if (firstPiece) {
+      if (profile === 'challenger' && rank !== undefined) {
+        const multiplier =
+          challengerMassOverride ?? challengerMassMultiplierForRank(rank, challengerConfig);
         this.room.world.setMass(firstPiece, firstPiece.mass * multiplier);
+      }
+
+      // Masse personnalisée (§9.3/§17) : même schéma que le multiplicateur Challenger ci-dessus —
+      // appliquée APRÈS `addPlayer`/`onPlayerJoin` (jamais avant, qui a besoin d'une masse de
+      // départ valide, `startMass` du mod, pour placer la pièce à une position sûre en premier
+      // lieu, voir `spawnPlayerPiece`, mods/parametric/index.ts).
+      if (customOptions?.mass !== undefined) {
+        this.room.world.setMass(firstPiece, customOptions.mass);
+      }
+
+      // Position personnalisée (§9.3/§17, "position précise (x,y) ou au clic sur le canva") : les
+      // DEUX coordonnées doivent être fournies ensemble, sinon ignorées (pas de repositionnement
+      // partiel, voir `CustomBotSpawnOptions`) — clampée défensivement dans les bornes de la carte
+      // (origine en haut à gauche, `[0, mapSize]`, voir `randomPositionInMap`,
+      // mods/parametric/index.ts) : une position hors carte fournie par l'admin ne doit pas faire
+      // disparaître le bot du monde jouable.
+      if (customOptions?.x !== undefined && customOptions?.y !== undefined) {
+        const mapSize = this.room.world.mapSize;
+        firstPiece.position.x = Math.max(0, Math.min(mapSize, customOptions.x));
+        firstPiece.position.y = Math.max(0, Math.min(mapSize, customOptions.y));
       }
     }
   }
@@ -464,8 +497,19 @@ export class BotManager {
   }
 
   /** Force le spawn immédiat d'un bot supplémentaire (§4.4, "Spawner"), au-delà du peuplement
-   * automatique de `adjustPopulation` — un profil aléatoire, comme un spawn naturel. */
-  forceSpawnOne(): void {
-    this.spawnBot();
+   * automatique de `adjustPopulation` — un profil aléatoire, comme un spawn naturel, SAUF si
+   * `options` fixe au moins un des champs pseudo/masse/position (bot PERSONNALISÉ créé depuis
+   * l'admin, §9.3/§17) : dans ce cas le profil de pilotage IA est fixé à `'neutre'` (comportement
+   * simple et prévisible, alors qu'il resterait sinon tiré au hasard comme un bot ambiant) —
+   * `options` ne touche QUE l'apparence/position de spawn, jamais le comportement (le bot reste
+   * piloté par l'IA normalement, voir `update()`). */
+  forceSpawnOne(options?: CustomBotSpawnOptions): void {
+    const isCustom =
+      options !== undefined &&
+      (options.nickname !== undefined ||
+        options.mass !== undefined ||
+        options.x !== undefined ||
+        options.y !== undefined);
+    this.spawnBot(isCustom ? 'neutre' : undefined, undefined, undefined, undefined, options);
   }
 }

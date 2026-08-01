@@ -146,14 +146,27 @@ export function computeCamera(
   return { x: own.x, y: own.y, scale };
 }
 
+/** Une pastille considérée "mangée" ce cadre (voir `partitionEatenFood`). */
+export interface EatenFood {
+  /** Id de la pastille — à faire DÉFINITIVEMENT oublier via `RenderEngine.forgetFood`. */
+  id: string;
+  /** Masse de la pastille — créditée à la prédiction locale quand `eaterId` est un morceau du
+   * joueur (voir GameView.tsx / `LocalPrediction.addPredictedMass`), pour que le blob GROSSISSE
+   * aussi instantanément que la pastille disparaît. */
+  mass: number;
+  /** Id de l'entité (morceau) qui la recouvre — pas forcément un morceau du joueur local (ce
+   * filtrage vaut pour toutes les créatures, voir `partitionEatenFood`). */
+  eaterId: string;
+}
+
 export interface RenderFrameResult {
   drawCalls: number;
   batches: number;
-  /** Ids des pastilles considérées "mangées" ce cadre (voir `partitionEatenFood` ci-dessous) —
+  /** Pastilles considérées "mangées" ce cadre (voir `partitionEatenFood` ci-dessous) —
    * l'appelant (GameView.tsx) les fait DÉFINITIVEMENT oublier via `RenderEngine.forgetFood`,
    * plutôt que ce filtrage ne reste qu'une astuce d'affichage locale à la frame (voir son
    * commentaire). */
-  eatenFoodIds: string[];
+  eatenFood: EatenFood[];
 }
 
 /** Marge (en pixels *monde*) ajoutée autour du viewport pour le culling — évite qu'une entité en
@@ -229,7 +242,7 @@ export function renderFrame(
   drawGrid(ctx, canvas, camera, toScreenX, toScreenY);
   drawCalls++;
 
-  const { visible: visibleEntities, eatenIds: eatenFoodIds } = partitionEatenFood(entities);
+  const { visible: visibleEntities, eaten: eatenFood } = partitionEatenFood(entities);
 
   const foodEntities = visibleEntities.filter((e) => e.k === 'f');
   const foodPathsByColor = new Map<string, Path2D>();
@@ -362,7 +375,7 @@ export function renderFrame(
   return {
     drawCalls,
     batches: foodPathsByColor.size + 1,
-    eatenFoodIds,
+    eatenFood,
   };
 }
 
@@ -377,9 +390,9 @@ export function renderFrame(
  * delta serveur qu'à la prochaine resynchronisation périodique, jusqu'à ~5s plus tard — voir
  * cahier_des_charges_perf_reseau_grande_carte.md §3.5, correctif "pastilles mangées qui mettent
  * plusieurs secondes à disparaître"). */
-function partitionEatenFood(entities: EntitySnapshot[]): { visible: EntitySnapshot[]; eatenIds: string[] } {
+function partitionEatenFood(entities: EntitySnapshot[]): { visible: EntitySnapshot[]; eaten: EatenFood[] } {
   const creatures = entities.filter((e) => e.k === 'c');
-  const eatenIds: string[] = [];
+  const eaten: EatenFood[] = [];
   const visible = entities.filter((entity) => {
     if (entity.k !== 'f') return true;
     for (const c of creatures) {
@@ -387,13 +400,13 @@ function partitionEatenFood(entities: EntitySnapshot[]): { visible: EntitySnapsh
       const dy = entity.y - c.y;
       const hitRadius = c.r * 1.05 + entity.r;
       if (dx * dx + dy * dy <= hitRadius * hitRadius) {
-        eatenIds.push(entity.i);
+        eaten.push({ id: entity.i, mass: entity.m, eaterId: c.i });
         return false; // Disparition instantanée sans animation dès l'impact
       }
     }
     return true;
   });
-  return { visible, eatenIds };
+  return { visible, eaten };
 }
 
 /** Taille de police plancher pour un pseudo (bot ou joueur humain) — en-deçà, le texte devient

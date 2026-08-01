@@ -31,7 +31,10 @@ Pour une cartographie fichier-par-fichier, voir [structure.md](structure.md).
   `client`, `admin` — voir [structure.md](structure.md#1-vue-densemble-du-monorepo)).
 - Serveur : Node natif (`node:http`, `ws`), PostgreSQL optionnel (comptes joueurs/admin — sans
   `DATABASE_URL`, le serveur tourne en parties anonymes uniquement).
-- Client/admin : React + Vite, rendu de jeu en Canvas2D (pas de WebGL, pas de moteur tiers).
+- Client : React + Vite, rendu de jeu en Canvas2D (pas de WebGL, pas de moteur tiers).
+- Admin : React + Vite, UI en glassmorphisme blanc (cahier_des_charges_admin.md §14) ; le canva
+  temps réel (Studio de contrôle/POV) est rendu en PixiJS (WebGL), seule exception au reste du
+  monorepo qui reste Canvas2D — voir §10.2 du même document pour le pourquoi.
 
 ```bash
 npm install
@@ -50,7 +53,7 @@ Variables d'environnement server pertinentes pour le développement d'un mod :
 
 | Variable | Défaut | Effet |
 |---|---|---|
-| `TICK_RATE_HZ` | `20` (v5.8, était 30) | Cadence de simulation, identique pour **tous** les salons du process — la physique intègre à pas fixe dérivé de cette valeur (`dt = 1/TICK_RATE_HZ`, jamais le temps réel écoulé), donc ce taux ne change pas le comportement de la simulation, seulement sa granularité temporelle et le coût CPU/réseau |
+| `TICK_RATE_HZ` | `20` (v6.0) | Cadence de simulation, identique pour **tous** les salons du process — la physique intègre à pas fixe dérivé de cette valeur (`dt = 1/TICK_RATE_HZ`, jamais le temps réel écoulé), donc ce taux ne change pas le comportement de la simulation, seulement sa granularité temporelle et le coût CPU/réseau |
 | `ROOM_WORKERS` | nb de cœurs CPU | Nombre de `worker_threads` hébergeant les salons ; `0` = mono-thread (utile pour déboguer un mod avec un débogueur synchrone) |
 | `PORT` | `8080` | Port HTTP/WebSocket |
 | `DATABASE_URL` | absent | Active comptes joueurs + persistance des scores |
@@ -439,7 +442,7 @@ Room.tick() (dt fixe)
   → roomInstance.ts : filtrage par intérêt + delta nourriture PAR JOUEUR (interestFilter.ts) ;
     salon entier inchangé pour spectateur/vue admin
   → snapshotBuilder.ts construit EntitySnapshot[] (par destinataire)
-  → broadcast.ts diffuse `state` à chaque viewer du salon (30/s par défaut)
+  → broadcast.ts diffuse `state` à chaque viewer du salon (20/s par défaut)
   → net.ts (client) : GameConnection, reconnexion auto sur coupure transitoire (backoff court)
   → renderEngine.ts : file de snapshots ancrée sur le NUMÉRO DE TICK (pas l'heure d'arrivée
     réseau) — une rafale après un micro-décrochage réseau ne casse pas le rythme de lecture ;

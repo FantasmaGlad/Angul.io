@@ -1,30 +1,41 @@
 /* ---------------------------------------------------------------------------------------
- * Design "Onyx" (refonte UI/UX 2026-07, ajusté sur demande utilisateur) — fond clair, les tons
- * Onyx servent d'encre (texte/bordures/accent) pour contraster dessus. Tokens volontairement
- * identiques à client/src/styles.css (cohérence visuelle entre les deux apps, servies
- * séparément) ; dupliqués plutôt que partagés via un paquet commun pour rester simple à ce
- * stade (deux petites apps, pas de troisième consommateur).
+ * Design system "glassmorphisme blanc" (cahier_des_charges_admin.md §14, remplace le thème
+ * "Onyx Studio" précédent) — fond quasi neutre (style "verre" macOS/Apple, pas un dégradé
+ * coloré), panneaux en verre dépoli (translucides + backdrop-filter blur), un seul accent vif
+ * VIOLET (jamais bleu — demande explicite utilisateur) pour les actions primaires, le reste en
+ * niveaux de gris neutres. La zone canva temps réel (§10, §14 : "comme un moniteur vidéo
+ * intégré dans un panneau vitré") reste volontairement sombre par contraste — voir
+ * `.creative-canvas-wrap`/`.pov-overlay` plus bas, seules exceptions à ce fond clair. Icônes en
+ * Material Symbols uniquement, jamais d'emoji (déjà la convention du projet, voir plus bas).
  * --------------------------------------------------------------------------------------- */
 :root {
+  --bg-gradient: linear-gradient(165deg, #fbfbfc 0%, #f4f4f6 50%, #f8f6fa 100%);
   --bg: #ffffff;
-  --surface: #f1f1f3;
-  --surface-hover: #e7e7ea;
-  --border: rgba(46, 49, 51, 0.12);
-  --border-strong: rgba(46, 49, 51, 0.24);
-  --text: #2e3133;
-  --text-soft: #484a6e;
-  --text-faint: #80838a;
+  --surface: rgba(255, 255, 255, 0.55);
+  --surface-hover: rgba(255, 255, 255, 0.8);
+  --border: rgba(255, 255, 255, 0.5);
+  --border-strong: rgba(46, 49, 51, 0.16);
+  --text: #26262b;
+  --text-soft: #5d5d68;
+  --text-faint: #8c8c97;
 
-  --accent: #484a6e;
-  --accent-strong: #2e3133;
+  --glass-bg: rgba(255, 255, 255, 0.62);
+  --glass-blur: blur(24px) saturate(150%);
+
+  --accent: #8b5cf6;
+  --accent-strong: #7c3aed;
+  --accent-soft: rgba(139, 92, 246, 0.12);
   --accent-ink: #ffffff;
-  --danger: #c23b3b;
-  --success: #2f8a4e;
+  --danger: #e0455a;
+  --danger-soft: rgba(224, 69, 90, 0.12);
+  --success: #1fa971;
+  --success-soft: rgba(31, 169, 113, 0.12);
 
-  --radius-lg: 16px;
-  --radius-md: 10px;
+  --radius-lg: 18px;
+  --radius-md: 12px;
   --radius-pill: 999px;
-  --shadow-modal: 0 12px 32px rgba(46, 49, 51, 0.18);
+  --shadow-modal: 0 20px 48px rgba(46, 49, 71, 0.16);
+  --shadow-panel: 0 8px 28px rgba(46, 49, 71, 0.08);
 
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -39,7 +50,8 @@ body,
   overflow: hidden;
 }
 body {
-  background: var(--bg);
+  background: var(--bg-gradient);
+  background-attachment: fixed;
   color: var(--text);
   font-family: var(--font);
 }
@@ -69,8 +81,8 @@ input {
   font-size: 14px;
   font-family: inherit;
   color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
   padding: 9px 12px;
 }
@@ -84,6 +96,7 @@ input:focus {
   color: var(--accent-ink);
   padding: 9px 18px;
   font-size: 13.5px;
+  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.30);
 }
 .btn-primary:hover {
   background: var(--accent-strong);
@@ -91,11 +104,12 @@ input:focus {
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: default;
+  box-shadow: none;
 }
 .btn-ghost {
-  background: transparent;
+  background: rgba(255, 255, 255, 0.4);
   color: var(--text);
-  border-color: var(--border);
+  border-color: var(--border-strong);
   padding: 9px 16px;
   font-size: 13px;
 }
@@ -120,10 +134,13 @@ input:focus {
 }
 
 .panel {
-  background: var(--surface);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 22px 24px;
+  box-shadow: var(--shadow-panel);
 }
 
 /* --- Connexion ------------------------------------------------------------------------- */
@@ -160,7 +177,7 @@ input:focus {
   box-sizing: border-box;
 }
 .sidebar {
-  width: 220px;
+  width: 232px;
   height: 100vh;
   flex-shrink: 0;
   display: flex;
@@ -168,7 +185,9 @@ input:focus {
   justify-content: space-between;
   padding: 24px 16px;
   box-sizing: border-box;
-  background: var(--surface);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
   border-right: 1px solid var(--border);
 }
 .sidebar-logo {
@@ -226,10 +245,46 @@ input:focus {
   color: var(--text);
 }
 .side-link.active {
-  background: var(--bg);
-  color: var(--text);
-  border-color: var(--border);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  border-color: rgba(139, 92, 246, 0.28);
   font-weight: 700;
+}
+.side-link.active .material-symbols-outlined {
+  font-variation-settings:
+    'FILL' 1,
+    'wght' 400,
+    'GRAD' 0,
+    'opsz' 20;
+}
+.side-link.side-link-soon {
+  opacity: 0.6;
+}
+.side-link-soon-tag {
+  margin-left: auto;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  background: rgba(46, 49, 71, 0.06);
+  border-radius: var(--radius-pill);
+  padding: 2px 6px;
+}
+.sidebar-separator {
+  height: 1px;
+  margin: 10px 8px;
+  background: var(--border-strong);
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+.sidebar-group-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding: 4px 12px 2px;
 }
 
 .main-content {
@@ -634,6 +689,131 @@ input:focus {
   color: rgba(255, 255, 255, 0.75);
 }
 
+/* --- Tableau de bord (§6 cahier_des_charges_admin.md) ----------------------------------- */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-top: 4px;
+}
+.stat-card {
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+}
+.stat-card-value {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.15;
+}
+.stat-card-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-soft);
+  margin-top: 2px;
+}
+.room-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 4px;
+}
+.room-card {
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.room-card:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+.room-card-title {
+  font-weight: 700;
+  font-size: 13.5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tick-warning-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+  flex-shrink: 0;
+}
+.activity-feed {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.activity-feed li {
+  font-size: 12.5px;
+  color: var(--text-soft);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* --- Zones du Studio de contrôle (§9 cahier_des_charges_admin.md) : contexte / observation /
+   intervention, visuellement démarquées pour qu'un clic destructif ne soit jamais accidentel. */
+.studio-zone-context {
+  /* Barre supérieure — voir .top-bar, pas de style dédié supplémentaire nécessaire. */
+}
+.studio-zone-observe {
+  border-color: var(--border);
+}
+.studio-zone-intervene {
+  border: 1px solid rgba(224, 69, 90, 0.35);
+  background: linear-gradient(180deg, rgba(224, 69, 90, 0.05), rgba(255, 255, 255, 0.5) 40%);
+}
+.studio-zone-intervene .section-title {
+  color: var(--danger);
+}
+.intervene-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.intervene-tab {
+  flex: 1;
+  padding: 7px 8px;
+  font-size: 11.5px;
+  border-radius: var(--radius-md);
+}
+
+/* --- Placeholder Économie & Boosts (§12), Configuration (§13) --------------------------- */
+.config-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.config-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+}
+
 @media (max-width: 760px) {
   .app-shell {
     flex-direction: column;
@@ -647,6 +827,14 @@ input:focus {
   }
   .sidebar-nav {
     flex-direction: row;
+  }
+  .sidebar-group-label {
+    display: none;
+  }
+  .sidebar-separator {
+    width: 1px;
+    height: auto;
+    margin: 4px 6px;
   }
   .main-content {
     padding: 18px;

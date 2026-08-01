@@ -19,14 +19,30 @@ describe('loadModConfig', () => {
     expect(config.arena.borderType).toBe('STRICT_WALL');
   });
 
+  it('charge server/configs/infini.json avec les valeurs attendues', () => {
+    const config = loadModConfig('infini');
+    expect(config.id).toBe('infini');
+    expect(config.arena.width).toBe(5000);
+    expect(config.arena.height).toBe(5000);
+    expect(config.arena.borderType).toBe('TOROIDAL');
+    expect(config.food.pelletTypes).toEqual([{ color: 'vert', mass: 2, weight: 100 }]);
+  });
+
+  it('charge server/configs/mega-split.json avec les valeurs attendues', () => {
+    const config = loadModConfig('mega-split');
+    expect(config.id).toBe('mega-split');
+    expect(config.player.maxSplits).toBe(64);
+    expect(config.merge.baseTimeSec).toBe(0);
+  });
+
   it('lève une erreur explicite pour un mod inconnu', () => {
     expect(() => loadModConfig('inexistant')).toThrow(/introuvable/);
   });
 });
 
 describe('listAvailableModIds', () => {
-  it('liste hardcore et vanilla (triés par ordre alphabétique)', () => {
-    expect(listAvailableModIds()).toEqual(['hardcore', 'vanilla']);
+  it('liste les modes disponibles (triés par ordre alphabétique)', () => {
+    expect(listAvailableModIds()).toEqual(['hardcore', 'infini', 'mega-split', 'vanilla']);
   });
 });
 

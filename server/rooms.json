@@ -1,0 +1,10 @@
+[
+  {
+    "name": "Vanilla",
+    "modId": "vanilla"
+  },
+  {
+    "name": "Hardcore",
+    "modId": "hardcore"
+  }
+]

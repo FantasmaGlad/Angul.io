@@ -149,7 +149,7 @@ function fullSeparationDistance(a: Entity, b: Entity): number {
  * morceau peut dépasser de loin la pénétration réelle d'une seule paire — visible côté client comme
  * une "explosion" (saut de position > 200px entre deux snapshots, voir `smoothMap` de
  * renderEngine.ts, qui bascule alors sur un snap instantané au lieu d'un lissage). Amortir la
- * correction lisse ce cumul sur quelques ticks (~100-150ms à 30Hz, imperceptible en soi) plutôt que
+ * correction lisse ce cumul sur quelques ticks (~100-150ms à 20Hz, imperceptible en soi) plutôt que
  * de résoudre un chevauchement profond d'un coup. */
 const REPULSION_CORRECTION_FACTOR = 0.3;
 
@@ -383,7 +383,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
    * utilisateur : "comme sur le vrai agar.io"). Une fois franchi, la masse est transférée
    * PROGRESSIVEMENT sur `config.eating.absorptionDurationSec` (voir `beginConsumption`/
    * `advanceConsumptions` plus bas) plutôt qu'en un seul tick — un transfert instantané faisait
-   * disparaître la cible en un temps trop court pour être perçu (~33ms à 30Hz dès que l'écart de
+   * disparaître la cible en un temps trop court pour être perçu (~50ms à 20Hz dès que l'écart de
    * masse est important, voir l'audit ayant motivé ce correctif), donnant l'impression d'être
    * mangé "sans comprendre pourquoi". Exception : Blob Dieu (§4.5 cahier_des_charges_admin.md)
    * mange toujours instantanément — outil admin, pas une mécanique de jeu régulière.

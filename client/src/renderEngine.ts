@@ -16,7 +16,7 @@ export interface SnapshotItem {
  * proche du dernier point connu que de continuer à extrapoler à l'aveugle. */
 const MAX_EXTRAPOLATION_MS = 250;
 /** Réactivité de la moyenne mobile de gigue (voir `RenderEngine.jitterEmaMs`) — assez rapide pour
- * suivre une vraie dégradation en quelques secondes (à 30Hz, ~10 échantillons), assez lent pour ne
+ * suivre une vraie dégradation en quelques secondes (à 20Hz, ~10 échantillons), assez lent pour ne
  * pas réagir au moindre pic isolé. */
 const JITTER_SMOOTHING = 0.1;
 /** Multiplicateur appliqué à la gigue mesurée pour dimensionner le buffer d'interpolation (voir
@@ -63,7 +63,7 @@ function hashEntityId(id: string): number {
 }
 
 /** Résultat mis en cache PAR RÉFÉRENCE de tableau brut (voir `subsampleForSpectator`) — le même
- * snapshot réseau (`SnapshotItem.entities`, poussé une fois par tick serveur, ~30Hz) est relu par
+ * snapshot réseau (`SnapshotItem.entities`, poussé une fois par tick serveur, ~20Hz) est relu par
  * `getInterpolatedEntities` à CHAQUE frame de rendu (jusqu'à plusieurs centaines de fois/seconde
  * depuis la suppression du plafond FPS dédié du fond spectateur, voir SpectatorBackground.tsx) :
  * sans ce cache, le filtre ci-dessous (coût proportionnel au nombre d'entités du salon ENTIER)
@@ -160,9 +160,23 @@ export class RenderEngine {
    * réseau ne la retire jamais explicitement, seule une resynchronisation complète le fait, voir
    * son commentaire) : elle réapparaissait dès que le blob s'en éloignait (le filtrage de
    * `render.ts` ne la masque que tant qu'il reste dans son rayon de collision), jusqu'à la
-   * prochaine resynchro (~5s) — bug "pastille mangée qui met plusieurs secondes à disparaître". */
-  public forgetFood(ids: Iterable<string>): void {
-    for (const id of ids) this.knownFood.delete(id);
+   * prochaine resynchro (~5s) — bug "pastille mangée qui met plusieurs secondes à disparaître".
+   *
+   * Renvoie les ids RÉELLEMENT retirés (ceux qui étaient encore connus) — sert de dédoublonnage à
+   * l'appelant pour la prédiction de masse (voir GameView.tsx / `LocalPrediction.addPredictedMass`) :
+   * une même pastille est signalée mangée à CHAQUE frame de rendu tant qu'elle reste dans les
+   * snapshots déjà en file d'interpolation (`snapshotQueue`, jusqu'à ~2 snapshots après ce retrait
+   * — `pushSnapshot` ne fusionne `knownFood` qu'au moment où il empile, jamais rétroactivement),
+   * soit une dizaine de frames à 120fps. Idempotent pour le simple oubli, ça ne l'est pas du tout
+   * pour un crédit de masse : sans ce retour, la même pastille serait créditée une dizaine de fois
+   * (blob visiblement trop gros jusqu'au `state` suivant qui le ramène brutalement à sa vraie
+   * masse). */
+  public forgetFood(ids: Iterable<string>): string[] {
+    const removed: string[] = [];
+    for (const id of ids) {
+      if (this.knownFood.delete(id)) removed.push(id);
+    }
+    return removed;
   }
 
   /** `entitiesFull` — voir `WorldStateMessage.entitiesFull` (shared/src/protocol.ts) : `true`

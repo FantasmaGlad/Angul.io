@@ -67,7 +67,7 @@ import {
  * l'intégration — elle doit rester exacte immédiatement, sinon la physique locale désynchronise) :
  * il corrige uniquement l'AFFICHAGE, via un `visualOffset` séparé qui absorbe le saut et se résorbe
  * ensuite à VITESSE PLAFONNÉE (`VISUAL_CORRECTION_SPEED_PX_PER_S`), frame de rendu après frame de
- * rendu, plutôt qu'un pourcentage comblé en un seul `state` reçu (~30Hz). Un pourcentage fixe
+ * rendu, plutôt qu'un pourcentage comblé en un seul `state` reçu (~20Hz). Un pourcentage fixe
  * produit un bond proportionnellement plus grand pour un écart plus grand ("violent" à chaque vrai
  * événement, en pratique dès qu'un bot pousse le joueur) ; une vitesse plafonnée étale la même
  * correction sur autant de frames que nécessaire pour ne jamais dépasser un déplacement visuel
@@ -175,10 +175,12 @@ const RECONCILE_IGNORE_SAFETY_FACTOR = 1.5;
  * déclenche un lissage visuel pour un résidu insignifiant. */
 const RECONCILE_IGNORE_FLOOR_PX = 0.5;
 /** Tolère jusqu'à un bloc de rejeu ENTIER (voir le commentaire ci-dessus sur `sinceMs`) de bruit de
- * découpage temporel — au-delà, considéré comme un vrai événement (répulsion, correction). 1.0 =
- * un tick plein ; volontairement pas plus (une répulsion serveur réelle et soutenue, voir le
- * commentaire d'en-tête sur `applyRepulsion`, doit rester détectée dès qu'elle dépasse ce bruit de
- * fond, pas être masquée indéfiniment). */
+ * découpage temporel — au-delà, considéré comme un vrai événement (répulsion, correction). 1.0
+ * couvrirait exactement un tick plein ; 1.5 y ajoute une demi-marge pour le fait que le bloc
+ * inclus/exclu ne s'aligne jamais exactement sur la frontière de tick (`sinceMs` est dérivé d'une
+ * latence LISSÉE, voir ci-dessus). Volontairement pas davantage : une répulsion serveur réelle et
+ * soutenue (voir le commentaire d'en-tête sur `applyRepulsion`) doit rester détectée dès qu'elle
+ * dépasse ce bruit de fond, jamais masquée indéfiniment. */
 const RECONCILE_JITTER_TOLERANCE_TICKS = 1.5;
 /** Plafond (px) du terme de biais d'ACCÉLÉRATION ci-dessus (`accelerationBiasPx` dans
  * `reconcile`) — borne de sécurité pour éviter qu'un mod/test à l'accélération démesurée (voir
@@ -192,7 +194,7 @@ const RECONCILE_ACCEL_BIAS_MAX_PX = 3.0;
  * plus élevée du jeu, pas seulement la vitesse de croisière : depuis que `replayChunkJitterPx` se
  * base sur `length(predicted.velocity)` (vitesse réelle, voir son commentaire) plutôt que sur la
  * seule masse, l'impulsion de Dash (4050px/s) produit un terme brut d'environ
- * `4050 × (1/30) × 1.5 ≈ 200px` à 30Hz — un ancien plafond de 60px l'écrêtait sévèrement,
+ * `4050 × (1/20) × 1.5 ≈ 300px` (ou ~200px à 30Hz) — un ancien plafond de 60px l'écrêtait sévèrement,
  * laissant EXACTEMENT le bruit de découpage temporel normal pendant tout un Dash retomber dans la
  * branche "lissage visuel" (`visualOffset`) au lieu d'être ignoré comme le bruit qu'il est : une
  * micro-correction visible à CHAQUE `state` reçu tant que la vitesse reste élevée, perçue comme un
@@ -356,9 +358,25 @@ export class LocalPrediction {
       // `RECONCILE_SNAP_THRESHOLD_PX` — un saut/téléportation visuelle plutôt qu'un lissage, surtout
       // sensible au tout début du Dash (vitesse au plus haut, voir retour utilisateur : "lag
       // persiste surtout à haute vitesse et au début de l'animation du dash").
+      const currentSpeed = length(predicted.velocity);
+      // Le plafond LARGE (`RECONCILE_JITTER_TOLERANCE_MAX_PX`, dimensionné pour la vitesse de Dash)
+      // n'est accordé QU'EN régime réellement rapide — au-delà de 1.5x la vitesse de croisière du
+      // morceau, donc jamais atteignable par un simple pilotage : seuls un Dash ou une éjection de
+      // split y montent. Hors de ce régime, le plafond retombe sur le rayon du morceau lui-même :
+      // un plafond de 220px accordé en permanence ferait ignorer, à vitesse normale, des écarts
+      // bien plus grands que le blob n'est gros — c'est-à-dire de vraies corrections serveur, qui
+      // ne seraient alors JAMAIS reflétées (la branche "ignorer" repose `predicted.position` sur
+      // `beforeReconcile`, elle n'atténue pas, elle jette). Continu de part et d'autre du seuil :
+      // le terme borné ci-dessous (`currentSpeed × tick × 1.5`) vaut lui-même moins que le rayon à
+      // la vitesse de croisière, donc aucun des deux plafonds ne mord au moment de la bascule.
+      const isDashing = currentSpeed > velocityForMass(predicted.mass, movement) * 1.5;
+      const maxJitterPx = isDashing
+        ? RECONCILE_JITTER_TOLERANCE_MAX_PX
+        : Math.max(RECONCILE_IGNORE_FLOOR_PX, massToRadius(predicted.mass));
+
       const replayChunkJitterPx = Math.min(
-        RECONCILE_JITTER_TOLERANCE_MAX_PX,
-        length(predicted.velocity) * tickSeconds * RECONCILE_JITTER_TOLERANCE_TICKS,
+        maxJitterPx,
+        currentSpeed * tickSeconds * RECONCILE_JITTER_TOLERANCE_TICKS,
       );
       const dynamicIgnoreThresholdPx = Math.max(
         RECONCILE_IGNORE_FLOOR_PX,
@@ -487,6 +505,33 @@ export class LocalPrediction {
     this.pendingDashes.push({ atMs: performance.now(), impulse: scale(direction, speedImpulse) });
   }
 
+  /** Crédite immédiatement `addedMass` au morceau `pieceId` — appelé dès qu'une pastille est
+   * détectée recouverte à l'écran (voir `partitionEatenFood`, client/src/render.ts), SANS attendre
+   * le `state` serveur qui l'entérinera.
+   *
+   * Pourquoi : la pastille, elle, disparaît déjà instantanément (retrait optimiste côté client,
+   * voir `RenderEngine.forgetFood`) — mais la MASSE ne l'était pas du tout, et c'est elle qui
+   * porte la sensation de "manger". Avant ce correctif, la croissance du blob attendait le
+   * cumul RTT/2 + un tick serveur + le buffer d'interpolation (`renderEngine.ts`) + le lissage
+   * exponentiel du rayon + le lerp de zoom caméra (GameView.tsx) : ~230-280ms entre la pastille
+   * qui s'efface et le blob qui grossit, perçu comme "manger n'est pas instantané" alors même que
+   * la pastille disparaissait sans délai.
+   *
+   * Spéculatif SANS RISQUE de dérive, exactement comme la prédiction de position : `reconcile()`
+   * ré-ancre `predicted.mass` sur la masse autoritaire à CHAQUE `state` reçu (voir plus haut) —
+   * une pastille créditée à tort (mangée en réalité par un autre joueur au même instant, ou
+   * refusée par la collision autoritaire) est donc corrigée au tick suivant, jamais accumulée.
+   *
+   * Ignore silencieusement un `pieceId` inconnu : `pieces` ne contient QUE les morceaux du joueur
+   * local, alors que le filtrage d'affichage qui alimente cet appel vaut pour toutes les créatures
+   * à l'écran (bots/adversaires compris) — leur masse reste, elle, purement serveur. */
+  addPredictedMass(pieceId: string, addedMass: number): void {
+    if (!(addedMass > 0)) return;
+    const piece = this.pieces.get(pieceId);
+    if (!piece) return;
+    piece.mass += addedMass;
+  }
+
   /** Regroupe les échantillons fins de `step()` (pas `FIXED_STEP_SECONDS`, 1/240s) en blocs dont la
    * durée cumulée correspond au pas serveur (1/`serverTickRateHz`) avant rejeu — plutôt qu'un
    * `integrate()` par échantillon fin.
@@ -591,24 +636,30 @@ export class LocalPrediction {
     piece.position = add(piece.position, scale(piece.velocity, dtSeconds));
 
     if (movement.mapSize && movement.mapSize > 0) {
-      const r = massToRadius(piece.mass);
-      const minX = r;
-      const maxX = movement.mapSize - r;
-      const minY = r;
-      const maxY = movement.mapSize - r;
-      if (piece.position.x < minX) {
-        piece.position.x = minX;
-        piece.velocity.x = 0;
-      } else if (piece.position.x > maxX) {
-        piece.position.x = maxX;
-        piece.velocity.x = 0;
-      }
-      if (piece.position.y < minY) {
-        piece.position.y = minY;
-        piece.velocity.y = 0;
-      } else if (piece.position.y > maxY) {
-        piece.position.y = maxY;
-        piece.velocity.y = 0;
+      if (movement.borderType === 'TOROIDAL') {
+        const w = movement.mapSize;
+        piece.position.x = ((piece.position.x % w) + w) % w;
+        piece.position.y = ((piece.position.y % w) + w) % w;
+      } else {
+        const r = massToRadius(piece.mass);
+        const minX = r;
+        const maxX = movement.mapSize - r;
+        const minY = r;
+        const maxY = movement.mapSize - r;
+        if (piece.position.x < minX) {
+          piece.position.x = minX;
+          piece.velocity.x = 0;
+        } else if (piece.position.x > maxX) {
+          piece.position.x = maxX;
+          piece.velocity.x = 0;
+        }
+        if (piece.position.y < minY) {
+          piece.position.y = minY;
+          piece.velocity.y = 0;
+        } else if (piece.position.y > maxY) {
+          piece.position.y = maxY;
+          piece.velocity.y = 0;
+        }
       }
     }
   }
@@ -624,10 +675,22 @@ export class LocalPrediction {
     this.pendingDashes = this.pendingDashes.filter((d) => d.atMs >= cutoff);
   }
 
-  /** Remplace, dans `entities` (déjà interpolées/cullées côté serveur-distant), la position des
-   * morceaux du joueur par leur position AFFICHÉE (simulation + `visualOffset`, voir le
-   * commentaire d'en-tête) — ne touche à rien d'autre (rayon/masse/couleur restent ceux du
-   * pipeline serveur habituel). */
+  /** Remplace, dans `entities` (déjà interpolées/cullées côté serveur-distant), la position ET la
+   * masse/le rayon des morceaux du joueur par leurs valeurs PRÉDITES (position affichée =
+   * simulation + `visualOffset`, voir le commentaire d'en-tête ; masse = dernière masse
+   * autoritaire + les pastilles créditées localement depuis, voir `addPredictedMass`) — ne touche
+   * à rien d'autre (couleur/propriétaire restent ceux du pipeline serveur habituel).
+   *
+   * La masse et le rayon DOIVENT passer par ici, sans quoi `addPredictedMass` n'aurait aucun effet
+   * visible : sans cette substitution, la taille affichée du blob du joueur resterait celle du
+   * pipeline serveur (interpolation + lissage exponentiel du rayon, voir renderEngine.ts), c'est-
+   * à-dire précisément le retard que la prédiction de masse existe pour supprimer. Le rayon est
+   * redérivé de la masse par la MÊME formule partagée que le serveur (`massToRadius`, comme
+   * `applySelfRepulsion`/`integrate` ci-dessus) plutôt que mis à l'échelle à la main — aucune
+   * seconde courbe à garder synchronisée. `m` est substituée en plus de `r` parce que la caméra
+   * dérive son zoom de la masse (`computeCamera`/`computeScaleForMass`, render.ts) : ne corriger
+   * que `r` ferait grossir le blob sans que le dézoom suive, un décalage visible entre la taille
+   * du blob et le cadrage. */
   applyTo(entities: EntitySnapshot[], selfPlayerId: string): EntitySnapshot[] {
     if (this.pieces.size === 0) return entities;
     return entities.map((entity) => {
@@ -638,6 +701,8 @@ export class LocalPrediction {
         ...entity,
         x: predicted.position.x + predicted.visualOffset.x,
         y: predicted.position.y + predicted.visualOffset.y,
+        m: predicted.mass,
+        r: massToRadius(predicted.mass),
       };
     });
   }

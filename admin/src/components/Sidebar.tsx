@@ -6,13 +6,44 @@ interface SidebarProps {
   onLogout: () => void;
 }
 
-const NAV_ITEMS: Array<{ view: ViewName; label: string; icon: string }> = [
+interface NavItem {
+  view: ViewName;
+  label: string;
+  icon: string;
+  soon?: boolean;
+}
+
+/** §4 cahier_des_charges_admin.md — 7 entrées, séparées en deux groupes : "opérationnel"
+ * (usage quotidien) et "gouvernance" (supervision/administration du serveur lui-même). */
+const OPERATIONAL_ITEMS: NavItem[] = [
+  { view: 'dashboard', label: 'Tableau de bord', icon: 'dashboard' },
   { view: 'joueurs', label: 'Joueurs', icon: 'group' },
   { view: 'salons', label: 'Salons & Écrans', icon: 'stadia_controller' },
-  { view: 'creatif', label: 'Espace Créatif', icon: 'palette' },
+  { view: 'creatif', label: 'Studio de contrôle', icon: 'palette' },
+];
+const GOVERNANCE_ITEMS: NavItem[] = [
+  { view: 'moderation', label: 'Modération', icon: 'gavel' },
+  { view: 'economie', label: 'Économie & Boosts', icon: 'toll', soon: true },
+  { view: 'configuration', label: 'Configuration', icon: 'tune' },
 ];
 
-/** Navigation latérale (§6 cahier_des_charges_admin.md) — 3 onglets. */
+function NavButton({ item, active, onClick }: { item: NavItem; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className={active ? 'side-link active' : item.soon ? 'side-link side-link-soon' : 'side-link'}
+      onClick={onClick}
+    >
+      <span className="material-symbols-outlined" aria-hidden="true">
+        {item.icon}
+      </span>
+      {item.label}
+      {item.soon && <span className="side-link-soon-tag">Bientôt</span>}
+    </button>
+  );
+}
+
+/** Navigation latérale (§4 cahier_des_charges_admin.md) — 7 entrées. */
 export default function Sidebar({ view, onChangeView, onLogout }: SidebarProps) {
   return (
     <aside className="sidebar">
@@ -21,18 +52,13 @@ export default function Sidebar({ view, onChangeView, onLogout }: SidebarProps) 
         <span>Admin</span>
       </div>
       <nav className="sidebar-nav">
-        {NAV_ITEMS.map((item) => (
-          <button
-            key={item.view}
-            type="button"
-            className={item.view === view ? 'side-link active' : 'side-link'}
-            onClick={() => onChangeView(item.view)}
-          >
-            <span className="material-symbols-outlined" aria-hidden="true">
-              {item.icon}
-            </span>
-            {item.label}
-          </button>
+        {OPERATIONAL_ITEMS.map((item) => (
+          <NavButton key={item.view} item={item} active={item.view === view} onClick={() => onChangeView(item.view)} />
+        ))}
+        <div className="sidebar-separator" />
+        <span className="sidebar-group-label">Gouvernance</span>
+        {GOVERNANCE_ITEMS.map((item) => (
+          <NavButton key={item.view} item={item} active={item.view === view} onClick={() => onChangeView(item.view)} />
         ))}
       </nav>
       <button className="btn-ghost" type="button" onClick={onLogout}>

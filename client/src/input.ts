@@ -14,9 +14,31 @@ const GAMEPAD_STICK_DEAD_ZONE = 0.15;
 /** Décalage (unités monde) simulé pour la déflexion du stick, indépendant du zoom caméra —
  * seule la DIRECTION du vecteur cible sert au-delà de la zone morte de pilotage
  * (`TARGET_DEAD_ZONE_PX`, prediction.ts) ; l'intensité (vitesse) est un scalaire séparé dérivé
- * directement de la magnitude du stick. Valeur arbitraire, juste assez grande pour ne jamais
- * retomber dans cette zone morte. */
-const GAMEPAD_TARGET_OFFSET_WORLD_PX = 500;
+ * directement de la magnitude du stick. Sert AUSSI au joystick virtuel tactile (voir `getTarget`),
+ * d'où son dimensionnement pour le pire cas mobile.
+ *
+ * Pourquoi si loin devant (et non les 500 px d'origine, "juste assez grand pour sortir de la zone
+ * morte") — deux raisons, toutes deux propres aux vitesses de Dash (`DASH_BASE_SPEED` = 4050 px/s,
+ * shared/src/movement.ts, la plus haute du jeu) :
+ *
+ *  1. DÉPASSEMENT DE CIBLE. Le serveur conserve la dernière cible reçue jusqu'à l'input suivant
+ *     (~50 ms à 20 Hz) et pilote par `normalize(target - piece.position)`. À 4050 px/s, 500 px ne
+ *     représentent que ~123 ms de trajet : il suffit d'un trou d'input un peu plus long (gigue
+ *     cellulaire/wifi chargé, banal sur mobile — bien moins sur le LAN où ces réglages ont été
+ *     validés) pour que le morceau DÉPASSE sa propre cible. La direction s'inverse alors à 180°, ou
+ *     retombe sous `TARGET_DEAD_ZONE_PX` (intensité forcée à 0, voir mods/parametric/index.ts
+ *     `inputVectorOf`) : un freinage brutal en plein dash. À 4000 px, la même cible couvre ~1 s de
+ *     trajet — hors d'atteinte de toute gigue réaliste.
+ *  2. ACCORD PRÉDICTION/SERVEUR. La cible est projetée depuis la position PRÉDITE localement, mais
+ *     le serveur normalise depuis SA position (en retard de la latence). Pour un même écart entre
+ *     les deux, l'erreur angulaire décroît avec la distance de projection : ~11° à 500 px contre
+ *     ~1,4° à 4000 px pour 100 px d'écart. Projeter loin rend donc les deux directions
+ *     pratiquement identiques, au lieu de simplement "assez différentes pour se voir" au dash.
+ *
+ * Aucun risque à agrandir : la cible n'est jamais bornée à la carte côté serveur (seule sa
+ * finitude est validée, voir net/ws/connectionHandler.ts `validateInputMessage`) et sa distance
+ * n'entre dans aucun calcul de vitesse — client comme serveur ne lisent que sa direction. */
+const GAMEPAD_TARGET_OFFSET_WORLD_PX = 4000;
 
 export interface InputTracker {
   /**
@@ -62,7 +84,7 @@ export interface InputTracker {
  * `consumeX()` respectif (qui reste le seul canal vers le réseau, lu au rythme de
  * `scheduleInput`, voir GameView.tsx). Sert uniquement de retour visuel local instantané (effet
  * de zoom au split/dash, demande utilisateur) : attendre le prochain envoi réseau planifié
- * (jusqu'à ~33ms à 30Hz) pour déclencher l'animation la ferait démarrer perceptiblement en
+ * (jusqu'à ~50ms à 20Hz) pour déclencher l'animation la ferait démarrer perceptiblement en
  * retard sur la pression réelle.
  *
  * Touches/boutons lus depuis `loadKeybinds()` (demande utilisateur : configuration dynamique,

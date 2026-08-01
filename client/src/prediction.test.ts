@@ -1,4 +1,4 @@
-import type { EntitySnapshot, MovementConfig } from '@angulio/shared';
+import { massToRadius, type EntitySnapshot, type MovementConfig } from '@angulio/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LocalPrediction } from './prediction.js';
 
@@ -227,7 +227,7 @@ describe('LocalPrediction — réconciliation par rejeu', () => {
     const FAR_TARGET = { x: 1000, y: 0 };
 
     // Amorce le morceau au repos puis rejoue exactement 8 sous-pas fins de 1/240s — soit
-    // exactement UN tick serveur à 30Hz (240/30=8). Vélocité 0->150 (PAS encore saturée, la
+    // exactement UN tick serveur à 30Hz (ou 2.4 sous-pas à 20Hz). Vélocité 0->150 (PAS encore saturée, la
     // cible est 300), position finale 2.8125 — calculé à la main (rampe clampée par
     // `moveToward`, voir shared/src/vector.ts) : identique pour les deux variantes ci-dessous,
     // c'est `beforeReconcile` (la prédiction déjà en direct avant toute réconciliation).
@@ -311,6 +311,62 @@ describe('LocalPrediction — réconciliation par rejeu', () => {
   });
 });
 
+/** Prédiction de la MASSE (pas seulement de la position) — retour utilisateur : "manger une
+ * pastille ne semble pas instantané" alors que la pastille, elle, disparaît sans délai (retrait
+ * optimiste côté client, voir render.ts `partitionEatenFood`). Seule la croissance du blob
+ * attendait encore le `state` serveur, plus le buffer d'interpolation et le lissage du rayon. */
+describe('LocalPrediction — prédiction de masse (manger instantanément)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('applique immédiatement la masse créditée localement, avec le rayon redérivé de cette masse', () => {
+    const prediction = new LocalPrediction();
+    const nowSpy = vi.spyOn(performance, 'now');
+    nowSpy.mockReturnValueOnce(0);
+    prediction.reconcile([ownSnapshot('1', 0, 0, 50)], 'self', MOVEMENT, 0);
+
+    prediction.addPredictedMass('1', 12);
+
+    const [entity] = prediction.applyTo([ownSnapshot('1', 0, 0, 50)], 'self');
+    expect(entity?.m).toBe(62);
+    // Même formule partagée que le serveur (shared/src/geometry.ts), jamais une seconde courbe.
+    expect(entity?.r).toBeCloseTo(massToRadius(62), 10);
+  });
+
+  it('ignore un morceau qui n’appartient pas au joueur local (créature distante, masse purement serveur)', () => {
+    const prediction = new LocalPrediction();
+    const nowSpy = vi.spyOn(performance, 'now');
+    nowSpy.mockReturnValueOnce(0);
+    prediction.reconcile([ownSnapshot('1', 0, 0, 50)], 'self', MOVEMENT, 0);
+
+    prediction.addPredictedMass('999', 500); // id d'un bot voisin
+
+    const [entity] = prediction.applyTo([ownSnapshot('1', 0, 0, 50)], 'self');
+    expect(entity?.m).toBe(50);
+  });
+
+  it('se ré-ancre sur la masse autoritaire au `state` suivant (une misprédiction ne s’accumule jamais)', () => {
+    const prediction = new LocalPrediction();
+    const nowSpy = vi.spyOn(performance, 'now');
+    nowSpy.mockReturnValueOnce(0);
+    prediction.reconcile([ownSnapshot('1', 0, 0, 50)], 'self', MOVEMENT, 0);
+
+    // Crédit local de 3 pastilles, dont le serveur n'en confirmera qu'une (les deux autres ont été
+    // mangées par un autre joueur au même instant).
+    prediction.addPredictedMass('1', 5);
+    prediction.addPredictedMass('1', 5);
+    prediction.addPredictedMass('1', 5);
+    expect(prediction.applyTo([ownSnapshot('1', 0, 0, 50)], 'self')[0]?.m).toBe(65);
+
+    nowSpy.mockReturnValueOnce(100);
+    prediction.reconcile([ownSnapshot('1', 0, 0, 55)], 'self', MOVEMENT, 0);
+
+    const [entity] = prediction.applyTo([ownSnapshot('1', 0, 0, 55)], 'self');
+    expect(entity?.m).toBe(55);
+  });
+});
+
 /** Accélération FINIE, choisie assez faible pour ne JAMAIS saturer (`moveToward` plafonné) sur
  * toute la durée des deux tests ci-dessous (vélocité max atteinte ~244px/s, cible v0=300px/s) —
  * isole strictement l'effet du rembobinage de vélocité de `reconcile()`, sans interférence d'un
@@ -328,7 +384,7 @@ const REWIND_MOVEMENT: MovementConfig = {
 const REWIND_STEP_MS = 1000 / 240;
 const REWIND_FAR_TARGET = { x: 1000, y: 0 };
 
-/** Amorce un morceau au repos puis rejoue 31 sous-pas fins CONTINUS (~3.875 ticks serveur à 30Hz,
+/** Amorce un morceau au repos puis rejoue 31 sous-pas fins CONTINUS (~3.875 ticks serveur à 30Hz / ~2.58 à 20Hz,
  * jamais interrompus par un `reconcile()`) — point de départ commun aux deux tests ci-dessous
  * (fix_vitesse_reseau.md), avant que leur unique appel à `reconcile()` sous test ne diverge selon
  * que `authoritativeVelocities` est fourni ou non. 31 (pas 16) : le résidu de rejeu introduit par

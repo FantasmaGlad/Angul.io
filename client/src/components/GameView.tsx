@@ -6,6 +6,7 @@ import type {
   ServerMessage,
 } from '@angulio/shared';
 import {
+  computeScaleForMass,
   DEFAULT_DEATH_BANNER_ID,
   DEFAULT_DEATH_MESSAGE,
   dashSpeedForMass,
@@ -257,6 +258,22 @@ export default function GameView({
     // `colorFor` (render.ts) à la place de l'ancien `DEFAULT_BLOB_COLOR` unique.
     const colors = new Map<string, string>();
     let latestCamera: Camera = { x: 7500, y: 7500, scale: BASE_SCALE };
+    /** `false` tant que la caméra n'a pas encore été calée sur la position RÉELLE du joueur — sa
+     * valeur initiale ci-dessus n'est qu'un espace réservé (le centre d'une carte de 15000, qui
+     * n'a même plus de sens sur une carte d'une autre taille). Le premier `state` la place
+     * directement, position ET zoom, sans passer par le lissage habituel (voir `frameBody`).
+     *
+     * Sans ce calage direct, les deux lissages partent de cet espace réservé : la position
+     * converge vite (k=60) mais le ZOOM (k=18) met ~200-300ms à quitter `BASE_SCALE` — or
+     * `cullEntitiesForViewport` (renderEngine.ts) dimensionne le viewport à partir de CE zoom :
+     * tant qu'il est faux, tout ce qui est réellement à l'écran mais hors du viewport calculé est
+     * cullé, puis apparaît d'un coup à mesure que le zoom se corrige. C'est le "gros lag à la
+     * connexion" ressenti — pas un vrai lag réseau, une image incomplète qui se remplit.
+     *
+     * Remis à `false` à chaque `welcome` (nouvelle vie/reconnexion, voir plus bas) : un respawn
+     * place le joueur ailleurs sur la carte, avec une masse remise à zéro — donc exactement la
+     * même situation qu'à la première connexion. */
+    let cameraInitialized = false;
     // `undefined` tant qu'aucun `pong` n'est encore arrivé (écran F3, RTT) — distinct de `0`, qui
     // afficherait une latence mesurée alors qu'aucune mesure n'a encore eu lieu.
     let lastPingMs: number | undefined;
@@ -384,11 +401,38 @@ export default function GameView({
         if (!currentCanDash) return;
         dashZoomBonus = 0.10;
         if (!canvas) return;
-        const rect = canvas.getBoundingClientRect();
-        const centerX = rect.left + rect.width / 2;
-        const centerY = rect.top + rect.height / 2;
-        const dx = lastMouseX - centerX;
-        const dy = lastMouseY - centerY;
+
+        // Direction du dash dérivée de la CIBLE D'INPUT EFFECTIVE (`input.getTarget`, la même que
+        // celle envoyée au serveur juste en dessous), JAMAIS de la position souris brute.
+        //
+        // Pourquoi (correctif du "lag énorme au dash sur téléphone") : le serveur calcule la
+        // direction du dash par `normalize(input.target - piece.position)` (voir
+        // mods/hardcore/index.ts `onPlayerInput`) — donc à partir de la cible d'input, quelle que
+        // soit la source qui l'a produite. Cette prédiction locale, elle, la dérivait de
+        // `lastMouseX/lastMouseY` relativement au centre du canvas : une valeur alimentée
+        // UNIQUEMENT par l'écouteur `mousemove`. Sur téléphone, aucun `mousemove` réel n'existe —
+        // `lastMouseX/Y` restait donc figé sur son initialisation (`window.innerWidth/2`,
+        // `innerHeight/2`, soit exactement le centre du canvas) : `len` valait 0 et la direction
+        // prédite retombait systématiquement sur le repli `{ x: 1, y: 0 }`. Autrement dit, TOUT
+        // dash tactile était prédit localement vers la DROITE de l'écran pendant que le serveur,
+        // lui, l'appliquait dans la direction réelle du joystick virtuel. À la vitesse du dash
+        // (`DASH_BASE_SPEED` = 4050 px/s, la plus haute du jeu), les deux positions divergeaient de
+        // plusieurs centaines de pixels en un seul aller-retour réseau — puis `reconcile()`
+        // rattrapait cet écart d'un coup au `state` suivant. C'est très exactement le "lag au début
+        // du dash" rapporté : pas un vrai lag réseau, une prédiction locale qui partait dans une
+        // direction sans rapport avec le mouvement autoritaire. Le cas dégradé où le navigateur
+        // synthétise malgré tout un `mousemove` de compatibilité au tap n'était pas meilleur : il
+        // enregistrait la position du BOUTON tactile (coin bas de l'écran), donc une direction tout
+        // aussi étrangère à celle visée.
+        //
+        // Passer par `getTarget` corrige la source du problème pour TOUTES les sources d'input à la
+        // fois (joystick virtuel tactile, manette — qui souffrait exactement du même défaut — et
+        // souris, pour laquelle le résultat est inchangé) : la prédiction et le serveur partent
+        // désormais littéralement de la même cible.
+        const ownPosition = prediction.getOwnPosition() ?? latestCamera;
+        const { target, intensity } = input.getTarget({ ...latestCamera, ...ownPosition });
+        const dx = target.x - ownPosition.x;
+        const dy = target.y - ownPosition.y;
         const len = Math.hypot(dx, dy);
         const dir = len > 0 ? { x: dx / len, y: dy / len } : { x: 1, y: 0 };
         // Impulsion atténuée avec la masse (cahier des charges §4a) — même formule partagée que
@@ -405,9 +449,11 @@ export default function GameView({
         // début de chaque dash (retour utilisateur), même après le correctif de réapplication de
         // l'impulsion. `input.consumeDash()` ici (au lieu d'attendre `scheduleInput`) évite que ce
         // même dash ne soit renvoyé une seconde fois au tick programmé suivant.
+        // `target`/`intensity` sont ceux calculés ci-dessus pour la direction de l'impulsion — un
+        // second appel à `getTarget` ici pourrait renvoyer une cible légèrement différente (le
+        // joystick/la souris ont pu bouger entre les deux) et ré-introduirait, en plus petit,
+        // exactement le désaccord prédiction/serveur que ce correctif supprime.
         if (selfPlayerId) {
-          const ownPosition = prediction.getOwnPosition() ?? latestCamera;
-          const { target, intensity } = input.getTarget({ ...latestCamera, ...ownPosition });
           connection.send({
             type: 'input',
             target,
@@ -491,6 +537,10 @@ export default function GameView({
         isReconnecting = false;
         renderEngine.reset();
         prediction.reset();
+        // Nouvelle vie : la caméra doit se recaler directement sur le nouveau point de spawn
+        // (position ET zoom) au premier `state`, au lieu de traverser la carte / de dézoomer
+        // progressivement depuis l'état de la vie précédente (voir `cameraInitialized`).
+        cameraInitialized = false;
         setMapSizeState(message.mapSize);
         isDeadNow = false;
         setDeathState(DEFAULT_DEATH_STATE);
@@ -513,6 +563,18 @@ export default function GameView({
         previousSnapshot = latestSnapshot;
         latestSnapshot = message.entities;
         latestSnapshotAt = performance.now();
+        if (selfPlayerId && !cameraInitialized) {
+          const own = ownAggregate(message.entities, selfPlayerId);
+          if (own) {
+            // Calage DIRECT (jamais un lissage) sur la position ET le zoom cible — voir
+            // `cameraInitialized`. Le zoom est calculé par la même et unique formule que le
+            // régime permanent (`computeScaleForMass`, via `computeCamera` dans `frameBody`) : ce
+            // qui est posé ici est donc exactement la valeur vers laquelle le lissage aurait
+            // convergé, simplement atteinte à la première image au lieu de ~200-300ms plus tard.
+            latestCamera = { x: own.x, y: own.y, scale: computeScaleForMass(own.mass) };
+            cameraInitialized = true;
+          }
+        }
         if (selfPlayerId && movementConfig) {
           // Latence aller simple estimée, lissée + marge de sécurité (voir `smoothedLatencyMs`) —
           // détermine depuis quel instant rejouer l'historique d'inputs local lors de la
@@ -603,6 +665,17 @@ export default function GameView({
       } else if (message.type === 'forceRoomChange') {
         onForceRoomChangeRef.current?.(message.roomId);
       }
+    });
+
+    // Mesure la latence dès l'OUVERTURE du socket — le plus tôt possible, sans attendre le
+    // `welcome` du serveur : l'aller-retour de ce `ping` se superpose alors à celui du `join`
+    // (envoyés dans la même salve, voir `GameConnection.onOpen`) au lieu de s'y ajouter en série.
+    // La réconciliation (prediction.ts) travaille sinon sur `DEFAULT_LATENCY_MS` — une latence
+    // SUPPOSÉE, généralement fausse — pendant toute cette fenêtre, et la première correction
+    // qu'elle applique une fois la vraie valeur connue est d'autant plus visible qu'elle survient
+    // juste après l'entrée en partie.
+    connection.onOpen(() => {
+      connection.send({ type: 'ping', t: performance.now() });
     });
 
     connection.onReconnecting(() => {
@@ -839,7 +912,22 @@ export default function GameView({
       // sans ça, le filtrage visuel de `renderFrame` ne les masque que le temps que le blob reste
       // dessus, elles réapparaissent dès qu'il s'en éloigne (correctif "pastille mangée qui met
       // plusieurs secondes à disparaître").
-      if (renderInfo.eatenFoodIds.length > 0) renderEngine.forgetFood(renderInfo.eatenFoodIds);
+      if (renderInfo.eatenFood.length > 0) {
+        const forgotten = renderEngine.forgetFood(renderInfo.eatenFood.map((food) => food.id));
+        // Crédit optimiste de la masse au morceau qui vient de la recouvrir (voir
+        // `LocalPrediction.addPredictedMass`) : la pastille disparaissait déjà instantanément,
+        // mais le blob ne grossissait qu'au `state` suivant — le décalage perçu comme "manger
+        // n'est pas instantané". Restreint aux ids RÉELLEMENT oubliés à l'instant (voir la valeur
+        // de retour de `forgetFood`) : la même pastille reste signalée mangée pendant la dizaine
+        // de frames que les snapshots déjà en file mettent à s'écouler, et la créditer à chaque
+        // fois gonflerait la masse prédite d'un ordre de grandeur.
+        if (forgotten.length > 0) {
+          const forgottenIds = new Set(forgotten);
+          for (const food of renderInfo.eatenFood) {
+            if (forgottenIds.has(food.id)) prediction.addPredictedMass(food.eaterId, food.mass);
+          }
+        }
+      }
 
       if (hudRef.current) {
         const status = isReconnecting

@@ -229,23 +229,36 @@ export function computeBotInput(
   // qu'une autre force peut annuler, un vrai changement de priorité qui va jusqu'au demi-tour net
   // à mesure que le bot s'approche du bord.
   const margin = behavior.wallAvoidance.marginPx;
+  let maxRadius = 0;
+  for (const piece of botPieces) {
+    if (piece.radius > maxRadius) maxRadius = piece.radius;
+  }
+
   const wallPush: Vector2 = { x: 0, y: 0 };
   let wallFactor = 0;
-  if (center.x < margin) {
-    const f = (margin - center.x) / margin;
+
+  // Calcul des distances au bord en tenant compte du rayon réel des cellules du bot
+  const distLeft = center.x - maxRadius;
+  const distRight = mapSize - center.x - maxRadius;
+  const distTop = center.y - maxRadius;
+  const distBottom = mapSize - center.y - maxRadius;
+
+  if (distLeft < margin) {
+    const f = Math.min(1, Math.max(0, (margin - distLeft) / margin));
     wallPush.x += f;
     wallFactor = Math.max(wallFactor, f);
-  } else if (center.x > mapSize - margin) {
-    const f = (center.x - (mapSize - margin)) / margin;
+  } else if (distRight < margin) {
+    const f = Math.min(1, Math.max(0, (margin - distRight) / margin));
     wallPush.x -= f;
     wallFactor = Math.max(wallFactor, f);
   }
-  if (center.y < margin) {
-    const f = (margin - center.y) / margin;
+
+  if (distTop < margin) {
+    const f = Math.min(1, Math.max(0, (margin - distTop) / margin));
     wallPush.y += f;
     wallFactor = Math.max(wallFactor, f);
-  } else if (center.y > mapSize - margin) {
-    const f = (center.y - (mapSize - margin)) / margin;
+  } else if (distBottom < margin) {
+    const f = Math.min(1, Math.max(0, (margin - distBottom) / margin));
     wallPush.y -= f;
     wallFactor = Math.max(wallFactor, f);
   }
@@ -265,6 +278,13 @@ export function computeBotInput(
   let away: Vector2 | undefined;
   if (wallFactor > 0) {
     away = normalize(wallPush);
+    // Neutralise / réoriente la composante de targetDir qui tire vers le mur
+    const dot = targetDir.x * away.x + targetDir.y * away.y;
+    if (dot < 0) {
+      targetDir.x -= away.x * dot * (1 + wallFactor);
+      targetDir.y -= away.y * dot * (1 + wallFactor);
+    }
+
     const blendedDir = normalize({
       x: targetDir.x * (1 - wallFactor) + away.x * wallFactor,
       y: targetDir.y * (1 - wallFactor) + away.y * wallFactor,
@@ -285,6 +305,7 @@ export function computeBotInput(
       y: memory.lastDir.y + (normDir.y - memory.lastDir.y) * lerpRate,
     });
   }
+
   // Passé WALL_STUCK_MAX_MS collé au mur, COURT-CIRCUITE le lissage ci-dessus : celui-ci est
   // exactement ce qui, combiné à la cadence d'évaluation ambiante des bots, fait traîner
   // l'échappée sur plusieurs secondes (voir le commentaire de WALL_STUCK_MAX_MS) — direction
@@ -342,8 +363,17 @@ function getWanderDir(
   memory: BotStateMemory,
   maxDev = 0.3,
 ): Vector2 {
-  let angle = memory.lastWanderAngle ?? Math.random() * 6;
+  let angle = memory.lastWanderAngle ?? Math.random() * Math.PI * 2;
   angle += (Math.random() - 0.5) * maxDev;
+
+  // Si le bot approche des murs, orienter le vagabondage vers le centre de la carte
+  const margin = 500;
+  if (center.x < margin || center.x > mapSize - margin || center.y < margin || center.y > mapSize - margin) {
+    const centerDir = { x: mapSize / 2 - center.x, y: mapSize / 2 - center.y };
+    const centerAngle = Math.atan2(centerDir.y, centerDir.x);
+    angle = angle + (centerAngle - angle) * 0.25;
+  }
+
   memory.lastWanderAngle = angle;
 
   return {

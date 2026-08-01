@@ -13,6 +13,7 @@ import { RoomManager } from './engine/roomManager.js';
 import { createLocalRoomHost } from './engine/worker/roomHost.js';
 import { createWorkerRoomHost } from './engine/worker/workerRoomHost.js';
 import { startGameServer } from './net/server.js';
+import { loadBaseRoomsConfig } from './roomsConfig.js';
 import { logEvent } from './log.js';
 
 import os from 'node:os';
@@ -53,8 +54,12 @@ const ROOM_WORKERS = process.env.ROOM_WORKERS !== undefined ? Number(process.env
 const roomHost = ROOM_WORKERS > 0 ? createWorkerRoomHost(ROOM_WORKERS) : createLocalRoomHost();
 const roomManager = new RoomManager(roomHost, TICK_RATE_HZ);
 
-// Deux salons publics de base toujours présents (demande utilisateur), un par mode disponible
-// (Vanilla, Hardcore — Folie retiré), remplis à 10-20% de bots (ratio fluctuant, voir
+// Salons publics de base toujours présents à l'accueil — liste et mode attribué à chacun lus
+// depuis `server/rooms.json` (§13 cahier_des_charges_admin.md : "ne pas hardcoder les salons
+// principaux", éditable via l'interface admin, `GET/PUT /api/admin/base-rooms`, voir
+// roomsConfig.ts) plutôt qu'un tableau codé en dur ici — un changement de ce fichier ne prend
+// effet qu'au prochain redémarrage (les salons déjà démarrés ne sont pas recréés à la volée, voir
+// le commentaire de `saveBaseRoomsConfig`). Remplis à 10-20% de bots (ratio fluctuant, voir
 // BotManager.updateFluctuatingRatio — `targetRatio` volontairement absent des configs pour
 // laisser ce ratio s'appliquer ; `BotManager.adjustPopulation` fait respawner les bots
 // automatiquement dès que leur nombre baisse). Jamais supprimés par le nettoyage automatique des
@@ -65,10 +70,7 @@ const roomManager = new RoomManager(roomHost, TICK_RATE_HZ);
 // voir mods/parametric/config.ts) — modifiables par un modder sans toucher ce fichier ; repli sur
 // `BASE_ROOM_MAX_PLAYERS`/`TWO_HOUR_RESET_SCHEDULE` uniquement pour un mod dont la config JSON
 // omet cette section.
-const BASE_ROOMS: Array<{ name: string; modId: string }> = [
-  { name: 'Vanilla', modId: 'vanilla' },
-  { name: 'Hardcore', modId: 'hardcore' },
-];
+const BASE_ROOMS = loadBaseRoomsConfig();
 const baseRooms = BASE_ROOMS.map((base) => {
   const { room } = resolveMod(base.modId);
   return roomManager.createRoom({

@@ -16,7 +16,18 @@ export type AdminRoomAction =
   | { kind: 'split'; playerId: PlayerId }
   | { kind: 'remerge'; playerId: PlayerId }
   | { kind: 'spawnFood'; x: number; y: number; mass: number }
-  | { kind: 'spawnBot' }
+  | {
+      kind: 'spawnBot';
+      /** Tous optionnels — omis (ou tous `undefined`), c'est le spawn "naturel" existant (profil
+       * aléatoire, position sûre aléatoire, masse de départ du mod). Fournis, c'est un "Bot
+       * personnalisé" (cahier_des_charges_admin.md §9.3/§17) : pseudo/masse/position imposés, le
+       * bot reste sinon piloté par l'IA normalement (voir `BotManager.forceSpawnOne`, server). `x`
+       * et `y` doivent être fournis TOUS LES DEUX pour être pris en compte (sinon ignorés). */
+      nickname?: string;
+      mass?: number;
+      x?: number;
+      y?: number;
+    }
   | { kind: 'clearFood' }
   | { kind: 'clearBots' }
   | { kind: 'reset' }

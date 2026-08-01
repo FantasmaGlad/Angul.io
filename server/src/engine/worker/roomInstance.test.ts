@@ -1,6 +1,8 @@
 import type { ServerMessage } from '@angulio/shared';
 import { describe, expect, it } from 'vitest';
 import type { BotConfig } from '../../mods/parametric/config.js';
+import { createParametricMod } from '../../mods/parametric/index.js';
+import { testConfig } from '../../mods/parametric/testConfig.js';
 import type { ModResolver } from '../roomManager.js';
 import type { TickPayload } from './protocol.js';
 import { applyRoomBotCountOverride, RoomInstance } from './roomInstance.js';
@@ -229,6 +231,114 @@ describe('RoomInstance — filtrage par intérêt (handleTick)', () => {
     if (secondMessage.type !== 'state') throw new Error('unreachable');
     expect(secondMessage.entitiesFull).toBe(false);
     expect(secondMessage.entities.some((e) => e.k === 'f')).toBe(false);
+    instance.destroy();
+  });
+
+  /** Correctif "le plus gros lag est juste après la connexion" : un destinataire SANS morceau
+   * (tout juste rejoint et pas encore apparu, ou mort en attente de respawn) recevait le SALON
+   * ENTIER à chaque tick — des milliers de pastilles sérialisées/reparsées ~20 fois par seconde,
+   * pour un client qui n'a rien à cadrer. */
+  it("un joueur sans morceau reçoit une liste VIDE, jamais le salon entier", () => {
+    const instance = makeInstance();
+    const alice = instance.join('Alice');
+    if (!alice.ok) throw new Error('join a échoué');
+    // Volontairement AUCUN `spawnPiece` pour Alice (le mod factice de `makeInstance` n'en spawne
+    // pas non plus au join) — l'état exact du repli sous test.
+    for (let i = 0; i < 20; i++) instance.room.world.spawnParticle({ x: 10 + i, y: 10 }, 1);
+    instance.connectViewer(alice.playerId, false);
+
+    const payloads = capture(instance);
+    instance.room.tick();
+
+    const message = payloads.find((p) => p.playerId === alice.playerId)!.message;
+    expect(stateEntities(message)).toEqual([]);
+    instance.destroy();
+  });
+
+  it("envoie l'état complet filtré par intérêt dès le tick où le morceau existe (rien de perdu, juste différé)", () => {
+    const instance = makeInstance();
+    const alice = instance.join('Alice');
+    if (!alice.ok) throw new Error('join a échoué');
+    instance.room.world.spawnParticle({ x: 50, y: 0 }, 1);
+    instance.connectViewer(alice.playerId, false);
+
+    const payloads = capture(instance);
+    instance.room.tick(); // pas encore de morceau -> liste vide
+    instance.room.world.spawnPiece(alice.playerId, { x: 0, y: 0 }, 50);
+    instance.room.tick(); // le morceau existe -> resynchro complète (`!lastSent`)
+
+    const aliceMessages = payloads.filter((p) => p.playerId === alice.playerId);
+    const secondMessage = aliceMessages[1]!.message;
+    if (secondMessage.type !== 'state') throw new Error('unreachable');
+    expect(secondMessage.entitiesFull).toBe(true);
+    expect(secondMessage.entities.some((e) => e.k === 'f')).toBe(true);
+    expect(secondMessage.entities.some((e) => e.k === 'c')).toBe(true);
+    instance.destroy();
+  });
+});
+
+/** Dispatch admin `adminAction({ kind: 'spawnBot', ... })` (§4.3, `adminAction` switch) — Bots
+ * PERSONNALISÉS (cahier_des_charges_admin.md §9.3/§17, "création de robots configurables
+ * sur-mesure") : vérifie que les champs `nickname`/`mass`/`x`/`y` de l'action traversent bien
+ * cette frontière worker jusqu'au morceau du bot réellement spawné, et que l'action existante SANS
+ * ces champs (bouton "Spawn bot" déjà en production) reste inchangée. Mod paramétrique réel
+ * (contrairement à `makeInstance` ci-dessus, dont le mod factice `{ id: 'test' }` ne spawne aucun
+ * morceau à la connexion) — nécessaire ici pour observer une masse/position de morceau. */
+describe('RoomInstance — adminAction(\'spawnBot\') bots personnalisés (§9.3/§17 cahier_des_charges_admin.md)', () => {
+  function makeBotInstance(): RoomInstance {
+    const config = testConfig({
+      bots: {
+        enabled: true,
+        targetRatio: 0,
+        updateFrequencyHz: 2,
+        proportions: { fuis: 0, neutre: 100, agressif: 0, fou: 0 },
+        challengers: {
+          enabled: false,
+          baselineCount: 0,
+          minWithHumans: 0,
+          maxWithHumans: 0,
+          rampHumans: 1,
+          massMultipliers: [],
+        },
+      },
+    });
+    const mod = createParametricMod(config);
+    const resolver: ModResolver = () => ({ mod, mapSize: 2000, bots: config.bots });
+    return new RoomInstance(
+      { id: 'room-custom-bots', modId: 'test', tickRateHz: 20, maxPlayers: 30, resetSchedule: null },
+      resolver,
+    );
+  }
+
+  it('applique pseudo/masse/position personnalisés depuis une action admin spawnBot', () => {
+    const instance = makeBotInstance();
+
+    const result = instance.adminAction({
+      kind: 'spawnBot',
+      nickname: 'AdminBot',
+      mass: 500000,
+      x: 300,
+      y: 400,
+    });
+    expect(result.ok).toBe(true);
+
+    const player = instance.room.world.allPlayers().find((p) => p.nickname === 'AdminBot');
+    expect(player).toBeDefined();
+    const piece = instance.room.world.getPiecesByOwner(player!.id)[0];
+    expect(piece?.mass).toBe(500000);
+    expect(piece?.position).toEqual({ x: 300, y: 400 });
+
+    instance.destroy();
+  });
+
+  it('conserve le comportement existant du bouton "Spawn bot" (sans options, régression)', () => {
+    const instance = makeBotInstance();
+    const before = instance.room.botManager?.activeBotCount ?? 0;
+
+    const result = instance.adminAction({ kind: 'spawnBot' });
+    expect(result.ok).toBe(true);
+    expect(instance.room.botManager?.activeBotCount).toBe(before + 1);
+
     instance.destroy();
   });
 });
