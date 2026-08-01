@@ -896,9 +896,27 @@ export default function GameView({
       //   sans micro-freeze ni à-coup.
       const cameraScaleLerp = 1 - Math.exp(-18 * (frameDt / 1000));
       const cameraPosLerp = 1 - Math.exp(-60 * (frameDt / 1000));
+
+      let dx = targetCamera.x - latestCamera.x;
+      let dy = targetCamera.y - latestCamera.y;
+      if (mapSize && mapSize > 0) {
+        if (Math.abs(dx) > mapSize / 2) {
+          dx = dx > 0 ? dx - mapSize : dx + mapSize;
+        }
+        if (Math.abs(dy) > mapSize / 2) {
+          dy = dy > 0 ? dy - mapSize : dy + mapSize;
+        }
+      }
+      let newX = latestCamera.x + dx * cameraPosLerp;
+      let newY = latestCamera.y + dy * cameraPosLerp;
+      if (mapSize && mapSize > 0) {
+        newX = ((newX % mapSize) + mapSize) % mapSize;
+        newY = ((newY % mapSize) + mapSize) % mapSize;
+      }
+
       latestCamera = {
-        x: latestCamera.x + (targetCamera.x - latestCamera.x) * cameraPosLerp,
-        y: latestCamera.y + (targetCamera.y - latestCamera.y) * cameraPosLerp,
+        x: newX,
+        y: newY,
         scale: latestCamera.scale + (targetScale - latestCamera.scale) * cameraScaleLerp,
       };
       // L'effet de "dash" au split est un pur transform CSS sur le canvas (voir attachInput
@@ -908,7 +926,17 @@ export default function GameView({
       const logicStepMs = performance.now() - logicStart;
 
       const drawStart = performance.now();
-      const renderInfo = renderFrame(ctx!, canvas!, entities, camera, nicknames, colors, selfPlayerId);
+      const renderInfo = renderFrame(
+        ctx!,
+        canvas!,
+        entities,
+        camera,
+        nicknames,
+        colors,
+        selfPlayerId,
+        mapSize,
+        currentModId,
+      );
       const drawTimeMs = performance.now() - drawStart;
       // Purge définitive des pastilles mangées ce cadre (voir renderEngine.ts `forgetFood`) —
       // sans ça, le filtrage visuel de `renderFrame` ne les masque que le temps que le blob reste

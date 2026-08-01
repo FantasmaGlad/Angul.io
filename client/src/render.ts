@@ -224,14 +224,10 @@ export function renderFrame(
   nicknames: ReadonlyMap<string, string>,
   colors?: ReadonlyMap<string, string>,
   selfPlayerId?: string,
+  mapSize?: number,
+  borderType?: string,
 ): RenderFrameResult {
   let drawCalls = 0;
-  // Taille CSS ("logique"), pas `canvas.width/height` (la résolution physique de dessin, voir
-  // GameView.tsx `resizeCanvas` — peut valoir `dpr` fois plus sur un écran HiDPI/Retina) : tout
-  // ce module raisonne en coordonnées CSS-pixel, compensées vers la résolution physique par
-  // `ctx.setTransform(dpr, ...)` posé une fois au resize. `clientWidth`/`clientHeight` restent
-  // corrects pour SpectatorBackground.tsx aussi (pas de traitement DPR là, donc identiques à
-  // `canvas.width/height` dans ce cas).
   const canvasWidth = canvas.clientWidth;
   const canvasHeight = canvas.clientHeight;
   ctx.clearRect(0, 0, canvasWidth, canvasHeight);
@@ -241,6 +237,11 @@ export function renderFrame(
 
   drawGrid(ctx, canvas, camera, toScreenX, toScreenY);
   drawCalls++;
+
+  if (mapSize && mapSize > 0) {
+    drawWorldBounds(ctx, camera, mapSize, borderType, toScreenX, toScreenY);
+    drawCalls++;
+  }
 
   const { visible: visibleEntities, eaten: eatenFood } = partitionEatenFood(entities);
 
@@ -587,6 +588,44 @@ function drawGrid(
   }
 
   ctx.stroke();
+}
+
+/** Surbrillance visuelle des bordures de la carte selon le type de bordure (ex: lueur jaune toroïdale pour Infini, néon cyan pour Mega Split). */
+function drawWorldBounds(
+  ctx: CanvasRenderingContext2D,
+  camera: Camera,
+  mapSize: number,
+  borderType: string | undefined,
+  toScreenX: (x: number) => number,
+  toScreenY: (y: number) => number,
+): void {
+  const x0 = toScreenX(0);
+  const y0 = toScreenY(0);
+  const x1 = toScreenX(mapSize);
+  const y1 = toScreenY(mapSize);
+
+  ctx.save();
+  if (borderType === 'TOROIDAL' || borderType === 'infini') {
+    // Surbrillance jaune subtile avec lueur pour signaler la bordure toroïdale du mod Infini
+    ctx.strokeStyle = 'rgba(255, 215, 0, 0.85)';
+    ctx.lineWidth = Math.max(2, 3 * camera.scale);
+    ctx.shadowColor = 'rgba(255, 235, 59, 0.9)';
+    ctx.shadowBlur = 15;
+    ctx.setLineDash([12 * camera.scale, 8 * camera.scale]);
+    ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+  } else if (borderType === 'ELASTIC_BOUNCE' || borderType === 'mega-split') {
+    // Effet néon cyan pour la bordure rebondissante de Mega Split
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.85)';
+    ctx.lineWidth = Math.max(3, 4 * camera.scale);
+    ctx.shadowColor = 'rgba(0, 240, 255, 0.9)';
+    ctx.shadowBlur = 18;
+    ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+  } else {
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.lineWidth = Math.max(1, 2 * camera.scale);
+    ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+  }
+  ctx.restore();
 }
 
 /** Couleur de repli si ni `colors` (avatar procédural, refonte UI/UX) ni `nicknames` (bot connu)

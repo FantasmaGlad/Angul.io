@@ -3,7 +3,9 @@
   "player": {
     "startMass": 50,
     "maxSplits": 64,
-    "minSplitMass": 50
+    "minSplitMass": 50,
+    "splitEnabled": true,
+    "ejectEnabled": false
   },
   "physics": {
     "v0": 300,
@@ -45,7 +47,8 @@
   "arena": {
     "width": 20000,
     "height": 20000,
-    "borderType": "STRICT_WALL"
+    "borderType": "ELASTIC_BOUNCE",
+    "bounceRestitution": 2.0
   },
   "food": {
     "density": 2.5,

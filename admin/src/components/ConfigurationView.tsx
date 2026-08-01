@@ -12,6 +12,13 @@ interface ConfigurationViewProps {
   onAuthError: (message: string) => void;
 }
 
+const DEFAULT_MOD_PROPERTIES: Record<string, { mapSize: number; maxPlayers: number; resetDurationMin: number }> = {
+  vanilla: { mapSize: 15000, maxPlayers: 30, resetDurationMin: 120 },
+  hardcore: { mapSize: 15000, maxPlayers: 30, resetDurationMin: 120 },
+  infini: { mapSize: 5000, maxPlayers: 30, resetDurationMin: 120 },
+  'mega-split': { mapSize: 20000, maxPlayers: 30, resetDurationMin: 120 },
+};
+
 export default function ConfigurationView({ token, onAuthError }: ConfigurationViewProps) {
   const [modes, setModes] = useState<string[]>([]);
   const [baseRooms, setBaseRooms] = useState<BaseRoomConfig[]>([]);
@@ -45,7 +52,19 @@ export default function ConfigurationView({ token, onAuthError }: ConfigurationV
   }, [token]);
 
   const updateRoom = (index: number, patch: Partial<BaseRoomConfig>): void => {
-    setBaseRooms((rooms) => rooms.map((room, i) => (i === index ? { ...room, ...patch } : room)));
+    setBaseRooms((rooms) =>
+      rooms.map((room, i) => {
+        if (i !== index) return room;
+        const updated = { ...room, ...patch };
+        const defaults = patch.modId ? DEFAULT_MOD_PROPERTIES[patch.modId] : undefined;
+        if (defaults) {
+          updated.mapSize = defaults.mapSize;
+          updated.maxPlayers = defaults.maxPlayers;
+          updated.resetDurationMin = defaults.resetDurationMin;
+        }
+        return updated;
+      }),
+    );
   };
 
   const removeRoom = (index: number): void => {
@@ -53,9 +72,11 @@ export default function ConfigurationView({ token, onAuthError }: ConfigurationV
   };
 
   const addRoom = (): void => {
+    const defaultMod = modes[0] ?? 'vanilla';
+    const defaults = DEFAULT_MOD_PROPERTIES[defaultMod] ?? { mapSize: 15000, maxPlayers: 30, resetDurationMin: 120 };
     setBaseRooms((rooms) => [
       ...rooms,
-      { name: '', modId: modes[0] ?? 'vanilla', mapSize: 15000, maxPlayers: 30, resetDurationMin: 120 },
+      { name: '', modId: defaultMod, mapSize: defaults.mapSize, maxPlayers: defaults.maxPlayers, resetDurationMin: defaults.resetDurationMin },
     ]);
   };
 

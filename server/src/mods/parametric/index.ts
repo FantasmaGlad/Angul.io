@@ -566,15 +566,13 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
       if (a.kind === 'particle' || b.kind === 'particle') {
         const [particle, piece] = a.kind === 'particle' ? [a, b] : [b, a];
         if (piece.mass >= config.eating.minMassToEatFood) {
+          const efficiency = config.eating.foodEfficiency ?? 1.0;
+          const gainedMass = particle.mass * efficiency;
+          world.setMass(piece, piece.mass + gainedMass);
+          world.removeEntity(particle.id);
           const state = pieceState(piece);
-          state.foodEatenThisTick = (state.foodEatenThisTick ?? 0) + particle.mass;
-          if (state.foodEatenThisTick <= 25) {
-            const gainedMass = particle.mass;
-            world.setMass(piece, piece.mass + gainedMass);
-            world.removeEntity(particle.id);
-            state.timeSinceLastEatenS = 0;
-            creditMassEatenXp(world, piece.ownerId, gainedMass, performance.now());
-          }
+          state.timeSinceLastEatenS = 0;
+          creditMassEatenXp(world, piece.ownerId, gainedMass, performance.now());
         }
         return;
       }

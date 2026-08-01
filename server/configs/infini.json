@@ -3,7 +3,9 @@
   "player": {
     "startMass": 50,
     "maxSplits": 16,
-    "minSplitMass": 50
+    "minSplitMass": 50,
+    "splitEnabled": true,
+    "ejectEnabled": true
   },
   "physics": {
     "v0": 300,
@@ -19,7 +21,7 @@
     "ejectSpeedFactor": 4.5
   },
   "eject": {
-    "amount": 5
+    "amount": 20
   },
   "merge": {
     "baseTimeSec": 15,
@@ -30,7 +32,8 @@
     "massAdvantage": 0.05,
     "minMassToEatFood": 2,
     "eatOverlapFraction": 0.7,
-    "absorptionDurationSec": 0
+    "absorptionDurationSec": 0,
+    "foodEfficiency": 2.0
   },
   "decay": {
     "floor": 20,
