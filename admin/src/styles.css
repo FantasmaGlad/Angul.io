@@ -9,33 +9,33 @@
  * Material Symbols uniquement, jamais d'emoji (déjà la convention du projet, voir plus bas).
  * --------------------------------------------------------------------------------------- */
 :root {
-  --bg-gradient: linear-gradient(165deg, #fbfbfc 0%, #f4f4f6 50%, #f8f6fa 100%);
+  --bg-gradient: linear-gradient(165deg, #f8fafc 0%, #f1f5f9 50%, #f8fafc 100%);
   --bg: #ffffff;
-  --surface: rgba(255, 255, 255, 0.55);
-  --surface-hover: rgba(255, 255, 255, 0.8);
-  --border: rgba(255, 255, 255, 0.5);
-  --border-strong: rgba(46, 49, 51, 0.16);
-  --text: #26262b;
-  --text-soft: #5d5d68;
-  --text-faint: #8c8c97;
+  --surface: rgba(255, 255, 255, 0.7);
+  --surface-hover: rgba(255, 255, 255, 0.95);
+  --border: rgba(255, 255, 255, 0.75);
+  --border-strong: rgba(15, 23, 42, 0.14);
+  --text: #0f172a;
+  --text-soft: #475569;
+  --text-faint: #94a3b8;
 
-  --glass-bg: rgba(255, 255, 255, 0.62);
-  --glass-blur: blur(24px) saturate(150%);
+  --glass-bg: rgba(255, 255, 255, 0.75);
+  --glass-blur: blur(24px) saturate(160%);
 
-  --accent: #8b5cf6;
-  --accent-strong: #7c3aed;
-  --accent-soft: rgba(139, 92, 246, 0.12);
+  --accent: #0f172a;
+  --accent-strong: #020617;
+  --accent-soft: rgba(15, 23, 42, 0.08);
   --accent-ink: #ffffff;
   --danger: #e0455a;
   --danger-soft: rgba(224, 69, 90, 0.12);
-  --success: #1fa971;
-  --success-soft: rgba(31, 169, 113, 0.12);
+  --success: #10b981;
+  --success-soft: rgba(16, 185, 129, 0.12);
 
   --radius-lg: 18px;
   --radius-md: 12px;
   --radius-pill: 999px;
-  --shadow-modal: 0 20px 48px rgba(46, 49, 71, 0.16);
-  --shadow-panel: 0 8px 28px rgba(46, 49, 71, 0.08);
+  --shadow-modal: 0 20px 48px rgba(15, 23, 42, 0.16);
+  --shadow-panel: 0 8px 28px rgba(15, 23, 42, 0.06);
 
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -96,7 +96,7 @@ input:focus {
   color: var(--accent-ink);
   padding: 9px 18px;
   font-size: 13.5px;
-  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.30);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.16);
 }
 .btn-primary:hover {
   background: var(--accent-strong);
@@ -245,9 +245,10 @@ input:focus {
   color: var(--text);
 }
 .side-link.active {
-  background: var(--accent-soft);
-  color: var(--accent-strong);
-  border-color: rgba(139, 92, 246, 0.28);
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--accent);
+  border-color: rgba(15, 23, 42, 0.18);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
   font-weight: 700;
 }
 .side-link.active .material-symbols-outlined {
@@ -290,9 +291,11 @@ input:focus {
 .main-content {
   flex: 1;
   height: 100vh;
-  overflow: hidden;
+  height: 100dvh;
+  overflow-y: auto;
+  overflow-x: hidden;
   min-width: 0;
-  padding: 20px 24px;
+  padding: 20px 24px 60px;
   box-sizing: border-box;
 }
 .view {

@@ -64,7 +64,13 @@ export default function App() {
   if (!token) {
     return (
       <div className="login-overlay">
-        <div className="panel">
+        <form
+          className="panel"
+          onSubmit={(event) => {
+            event.preventDefault();
+            handleLogin();
+          }}
+        >
           <h1>Angul.io — Admin</h1>
           <p style={{ color: 'var(--text-soft)', fontSize: 12.5, margin: '6px 0 0' }}>
             Accès réservé (cahier des charges §5.4)
@@ -76,9 +82,6 @@ export default function App() {
             placeholder="Nom d'utilisateur"
             value={username}
             onChange={(event) => setUsername(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') handleLogin();
-            }}
           />
           <input
             className="login-password-input"
@@ -87,15 +90,12 @@ export default function App() {
             placeholder="Mot de passe admin"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') handleLogin();
-            }}
           />
-          <button className="btn-primary login-button" type="button" onClick={handleLogin}>
+          <button className="btn-primary login-button" type="submit">
             Se connecter
           </button>
           <p className="error-text">{loginError}</p>
-        </div>
+        </form>
       </div>
     );
   }

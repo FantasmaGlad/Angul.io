@@ -314,6 +314,7 @@ export default function PlayersView({ token, onAuthError }: PlayersViewProps) {
                 <input
                   id="detail-newpass"
                   type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
                   placeholder="Laisser vide pour conserver"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}

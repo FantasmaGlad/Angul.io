@@ -173,7 +173,7 @@ export async function handleAdminUpdatePlayer(
 
   let body: unknown;
   try {
-    body = await readJsonBody(req);
+    body = await readJsonBody(req, 10_000_000);
   } catch (error) {
     respondJson(res, 400, { error: (error as Error).message });
     return;
