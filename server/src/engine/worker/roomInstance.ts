@@ -1,14 +1,28 @@
-import { DEFAULT_MOVEMENT_CONFIG, type MovementConfig, type ServerMessage } from '@angulio/shared';
+import {
+  DEFAULT_MOVEMENT_CONFIG,
+  interestRadiusForMass,
+  type MovementConfig,
+  type ServerMessage,
+} from '@angulio/shared';
 import { DEFAULT_CHALLENGER_CONFIG } from '../bots/botTypes.js';
 import type { BotConfig } from '../../mods/parametric/config.js';
 import { Room } from '../room.js';
 import type { ModResolver } from '../roomManager.js';
-import type { PlayerId, PlayerInput } from '../types.js';
+import type { Entity, EntityId, PlayerId, PlayerInput } from '../types.js';
+import {
+  buildCoarseFoodIndex,
+  isResyncTick,
+  queryCoarseFoodIndex,
+  RESYNC_INTERVAL_SEC,
+  type CoarseFoodIndex,
+} from './interestFilter.js';
 import {
   buildStateMessage,
   buildVisibleEntitySnapshots,
+  centroidOf,
   computeTopScores,
   SPECTATOR_TICK_DIVISOR,
+  toSnapshot,
 } from './snapshotBuilder.js';
 import type {
   AdminActionResult,
@@ -47,6 +61,11 @@ export class RoomInstance {
   private readonly viewerIds = new Set<PlayerId>();
   private readonly spectatorIds = new Set<PlayerId>();
   private readonly maxMassByPlayer = new Map<PlayerId, number>();
+  /** Ids de nourriture déjà envoyés à CE joueur depuis sa dernière resynchronisation complète —
+   * filtrage par intérêt + delta nourriture (cahier_des_charges_perf_reseau_grande_carte.md §3.5,
+   * voir `handleTick`). `undefined`/absent = jamais encore envoyé à ce joueur, traité comme un
+   * besoin de resynchronisation complète immédiate. */
+  private readonly lastSentFoodIdsByPlayer = new Map<PlayerId, Set<EntityId>>();
 
   private readonly tickListeners: Array<
     (tick: number, payloads: TickPayload[], stats: RoomStats) => void
@@ -84,6 +103,7 @@ export class RoomInstance {
     this.room.onPlayerDeath((playerId, info) => this.handleDeath(playerId, info));
     this.room.onReset(() => {
       this.maxMassByPlayer.clear();
+      this.lastSentFoodIdsByPlayer.clear();
       for (const listener of this.resetListeners) listener();
     });
 
@@ -168,6 +188,7 @@ export class RoomInstance {
 
     this.room.removePlayer(playerId);
     this.maxMassByPlayer.delete(playerId);
+    this.lastSentFoodIdsByPlayer.delete(playerId);
     this.viewerIds.delete(playerId);
     this.spectatorIds.delete(playerId);
 
@@ -260,6 +281,11 @@ export class RoomInstance {
   disconnectViewer(playerId: PlayerId): void {
     this.viewerIds.delete(playerId);
     this.spectatorIds.delete(playerId);
+    // Force une resynchronisation complète de la nourriture à la reconnexion (voir `handleTick`,
+    // `!lastSent` déclenche un envoi complet) plutôt que de reprendre un delta sur une position
+    // potentiellement périmée après une coupure — sans risque, l'ancien Set n'était de toute
+    // façon plus mis à jour pendant la déconnexion (ce joueur n'était plus dans `viewerIds`).
+    this.lastSentFoodIdsByPlayer.delete(playerId);
   }
 
   destroy(): void {
@@ -310,13 +336,20 @@ export class RoomInstance {
     let sharedSpectatorMessage: ServerMessage | undefined;
     const shouldSendSpectatorTick = tick % SPECTATOR_TICK_DIVISOR === 0;
 
-    // Snapshot des entités construit UNE SEULE FOIS par tick pour chaque catégorie de
-    // destinataire (voir `buildVisibleEntitySnapshots`) — chargement dynamique par intérêt retiré
-    // (demande utilisateur, tout le salon est désormais envoyé à chaque joueur, comme aux
-    // spectateurs) : sans ce partage, refaire ce travail par joueur individuellement aurait
-    // multiplié un coût désormais identique pour tous par le nombre de viewers connectés.
-    let playerEntities: ReturnType<typeof buildVisibleEntitySnapshots> | undefined;
+    // Snapshot du salon entier construit UNE SEULE FOIS par tick pour les spectateurs/vue admin
+    // (voir `buildVisibleEntitySnapshots`) — chemin INCHANGÉ, ils continuent de tout voir (§1.3
+    // cahier_des_charges_perf_reseau_grande_carte.md, non-régression modération/fond d'accueil).
     let spectatorEntities: ReturnType<typeof buildVisibleEntitySnapshots> | undefined;
+
+    // Filtrage par intérêt (joueurs réels uniquement, jamais les spectateurs/vue admin) : calculé
+    // PAR JOUEUR désormais (plus de liste unique partagée, voir cahier des charges §3.4) —
+    // `pieces`/`particles`/`coarseFoodIndex` restent en revanche calculés UNE SEULE FOIS par tick
+    // et réutilisés pour tous les joueurs (seul le centre/rayon de la requête varie).
+    let pieces: Entity[] | undefined;
+    let particles: Entity[] | undefined;
+    let coarseFoodIndex: CoarseFoodIndex | undefined;
+    let wholeRoomFallbackEntities: ReturnType<typeof buildVisibleEntitySnapshots> | undefined;
+    const resyncIntervalTicks = Math.round(this.room.tickRateHz * RESYNC_INTERVAL_SEC);
 
     for (const playerId of this.viewerIds) {
       const isSpectator = this.spectatorIds.has(playerId);
@@ -347,19 +380,97 @@ export class RoomInstance {
             tick: Math.floor(tick / SPECTATOR_TICK_DIVISOR),
             entities: spectatorEntities,
             topScores,
+            // Toujours le salon entier pour un spectateur/vue admin (jamais de filtrage par
+            // intérêt, voir §1.3 cahier des charges) — `entitiesFull: true` en cohérence.
+            entitiesFull: true,
           }).message;
         }
         payloads.push({ playerId, message: sharedSpectatorMessage });
         continue;
       }
 
-      playerEntities ??= buildVisibleEntitySnapshots(allEntities, false);
+      const ownPieces = world.getPiecesByOwner(playerId);
+      let entitiesForPlayer: ReturnType<typeof buildVisibleEntitySnapshots>;
+      let entitiesFull: boolean;
+
+      if (ownPieces.length === 0) {
+        // Pas (encore/plus) de morceau — mort, en attente de respawn : repli sur le salon entier
+        // pour ce seul tick, cas transitoire rare (aucun centre/masse dont dériver un rayon
+        // d'intérêt sensé). Purge l'ancien Set de delta : au prochain respawn (position
+        // potentiellement très différente), `!lastSent` forcera une resynchro complète plutôt que
+        // de comparer contre une position périmée.
+        wholeRoomFallbackEntities ??= buildVisibleEntitySnapshots(allEntities, false);
+        entitiesForPlayer = wholeRoomFallbackEntities;
+        entitiesFull = true;
+        this.lastSentFoodIdsByPlayer.delete(playerId);
+      } else {
+        const center = centroidOf(ownPieces)!;
+        let totalOwnMass = 0;
+        for (const piece of ownPieces) totalOwnMass += piece.mass;
+        const radius = interestRadiusForMass(totalOwnMass);
+        const radiusSq = radius * radius;
+
+        // Morceaux (joueurs/bots) : filtre brute-force par distance (nombre borné — voir
+        // interestFilter.ts, pas besoin d'index spatial dédié) + les propres morceaux du joueur
+        // TOUJOURS inclus, même hors rayon (le client en a besoin hors caméra pour la
+        // prédiction/HUD, voir cahier des charges §3.4).
+        pieces ??= allEntities.filter((e) => e.kind === 'piece');
+        const pieceSnapshots: ReturnType<typeof toSnapshot>[] = ownPieces.map(toSnapshot);
+        const includedPieceIds = new Set<EntityId>(ownPieces.map((p) => p.id));
+        for (const piece of pieces) {
+          if (includedPieceIds.has(piece.id)) continue;
+          const dx = piece.position.x - center.x;
+          const dy = piece.position.y - center.y;
+          if (dx * dx + dy * dy <= radiusSq) {
+            pieceSnapshots.push(toSnapshot(piece));
+            includedPieceIds.add(piece.id);
+          }
+        }
+
+        // Nourriture : delta — seuls les ids NOUVELLEMENT dans l'intérêt du joueur depuis son
+        // dernier envoi sont inclus, sauf tick de resynchronisation complète (périodique, étalée
+        // par joueur — voir `isResyncTick`) ou premier envoi jamais fait à ce joueur.
+        particles ??= allEntities.filter((e) => e.kind === 'particle');
+        coarseFoodIndex ??= buildCoarseFoodIndex(particles);
+        const candidateFoodIds = queryCoarseFoodIndex(coarseFoodIndex, center, radius);
+        const currentFoodIds = new Set<EntityId>();
+        for (const id of candidateFoodIds) {
+          const entity = world.getEntity(id);
+          if (!entity) continue; // mangée entre la construction de l'index et cette requête
+          const dx = entity.position.x - center.x;
+          const dy = entity.position.y - center.y;
+          if (dx * dx + dy * dy <= radiusSq) currentFoodIds.add(id);
+        }
+
+        const lastSent = this.lastSentFoodIdsByPlayer.get(playerId);
+        const resync = !lastSent || isResyncTick(playerId, tick, resyncIntervalTicks);
+        const foodSnapshots: ReturnType<typeof toSnapshot>[] = [];
+        if (resync) {
+          for (const id of currentFoodIds) {
+            const entity = world.getEntity(id);
+            if (entity) foodSnapshots.push(toSnapshot(entity));
+          }
+          this.lastSentFoodIdsByPlayer.set(playerId, currentFoodIds);
+        } else {
+          for (const id of currentFoodIds) {
+            if (lastSent.has(id)) continue;
+            const entity = world.getEntity(id);
+            if (entity) foodSnapshots.push(toSnapshot(entity));
+            lastSent.add(id);
+          }
+        }
+
+        entitiesForPlayer = [...pieceSnapshots, ...foodSnapshots];
+        entitiesFull = resync;
+      }
+
       const { message, totalMass } = buildStateMessage({
         room: this.room,
         playerId,
         tick,
-        entities: playerEntities,
+        entities: entitiesForPlayer,
         topScores,
+        entitiesFull,
       });
       payloads.push({ playerId, message });
 

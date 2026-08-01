@@ -174,7 +174,12 @@ export default function SpectatorBackground({ roomId, zooming }: SpectatorBackgr
           stateRef.current.nicknames.set(message.playerId, message.nickname);
           if (message.color) stateRef.current.colors.set(message.playerId, message.color);
         } else if (message.type === 'state') {
-          stateRef.current.renderEngine.pushSnapshot(message.entities, message.tick, tickRateHz);
+          stateRef.current.renderEngine.pushSnapshot(
+            message.entities,
+            message.tick,
+            tickRateHz,
+            message.entitiesFull,
+          );
         }
       });
     }, ROOM_SWITCH_DEBOUNCE_MS);

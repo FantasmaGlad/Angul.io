@@ -140,6 +140,19 @@ export interface WorldStateMessage {
   type: 'state';
   tick: number;
   entities: EntitySnapshot[];
+  /** `true` si `entities` représente l'ensemble COMPLET et autoritaire des entités actuellement
+   * pertinentes pour ce destinataire (salon entier pour un spectateur/vue admin, ou
+   * resynchronisation périodique de la nourriture pour un joueur filtré par intérêt — voir
+   * server/src/engine/worker/interestFilter.ts) ; `false` signifie que `entities` ne contient
+   * QUE ce qui a changé depuis le dernier message envoyé à CE destinataire (delta nourriture,
+   * filtrage par intérêt réseau, cahier_des_charges_perf_reseau_grande_carte.md §3.5) — toute
+   * entité déjà connue et non re-listée ici reste valable telle quelle côté client. Absent =
+   * traité comme `true` (comportement historique : `entities` a toujours été la liste complète
+   * avant l'introduction du filtrage par intérêt), voir client/src/renderEngine.ts
+   * `RenderEngine.pushSnapshot`. La nourriture ('f') est la seule kind concernée par le delta —
+   * les morceaux ('c', kind 'piece') sont toujours réenvoyés en entier tant qu'ils restent dans
+   * l'intérêt du destinataire (ils bougent, un delta n'aurait pas de sens pour eux). */
+  entitiesFull?: boolean;
   leaderboard?: LeaderboardEntry[];
   /** Valeurs propres au destinataire de ce message, jamais partagées avec les autres clients
    * (contrairement à `entities`, diffusé tel quel). */

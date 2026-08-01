@@ -236,3 +236,90 @@ describe('RenderEngine — sous-échantillonnage spectateur type-aware (nourritu
     expect(first.map((e) => e.i).sort()).toEqual(second.map((e) => e.i).sort());
   });
 });
+
+/** Delta nourriture (cahier_des_charges_perf_reseau_grande_carte.md §3.5) : le serveur ne
+ * réenvoie une pastille ('f') que si elle est nouvellement entrée dans l'intérêt du joueur — ce
+ * qui suppose que le client ACCUMULE la nourriture reçue plutôt que de ne garder que le dernier
+ * tick brut (contrairement à `interpolateEntities`, qui lui reste volontairement inchangé, voir
+ * son commentaire). `pushSnapshot`'s 4e paramètre (`entitiesFull`) pilote ce comportement. */
+describe('RenderEngine — accumulation persistante de la nourriture (delta réseau)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('conserve une pastille omise sur un tick delta (entitiesFull=false)', () => {
+    const engine = new RenderEngine();
+    const nowSpy = vi.spyOn(performance, 'now');
+
+    nowSpy.mockReturnValueOnce(0);
+    engine.pushSnapshot([entity('c1', 0), food('f1', 50)], 1, 30, true);
+    nowSpy.mockReturnValueOnce(33);
+    // Tick delta : la pastille f1 n'a pas bougé, le serveur ne la réenvoie pas — seul le morceau
+    // du joueur est présent (toujours envoyé en entier, voir roomInstance.ts).
+    engine.pushSnapshot([entity('c1', 10)], 2, 30, false);
+
+    const last = engine.snapshotQueue[engine.snapshotQueue.length - 1]!;
+    expect(last.entities.some((e) => e.i === 'f1')).toBe(true);
+    expect(last.entities.some((e) => e.i === 'c1')).toBe(true);
+  });
+
+  it('purge une pastille absente d’un tick de resynchronisation complète (entitiesFull=true)', () => {
+    const engine = new RenderEngine();
+    const nowSpy = vi.spyOn(performance, 'now');
+
+    nowSpy.mockReturnValueOnce(0);
+    engine.pushSnapshot([entity('c1', 0), food('f1', 50)], 1, 30, true);
+    nowSpy.mockReturnValueOnce(33);
+    engine.pushSnapshot([entity('c1', 10)], 2, 30, false); // delta : f1 toujours implicite
+
+    // Resynchro complète : f1 a été mangée entre-temps (par un autre joueur) — absente de la
+    // liste complète, doit disparaître plutôt que de rester affichée indéfiniment.
+    nowSpy.mockReturnValueOnce(66);
+    engine.pushSnapshot([entity('c1', 20)], 3, 30, true);
+
+    const last = engine.snapshotQueue[engine.snapshotQueue.length - 1]!;
+    expect(last.entities.some((e) => e.i === 'f1')).toBe(false);
+  });
+
+  it('fusionne une nouvelle pastille delta sans effacer celles déjà connues', () => {
+    const engine = new RenderEngine();
+    const nowSpy = vi.spyOn(performance, 'now');
+
+    nowSpy.mockReturnValueOnce(0);
+    engine.pushSnapshot([entity('c1', 0), food('f1', 50)], 1, 30, true);
+    nowSpy.mockReturnValueOnce(33);
+    // Delta : une seconde pastille entre dans l'intérêt, f1 reste implicite.
+    engine.pushSnapshot([entity('c1', 10), food('f2', 80)], 2, 30, false);
+
+    const last = engine.snapshotQueue[engine.snapshotQueue.length - 1]!;
+    expect(last.entities.some((e) => e.i === 'f1')).toBe(true);
+    expect(last.entities.some((e) => e.i === 'f2')).toBe(true);
+  });
+
+  it('reset() vide la nourriture accumulée (nouvelle vie/reconnexion)', () => {
+    const engine = new RenderEngine();
+    const nowSpy = vi.spyOn(performance, 'now');
+
+    nowSpy.mockReturnValueOnce(0);
+    engine.pushSnapshot([entity('c1', 0), food('f1', 50)], 1, 30, true);
+    engine.reset();
+    nowSpy.mockReturnValueOnce(33);
+    engine.pushSnapshot([entity('c1', 0)], 1, 30, false);
+
+    const last = engine.snapshotQueue[engine.snapshotQueue.length - 1]!;
+    expect(last.entities.some((e) => e.i === 'f1')).toBe(false);
+  });
+
+  it('sans 4e paramètre (spectateur historique), se comporte comme entitiesFull=true (remplace, ne fusionne pas)', () => {
+    const engine = new RenderEngine();
+    const nowSpy = vi.spyOn(performance, 'now');
+
+    nowSpy.mockReturnValueOnce(0);
+    engine.pushSnapshot([entity('c1', 0), food('f1', 50)], 1, 30);
+    nowSpy.mockReturnValueOnce(33);
+    engine.pushSnapshot([entity('c1', 10)], 2, 30); // pas de 4e argument
+
+    const last = engine.snapshotQueue[engine.snapshotQueue.length - 1]!;
+    expect(last.entities.some((e) => e.i === 'f1')).toBe(false);
+  });
+});

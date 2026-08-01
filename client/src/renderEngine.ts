@@ -139,9 +139,37 @@ export class RenderEngine {
     this.jitterEmaMs = 0;
     this.lastArrivalMs = undefined;
     this.smoothMap.clear();
+    this.knownFood.clear();
   }
 
-  public pushSnapshot(entities: EntitySnapshot[], tick: number, serverTickRateHz?: number): void {
+  /** Nourriture accumulée persistante — le serveur ne réenvoie une pastille ('f') QUE si elle est
+   * nouvellement entrée dans l'intérêt du joueur depuis son dernier envoi (delta réseau, voir
+   * server/src/engine/worker/roomInstance.ts, cahier_des_charges_perf_reseau_grande_carte.md
+   * §3.5) ; une pastille omise reste donc valable (elle ne bouge jamais après son spawn) tant
+   * qu'elle n'a pas été explicitement retirée par une resynchronisation complète. Sans cette
+   * couche, `pushSnapshot` ferait disparaître toute pastille omise dès le tick suivant : le reste
+   * du pipeline (`getInterpolatedEntities`/`interpolateEntities`) travaille sur EXACTEMENT les
+   * `entities` du dernier `SnapshotItem` reçu, jamais un historique cumulé — voir leur commentaire
+   * respectif, inchangés par ce correctif. */
+  private knownFood = new Map<string, EntitySnapshot>();
+
+  /** `entitiesFull` — voir `WorldStateMessage.entitiesFull` (shared/src/protocol.ts) : `true`
+   * (défaut, comportement historique) si `entities` est la liste COMPLÈTE et autoritaire de la
+   * nourriture actuellement pertinente (spectateur/vue admin, resynchronisation périodique, repli
+   * salon entier) — `knownFood` est alors REMPLACÉ, purgeant toute pastille mangée/quittée
+   * l'intérêt ailleurs pendant la fenêtre de delta. `false` : `entities` ne contient QUE de la
+   * nourriture nouvellement visible depuis le dernier envoi à CE joueur — fusionnée (upsert) dans
+   * `knownFood` sans jamais rien retirer. Tradeoff assumé : une pastille mangée par un AUTRE
+   * joueur pendant que je suis hors de portée de mise à jour peut rester affichée jusqu'à ma
+   * prochaine resynchro (≤5s, voir interestFilter.ts `RESYNC_INTERVAL_SEC`) — sans conséquence de
+   * gameplay, la collision reste autoritaire serveur, et elle disparaît de toute façon
+   * instantanément si je m'en approche (voir render.ts, disparition instantanée à la collision). */
+  public pushSnapshot(
+    entities: EntitySnapshot[],
+    tick: number,
+    serverTickRateHz?: number,
+    entitiesFull: boolean = true,
+  ): void {
     if (serverTickRateHz && serverTickRateHz > 0) {
       this.serverTickRateHz = serverTickRateHz;
     }
@@ -169,7 +197,20 @@ export class RenderEngine {
 
     const serverTimeMs = this.epochClientMs! + (tick - this.epochTick) * tickIntervalMs;
 
-    this.snapshotQueue.push({ tick, serverTimeMs, entities });
+    const pieces: EntitySnapshot[] = [];
+    const receivedFood: EntitySnapshot[] = [];
+    for (const entity of entities) {
+      if (entity.k === 'f') receivedFood.push(entity);
+      else pieces.push(entity);
+    }
+    if (entitiesFull) {
+      this.knownFood.clear();
+    }
+    for (const food of receivedFood) this.knownFood.set(food.i, food);
+    const mergedEntities =
+      this.knownFood.size === 0 ? pieces : pieces.concat(Array.from(this.knownFood.values()));
+
+    this.snapshotQueue.push({ tick, serverTimeMs, entities: mergedEntities });
     if (this.snapshotQueue.length > 20) {
       this.snapshotQueue.shift();
     }
@@ -241,16 +282,17 @@ export class RenderEngine {
     // `interpolateEntities` (juste en dessous) et le lissage exponentiel (`smoothed` plus bas)
     // allouent chacun un objet PAR ENTITÉ à CHAQUE FRAME DE RENDU (jusqu'à 240 fois/seconde), et
     // le second entretient en plus une `Map` persistante par entité (`smoothMap`) — un coût
-    // proportionnel au nombre d'entités TRANSMISES par le serveur, qui envoie désormais le salon
-    // ENTIER à chaque joueur (chargement dynamique par intérêt retiré, demande utilisateur
-    // antérieure, voir snapshotBuilder.ts) : potentiellement plusieurs milliers de pastilles de
-    // nourriture + bots hors-écran sur une carte chargée, alors que seule une fraction est
-    // réellement visible à l'écran. Culler d'abord réduit ce travail à ce que l'écran affiche
-    // réellement, sans changer le résultat visuel : une entité cullée ici n'aurait de toute façon
+    // proportionnel au nombre d'entités de `rawFromEntities`/`rawToEntities`. Même filtrées par
+    // intérêt côté serveur (voir server/src/engine/worker/roomInstance.ts), ces listes restent
+    // volontairement plus larges que ce que l'écran affiche réellement (marge de sécurité du
+    // rayon d'intérêt, `INTEREST_SAFETY_MARGIN_WORLD_PX`, shared/src/camera.ts — couvre la
+    // latence/le Dash/un grand écran) : culler d'abord réduit ce travail à ce que l'écran affiche
+    // réellement, sans changer le résultat visuel — une entité cullée ici n'aurait de toute façon
     // jamais été dessinée par `renderFrame` (qui culle lui-même une seconde fois, bon marché,
     // juste avant de dessiner). Un spectateur (fond d'accueil dézoomé, voir
-    // SpectatorBackground.tsx) voit déjà tout le salon par construction — culler n'y changerait
-    // rien, seulement gaspillerait le calcul du viewport.
+    // SpectatorBackground.tsx) voit tout le salon SANS filtrage par intérêt (voir §1.3
+    // cahier_des_charges_perf_reseau_grande_carte.md) — culler n'y changerait rien, seulement
+    // gaspillerait le calcul du viewport.
     const fromEntities = isSpectator
       ? subsampleForSpectator(rawFromEntities)
       : cullEntitiesForViewport(rawFromEntities, camera, viewportWidth, viewportHeight, selfPlayerId);

@@ -392,15 +392,29 @@ façon toutes les connexions WebSocket actives (process qui redémarre), donc ch
 reconnecte naturellement et détecte le changement à ce moment-là.
 
 `EntitySnapshot` utilise des clés à une lettre (`i,k,x,y,r,m,p`) — mesuré : la diffusion d'état
-complet à 50 joueurs avec des clés explicites coûtait ~387 Mbit/s d'upload serveur. Pas de delta
-compression ni d'interest management serveur par défaut au-delà du culling viewport côté client
-(le joueur en partie reçoit toujours le salon entier). Exception client-only : le fond spectateur
-de l'accueil (`SpectatorBackground.tsx`, caméra dézoomée sur toute la carte — rien à culler
-géométriquement) sous-échantillonne la nourriture à ~10 % dans `renderEngine.ts`
-(`subsampleForSpectator`), jamais les créatures (joueurs/bots, toujours affichées intégralement) —
-un simple décor d'arrière-plan n'a pas besoin de chaque pastille individuelle. Le sous-échantillon
-est indexé par le hash **FNV-1a** de l'id d'entité (PAS un hash polynomial simple `hash*31+char` :
-mesuré, ce dernier reste quasi-monotone sur les id entiers séquentiels courts que génère le serveur
+complet à 50 joueurs avec des clés explicites coûtait ~387 Mbit/s d'upload serveur.
+
+**Filtrage par intérêt + delta nourriture** (v5.7, `cahier_des_charges_perf_reseau_grande_carte.md`) :
+un joueur en partie ne reçoit plus le salon entier — `roomInstance.ts` calcule PAR JOUEUR un rayon
+d'intérêt dérivé de sa masse (`interestRadiusForMass`, `shared/src/camera.ts`, IDENTIQUE à la
+formule de zoom réelle du client, `computeCamera`/`render.ts`, pour ne jamais désynchroniser "ce
+qui est visible" et "ce qui est envoyé"). Les morceaux (joueurs/bots) dans ce rayon sont envoyés en
+entier à chaque tick ; la nourriture (immobile après spawn) est envoyée en **delta** — seuls les ids
+nouvellement entrés dans l'intérêt sont retransmis, avec une resynchronisation complète périodique
+(toutes les 5s, étalée par joueur) en filet de sécurité (`WorldStateMessage.entitiesFull`,
+`interestFilter.ts`). Les propres morceaux du joueur restent toujours inclus, même hors rayon. Le
+spectateur/la vue admin (POV salon, modération) continuent de recevoir le salon entier, jamais
+filtrés. La grille de collision (`World.spatialHash`, cellSize=50) n'est PAS réutilisée telle
+quelle pour ces requêtes à grand rayon (coût prohibitif) : un index grossier dédié à la nourriture
+(cellSize=1000) est reconstruit une fois par tick dans `interestFilter.ts`.
+
+Exception client-only, orthogonale à ce qui précède : le fond spectateur de l'accueil
+(`SpectatorBackground.tsx`, caméra dézoomée sur toute la carte — rien à culler géométriquement)
+sous-échantillonne la nourriture à ~10 % dans `renderEngine.ts` (`subsampleForSpectator`), jamais
+les créatures (joueurs/bots, toujours affichées intégralement) — un simple décor d'arrière-plan n'a
+pas besoin de chaque pastille individuelle. Le sous-échantillon est indexé par le hash **FNV-1a** de
+l'id d'entité (PAS un hash polynomial simple `hash*31+char` : mesuré, ce dernier reste
+quasi-monotone sur les id entiers séquentiels courts que génère le serveur
 (`String(nextEntityId++)`, voir `World.spawnEntity`), donc pas du tout dispersé par rapport au
 seuil de coupure — soit ~0 %, soit ~100 % de rétention selon la plage d'id, jamais réellement 10 %).
 
@@ -408,11 +422,14 @@ seuil de coupure — soit ~0 %, soit ~100 % de rétention selon la plage d'id, j
 
 ```
 Room.tick() (dt fixe)
-  → snapshotBuilder.ts construit EntitySnapshot[]
+  → roomInstance.ts : filtrage par intérêt + delta nourriture PAR JOUEUR (interestFilter.ts) ;
+    salon entier inchangé pour spectateur/vue admin
+  → snapshotBuilder.ts construit EntitySnapshot[] (par destinataire)
   → broadcast.ts diffuse `state` à chaque viewer du salon (30/s par défaut)
   → net.ts (client) : GameConnection, reconnexion auto sur coupure transitoire (backoff court)
   → renderEngine.ts : file de snapshots ancrée sur le NUMÉRO DE TICK (pas l'heure d'arrivée
-    réseau) — une rafale après un micro-décrochage réseau ne casse pas le rythme de lecture
+    réseau) — une rafale après un micro-décrochage réseau ne casse pas le rythme de lecture ;
+    accumule aussi la nourriture reçue en delta (`entitiesFull`, absence ≠ disparition)
   → interpolation entre 2 snapshots + lissage exponentiel compensé en dt → render.ts (Canvas2D)
 ```
 

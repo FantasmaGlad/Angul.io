@@ -1,5 +1,14 @@
-import { clamp, DEFAULT_SKIN, SKIN_IMAGE_MAP, skinForNickname, type EntitySnapshot } from '@angulio/shared';
+import {
+  BASE_SCALE,
+  computeScaleForMass,
+  DEFAULT_SKIN,
+  SKIN_IMAGE_MAP,
+  skinForNickname,
+  type EntitySnapshot,
+} from '@angulio/shared';
 import { ownAggregate } from './stats.js';
+
+export { BASE_SCALE };
 
 const skinImageCache = new Map<string, HTMLImageElement>();
 
@@ -71,24 +80,13 @@ export function colorForSkinFallback(skinId: string): string {
   return map[skinId] ?? '#3a6b35';
 }
 
-/** Échelle à la masse de référence : délibérément > 1 (zoomé par rapport à la taille "réelle"
- * du morceau) plutôt qu'un cadrage 1:1 — meilleur contrôle en début de partie (viser devient
- * plus précis avec un morceau qui occupe plus d'espace à l'écran), et laisse la place à la
- * sensation classique de dézoom progressif à mesure que la masse grossit (demande utilisateur).
- * Divisée par 1.5 (÷1.5 = dézoom de base +50%, demande utilisateur) par rapport à la valeur
- * d'origine (1.44) — combinée à la taille de départ des morceaux réduite de moitié
- * (shared/geometry.ts `massToRadius`), la carte perçue est plus vaste/spacieuse dès le début
- * d'une partie. Puis divisée par 2 supplémentaires (÷2 = dézoom de base +100% supplémentaire,
- * demande utilisateur — 1.5 × 2 = 4.5 au dénominateur ci-dessous) : la carte reste encore trop
- * "proche" au goût du joueur à ce stade, malgré le premier ajustement. */
-export const BASE_SCALE = 1.44 / 4.5;
-const MIN_SCALE = 0.1;
-/** Légèrement au-dessus de `BASE_SCALE` : laisse un peu de marge de zoom supplémentaire pour
- * les morceaux plus petits que la référence (ex. juste après un split). */
-const MAX_SCALE = 1.76 / 4.5;
-/** Le client n'a pas besoin de connaître M_START du mod actif : cette référence ne sert
- * qu'à calibrer le zoom, pas la simulation elle-même. */
-const REFERENCE_MASS = 50;
+/** BASE_SCALE/MIN_SCALE/MAX_SCALE/REFERENCE_MASS (formule complète de zoom en fonction de la
+ * masse) vivent désormais dans `@angulio/shared` (`camera.ts`) — le serveur en a besoin pour
+ * dériver le rayon d'intérêt réseau à partir de la même masse (filtrage par intérêt, voir
+ * server/src/engine/worker/interestFilter.ts) : une seule formule des deux côtés élimine tout
+ * risque de divergence entre "ce que le client affiche" et "ce que le serveur envoie". `BASE_SCALE`
+ * reste ré-exporté d'ici (voir l'import ci-dessus) pour ne rien casser des appelants existants de
+ * ce module. */
 
 /** Pas de couleur de fond opaque : le canvas est transparent (`clearRect`, voir `renderFrame`)
  * pour laisser voir le fond "labo premium" de la page (`index.html`, partagé avec le lobby,
@@ -144,7 +142,7 @@ export function computeCamera(
   const own = ownAggregate(entities, selfPlayerId);
   if (!own) return { x: fallback.x, y: fallback.y, scale: BASE_SCALE };
 
-  const scale = clamp(BASE_SCALE / Math.sqrt(own.mass / REFERENCE_MASS), MIN_SCALE, MAX_SCALE);
+  const scale = computeScaleForMass(own.mass);
   return { x: own.x, y: own.y, scale };
 }
 

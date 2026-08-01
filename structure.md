@@ -142,6 +142,9 @@ Angul.io/
 │       ├── index.ts                   Point d'entrée (ré-exporte tout)
 │       ├── vector.ts / vector.test.ts       Vecteurs 2D (add, sub, scale, distance, dot…)
 │       ├── geometry.ts / geometry.test.ts   Formules masse↔aire↔rayon, aire de chevauchement de cercles
+│       ├── camera.ts / camera.test.ts       Formule de zoom (masse→échelle) et rayon d'intérêt réseau — IDENTIQUE
+│       │                               client (computeCamera, render.ts) et serveur (interestFilter.ts),
+│       │                               voir cahier_des_charges_perf_reseau_grande_carte.md §2-3
 │       ├── movement.ts                Modèle vitesse/accélération en fonction de la masse — IDENTIQUE
 │       │                               client (prédiction) et serveur (autorité), voir README §Réseau
 │       ├── protocol.ts                Types des messages WebSocket client↔serveur (voir README §Réseau)
@@ -201,7 +204,11 @@ Angul.io/
 │       │   │   │                                    (taille de carte perso) et applyRoomBotCountOverride
 │       │   │   │                                    (spec.botCount, réutilise la pyramide Challenger)
 │       │   │   ├── roomWorker.ts                  Point d'entrée du worker_thread (boucle de messages)
-│       │   │   └── snapshotBuilder.ts / .test.ts  Construit l'EntitySnapshot[] envoyé au réseau
+│       │   │   ├── snapshotBuilder.ts / .test.ts  Construit l'EntitySnapshot[] envoyé au réseau
+│       │   │   └── interestFilter.ts / .test.ts   Filtrage par intérêt réseau (v5.7) : index grossier
+│       │   │                                        nourriture (cellSize=1000, distinct de la grille de
+│       │   │                                        collision), resynchronisation périodique étalée par
+│       │   │                                        joueur — voir cahier_des_charges_perf_reseau_grande_carte.md
 │       │   └── bots/                        Système de robots (IA, régulation population)
 │       │       ├── botTypes.ts                    Profils ('fuis', 'neutre'...) + pyramide Challenger
 │       │       │                                   (ChallengerConfig/DEFAULT_CHALLENGER_CONFIG,

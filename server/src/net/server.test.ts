@@ -426,7 +426,7 @@ describe('startGameServer', () => {
     socket.close();
   });
 
-  it('diffuse à un client TOUTES les entités du salon, y compris très loin de sa propre caméra (chargement dynamique par intérêt retiré, demande utilisateur)', async () => {
+  it('filtre par intérêt : une particule proche est diffusée, une très loin ne l’est pas (cahier_des_charges_perf_reseau_grande_carte.md §3)', async () => {
     const mod: GameMod = {
       id: 'test',
       onPlayerJoin: (world, playerId) => {
@@ -444,8 +444,8 @@ describe('startGameServer', () => {
     socket.send(JSON.stringify({ type: 'join', nickname: 'Test' }));
     await waitUntil(() => messages.some((m) => m.type === 'welcome'));
 
-    // Une particule proche et une très loin (l'ancien rayon d'intérêt, ~2500px par défaut,
-    // aurait exclu cette dernière) — les deux doivent désormais être diffusées.
+    // Une particule proche (dans le rayon d'intérêt à masse 50) et une très loin (bien au-delà,
+    // même avec la marge de sécurité — voir shared/src/camera.ts `interestRadiusForMass`).
     room.world.spawnParticle({ x: 100, y: 0 }, 1);
     room.world.spawnParticle({ x: 50_000, y: 50_000 }, 1);
 
@@ -456,8 +456,8 @@ describe('startGameServer', () => {
     };
 
     expect(state.entities.some((e) => e.x === 100 && e.y === 0)).toBe(true);
-    expect(state.entities.some((e) => e.x === 50_000)).toBe(true);
-    expect(state.entities.some((e) => e.x === 0 && e.y === 0)).toBe(true); // son propre morceau
+    expect(state.entities.some((e) => e.x === 50_000)).toBe(false);
+    expect(state.entities.some((e) => e.x === 0 && e.y === 0)).toBe(true); // son propre morceau, toujours inclus
 
     socket.close();
   });

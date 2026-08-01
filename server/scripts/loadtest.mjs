@@ -84,19 +84,18 @@ async function main() {
 
       socket.on('open', () => {
         socket.send(JSON.stringify({ type: 'join', nickname: `Bot${i}` }));
-        const phase = Math.random() * Math.PI * 2;
+        // Cible fixe aléatoire par bot (coordonnées MONDE, pas une direction — voir
+        // shared/src/protocol.ts `ClientInputMessage.target`, le format `dir` n'est plus valide
+        // depuis longtemps) : chaque bot marche vers un point différent, dispersant le groupe sur
+        // la carte au fil du test plutôt que de rester agglutiné au spawn — nécessaire pour
+        // observer un effet réaliste du filtrage par intérêt réseau
+        // (cahier_des_charges_perf_reseau_grande_carte.md §3).
+        const target = { x: Math.random() * 20000, y: Math.random() * 20000 };
         inputTimer = setInterval(() => {
-          const angle = phase + performance.now() / 2000;
-          socket.send(
-            JSON.stringify({
-              type: 'input',
-              dir: { x: Math.cos(angle), y: Math.sin(angle) },
-              split: false,
-            }),
-          );
+          socket.send(JSON.stringify({ type: 'input', target, intensity: 1, split: false }));
         }, 50);
         splitTimer = setInterval(() => {
-          socket.send(JSON.stringify({ type: 'input', dir: { x: 1, y: 0 }, split: true }));
+          socket.send(JSON.stringify({ type: 'input', target, intensity: 1, split: true }));
         }, 4000);
       });
 

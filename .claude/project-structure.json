@@ -208,6 +208,18 @@
       "description": "Formules masse<->aire<->rayon, aire de chevauchement de cercles."
     },
     {
+      "path": "shared/src/camera.ts",
+      "workspace": "shared",
+      "tags": [
+        "reseau",
+        "camera",
+        "zoom",
+        "interet",
+        "v5.7"
+      ],
+      "description": "Formule de zoom (masse->echelle) et rayon d'interet reseau (interestRadiusForMass) — IDENTIQUE client (computeCamera, render.ts) et serveur (interestFilter.ts), pour ne jamais desynchroniser ce qui est visible et ce qui est envoye. Voir cahier_des_charges_perf_reseau_grande_carte.md."
+    },
+    {
       "path": "shared/src/movement.ts",
       "workspace": "shared",
       "tags": [
@@ -538,6 +550,18 @@
         "tick-rate"
       ],
       "description": "Construit l'EntitySnapshot[] envoye au reseau, SPECTATOR_TICK_DIVISOR (cadence reduite pour spectateurs/admin)."
+    },
+    {
+      "path": "server/src/engine/worker/interestFilter.ts",
+      "workspace": "server",
+      "tags": [
+        "reseau",
+        "interet",
+        "delta",
+        "nourriture",
+        "v5.7"
+      ],
+      "description": "Filtrage par interet reseau (v5.7, cahier_des_charges_perf_reseau_grande_carte.md §3) : index grossier dedie a la nourriture (cellSize=1000, distinct de World.spatialHash cellSize=50 — trop couteux a interroger a grand rayon), resynchronisation periodique complete etalee par joueur (RESYNC_INTERVAL_SEC=5, resyncOffsetForPlayer). Consomme par roomInstance.ts, qui calcule desormais des entities PAR JOUEUR au lieu d'un salon entier partage."
     },
     {
       "path": "server/src/engine/bots/botTypes.ts",
@@ -1466,6 +1490,19 @@
       "client/src/renderEngine.ts",
       "client/src/prediction.ts",
       "server/src/engine/worker/snapshotBuilder.ts"
+    ],
+    "reseau/filtrage-interet": [
+      "cahier_des_charges_perf_reseau_grande_carte.md",
+      "shared/src/camera.ts",
+      "shared/src/protocol.ts",
+      "server/src/engine/worker/interestFilter.ts",
+      "server/src/engine/worker/roomInstance.ts",
+      "server/src/engine/worker/snapshotBuilder.ts",
+      "server/src/net/ws/broadcast.ts",
+      "client/src/renderEngine.ts",
+      "client/src/render.ts",
+      "server/configs/vanilla.json",
+      "server/configs/hardcore.json"
     ],
     "collision/tunneling": [
       "server/src/engine/world.ts",

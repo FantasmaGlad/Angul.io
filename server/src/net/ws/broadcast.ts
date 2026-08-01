@@ -7,7 +7,6 @@ import {
   isBotId,
   type DeathCustomCard,
   type ServerMessage,
-  type WorldStateMessage,
 } from '@angulio/shared';
 import type { WebSocket } from 'ws';
 import type { AccountsService } from '../../accounts/service.js';
@@ -113,18 +112,16 @@ export function wireRoom(
     }
 
     let cachedSpectatorJson: string | undefined;
-    // Partie JSON PARTAGÉE (`type`/`tick`/`entities`/`leaderboard`) du message `state` de CE
-    // tick, identique pour tous les joueurs (pas les spectateurs, déjà couverts par
-    // `cachedSpectatorJson` ci-dessus) — seul `self` diffère d'un joueur à l'autre (voir
-    // `buildStateMessage`, snapshotBuilder.ts). Calculée à la demande à partir du PREMIER message
-    // joueur rencontré ce tick (voir `sharedStatePrefix`), puis réutilisée pour tous les
-    // suivants : sans ce partage, `JSON.stringify(message)` re-sérialisait `entities` EN ENTIER
-    // (potentiellement plusieurs milliers d'éléments, le salon complet étant envoyé à chaque
-    // joueur — chargement dynamique par intérêt retiré, demande utilisateur antérieure) une fois
-    // PAR JOUEUR CONNECTÉ à chaque tick, alors que son contenu est rigoureusement identique pour
-    // tous — un coût CPU proportionnel à (nb entités × nb joueurs) plutôt qu'à (nb entités + nb
-    // joueurs).
-    let sharedStatePrefix: string | undefined;
+    // Un spectateur/vue admin voit toujours le salon ENTIER, un seul message JSON partagé par
+    // tick suffit pour tous (voir RoomInstance.handleTick, `sharedSpectatorMessage`). Un joueur
+    // réel, en revanche, reçoit désormais des `entities` PROPRES à lui (filtrage par intérêt +
+    // delta nourriture, cahier_des_charges_perf_reseau_grande_carte.md §3) — le partage de préfixe
+    // JSON qui existait ici avant ce correctif supposait `entities`/`leaderboard` identiques pour
+    // tous les joueurs d'un même tick ; réutiliser le JSON calculé pour un joueur A envoyait
+    // littéralement les entités de A à un joueur B, un bug de fond, pas seulement une perte
+    // d'optimisation. Chaque joueur est donc sérialisé individuellement — attendu : son volume
+    // d'entités a par ailleurs chuté d'un ordre de grandeur (borné par son propre rayon d'intérêt
+    // plutôt que par le salon entier), ce qui compense largement la perte du partage.
     for (const { playerId, message } of payloads) {
       const socket = runtime.sockets.get(playerId);
       if (!socket) continue;
@@ -135,14 +132,7 @@ export function wireRoom(
           cachedSpectatorJson = JSON.stringify(message);
         }
         sendRaw(socket, cachedSpectatorJson);
-      } else if (message.type === 'state') {
-        sharedStatePrefix ??= stateMessageSharedJsonPrefix(message);
-        sendRaw(socket, sharedStatePrefix + stateMessageSelfJsonSuffix(message.self));
       } else {
-        // Jamais atteint en pratique dans la boucle de tick (voir RoomInstance.handleTick, qui
-        // ne construit que des `state`) — filet de sécurité si un jour un autre type de message y
-        // transitait, pour ne jamais mal sérialiser un message dont la forme n'a pas été prévue
-        // ci-dessus.
         send(socket, message);
       }
     }
@@ -346,23 +336,4 @@ export function send(socket: WebSocket, message: ServerMessage): void {
   if (socket.readyState === socket.OPEN && socket.bufferedAmount <= MAX_BUFFERED_AMOUNT) {
     socket.send(JSON.stringify(message));
   }
-}
-
-/** JSON du message `state` SANS `self` (`type`/`tick`/`entities`/`leaderboard`), tronqué juste
- * avant son accolade fermante — pas un JSON valide en soi, prévu pour être complété par
- * `stateMessageSelfJsonSuffix` ci-dessous. Voir le commentaire de `sharedStatePrefix` (appelant,
- * `wireRoom`) pour pourquoi ce découpage existe : `entities`/`leaderboard` sont identiques pour
- * tous les joueurs d'un même tick, seul `self` diffère. */
-function stateMessageSharedJsonPrefix(message: WorldStateMessage): string {
-  const { self: _self, ...shared } = message;
-  const json = JSON.stringify(shared);
-  return json.slice(0, -1); // retire le '}' final pour pouvoir y ajouter "self" ensuite
-}
-
-/** Complète le JSON tronqué de `stateMessageSharedJsonPrefix` — `,"self":{...}}` si `self` est
- * défini (voir `WorldStateMessage.self`, absent si le joueur n'a plus aucun morceau), sinon
- * simplement `}`. Le résultat concaténé reproduit EXACTEMENT `JSON.stringify(message)` (même
- * ordre de clés que `WorldStateMessage` : `type`, `tick`, `entities`, `leaderboard`, `self`). */
-function stateMessageSelfJsonSuffix(self: WorldStateMessage['self']): string {
-  return self === undefined ? '}' : `,"self":${JSON.stringify(self)}}`;
 }

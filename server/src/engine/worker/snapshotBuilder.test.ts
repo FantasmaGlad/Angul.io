@@ -189,6 +189,7 @@ describe('buildStateMessage', () => {
       tick: 1,
       entities,
       topScores,
+      entitiesFull: true,
     });
 
     expect(totalMass).toBe(50);
@@ -213,6 +214,7 @@ describe('buildStateMessage', () => {
       tick: 1,
       entities,
       topScores,
+      entitiesFull: true,
     });
 
     if (message.type !== 'state') throw new Error('unreachable');

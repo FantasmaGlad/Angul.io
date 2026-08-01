@@ -529,7 +529,12 @@ export default function GameView({
             authoritativeVelocities,
           );
         }
-        renderEngine.pushSnapshot(message.entities, message.tick, serverTickRateHz);
+        renderEngine.pushSnapshot(
+          message.entities,
+          message.tick,
+          serverTickRateHz,
+          message.entitiesFull,
+        );
         serverTpsCurrent = tickRateTracker.record(latestSnapshotAt);
         if (message.leaderboard) {
           setLeaderboard(

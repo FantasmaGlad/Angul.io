@@ -133,17 +133,22 @@ export function centroidOf(pieces: Entity[]): { x: number; y: number } | undefin
   return { x: x / totalMass, y: y / totalMass };
 }
 
-/** Snapshot des entités visibles pour une CATÉGORIE de destinataire (joueurs vs spectateurs) —
- * calculé une seule fois par tick et PARTAGÉ par tous les viewers de cette catégorie (voir
- * roomInstance.ts `handleTick`), plutôt que refiltré/remappé à chaque destinataire individuel.
- * Chargement dynamique par intérêt retiré (demande utilisateur) : un joueur reçoit désormais le
- * salon ENTIER, comme un spectateur — l'ancien filtrage par rayon autour de la caméra
- * (`interestHash`/rayon effectif) supposait un volume d'entités que ce jeu n'atteint jamais en
- * pratique (quelques dizaines de joueurs/bots, quelques milliers de pastilles), un coût de
- * filtrage (+ une grille spatiale d'intérêt reconstruite à chaque tick) pour un bénéfice de bande
- * passante non justifié ici. Seul le fond spectateur de l'accueil garde un allègement dédié
- * (`isVisibleToSpectator`, échantillonnage de la nourriture) : lui est consulté par N visiteurs
- * simultanés du lobby, pas juste les joueurs d'un salon. */
+/** Snapshot du salon ENTIER (aucun filtrage par intérêt) — utilisé pour deux cas seulement,
+ * distingués par `isSpectator` :
+ * - un spectateur/la vue admin (`isSpectator=true`) : voit toujours tout, jamais de filtrage par
+ *   intérêt (modération, fond d'accueil — voir §1.3 cahier_des_charges_perf_reseau_grande_carte.md),
+ *   avec un allègement dédié pour le fond de l'accueil (`isVisibleToSpectator`, échantillonnage de
+ *   la nourriture, consulté par N visiteurs simultanés du lobby).
+ * - un JOUEUR sans aucun morceau (`isSpectator=false`, mort/pas encore respawn) : repli
+ *   transitoire d'un seul tick le temps qu'il ait à nouveau une position dont dériver un rayon
+ *   d'intérêt (voir roomInstance.ts `handleTick`, `wholeRoomFallbackEntities`).
+ *
+ * Un joueur avec au moins un morceau, lui, ne passe PLUS par cette fonction : ses `entities` sont
+ * désormais calculées PAR JOUEUR dans `roomInstance.ts` (filtrage par intérêt + delta nourriture,
+ * cahier des charges §3) — l'ancien filtrage par rayon avait été retiré (demande utilisateur) puis
+ * réintroduit avec un design différent (réutilise `World.spatialHash`/un index grossier dédié
+ * plutôt qu'une grille d'intérêt séparée et fine, voir interestFilter.ts) une fois l'agrandissement
+ * des cartes ayant rendu le volume d'entités du salon entier trop coûteux à diffuser tel quel. */
 export function buildVisibleEntitySnapshots(
   allEntities: Entity[],
   isSpectator: boolean,
@@ -162,6 +167,10 @@ export interface BuildStateMessageParams {
    * destinataire), jamais à sélectionner un sous-ensemble d'entités. */
   entities: EntitySnapshot[];
   topScores: TopScoreEntry[];
+  /** Voir `WorldStateMessage.entitiesFull` (shared/src/protocol.ts) — posé tel quel sur le
+   * message construit, jamais recalculé ici : l'appelant (`RoomInstance.handleTick`) est seul à
+   * savoir si `entities` est le résultat d'un filtrage par intérêt complet/delta. */
+  entitiesFull: boolean;
 }
 
 /** Construit le message `state` d'un seul destinataire (joueur ou spectateur) — logique
@@ -172,7 +181,7 @@ export interface BuildStateMessageParams {
 export function buildStateMessage(
   params: BuildStateMessageParams,
 ): { message: ServerMessage; totalMass: number } {
-  const { room, playerId, tick, entities, topScores } = params;
+  const { room, playerId, tick, entities, topScores, entitiesFull } = params;
   const world = room.world;
 
   const ownPieces = world.getPiecesByOwner(playerId);
@@ -202,10 +211,11 @@ export function buildStateMessage(
   }
   const self = Object.keys(selfFields).length > 0 ? selfFields : undefined;
 
-  // Classement identique pour tout le monde (voir net/ws/broadcast.ts `sharedStatePrefix`, qui
-  // sérialise `leaderboard` une seule fois par tick et le réutilise pour tous les joueurs) :
-  // `playerId` par entrée plutôt qu'un `isSelf` calculé ici pour LE joueur `playerId` du paramètre
-  // — sinon ce booléen se retrouve figé sur le premier joueur traité ce tick pour tous les autres.
+  // Classement identique pour tout le monde (voir RoomInstance.handleTick, `topScores` calculé
+  // UNE SEULE FOIS par tick et réutilisé pour tous les joueurs — inchangé par le filtrage par
+  // intérêt des `entities`, qui lui diffère désormais par joueur) : `playerId` par entrée plutôt
+  // qu'un `isSelf` calculé ici pour LE joueur `playerId` du paramètre — sinon ce booléen se
+  // retrouve figé sur le premier joueur traité ce tick pour tous les autres.
   const leaderboard: LeaderboardEntry[] = topScores.map((entry, idx) => ({
     rank: idx + 1,
     nickname: entry.nickname,
@@ -214,7 +224,7 @@ export function buildStateMessage(
   }));
 
   return {
-    message: { type: 'state', tick, entities, leaderboard, self },
+    message: { type: 'state', tick, entities, leaderboard, self, entitiesFull },
     totalMass,
   };
 }

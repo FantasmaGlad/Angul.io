@@ -4,6 +4,7 @@ export * from './vector.js';
 export * from './geometry.js';
 export * from './movement.js';
 export * from './protocol.js';
+export * from './camera.js';
 export * from './botIdentities.js';
 export * from './botKillMessages.js';
 export * from './avatarPalette.js';
