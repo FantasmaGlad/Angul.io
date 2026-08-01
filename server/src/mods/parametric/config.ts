@@ -90,9 +90,10 @@ export interface ParametricModConfig {
    * d'origine) : recrache une particule de masse fixe, mangeable par n'importe qui (y compris un
    * adversaire), dans la direction visée. */
   eject: {
-    /** Masse (fixe, pas un %) envoyée par éjection — 5 en Vanilla, 20 en Hardcore (valeurs
-     * fournies par l'utilisateur). */
+    /** Masse (fixe, pas un %) envoyée par éjection. */
     amount: number;
+    /** Masse de la particule créée (valeur éjectée W). Si absente, vaut `amount`. */
+    value?: number;
   };
 
   merge: {
@@ -221,7 +222,6 @@ export interface BotConfig {
     fuis: number;
     neutre: number;
     agressif: number;
-    fou: number;
   };
   /** Bots "Challenger" (pyramide de robots forts identifiés par rang, voir
    * engine/bots/botManager.ts/botTypes.ts) — population et paliers de masse distincts des bots

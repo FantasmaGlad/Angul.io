@@ -61,22 +61,6 @@ export interface BotBehaviorConfig {
     splitMassMultiplier: number;
   };
 
-  fou: {
-    /** Probabilité (0-1) de pause complète (intensité nulle) à chaque évaluation. */
-    pauseChance: number;
-    /** Intensité minimale hors pause (l'intensité effective est `intensityMin + random()*intensityRange`). */
-    intensityMin: number;
-    intensityRange: number;
-    /** Déviation angulaire maximale du vagabondage (voir `getWanderDir`). */
-    wanderMaxDeviation: number;
-    /** Cooldown (ms) entre deux splits aléatoires. */
-    splitCooldownMs: number;
-    /** Masse minimale pour tenter un split aléatoire. */
-    splitMinMass: number;
-    /** Probabilité (0-1) de split aléatoire à chaque évaluation, une fois `splitMinMass` atteinte. */
-    splitChance: number;
-  };
-
   wallAvoidance: {
     /** Distance (px) au bord à partir de laquelle le bot commence à s'en écarter (voir le calcul
      * de `wallFactor` dans botEvaluator.ts — la priorité de cette force sur le cap du profil
@@ -117,15 +101,6 @@ export const DEFAULT_BOT_BEHAVIOR_CONFIG: BotBehaviorConfig = {
     wanderIntensity: 0.9,
     splitCooldownMs: 15000,
     splitMassMultiplier: 1.35,
-  },
-  fou: {
-    pauseChance: 0.1,
-    intensityMin: 0.2,
-    intensityRange: 0.8,
-    wanderMaxDeviation: 0.8,
-    splitCooldownMs: 20000,
-    splitMinMass: 300,
-    splitChance: 0.002,
   },
   wallAvoidance: {
     marginPx: 300,

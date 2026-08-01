@@ -361,35 +361,7 @@ export default function GameView({
     const input = attachInput(
       canvas,
       () => {
-        // Split entièrement désactivé pour ce mode (`splitEnabled: false`, voir
-        // server/configs/hardcore.json et parametric/physics.ts `splitEnabled()`) : le serveur
-        // n'effectuera jamais ce split, quelle que soit la masse — jouer le pincement caméra ici
-        // n'aurait aucune fonction à confirmer/annuler (contrairement au Dash, purement
-        // décoratif dans ce cas), mais reste une animation qui ne correspond à rien de réel. Le
-        // seuil de masse minimum (`minSplitMass`) n'est en revanche pas exposé au client : un
-        // split refusé pour ce motif (mode où il est activé) rejoue encore ce pincement — un
-        // faux-positif bien plus rare et sans conséquence de rendu (contrairement au Dash), non
-        // traité ici.
-        if (currentModId === 'hardcore') return;
-        if (movementConfig && !prediction.canSplit(movementConfig)) return;
-        if (!canvas) return;
-        const rect = canvas.getBoundingClientRect();
-        const centerX = rect.left + rect.width / 2;
-        const centerY = rect.top + rect.height / 2;
-        const dx = lastMouseX - centerX;
-        const dy = lastMouseY - centerY;
-        const dist = Math.hypot(dx, dy);
-        const dirX = dist > 0 ? dx / dist : 0;
-        const dirY = dist > 0 ? dy / dist : 0;
-
-        canvas.style.transformOrigin = `${50 + dirX * 18}% ${50 + dirY * 18}%`;
-        canvas.style.transition = 'none';
-        canvas.style.transform = 'scale(0.96)';
-        requestAnimationFrame(() => {
-          if (!canvas) return;
-          canvas.style.transition = 'transform 0.22s cubic-bezier(0.1, 0.9, 0.2, 1)';
-          canvas.style.transform = 'scale(1)';
-        });
+        // Le split n'a pas l'animation qui est réservée au dash (demande v8.0).
       },
       () => {
         if (currentModId !== 'hardcore') return;

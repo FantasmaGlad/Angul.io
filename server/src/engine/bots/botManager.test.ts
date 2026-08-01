@@ -11,7 +11,7 @@ describe('BotManager', () => {
         enabled: true,
         targetRatio: 0.5,
         updateFrequencyHz: 2,
-        proportions: { fuis: 25, neutre: 30, agressif: 30, fou: 15 },
+        proportions: { fuis: 30, neutre: 30, agressif: 40 },
       },
     });
     const mod = createParametricMod(config);
@@ -38,7 +38,7 @@ describe('BotManager', () => {
         enabled: true,
         targetRatio: 0.5,
         updateFrequencyHz: 2,
-        proportions: { fuis: 25, neutre: 30, agressif: 30, fou: 15 },
+        proportions: { fuis: 30, neutre: 30, agressif: 40 },
       },
     });
     const mod = createParametricMod(config);
@@ -68,7 +68,7 @@ describe('BotManager', () => {
         enabled: true,
         targetRatio: 0.5,
         updateFrequencyHz: 2,
-        proportions: { fuis: 25, neutre: 30, agressif: 30, fou: 15 },
+        proportions: { fuis: 30, neutre: 30, agressif: 40 },
       },
     });
     const mod = createParametricMod(config);
@@ -99,7 +99,7 @@ describe('BotManager', () => {
         enabled: true,
         targetRatio: 0.5,
         updateFrequencyHz: 2,
-        proportions: { fuis: 25, neutre: 30, agressif: 30, fou: 15 },
+        proportions: { fuis: 30, neutre: 30, agressif: 40 },
       },
     });
     const mod = createParametricMod(config);
@@ -125,7 +125,7 @@ describe('BotManager', () => {
         enabled: true,
         targetRatio: 0.5,
         updateFrequencyHz: 2,
-        proportions: { fuis: 25, neutre: 30, agressif: 30, fou: 15 },
+        proportions: { fuis: 30, neutre: 30, agressif: 40 },
       },
     });
     const mod = createParametricMod(config);
@@ -153,7 +153,7 @@ describe('BotManager', () => {
         targetRatio: 0.5,
         ambientTargetCount: 6,
         updateFrequencyHz: 2,
-        proportions: { fuis: 25, neutre: 30, agressif: 30, fou: 15 },
+        proportions: { fuis: 30, neutre: 30, agressif: 40 },
         // Désactivés : ce test cible exclusivement le réglage `ambientTargetCount` des bots
         // normaux, indépendant de la pyramide Challenger (couverte par ses propres tests).
         challengers: { enabled: false, baselineCount: 0, minWithHumans: 0, maxWithHumans: 0, rampHumans: 1, massMultipliers: [] },
@@ -184,7 +184,7 @@ describe('BotManager', () => {
         targetRatio: 0.5,
         ambientTargetCount: 6,
         updateFrequencyHz: 2,
-        proportions: { fuis: 25, neutre: 30, agressif: 30, fou: 15 },
+        proportions: { fuis: 30, neutre: 30, agressif: 40 },
         challengers: { enabled: false, baselineCount: 0, minWithHumans: 0, maxWithHumans: 0, rampHumans: 1, massMultipliers: [] },
       },
     });
@@ -230,7 +230,7 @@ describe('BotManager', () => {
         targetRatio: 1,
         ambientTargetCount: 1, // exactement 1 bot tant qu'il n'y a aucun humain (voir tick1)
         updateFrequencyHz: 2, // 500ms d'échéance ambiante — bien plus que les ticks de ce test
-        proportions: { fuis: 0, neutre: 100, agressif: 0, fou: 0 },
+        proportions: { fuis: 0, neutre: 100, agressif: 0 },
       },
     });
     const mod = createParametricMod(config);
@@ -272,7 +272,7 @@ describe('BotManager', () => {
         enabled: true,
         targetRatio: 0,
         updateFrequencyHz: 2,
-        proportions: { fuis: 0, neutre: 100, agressif: 0, fou: 0 },
+        proportions: { fuis: 0, neutre: 100, agressif: 0 },
         challengers: { enabled: true, baselineCount: 2, minWithHumans: 3, maxWithHumans: 3, rampHumans: 1, massMultipliers: [10, 6, 3] },
       },
     });
@@ -295,7 +295,7 @@ describe('BotManager', () => {
         enabled: true,
         targetRatio: 0,
         updateFrequencyHz: 2,
-        proportions: { fuis: 0, neutre: 100, agressif: 0, fou: 0 },
+        proportions: { fuis: 0, neutre: 100, agressif: 0 },
         challengers: { enabled: true, baselineCount: 2, minWithHumans: 3, maxWithHumans: 3, rampHumans: 1, massMultipliers: [10, 6, 3] },
       },
     });
@@ -315,7 +315,7 @@ describe('BotManager', () => {
         enabled: true,
         targetRatio: 0,
         updateFrequencyHz: 2,
-        proportions: { fuis: 0, neutre: 100, agressif: 0, fou: 0 },
+        proportions: { fuis: 0, neutre: 100, agressif: 0 },
         challengers: { enabled: true, baselineCount: 2, minWithHumans: 3, maxWithHumans: 3, rampHumans: 1, massMultipliers: [10, 6, 3] },
       },
     });
@@ -344,7 +344,7 @@ describe('BotManager', () => {
         targetRatio: 0,
         ambientTargetCount: 2, // exactement 2 bots, jamais d'humain dans ce test
         updateFrequencyHz: 2,
-        proportions: { fuis: 0, neutre: 100, agressif: 0, fou: 0 },
+        proportions: { fuis: 0, neutre: 100, agressif: 0 },
         challengers: { enabled: false, baselineCount: 0, minWithHumans: 0, maxWithHumans: 0, rampHumans: 1, massMultipliers: [] },
       },
     });
@@ -382,7 +382,7 @@ describe('BotManager', () => {
         targetRatio: 0,
         ambientTargetCount: 3,
         updateFrequencyHz: 2,
-        proportions: { fuis: 0, neutre: 100, agressif: 0, fou: 0 },
+        proportions: { fuis: 0, neutre: 100, agressif: 0 },
         challengers: { enabled: false, baselineCount: 0, minWithHumans: 0, maxWithHumans: 0, rampHumans: 1, massMultipliers: [] },
         idleDespawn: { enabled: true, afterMinutes: 1 },
       },
@@ -421,7 +421,7 @@ describe('BotManager', () => {
         targetRatio: 0,
         ambientTargetCount: 3,
         updateFrequencyHz: 2,
-        proportions: { fuis: 0, neutre: 100, agressif: 0, fou: 0 },
+        proportions: { fuis: 0, neutre: 100, agressif: 0 },
         // Challengers activés (contrairement aux autres tests idleDespawn ci-dessus) : depuis la
         // connexion du premier humain, ce sont EUX seuls qui repeuplent (§15, "tout en
         // Challengers") — les bots normaux (ambientTargetCount) ne servent plus qu'au peuplement
@@ -452,7 +452,7 @@ describe('BotManager', () => {
    * sont tous optionnels et n'affectent JAMAIS le pilotage IA du bot, seulement son apparence de
    * spawn. Config commune : `neutre` à 100% pour un profil déterministe hors bot personnalisé,
    * Challengers désactivés pour isoler le comportement sous test. */
-  function makeCustomBotRoom(proportions = { fuis: 0, neutre: 100, agressif: 0, fou: 0 }) {
+  function makeCustomBotRoom(proportions = { fuis: 0, neutre: 100, agressif: 0 }) {
     const config = testConfig({
       bots: {
         enabled: true,

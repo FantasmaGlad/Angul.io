@@ -1,8 +1,8 @@
 {
   "id": "infini",
   "player": {
-    "startMass": 50,
-    "maxSplits": 16,
+    "startMass": 100,
+    "maxSplits": 8,
     "minSplitMass": 50,
     "splitEnabled": true,
     "ejectEnabled": true
@@ -21,10 +21,11 @@
     "ejectSpeedFactor": 4.5
   },
   "eject": {
-    "amount": 20
+    "amount": 40,
+    "value": 80
   },
   "merge": {
-    "baseTimeSec": 15,
+    "baseTimeSec": 8,
     "massFactor": 0,
     "overlapMinFraction": 0
   },
@@ -51,11 +52,11 @@
     "borderType": "TOROIDAL"
   },
   "food": {
-    "density": 2.5,
-    "respawnRatePerSecond": 300,
+    "density": 4,
+    "respawnRatePerSecond": 200,
     "pelletTypes": [
       {
-        "color": "vert",
+        "color": "#ffa500",
         "mass": 2,
         "weight": 100
       }
@@ -64,14 +65,14 @@
   "areaConstant": 6,
   "bots": {
     "enabled": true,
+    "behaviorId": "default_infini",
     "ambientTargetCount": 6,
     "maxTotal": 15,
     "updateFrequencyHz": 2,
     "proportions": {
-      "fuis": 25,
+      "fuis": 30,
       "neutre": 30,
-      "agressif": 30,
-      "fou": 15
+      "agressif": 40
     },
     "challengers": {
       "enabled": true,

@@ -7,19 +7,20 @@ import { selectRandomBotProfile } from './botTypes.js';
 
 describe('botEvaluator', () => {
   it('selectRandomBotProfile : respecte la pondération des proportions', () => {
-    const counts = { fuis: 0, neutre: 0, agressif: 0, fou: 0 };
-    const proportions = { fuis: 25, neutre: 30, agressif: 30, fou: 15 };
+    const counts = { fuis: 0, neutre: 0, agressif: 0 };
+    const proportions = { fuis: 30, neutre: 30, agressif: 40 };
 
     for (let i = 0; i < 10000; i++) {
       const p = selectRandomBotProfile(proportions);
-      counts[p]++;
+      if (p === 'fuis' || p === 'neutre' || p === 'agressif') {
+        counts[p]++;
+      }
     }
 
-    // Les proportions relatives doivent être approximativement respectées (ex: fuis ~25%)
-    expect(counts.fuis).toBeGreaterThan(2000);
+    // Les proportions relatives doivent être approximativement respectées (ex: fuis ~30%)
+    expect(counts.fuis).toBeGreaterThan(2500);
     expect(counts.neutre).toBeGreaterThan(2500);
-    expect(counts.agressif).toBeGreaterThan(2500);
-    expect(counts.fou).toBeGreaterThan(1000);
+    expect(counts.agressif).toBeGreaterThan(3300);
   });
 
   it('profil fuis : fuit un prédateur proche', () => {

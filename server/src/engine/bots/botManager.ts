@@ -41,7 +41,6 @@ export class BotManager {
     fuis: 0,
     neutre: 0,
     agressif: 0,
-    fou: 0,
     challenger: 0,
   };
 

@@ -7,7 +7,7 @@ describe('loadModConfig', () => {
     const config = loadModConfig('vanilla');
     expect(config.id).toBe('vanilla');
     expect(config.player.startMass).toBe(50);
-    expect(config.player.maxSplits).toBe(16);
+    expect(config.player.maxSplits).toBe(32);
     expect(config.physics.speedMultiplier).toBe(1.5);
     expect(config.arena.borderType).toBe('STRICT_WALL');
   });
@@ -15,7 +15,7 @@ describe('loadModConfig', () => {
   it('charge server/configs/hardcore.json avec les valeurs attendues', () => {
     const config = loadModConfig('hardcore');
     expect(config.id).toBe('hardcore');
-    expect(config.player.startMass).toBe(50);
+    expect(config.player.startMass).toBe(100);
     expect(config.arena.borderType).toBe('STRICT_WALL');
   });
 
@@ -25,7 +25,7 @@ describe('loadModConfig', () => {
     expect(config.arena.width).toBe(5000);
     expect(config.arena.height).toBe(5000);
     expect(config.arena.borderType).toBe('TOROIDAL');
-    expect(config.food.pelletTypes).toEqual([{ color: 'vert', mass: 2, weight: 100 }]);
+    expect(config.food.pelletTypes).toEqual([{ color: '#ffa500', mass: 2, weight: 100 }]);
   });
 
   it('charge server/configs/mega-split.json avec les valeurs attendues', () => {

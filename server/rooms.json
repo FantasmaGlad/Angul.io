@@ -1,18 +1,10 @@
 [
   {
-    "name": "Vanilla #1",
+    "name": "Vanilla",
     "modId": "vanilla"
   },
   {
-    "name": "Hardcore #1",
+    "name": "Hardcore",
     "modId": "hardcore"
-  },
-  {
-    "name": "Infini #1",
-    "modId": "infini"
-  },
-  {
-    "name": "Mega Split #1",
-    "modId": "mega-split"
   }
 ]

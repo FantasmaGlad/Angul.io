@@ -1,7 +1,7 @@
 {
   "id": "mega-split",
   "player": {
-    "startMass": 50,
+    "startMass": 250,
     "maxSplits": 64,
     "minSplitMass": 50,
     "splitEnabled": true,
@@ -51,12 +51,12 @@
     "bounceRestitution": 2.0
   },
   "food": {
-    "density": 2.5,
-    "respawnRatePerSecond": 300,
+    "density": 2,
+    "respawnRatePerSecond": 200,
     "pelletTypes": [
       {
-        "color": "rose",
-        "mass": 50,
+        "color": "#ffde21",
+        "mass": 40,
         "weight": 100
       }
     ]
@@ -64,14 +64,14 @@
   "areaConstant": 6,
   "bots": {
     "enabled": true,
+    "behaviorId": "default_mega_split",
     "ambientTargetCount": 6,
     "maxTotal": 15,
     "updateFrequencyHz": 2,
     "proportions": {
-      "fuis": 25,
+      "fuis": 30,
       "neutre": 30,
-      "agressif": 30,
-      "fou": 15
+      "agressif": 40
     },
     "challengers": {
       "enabled": true,

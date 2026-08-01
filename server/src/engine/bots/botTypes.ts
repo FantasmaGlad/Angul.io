@@ -1,7 +1,7 @@
 import { BOT_IDENTITIES } from '@angulio/shared';
 import type { BotConfig } from '../../mods/parametric/config.js';
 
-export type BotProfileKind = 'fuis' | 'neutre' | 'agressif' | 'fou' | 'challenger';
+export type BotProfileKind = 'fuis' | 'neutre' | 'agressif' | 'challenger';
 
 /** Forme résolue de `BotConfig['challengers']` (config.ts) — champ optionnel côté config JSON,
  * toujours présent ici une fois `DEFAULT_CHALLENGER_CONFIG` fusionné (voir `botManager.ts`). */
@@ -39,28 +39,25 @@ export interface BotProportions {
   fuis: number;
   neutre: number;
   agressif: number;
-  fou: number;
 }
 
 export const DEFAULT_BOT_PROPORTIONS: BotProportions = {
-  fuis: 25,
+  fuis: 30,
   neutre: 30,
-  agressif: 30,
-  fou: 15,
+  agressif: 40,
 };
 
 /** Sélectionne aléatoirement un type de bot selon la pondération des proportions. */
 export function selectRandomBotProfile(
   proportions: BotProportions = DEFAULT_BOT_PROPORTIONS,
 ): BotProfileKind {
-  const total = proportions.fuis + proportions.neutre + proportions.agressif + proportions.fou;
+  const total = proportions.fuis + proportions.neutre + proportions.agressif;
   if (total <= 0) return 'neutre';
 
   let roll = Math.random() * total;
   if ((roll -= proportions.fuis) < 0) return 'fuis';
   if ((roll -= proportions.neutre) < 0) return 'neutre';
-  if ((roll -= proportions.agressif) < 0) return 'agressif';
-  return 'fou';
+  return 'agressif';
 }
 
 /** Nombre de noms réservés en tête de liste aux Challengers du Top 10 (voir plus bas) — les

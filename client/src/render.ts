@@ -100,15 +100,15 @@ const GRID_COLOR = 'rgba(17, 17, 19, 0.1)';
  * même pour tous les modes). Couleur de repli pour toute masse qu'aucun mode connu n'utilise
  * (mod futur) plutôt que de dessiner du noir invisible. */
 const FOOD_COLORS_BY_MASS: Record<number, string> = {
-  1: '#3a6b35', // Vert
-  2: '#3266a8', // Bleu
-  3: '#c9a227', // Jaune
-  4: '#7a3fa0', // Violet
-  5: '#b23a2e', // Rouge
-  6: '#c9702e', // Orange
-  7: '#c94f8a', // Rose
+  1: '#0047ab',
+  2: '#ffa500',
+  3: '#8B008B',
+  5: '#8B008B',
+  8: '#44D7A8',
+  10: '#ff2c2c',
+  40: '#ffde21',
 };
-const FOOD_COLOR_FALLBACK = '#3a6b35';
+const FOOD_COLOR_FALLBACK = '#0047ab';
 /** Masse du pellet "Multicolor" (le plus rare et le plus gros, valeur 12) — rendu à part avec
  * un dégradé plutôt qu'une couleur plate, dessiné individuellement (pas dans le chemin groupé
  * ci-dessous) : assez rare (1 à 15% selon le mode) pour ne jamais peser sur le budget de dessin

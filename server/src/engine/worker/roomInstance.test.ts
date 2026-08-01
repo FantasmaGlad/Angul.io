@@ -11,7 +11,7 @@ import { SPECTATOR_TICK_DIVISOR } from './snapshotBuilder.js';
 const BASE_BOTS: BotConfig = {
   enabled: true,
   updateFrequencyHz: 4,
-  proportions: { fuis: 0.25, neutre: 0.25, agressif: 0.25, fou: 0.25 },
+  proportions: { fuis: 30, neutre: 30, agressif: 40 },
 };
 
 describe('applyRoomBotCountOverride', () => {
@@ -291,7 +291,7 @@ describe('RoomInstance — adminAction(\'spawnBot\') bots personnalisés (§9.3/
         enabled: true,
         targetRatio: 0,
         updateFrequencyHz: 2,
-        proportions: { fuis: 0, neutre: 100, agressif: 0, fou: 0 },
+        proportions: { fuis: 0, neutre: 100, agressif: 0 },
         challengers: {
           enabled: false,
           baselineCount: 0,

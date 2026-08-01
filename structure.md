@@ -168,12 +168,12 @@ Angul.io/
 │   │   ├── hardcore.json                    Absorption x2, Dash uniquement (split désactivé)
 │   │   ├── infini.json                      Carte 5000x5000, pastilles de masse 2, bords toroïdaux (téléportation fluide)
 │   │   ├── mega-split.json                  64 cellules max, refusion instantanée (0s)
-│   │   └── bots/                            Profils de COMPORTEMENT de robots (même système que ci-dessus,
-│   │       └── default.json                 mais pour le pilotage IA — voir engine/bots/behaviorConfig.ts/
-│   │                                         loadBehaviorConfig.ts) : fuis/neutre/agressif/fou/wallAvoidance.
-│   │                                         Sélectionné par `BotConfig.behaviorId` (mods/parametric/config.ts),
-│   │                                         absent = 'default'. Distinct de la POPULATION de bots
-│   │                                         (ambientTargetCount/challengers, restée dans server/configs/*.json).
+│   │   └── bots/                            Profils de COMPORTEMENT de robots par mode (pilotage IA) :
+│   │       ├── default_vanilla.json          Profil de pilotage pour mode Vanilla
+│   │       ├── default_hardcore.json         Profil de pilotage pour mode Hardcore
+│   │       ├── default_infini.json           Profil de pilotage pour mode Infini
+│   │       └── default_mega_split.json       Profil de pilotage pour mode Mega Split
+│   │                                         Sélectionné par `BotConfig.behaviorId`, fuis/neutre/agressif (30/30/40).
 │   ├── scripts/
 │   │   ├── hashPassword.mjs                 Génère un hash argon2 pour ADMIN_PASSWORD_HASH
 │   │   ├── loadtest.mjs                     Bots WebSocket pour valider la charge

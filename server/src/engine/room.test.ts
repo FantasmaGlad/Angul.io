@@ -368,7 +368,7 @@ describe('Room — actions admin (cahier_des_charges_admin.md §4.3-4.4)', () =>
       mapSize: 1000,
       tickRateHz: 20,
       maxPlayers: 10,
-      bots: { enabled: true, targetRatio: 0.5, updateFrequencyHz: 2, proportions: { fuis: 100, neutre: 0, agressif: 0, fou: 0 } },
+      bots: { enabled: true, targetRatio: 0.5, updateFrequencyHz: 2, proportions: { fuis: 100, neutre: 0, agressif: 0 } },
     });
     room.botManager!.adjustPopulation();
     expect(room.botManager!.activeBotCount).toBeGreaterThan(0);
@@ -389,7 +389,7 @@ describe('Room — actions admin (cahier_des_charges_admin.md §4.3-4.4)', () =>
         enabled: true,
         targetRatio: 0,
         updateFrequencyHz: 2,
-        proportions: { fuis: 0, neutre: 100, agressif: 0, fou: 0 },
+        proportions: { fuis: 0, neutre: 100, agressif: 0 },
         challengers: {
           enabled: false,
           baselineCount: 0,

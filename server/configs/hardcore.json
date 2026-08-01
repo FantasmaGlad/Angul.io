@@ -1,14 +1,14 @@
 {
   "id": "hardcore",
   "player": {
-    "startMass": 50,
+    "startMass": 100,
     "maxSplits": 32,
     "minSplitMass": 50,
-    "splitEnabled": false,
-    "ejectEnabled": false
+    "splitEnabled": true,
+    "ejectEnabled": true
   },
   "physics": {
-    "v0": 245,
+    "v0": 300,
     "speedMultiplier": 3.0,
     "speedMassExponent": 0.0333,
     "velocityFloor": 20,
@@ -21,10 +21,11 @@
     "ejectSpeedFactor": 4.5
   },
   "eject": {
-    "amount": 20
+    "amount": 40,
+    "value": 40
   },
   "merge": {
-    "baseTimeSec": 30,
+    "baseTimeSec": 15,
     "massFactor": 0,
     "overlapMinFraction": 0
   },
@@ -38,11 +39,31 @@
     "floor": 20,
     "graceSec": 6,
     "tiers": [
-      { "minMass": 0, "rate": 0, "intervalSec": 10 },
-      { "minMass": 500, "rate": 0.01, "intervalSec": 10 },
-      { "minMass": 2000, "rate": 0.02, "intervalSec": 8 },
-      { "minMass": 10000, "rate": 0.03, "intervalSec": 5 },
-      { "minMass": 25000, "rate": 0.05, "intervalSec": 2 }
+      {
+        "minMass": 0,
+        "rate": 0,
+        "intervalSec": 10
+      },
+      {
+        "minMass": 500,
+        "rate": 0.01,
+        "intervalSec": 10
+      },
+      {
+        "minMass": 2000,
+        "rate": 0.02,
+        "intervalSec": 8
+      },
+      {
+        "minMass": 10000,
+        "rate": 0.03,
+        "intervalSec": 5
+      },
+      {
+        "minMass": 25000,
+        "rate": 0.05,
+        "intervalSec": 2
+      }
     ]
   },
   "arena": {
@@ -51,62 +72,52 @@
     "borderType": "STRICT_WALL"
   },
   "food": {
-    "density": 1.6,
-    "respawnRatePerSecond": 300,
+    "density": 2,
+    "respawnRatePerSecond": 200,
     "pelletTypes": [
       {
-        "color": "vert",
+        "color": "#0047ab",
+        "mass": 1,
+        "weight": 30
+      },
+      {
+        "color": "#ffa500",
         "mass": 2,
-        "weight": 28
+        "weight": 25
       },
       {
-        "color": "bleu",
-        "mass": 4,
-        "weight": 22
+        "color": "#8B008B",
+        "mass": 3,
+        "weight": 20
       },
       {
-        "color": "jaune",
-        "mass": 6,
-        "weight": 18
+        "color": "#8B008B",
+        "mass": 5,
+        "weight": 15
       },
       {
-        "color": "violet",
+        "color": "#44D7A8",
         "mass": 8,
-        "weight": 13
-      },
-      {
-        "color": "rouge",
-        "mass": 10,
         "weight": 10
       },
       {
-        "color": "orange",
-        "mass": 12,
+        "color": "#ff2c2c",
+        "mass": 10,
         "weight": 5
-      },
-      {
-        "color": "rose",
-        "mass": 14,
-        "weight": 3
-      },
-      {
-        "color": "multicolor",
-        "mass": 24,
-        "weight": 1
       }
     ]
   },
   "areaConstant": 3,
   "bots": {
     "enabled": true,
+    "behaviorId": "default_hardcore",
     "ambientTargetCount": 6,
     "maxTotal": 15,
     "updateFrequencyHz": 2,
     "proportions": {
-      "fuis": 25,
+      "fuis": 30,
       "neutre": 30,
-      "agressif": 30,
-      "fou": 15
+      "agressif": 40
     },
     "challengers": {
       "enabled": true,

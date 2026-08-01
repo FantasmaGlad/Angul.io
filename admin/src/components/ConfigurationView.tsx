@@ -13,8 +13,8 @@ interface ConfigurationViewProps {
 }
 
 const DEFAULT_MOD_PROPERTIES: Record<string, { mapSize: number; maxPlayers: number; resetDurationMin: number }> = {
-  vanilla: { mapSize: 15000, maxPlayers: 30, resetDurationMin: 120 },
-  hardcore: { mapSize: 15000, maxPlayers: 30, resetDurationMin: 120 },
+  vanilla: { mapSize: 20000, maxPlayers: 30, resetDurationMin: 120 },
+  hardcore: { mapSize: 50000, maxPlayers: 30, resetDurationMin: 120 },
   infini: { mapSize: 5000, maxPlayers: 30, resetDurationMin: 120 },
   'mega-split': { mapSize: 20000, maxPlayers: 30, resetDurationMin: 120 },
 };

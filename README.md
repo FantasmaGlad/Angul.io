@@ -292,7 +292,7 @@ fichiers en démarrant le serveur en local avant de déployer.
 | | `ambientTargetCount?` | number | Bots NORMAUX maintenus en mode ambiance à 0 joueur humain (défaut 6) — dès qu'un humain est connecté, seuls les Challengers ci-dessous peuplent (les bots normaux tombent à 0) |
 | | `maxTotal?` | number | Plafond dur du nombre de bots actifs simultanément, Challengers ET normaux confondus — absent = aucun plafond dédié (seule la capacité du salon borne) |
 | | `updateFrequencyHz` | number | Cadence de décision de l'IA des bots |
-| | `proportions` | `{fuis, neutre, agressif, fou}` | Répartition des profils de bot normaux (poids relatifs), utilisés uniquement à 0 joueur humain |
+| | `proportions` | `{fuis, neutre, agressif}` | Répartition des profils de bot normaux (poids relatifs 30/30/40 par défaut), utilisés uniquement à 0 joueur humain |
 | | `challengers?` | `enabled` | boolean | `false` désactive les Challengers spécifiquement (indépendant du `enabled` ci-dessus) — défaut activé |
 | | | `baselineCount` | number | Challengers maintenus EN PERMANENCE, même à 0 joueur humain |
 | | | `maxWithHumans` | number | Population de Challengers dès qu'UN SEUL humain vient de se connecter (point de départ de la décroissance ci-dessous) |
@@ -315,9 +315,9 @@ code, pas seulement du JSON).
 
 Même principe que `server/configs/*.json` pour les modes, mais pour le PILOTAGE des bots
 (`server/src/engine/bots/botEvaluator.ts`) plutôt que leur population : un fichier JSON par profil
-de comportement, sélectionné par `BotConfig.behaviorId` (ci-dessus) — ajouter/ajuster un profil ne
-demande qu'un nouveau fichier, aucun code. `server/configs/bots/default.json` est le profil par
-défaut (comportement historique, voir `DEFAULT_BOT_BEHAVIOR_CONFIG` dans `behaviorConfig.ts`).
+de comportement, sélectionné par `BotConfig.behaviorId` (ci-dessus, ex: `default_vanilla`, `default_hardcore`, `default_infini`, `default_mega_split`) — ajouter/ajuster un profil ne
+demande qu'un nouveau fichier, aucun code. `server/configs/bots/default.json` est le profil de repli
+(comportement par défaut, voir `DEFAULT_BOT_BEHAVIOR_CONFIG` dans `behaviorConfig.ts`).
 
 | Clé | Type | Rôle |
 |---|---|---|
@@ -325,7 +325,7 @@ défaut (comportement historique, voir `DEFAULT_BOT_BEHAVIOR_CONFIG` dans `behav
 | `predatorMassRatio` / `preyMassRatio` | number | Ratios de masse au-delà/en-deçà desquels une entité voisine est traitée comme prédateur/proie |
 | `targetProjectionDistancePx` | number | Distance (px) projetée devant le bot pour construire sa cible monde |
 | `directionSmoothing` | number | Lissage de direction (EMA, 0-1) entre deux évaluations consécutives |
-| `fuis` / `neutre` / `agressif` / `fou` | objet | Réglages propres à chaque profil (rayons de détection, intensités, cooldowns/seuils de split — voir `behaviorConfig.ts` pour le détail champ par champ) |
+| `fuis` / `neutre` / `agressif` | objet | Réglages propres à chaque profil (rayons de détection, intensités, cooldowns/seuils de split — voir `behaviorConfig.ts` pour le détail champ par champ) |
 | `wallAvoidance.marginPx` | number | Distance (px) au bord à partir de laquelle un bot commence activement à s'en écarter |
 
 Un fichier JSON ne redéfinissant qu'un sous-ensemble de ces champs est fusionné PAR SECTION avec le

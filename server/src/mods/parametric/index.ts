@@ -337,6 +337,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     if (state.ejectCooldownS > 0) return;
 
     const amount = config.eject.amount;
+    const particleValue = config.eject.value ?? amount;
     if (piece.mass < amount * EJECT_MIN_MASS_MULTIPLIER) return;
 
     const { direction: dir } = inputVectorOf(world, piece); // l'éjection ignore l'intensité, toujours "pleine"
@@ -345,7 +346,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     state.ejectCooldownS = EJECT_COOLDOWN_SECONDS;
 
     const ejectedPosition = add(piece.position, scale(dir, piece.radius + 5));
-    const ejected = world.spawnParticle(ejectedPosition, amount);
+    const ejected = world.spawnParticle(ejectedPosition, particleValue);
     ejected.velocity = scale(dir, EJECT_LAUNCH_SPEED_PX_PER_S);
   }
 

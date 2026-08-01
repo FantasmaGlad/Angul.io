@@ -1,7 +1,7 @@
 {
   "version": 1,
   "generatedFrom": "structure.md",
-  "lastReviewed": "2026-08-01 (v7.1)",
+  "lastReviewed": "2026-08-01 (v8.0)",
   "note": "Cartographie machine-readable du depot, en complement de structure.md (lisible par un humain) et README.md (architecture/modding en detail). Sert de source au serveur MCP local que .mcp.json enregistre aupres de Claude Code (.gemini/mcp/server.mjs, PAS .claude/mcp/server.mjs qui existe aussi mais n'est pas celui lance) et a son equivalent Gemini/Antigravity — .gemini/project-structure.json est un SYMLINK vers CE fichier (../.claude/project-structure.json), pas une copie separee : les deux plateformes lisent toujours exactement le meme contenu, rien a resynchroniser manuellement. Ce fichier ET .claude/mcp/** SONT commites (voir structure.md §1bis) — outillage de projet partage, pas une preference locale. Mets a jour CE fichier ET structure.md dans le meme commit si tu ajoutes/deplaces/supprimes un fichier important — sinon les deux deviennent trompeurs.",
   "workspaces": [
     {
@@ -350,15 +350,52 @@
       "description": "Config JSON du mode Hardcore : absorption x2, Dash uniquement (split desactive via player.splitEnabled=false)."
     },
     {
-      "path": "server/configs/bots/default.json",
+      "path": "server/configs/bots/default_vanilla.json",
       "workspace": "server",
       "tags": [
         "config",
         "bots",
         "comportement",
-        "ia"
+        "ia",
+        "vanilla"
       ],
-      "description": "Profil de comportement de robots par defaut (fuis/neutre/agressif/fou/wallAvoidance) — meme systeme que server/configs/*.json pour les modes, selectionne via BotConfig.behaviorId (config.ts), charge par loadBehaviorConfig.ts. Un nouveau fichier ici = un nouveau profil de comportement, sans code."
+      "description": "Profil de comportement des robots en mode Vanilla (fuis/neutre/agressif 30/30/40)."
+    },
+    {
+      "path": "server/configs/bots/default_hardcore.json",
+      "workspace": "server",
+      "tags": [
+        "config",
+        "bots",
+        "comportement",
+        "ia",
+        "hardcore"
+      ],
+      "description": "Profil de comportement des robots en mode Hardcore."
+    },
+    {
+      "path": "server/configs/bots/default_infini.json",
+      "workspace": "server",
+      "tags": [
+        "config",
+        "bots",
+        "comportement",
+        "ia",
+        "infini"
+      ],
+      "description": "Profil de comportement des robots en mode Infini."
+    },
+    {
+      "path": "server/configs/bots/default_mega_split.json",
+      "workspace": "server",
+      "tags": [
+        "config",
+        "bots",
+        "comportement",
+        "ia",
+        "mega-split"
+      ],
+      "description": "Profil de comportement des robots en mode Mega Split."
     },
     {
       "path": "server/scripts/hashPassword.mjs",

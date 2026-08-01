@@ -193,27 +193,6 @@ export function computeBotInput(
       }
       break;
     }
-
-    case 'fou': {
-      const cfg = behavior.fou;
-      if (Math.random() < cfg.pauseChance) {
-        intensity = 0.0;
-        targetDir = { x: 0, y: 0 };
-      } else {
-        intensity = Math.random() * cfg.intensityRange + cfg.intensityMin;
-        targetDir = getWanderDir(center, mapSize, memory, cfg.wanderMaxDeviation);
-      }
-
-      // Split très rare si masse suffisante et cooldown écoulé.
-      const now = performance.now();
-      const cooldownOk =
-        memory.lastSplitAtMs === undefined || now - memory.lastSplitAtMs >= cfg.splitCooldownMs;
-      if (botPieces.length < 2 && cooldownOk && totalMass >= cfg.splitMinMass && Math.random() < cfg.splitChance) {
-        split = true;
-        memory.lastSplitAtMs = now;
-      }
-      break;
-    }
   }
 
   // S'éloigne activement des bordures (demande utilisateur : les bots doivent quitter les murs

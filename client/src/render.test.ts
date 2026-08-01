@@ -133,10 +133,10 @@ describe('cullEntitiesForViewport', () => {
   });
 });
 
-describe('foodColorForMass — types de pellets (Vert/Bleu/Jaune/Violet/Rouge/Orange/Rose)', () => {
-  it('associe une couleur distincte à chacune des masses 1 à 7', () => {
-    const colors = [1, 2, 3, 4, 5, 6, 7].map(foodColorForMass);
-    expect(new Set(colors).size).toBe(7); // toutes différentes, aucune collision
+describe('foodColorForMass — types de particules (v8.0)', () => {
+  it('associe une couleur distincte à chacune des masses 1, 2, 3, 5, 8, 10, 40', () => {
+    const colors = [1, 2, 3, 5, 8, 10, 40].map(foodColorForMass);
+    expect(new Set(colors).size).toBe(6); // 6 couleurs car masse 3 et 5 partagent #8B008B
   });
 
   it('reste stable (même couleur) pour une masse donnée', () => {

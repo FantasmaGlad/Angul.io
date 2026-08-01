@@ -2,8 +2,10 @@
   "id": "vanilla",
   "player": {
     "startMass": 50,
-    "maxSplits": 16,
-    "minSplitMass": 50
+    "maxSplits": 32,
+    "minSplitMass": 50,
+    "splitEnabled": true,
+    "ejectEnabled": true
   },
   "physics": {
     "v0": 300,
@@ -19,10 +21,11 @@
     "ejectSpeedFactor": 4.5
   },
   "eject": {
-    "amount": 5
+    "amount": 20,
+    "value": 20
   },
   "merge": {
-    "baseTimeSec": 15,
+    "baseTimeSec": 30,
     "massFactor": 0,
     "overlapMinFraction": 0
   },
@@ -64,11 +67,11 @@
     "borderType": "STRICT_WALL"
   },
   "food": {
-    "density": 2.5,
-    "respawnRatePerSecond": 300,
+    "density": 4,
+    "respawnRatePerSecond": 200,
     "pelletTypes": [
       {
-        "color": "vert",
+        "color": "#0047ab",
         "mass": 1,
         "weight": 100
       }
@@ -77,14 +80,14 @@
   "areaConstant": 6,
   "bots": {
     "enabled": true,
+    "behaviorId": "default_vanilla",
     "ambientTargetCount": 6,
     "maxTotal": 15,
     "updateFrequencyHz": 2,
     "proportions": {
-      "fuis": 25,
+      "fuis": 30,
       "neutre": 30,
-      "agressif": 30,
-      "fou": 15
+      "agressif": 40
     },
     "challengers": {
       "enabled": true,

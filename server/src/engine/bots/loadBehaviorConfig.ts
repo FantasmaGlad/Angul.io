@@ -27,7 +27,6 @@ export function loadBotBehaviorConfig(id = 'default'): BotBehaviorConfig {
       fuis: { ...DEFAULT_BOT_BEHAVIOR_CONFIG.fuis, ...parsed.fuis },
       neutre: { ...DEFAULT_BOT_BEHAVIOR_CONFIG.neutre, ...parsed.neutre },
       agressif: { ...DEFAULT_BOT_BEHAVIOR_CONFIG.agressif, ...parsed.agressif },
-      fou: { ...DEFAULT_BOT_BEHAVIOR_CONFIG.fou, ...parsed.fou },
       wallAvoidance: { ...DEFAULT_BOT_BEHAVIOR_CONFIG.wallAvoidance, ...parsed.wallAvoidance },
     };
   } catch {

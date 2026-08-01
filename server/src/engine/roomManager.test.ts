@@ -339,7 +339,7 @@ describe('RoomManager', () => {
         enabled: true,
         targetRatio: 0.5,
         updateFrequencyHz: 2,
-        proportions: { fuis: 25, neutre: 30, agressif: 30, fou: 15 },
+        proportions: { fuis: 30, neutre: 30, agressif: 40 },
       };
       const manager = makeManager(() => ({ mod: testMod, mapSize: 1000, bots: botsConfig }));
 
@@ -363,7 +363,7 @@ describe('RoomManager', () => {
         targetRatio: 0.5,
         ambientTargetCount: 6,
         updateFrequencyHz: 2,
-        proportions: { fuis: 25, neutre: 30, agressif: 30, fou: 15 },
+        proportions: { fuis: 30, neutre: 30, agressif: 40 },
       };
       const manager = makeManager(() => ({ mod: testMod, mapSize: 1000, bots: botsConfig }), 20, {
         emptyRoomGraceMs: 50,
