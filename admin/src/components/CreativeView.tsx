@@ -9,13 +9,9 @@ import {
   type AdminRoomView,
 } from '../adminApi.js';
 import { connectAdminSocket, generateGodPlayerId, type AdminSocketHandle } from '../adminSocket.js';
-import {
-  AdminSnapshotBuffer,
-  drawEntities,
-  pieceAtScreenPoint,
-  screenToWorld,
-  type Camera,
-} from '../entityCanvas.js';
+import { AdminSnapshotBuffer, pieceAtScreenPoint, screenToWorld, type Camera } from '../entityCanvas.js';
+import { PixiEntityRenderer } from '../pixiEntityRenderer.js';
+import ConnectionStatusDot, { type ConnectionStatus } from './ConnectionStatus.js';
 
 interface CreativeViewProps {
   token: string;
@@ -62,9 +58,40 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
   const [broadcastGlobal, setBroadcastGlobal] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [livePlayerList, setLivePlayerList] = useState<PlayerInspectInfo[]>([]);
+  /** Indicateur de connexion (§10.3 cahier_des_charges_admin.md) — jusqu'ici, une déconnexion
+   * n'était visible que via le toast d'erreur (`onClose`), qui disparaît après 3s ; ce point
+   * reste affiché tant que la connexion n'est pas rétablie. */
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
+  /** Cadence RÉELLEMENT annoncée par `welcome` (§10.1/§17 : "la cadence affichée doit toujours
+   * être la cadence réellement reçue, jamais une valeur théorique") — remplace le badge "Live
+   * 20Hz" qui était codé en dur (juste par-coïncidence exact avant ce correctif, aurait
+   * silencieusement menti dès que `TICK_RATE_HZ`/`ADMIN_TICK_DIVISOR` changerait côté serveur). */
+  const [liveTickRateHz, setLiveTickRateHz] = useState<number | undefined>(undefined);
 
   const socketRef = useRef<AdminSocketHandle | null>(null);
   const godPlayerIdRef = useRef<string | undefined>(undefined);
+  /** `spawnMode`/`selectedPlayerId` lus par la boucle canva/WebSocket (voir l'effet plus bas) SANS
+   * figurer dans ses dépendances — les lire directement depuis le state React y forçait une
+   * RECONNEXION COMPLÈTE (WebSocket + moteur de rendu PixiJS détruit et recréé) à chaque clic sur
+   * "Suivre"/changement d'outil de spawn. Inoffensif avec l'ancien rendu Canvas2D (recréer un
+   * contexte 2D est quasi gratuit) mais un vrai bug de fiabilité avec PixiJS (recréer un contexte
+   * WebGL est nettement plus coûteux ; un ancien contexte pas encore totalement détruit qui
+   * chevauche un nouveau sur le même <canvas> a fait geler l'onglet en test). `followId` reste
+   * distinct de `selectedPlayerId` : cliquer "Suivre" (re)lance le suivi caméra, mais panner la
+   * caméra à la main (`onMouseDown`) l'interrompt SANS désélectionner le joueur dans l'inspecteur —
+   * ce sont deux notions liées mais pas identiques. */
+  const liveRef = useRef({
+    spawnMode,
+    selectedPlayerId,
+    followId: selectedPlayerId as string | undefined,
+  });
+  useEffect(() => {
+    liveRef.current.spawnMode = spawnMode;
+  }, [spawnMode]);
+  useEffect(() => {
+    liveRef.current.selectedPlayerId = selectedPlayerId;
+    liveRef.current.followId = selectedPlayerId;
+  }, [selectedPlayerId]);
 
   const showToast = (text: string, type: 'info' | 'error' | 'success' = 'info') => {
     setToastMsg({ text, type });
@@ -110,27 +137,53 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
     });
   };
 
-  // --- Boucle Canvas : connexion, rendu 60 FPS, contrôles ---------------------------------
+  const rendererRef = useRef<PixiEntityRenderer | null>(null);
+
+  // --- Moteur de rendu GPU (§10.2 cahier_des_charges_admin.md) : un seul par MONTAGE du
+  // composant, jamais recréé quand on change de salon (`roomId`) ou d'outil (effet suivant) ---
+  // Recréer une `Application` PixiJS (donc un contexte WebGL) à chaque changement de salon s'est
+  // avéré non viable en pratique : reproduit en test, deux `Application` PixiJS se disputant
+  // brièvement le même contexte WebGL du même `<canvas>` (l'ancienne pas encore détruite, la
+  // nouvelle déjà en train de s'initialiser) a figé l'onglet ENTIER (plus aucun JS exécutable,
+  // y compris hors React) pendant plusieurs minutes — bien au-delà d'un simple ralentissement.
+  // Le canva/contexte GPU est désormais lié au CYCLE DE VIE DU COMPOSANT (monté une fois tant que
+  // "Espace Créatif" reste affiché), seule la connexion WebSocket change de salon en salon (effet
+  // suivant, déps `[roomId, token]`) — un salon differe par ses DONNÉES, pas par son moteur de
+  // rendu.
   useEffect(() => {
-    if (!roomId) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const renderer = new PixiEntityRenderer(canvas);
+    rendererRef.current = renderer;
 
     function resize(): void {
       canvas!.width = canvas!.clientWidth;
       canvas!.height = canvas!.clientHeight;
+      renderer.resize(canvas!.width, canvas!.height);
     }
     resize();
     window.addEventListener('resize', resize);
+
+    return () => {
+      window.removeEventListener('resize', resize);
+      renderer.destroy();
+      rendererRef.current = null;
+    };
+  }, []);
+
+  // --- Boucle Canvas : connexion, rendu 60 FPS, contrôles ---------------------------------
+  useEffect(() => {
+    if (!roomId) return;
+    const canvas = canvasRef.current;
+    const rendererInstance = rendererRef.current;
+    if (!canvas || !rendererInstance) return;
+    const renderer = rendererInstance;
 
     const nicknames = new Map<string, string>();
     const skinsMap = new Map<string, string>();
     const snapshotBuffer = new AdminSnapshotBuffer();
 
     const camera: Camera = { x: 0, y: 0, scale: 0.25 };
-    let followId: string | undefined = selectedPlayerId;
     const pressedKeys = new Set<string>();
     let isPanning = false;
     let lastPanScreen = { x: 0, y: 0 };
@@ -169,9 +222,18 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
         nicknames.set(id, nick);
         if (skin) skinsMap.set(id, skin);
       },
-      onClose: (reason) => showToast(reason, 'error'),
+      onWelcome: (tickRateHz) => {
+        snapshotBuffer.setServerTickRateHz(tickRateHz);
+        setLiveTickRateHz(tickRateHz);
+        setConnectionStatus('connected');
+      },
+      onClose: (reason) => {
+        setConnectionStatus('disconnected');
+        showToast(reason, 'error');
+      },
     });
     socketRef.current = handle;
+    setConnectionStatus('connecting');
 
     function centerOf(playerId: string, currentEntities: EntitySnapshot[]): { x: number; y: number } | undefined {
       const pieces = currentEntities.filter((e) => e.p === playerId);
@@ -206,27 +268,27 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
       const currentEntities = snapshotBuffer.getInterpolatedEntities();
       const clicked = pieceAtScreenPoint(currentEntities, camera, canvas!.width, canvas!.height, event.offsetX, event.offsetY);
       if (clicked?.p) {
-        followId = clicked.p;
+        liveRef.current.followId = clicked.p;
         setSelectedPlayerId(clicked.p);
         return;
       }
 
-      if (spawnMode === 'food') {
+      if (liveRef.current.spawnMode === 'food') {
         const world = screenToWorld(camera, canvas!.width, canvas!.height, event.offsetX, event.offsetY);
         runAction({ kind: 'spawnFood', x: world.x, y: world.y, mass: 10 }, "Pastille générée");
         return;
       }
 
-      if (spawnMode === 'bot') {
+      if (liveRef.current.spawnMode === 'bot') {
         runAction({ kind: 'spawnBot' }, "Bot créé");
         return;
       }
 
-      if (spawnMode === 'teleport' && selectedPlayerId) {
+      if (liveRef.current.spawnMode === 'teleport' && liveRef.current.selectedPlayerId) {
         const world = screenToWorld(camera, canvas!.width, canvas!.height, event.offsetX, event.offsetY);
         runAction({
           kind: 'godInput',
-          playerId: selectedPlayerId,
+          playerId: liveRef.current.selectedPlayerId,
           x: world.x,
           y: world.y,
           intensity: 1,
@@ -236,7 +298,7 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
         return;
       }
 
-      followId = undefined;
+      liveRef.current.followId = undefined;
       isPanning = true;
       lastPanScreen = { x: event.clientX, y: event.clientY };
     }
@@ -249,7 +311,7 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
         camera.x -= dx;
         camera.y -= dy;
         lastPanScreen = { x: event.clientX, y: event.clientY };
-        followId = undefined;
+        liveRef.current.followId = undefined;
       }
     }
     function onMouseUp(): void {
@@ -301,8 +363,8 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
             split: false,
           });
         }
-      } else if (followId) {
-        const center = centerOf(followId, currentEntities);
+      } else if (liveRef.current.followId) {
+        const center = centerOf(liveRef.current.followId, currentEntities);
         if (center) {
           camera.x = center.x;
           camera.y = center.y;
@@ -315,14 +377,13 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
         if (pressedKeys.has('s') || pressedKeys.has('arrowdown')) camera.y += speed;
       }
 
-      drawEntities(ctx!, currentEntities, camera, nicknames, skinsMap, selectedPlayerId);
+      renderer.render(currentEntities, camera, nicknames, skinsMap, liveRef.current.selectedPlayerId);
       raf = requestAnimationFrame(frame);
     }
     raf = requestAnimationFrame(frame);
 
     return () => {
       cancelAnimationFrame(raf);
-      window.removeEventListener('resize', resize);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('mousemove', onMouseMove);
@@ -334,7 +395,7 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
       socketRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, token, spawnMode, selectedPlayerId]);
+  }, [roomId, token]);
 
   const toggleGodmode = (): void => {
     if (godActive) {
@@ -423,6 +484,7 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <ConnectionStatusDot status={connectionStatus} />
           {activeRoom && (
             <span className="badge" style={{ padding: '6px 12px', borderRadius: 'var(--radius-pill)', background: 'var(--surface-hover)' }}>
               {activeRoom.modId.toUpperCase()} · {activeRoom.stats.playerCount}/{activeRoom.maxPlayers} joueurs
@@ -558,7 +620,9 @@ export default function CreativeView({ token, onAuthError, initialRoomId }: Crea
             <span style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-soft)' }}>
               Inspecteur Joueurs ({filteredPlayers.length})
             </span>
-            <span className="badge" style={{ fontSize: 10 }}>Live 20Hz</span>
+            <span className="badge" style={{ fontSize: 10 }}>
+              {liveTickRateHz !== undefined ? `Live ${liveTickRateHz}Hz` : 'Live —'}
+            </span>
           </div>
 
           {/* Search & Type Filter Header */}

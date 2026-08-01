@@ -103,8 +103,8 @@ class WorkerRoomHandle implements RoomHandle {
     this.post({ type: 'input', roomId: this.id, playerId, input });
   }
 
-  connectViewer(playerId: PlayerId, isSpectator: boolean): void {
-    this.post({ type: 'connectViewer', roomId: this.id, playerId, isSpectator });
+  connectViewer(playerId: PlayerId, isSpectator: boolean, isAdmin = false): void {
+    this.post({ type: 'connectViewer', roomId: this.id, playerId, isSpectator, isAdmin });
   }
 
   disconnectViewer(playerId: PlayerId): void {

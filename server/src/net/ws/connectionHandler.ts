@@ -15,7 +15,7 @@ import type { AccountsService } from '../../accounts/service.js';
 import type { AdminAuth } from '../../admin/adminAuth.js';
 import type { RoomManager } from '../../engine/roomManager.js';
 import type { PlayerId } from '../../engine/types.js';
-import { SPECTATOR_TICK_DIVISOR } from '../../engine/worker/snapshotBuilder.js';
+import { ADMIN_TICK_DIVISOR, SPECTATOR_TICK_DIVISOR } from '../../engine/worker/snapshotBuilder.js';
 import { logEvent } from '../../log.js';
 import { getClientIp } from '../http/httpUtils.js';
 import { RateLimiter } from '../rateLimiter.js';
@@ -97,19 +97,20 @@ export function handleWsConnection(
     const adminViewerId = `admin-view-${runtime.nextPlayerId++}`;
     runtime.sockets.set(adminViewerId, socket);
     runtime.spectatorIds.add(adminViewerId);
-    managed.handle.connectViewer(adminViewerId, true);
+    managed.handle.connectViewer(adminViewerId, true, true);
     logEvent('admin_ws_join', { roomId: managed.id, adminViewerId });
     send(socket, {
       type: 'welcome',
       playerId: adminViewerId,
       mapSize: managed.handle.mapSize,
-      // Cadence RÉELLE d'envoi pour ce viewer (spectateur/admin, un tick sur SPECTATOR_TICK_DIVISOR
-      // seulement, voir roomInstance.ts `shouldSendSpectatorTick`) — annoncer le tick rate de
-      // SIMULATION brut ici faisait sous-dimensionner le buffer d'interpolation du client
-      // (RenderEngine.getInterpolatedEntities), qui tombait alors bien plus souvent en
-      // extrapolation que pour un vrai joueur (retour utilisateur : lag du fond spectateur/vue
-      // admin).
-      tickRateHz: roomManager.tickRateHz / SPECTATOR_TICK_DIVISOR,
+      // Cadence RÉELLE d'envoi pour ce viewer (canal admin, un tick sur ADMIN_TICK_DIVISOR
+      // seulement — 1 par défaut, aucune réduction, voir son commentaire dans snapshotBuilder.ts
+      // et roomInstance.ts `shouldSendAdminTick`) — annoncer le tick rate de SIMULATION brut ici
+      // faisait sous-dimensionner le buffer d'interpolation du client
+      // (AdminSnapshotBuffer.updateIntervalMs, admin/src/entityCanvas.ts), qui tombait alors bien
+      // plus souvent en extrapolation/gel qu'attendu (retour utilisateur : lag du canva admin,
+      // cahier_des_charges_admin.md §2.3/§10.1).
+      tickRateHz: roomManager.tickRateHz / ADMIN_TICK_DIVISOR,
       movement: managed.handle.movement,
       nextResetAtMs: roomManager.nextResetAtMsOf(managed),
       buildVersion,

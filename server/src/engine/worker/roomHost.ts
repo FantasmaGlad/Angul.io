@@ -43,7 +43,7 @@ export interface RoomHandle {
   leave(playerId: PlayerId): Promise<LeaveResult | undefined>;
   getPlayerMaxMass?(playerId: PlayerId): number;
   input(playerId: PlayerId, input: PlayerInput): void;
-  connectViewer(playerId: PlayerId, isSpectator: boolean): void;
+  connectViewer(playerId: PlayerId, isSpectator: boolean, isAdmin?: boolean): void;
   disconnectViewer(playerId: PlayerId): void;
 
   /** Action admin générique (§4.3-4.4 cahier_des_charges_admin.md) — voir `AdminRoomAction`. */
@@ -98,8 +98,8 @@ class LocalRoomHandle implements RoomHandle {
     this.instance.input(playerId, input);
   }
 
-  connectViewer(playerId: PlayerId, isSpectator: boolean): void {
-    this.instance.connectViewer(playerId, isSpectator);
+  connectViewer(playerId: PlayerId, isSpectator: boolean, isAdmin = false): void {
+    this.instance.connectViewer(playerId, isSpectator, isAdmin);
   }
 
   disconnectViewer(playerId: PlayerId): void {

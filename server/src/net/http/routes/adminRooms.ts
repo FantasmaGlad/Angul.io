@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AdminRoomAction } from '@angulio/shared';
 import type { AdminAuth } from '../../../admin/adminAuth.js';
+import { ADMIN_TICK_DIVISOR } from '../../../engine/worker/snapshotBuilder.js';
 import type { RoomManager } from '../../../engine/roomManager.js';
 import { logEvent } from '../../../log.js';
 import type { RoomRuntime } from '../../ws/broadcast.js';
@@ -31,7 +32,15 @@ export async function handleAdminListRooms(
         modId: managed.modId,
         visibility: managed.visibility,
         maxPlayers: managed.maxPlayers,
+        // Cadence de SIMULATION brute — utile pour le diagnostic serveur (charge CPU), mais
+        // PAS ce qu'un viewer admin/spectateur reçoit réellement (voir `snapshotHz` ci-dessous).
         tickRateHz: roomManager.tickRateHz,
+        // Cadence RÉELLE des paquets reçus par le canal admin (§2.3/§8/§17 cahier_des_charges_admin.md :
+        // "la cadence affichée ... doit correspondre exactement à la cadence réelle des paquets
+        // reçus") — c'est CETTE valeur que "Salons & Écrans" doit afficher, jamais `tickRateHz` brut
+        // (qui affichait à tort le taux de simulation, trompeur : un admin voyait "30Hz"/"20Hz" alors
+        // que son canva n'était en réalité rafraîchi qu'à `tickRateHz / ADMIN_TICK_DIVISOR`).
+        snapshotHz: roomManager.tickRateHz / ADMIN_TICK_DIVISOR,
         stats,
         players: players.map((player) => ({
           ...player,

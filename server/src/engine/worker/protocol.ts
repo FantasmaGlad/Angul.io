@@ -119,7 +119,7 @@ export interface RespawnResult {
 export type RoomCommand =
   | ({ type: 'createRoom' } & RoomSpec)
   | { type: 'destroyRoom'; roomId: string }
-  | { type: 'connectViewer'; roomId: string; playerId: PlayerId; isSpectator: boolean }
+  | { type: 'connectViewer'; roomId: string; playerId: PlayerId; isSpectator: boolean; isAdmin?: boolean }
   | { type: 'disconnectViewer'; roomId: string; playerId: PlayerId }
   | { type: 'input'; roomId: string; playerId: PlayerId; input: PlayerInput }
   | { type: 'joinRequest'; reqId: number; roomId: string; nickname: string; skin?: string }

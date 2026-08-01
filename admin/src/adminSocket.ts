@@ -12,6 +12,13 @@ import type {
 export interface AdminSocketCallbacks {
   onState?: (entities: EntitySnapshot[], leaderboard?: LeaderboardEntry[]) => void;
   onPlayerInfo?: (playerId: string, nickname: string, skin?: string) => void;
+  /** `welcome` (cahier_des_charges_admin.md §10.1) — transmet la cadence RÉELLE d'envoi du canal
+   * admin (`tickRateHz` du protocole, déjà = `roomManager.tickRateHz / ADMIN_TICK_DIVISOR` côté
+   * serveur, voir connectionHandler.ts). Jamais écouté avant ce correctif — `AdminSnapshotBuffer`
+   * restait figé à un `updateIntervalMs` codé en dur (50ms), désynchronisé de la cadence réelle
+   * dès qu'elle diffère (c'était déjà le cas avant même ce correctif : 20/2=10Hz réels vs 50ms
+   * supposés) — la cause du "gel" périodique perçu dans le canva (§2.3). */
+  onWelcome?: (tickRateHz: number) => void;
   onClose?: (reason: string) => void;
 }
 
@@ -46,6 +53,11 @@ export function connectAdminSocket(
     if (typed.type === 'state') {
       const state = message as { entities: EntitySnapshot[]; leaderboard?: LeaderboardEntry[] };
       callbacks.onState?.(state.entities, state.leaderboard);
+    } else if (typed.type === 'welcome') {
+      const welcome = message as { tickRateHz?: number };
+      if (typeof welcome.tickRateHz === 'number' && welcome.tickRateHz > 0) {
+        callbacks.onWelcome?.(welcome.tickRateHz);
+      }
     } else if (typed.type === 'player') {
       const info = message as { playerId: string; nickname: string; skin?: string };
       callbacks.onPlayerInfo?.(info.playerId, info.nickname, info.skin);

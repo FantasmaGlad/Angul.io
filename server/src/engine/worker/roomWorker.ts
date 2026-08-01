@@ -65,7 +65,7 @@ port.on('message', (command: RoomCommand) => {
         break;
       }
       case 'connectViewer': {
-        instances.get(command.roomId)?.connectViewer(command.playerId, command.isSpectator);
+        instances.get(command.roomId)?.connectViewer(command.playerId, command.isSpectator, command.isAdmin);
         break;
       }
       case 'disconnectViewer': {

@@ -24,6 +24,18 @@ import { activeComboLevel } from '../xp.js';
  * (`SPECTATOR_FOOD_SAMPLE_EVERY`, 1/6 des particules) indépendamment de cette cadence, donc doubler
  * la fréquence d'envoi ne double pas vraiment le coût réseau/CPU par visiteur du lobby. */
 export const SPECTATOR_TICK_DIVISOR = 2;
+
+/** Cadence/fidélité DÉDIÉES au canal admin (`?admin=1`) — cahier_des_charges_admin.md §10.1 :
+ * distinct de `SPECTATOR_TICK_DIVISOR` ci-dessus, qui reste pensé pour le fond d'accueil (N
+ * visiteurs simultanés, dézoomé, sacrifie densité/fréquence pour la bande passante agrégée). Un
+ * admin observant activement un salon (modération, Studio de contrôle) est à l'inverse UN SEUL
+ * viewer authentifié à la fois, sur un canal déjà séparé — le coût d'une fidélité maximale reste
+ * borné par construction, alors que le lag perçu du canva admin était le point de douleur
+ * explicitement signalé en priorité (§2.3/§16 "priorité absolue"). `1` = aucune réduction de
+ * cadence (chaque tick de simulation envoyé), voir aussi `buildVisibleEntitySnapshots(allEntities,
+ * false)` dans `roomInstance.ts` (jamais de sous-échantillonnage nourriture pour ce viewer). */
+export const ADMIN_TICK_DIVISOR = 1;
+
 /** pastilles de nourriture pour spectateur : 1 sur N (id % N === 0) envoyée — le reste est omis.
  * Relevé à 6 (était 4, régression déjà corrigée à ce niveau — voir plan_performance_reseau.md
  * §4.1) : audit lag lobby — un visiteur d'accueil supplémentaire ne doit quasiment rien coûter,

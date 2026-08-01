@@ -17,6 +17,7 @@ import {
   type CoarseFoodIndex,
 } from './interestFilter.js';
 import {
+  ADMIN_TICK_DIVISOR,
   buildStateMessage,
   buildVisibleEntitySnapshots,
   centroidOf,
@@ -60,6 +61,13 @@ export class RoomInstance {
   private nextPlayerId = 1;
   private readonly viewerIds = new Set<PlayerId>();
   private readonly spectatorIds = new Set<PlayerId>();
+  /** Sous-ensemble de `spectatorIds` correspondant au canal admin (`?admin=1`,
+   * cahier_des_charges_admin.md §10.1) — distinct du fond spectateur joueur (`?spectate=1`) :
+   * cadence (`ADMIN_TICK_DIVISOR`) et fidélité (jamais de sous-échantillonnage nourriture, voir
+   * `handleTick`) propres, un admin observant activement un salon a besoin de bien plus de
+   * précision qu'un simple décor d'accueil dézoomé — et le coût, contrairement au spectateur
+   * joueur, reste borné par construction (un admin authentifié à la fois, jamais N visiteurs). */
+  private readonly adminViewerIds = new Set<PlayerId>();
   private readonly maxMassByPlayer = new Map<PlayerId, number>();
   /** Ids de nourriture déjà envoyés à CE joueur depuis sa dernière resynchronisation complète —
    * filtrage par intérêt + delta nourriture (cahier_des_charges_perf_reseau_grande_carte.md §3.5,
@@ -269,18 +277,22 @@ export class RoomInstance {
     }));
   }
 
-  /** Enregistre un destinataire d'état par tick — joueur réel (après un `join` accepté) ou
+  /** Enregistre un destinataire d'état par tick — joueur réel (après un `join` accepté),
    * spectateur (`?spectate=1`, jamais ajouté à `world`, voir SpectatorBackground.tsx côté
-   * client) : les deux cas passent par ici, seul `isSpectator` distingue le traitement
-   * (fréquence réduite + nourriture échantillonnée, voir snapshotBuilder.ts). */
-  connectViewer(playerId: PlayerId, isSpectator: boolean): void {
+   * client) ou vue admin (`?admin=1`, cahier_des_charges_admin.md §10.1) : les trois cas passent
+   * par ici. `isSpectator` distingue le traitement (fréquence réduite + nourriture échantillonnée,
+   * voir snapshotBuilder.ts) ; `isAdmin` (implique `isSpectator`) bascule sur la cadence/fidélité
+   * dédiées au canal admin (`ADMIN_TICK_DIVISOR`, jamais de sous-échantillonnage). */
+  connectViewer(playerId: PlayerId, isSpectator: boolean, isAdmin = false): void {
     this.viewerIds.add(playerId);
     if (isSpectator) this.spectatorIds.add(playerId);
+    if (isAdmin) this.adminViewerIds.add(playerId);
   }
 
   disconnectViewer(playerId: PlayerId): void {
     this.viewerIds.delete(playerId);
     this.spectatorIds.delete(playerId);
+    this.adminViewerIds.delete(playerId);
     // Force une resynchronisation complète de la nourriture à la reconnexion (voir `handleTick`,
     // `!lastSent` déclenche un envoi complet) plutôt que de reprendre un delta sur une position
     // potentiellement périmée après une coupure — sans risque, l'ancien Set n'était de toute
@@ -334,12 +346,20 @@ export class RoomInstance {
 
     const payloads: TickPayload[] = [];
     let sharedSpectatorMessage: ServerMessage | undefined;
+    let sharedAdminMessage: ServerMessage | undefined;
     const shouldSendSpectatorTick = tick % SPECTATOR_TICK_DIVISOR === 0;
+    const shouldSendAdminTick = tick % ADMIN_TICK_DIVISOR === 0;
 
     // Snapshot du salon entier construit UNE SEULE FOIS par tick pour les spectateurs/vue admin
     // (voir `buildVisibleEntitySnapshots`) — chemin INCHANGÉ, ils continuent de tout voir (§1.3
     // cahier_des_charges_perf_reseau_grande_carte.md, non-régression modération/fond d'accueil).
     let spectatorEntities: ReturnType<typeof buildVisibleEntitySnapshots> | undefined;
+    // Salon entier SANS sous-échantillonnage nourriture (cahier_des_charges_admin.md §10.1) —
+    // distinct de `spectatorEntities` : un admin qui observe activement un salon (modération,
+    // Studio de contrôle) a besoin de la nourriture réelle, contrairement au fond décoratif
+    // dézoomé de l'accueil (`isVisibleToSpectator`, pensé pour N visiteurs simultanés, jamais le
+    // cas ici — voir `adminViewerIds`).
+    let adminEntities: ReturnType<typeof buildVisibleEntitySnapshots> | undefined;
 
     // Filtrage par intérêt (joueurs réels uniquement, jamais les spectateurs/vue admin) : calculé
     // PAR JOUEUR désormais (plus de liste unique partagée, voir cahier des charges §3.4) —
@@ -352,6 +372,31 @@ export class RoomInstance {
     const resyncIntervalTicks = Math.round(this.room.tickRateHz * RESYNC_INTERVAL_SEC);
 
     for (const playerId of this.viewerIds) {
+      const isAdminViewer = this.adminViewerIds.has(playerId);
+      if (isAdminViewer) {
+        if (!shouldSendAdminTick) continue;
+        if (!sharedAdminMessage) {
+          // `isSpectator: false` ici (2ᵉ argument) : PAS de sous-échantillonnage nourriture,
+          // contrairement à `spectatorEntities` ci-dessus — voir le commentaire de `adminEntities`.
+          adminEntities ??= buildVisibleEntitySnapshots(allEntities, false);
+          sharedAdminMessage = buildStateMessage({
+            room: this.room,
+            playerId: 'admin',
+            // `ADMIN_TICK_DIVISOR` vaut 1 par défaut (aucune réduction) : `Math.floor(tick / 1)`
+            // reproduit le tick de simulation brut tel quel, jamais de renumérotation nécessaire
+            // dans ce cas — mais reste correct si `ADMIN_TICK_DIVISOR` change un jour (même
+            // raisonnement que `shouldSendSpectatorTick` ci-dessous pour la dérive de la ligne de
+            // temps du client, voir son commentaire détaillé).
+            tick: Math.floor(tick / ADMIN_TICK_DIVISOR),
+            entities: adminEntities,
+            topScores,
+            entitiesFull: true,
+          }).message;
+        }
+        payloads.push({ playerId, message: sharedAdminMessage });
+        continue;
+      }
+
       const isSpectator = this.spectatorIds.has(playerId);
       if (isSpectator) {
         if (!shouldSendSpectatorTick) continue;

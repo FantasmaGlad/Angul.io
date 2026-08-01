@@ -13,6 +13,12 @@ export default function App() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
+  // Doit rester AVANT le `if (!token) return ...` ci-dessous (Rules of Hooks) : un Hook appelé
+  // conditionnellement (absent au rendu "écran de login", présent une fois connecté) fait
+  // planter React à la connexion ("Rendered more hooks than during the previous render") — bug
+  // corrigé ici, l'admin restait blanc (aucun contenu, aucune erreur visible côté utilisateur)
+  // dès qu'un login réussissait.
+  const [selectedCreativeRoomId, setSelectedCreativeRoomId] = useState<string | undefined>(undefined);
 
   const handleLogin = useCallback(() => {
     void (async () => {
@@ -37,6 +43,11 @@ export default function App() {
     if (!message.includes('authentifié')) return;
     clearAdminSession();
     setToken(undefined);
+  }, []);
+
+  const handleSelectCreativeRoom = useCallback((roomId: string) => {
+    setSelectedCreativeRoomId(roomId);
+    setView('creatif');
   }, []);
 
   if (!token) {
@@ -77,13 +88,6 @@ export default function App() {
       </div>
     );
   }
-
-  const [selectedCreativeRoomId, setSelectedCreativeRoomId] = useState<string | undefined>(undefined);
-
-  const handleSelectCreativeRoom = useCallback((roomId: string) => {
-    setSelectedCreativeRoomId(roomId);
-    setView('creatif');
-  }, []);
 
   return (
     <div className="app-shell">

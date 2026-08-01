@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import type { EntitySnapshot } from '@angulio/shared';
 import { kickPlayer, listRooms, transferPlayer, type AdminRoomView } from '../adminApi.js';
 import { connectAdminSocket, type AdminSocketHandle } from '../adminSocket.js';
-import { drawEntities, type Camera } from '../entityCanvas.js';
+import { AdminSnapshotBuffer, type Camera } from '../entityCanvas.js';
+import { PixiEntityRenderer } from '../pixiEntityRenderer.js';
+import ConnectionStatusDot, { type ConnectionStatus } from './ConnectionStatus.js';
 
 interface RoomsViewProps {
   token: string;
@@ -145,7 +147,7 @@ export default function RoomsView({ token, onAuthError, onSelectCreativeRoom }: 
                   {room.name} <span className="badge">{room.modId}</span>
                 </h3>
                 <p className="view-subtitle" style={{ marginTop: 4 }}>
-                  {room.stats.playerCount}/{room.maxPlayers} joueurs · tick {room.tickRateHz}Hz · avg {room.stats.tickAvgMs.toFixed(1)}ms
+                  {room.stats.playerCount}/{room.maxPlayers} joueurs · {room.snapshotHz}Hz · avg {room.stats.tickAvgMs.toFixed(1)}ms
                 </p>
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
@@ -321,16 +323,17 @@ interface PovOverlayProps {
 function PovOverlay({ token, roomId, playerId, nickname, onClose }: PovOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [disconnected, setDisconnected] = useState('');
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const renderer = new PixiEntityRenderer(canvas);
 
     function resize(): void {
       canvas!.width = canvas!.clientWidth;
       canvas!.height = canvas!.clientHeight;
+      renderer.resize(canvas!.width, canvas!.height);
     }
     resize();
     window.addEventListener('resize', resize);
@@ -338,17 +341,29 @@ function PovOverlay({ token, roomId, playerId, nickname, onClose }: PovOverlayPr
     const nicknames = new Map<string, string>();
     const colors = new Map<string, string>();
     let raf = 0;
-    let latestEntities: EntitySnapshot[] = [];
+    // Interpolation (§10.2 cahier_des_charges_admin.md) — absente avant ce correctif : le POV
+    // dessinait directement le dernier `onState` reçu, sans lissage entre deux snapshots réseau,
+    // un mouvement en escalier à la cadence réseau plutôt que fluide à la cadence d'écran.
+    const snapshotBuffer = new AdminSnapshotBuffer();
 
     const handle: AdminSocketHandle = connectAdminSocket(token, roomId, {
       onState: (entities) => {
-        latestEntities = entities;
+        snapshotBuffer.pushSnapshot(entities);
       },
       onPlayerInfo: (id, nick) => nicknames.set(id, nick),
-      onClose: (reason) => setDisconnected(reason),
+      onWelcome: (tickRateHz) => {
+        snapshotBuffer.setServerTickRateHz(tickRateHz);
+        setConnectionStatus('connected');
+      },
+      onClose: (reason) => {
+        setConnectionStatus('disconnected');
+        setDisconnected(reason);
+      },
     });
+    setConnectionStatus('connecting');
 
     function frame(): void {
+      const latestEntities = snapshotBuffer.getInterpolatedEntities();
       let camera: Camera;
       if (playerId) {
         const ownPieces = latestEntities.filter((e) => e.p === playerId);
@@ -371,13 +386,14 @@ function PovOverlay({ token, roomId, playerId, nickname, onClose }: PovOverlayPr
               }
             : { x: 7500, y: 7500, scale: 0.05 };
       }
-      drawEntities(ctx!, latestEntities, camera, nicknames, colors, playerId || undefined);
+      renderer.render(latestEntities, camera, nicknames, colors, playerId || undefined);
       raf = requestAnimationFrame(frame);
     }
     raf = requestAnimationFrame(frame);
 
     return () => {
       cancelAnimationFrame(raf);
+      renderer.destroy();
       window.removeEventListener('resize', resize);
       handle.close();
     };
@@ -387,9 +403,12 @@ function PovOverlay({ token, roomId, playerId, nickname, onClose }: PovOverlayPr
     <div className="pov-overlay">
       <div className="pov-header">
         <span>{nickname}</span>
-        <button className="btn-ghost" type="button" onClick={onClose}>
-          Fermer
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <ConnectionStatusDot status={connectionStatus} />
+          <button className="btn-ghost" type="button" onClick={onClose}>
+            Fermer
+          </button>
+        </div>
       </div>
       {disconnected && <p className="error-text">{disconnected}</p>}
       <canvas ref={canvasRef} className="pov-canvas" />

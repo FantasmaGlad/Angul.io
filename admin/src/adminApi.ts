@@ -70,7 +70,13 @@ export interface AdminRoomView {
   modId: string;
   visibility: 'public' | 'private';
   maxPlayers: number;
+  /** Cadence de SIMULATION brute (charge CPU) — PAS ce qu'un viewer reçoit réellement, voir
+   * `snapshotHz` (cahier_des_charges_admin.md §2.3/§17 : "la cadence affichée doit toujours être
+   * la cadence réellement reçue"). */
   tickRateHz: number;
+  /** Cadence RÉELLE des paquets `state` reçus par le canal admin — c'est CETTE valeur à afficher
+   * dans "Salons & Écrans", jamais `tickRateHz`. */
+  snapshotHz: number;
   stats: { playerCount: number; tickAvgMs: number; tickP95Ms: number; tickOverruns: number };
   players: Array<AdminPlayerInfo & { ping?: number }>;
 }

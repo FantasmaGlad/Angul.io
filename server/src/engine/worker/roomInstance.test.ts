@@ -167,6 +167,46 @@ describe('RoomInstance — filtrage par intérêt (handleTick)', () => {
     instance.destroy();
   });
 
+  it('canal admin (§10.1 cahier_des_charges_admin.md) : cadence/fidélité DÉCOUPLÉES du spectateur joueur — toute la nourriture, sans sous-échantillonnage', () => {
+    const instance = makeInstance();
+    const alice = instance.join('Alice');
+    if (!alice.ok) throw new Error('join a échoué');
+    instance.room.world.spawnPiece(alice.playerId, { x: 0, y: 0 }, 50);
+
+    // 12 particules — avec SPECTATOR_FOOD_SAMPLE_EVERY=6, un spectateur JOUEUR n'en verrait
+    // qu'une fraction (isVisibleToSpectator, id % 6 === 0), jamais la vue admin.
+    const foodIds: string[] = [];
+    for (let i = 0; i < 12; i++) {
+      foodIds.push(instance.room.world.spawnParticle({ x: 10 + i, y: 10 }, 1).id);
+    }
+
+    instance.connectViewer('admin-1', true, true);
+    instance.connectViewer('spectator-1', true, false);
+
+    const payloads = capture(instance);
+    // ADMIN_TICK_DIVISOR = 1 : un seul tick suffit pour l'admin ; SPECTATOR_TICK_DIVISOR peut
+    // exiger plusieurs ticks pour que le spectateur joueur reçoive quoi que ce soit.
+    for (let i = 0; i < SPECTATOR_TICK_DIVISOR; i++) instance.room.tick();
+
+    const adminMessages = payloads.filter((p) => p.playerId === 'admin-1');
+    const spectatorMessages = payloads.filter((p) => p.playerId === 'spectator-1');
+    expect(adminMessages.length).toBeGreaterThan(0);
+    expect(spectatorMessages.length).toBeGreaterThan(0);
+
+    const adminFoodIds = stateEntities(adminMessages[0]!.message)
+      .filter((e) => foodIds.includes(e.i))
+      .map((e) => e.i);
+    const spectatorFoodIds = stateEntities(spectatorMessages[0]!.message)
+      .filter((e) => foodIds.includes(e.i))
+      .map((e) => e.i);
+
+    // L'admin voit TOUTES les particules spawnées, le spectateur joueur seulement une partie
+    // (sous-échantillonnage `isVisibleToSpectator`) — la différence prouve le découplage.
+    expect(adminFoodIds.length).toBe(12);
+    expect(spectatorFoodIds.length).toBeLessThan(12);
+    instance.destroy();
+  });
+
   it('nourriture : delta puis resynchronisation complète — un id delta n’est envoyé qu’une fois, une resynchro renvoie tout', () => {
     const instance = makeInstance(100_000, 30);
     const alice = instance.join('Alice');
