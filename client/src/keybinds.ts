@@ -19,10 +19,25 @@ export interface ActionBinding {
 
 export type KeybindConfig = Record<GameAction, ActionBinding>;
 
+/** `key` est un `KeyboardEvent.code` — la POSITION physique de la touche (repère clavier
+ * QWERTY-US), pas le caractère imprimé dessus (voir le commentaire de `ActionBinding.key`) :
+ * indépendant de la disposition réelle de l'utilisateur, sauf que `keyLabel()` (ci-dessous)
+ * AFFICHE ce code sous la forme de son caractère QWERTY-US ("KeyW" -> "W") — un défaut tombant
+ * sur une touche qui BOUGE entre QWERTY et AZERTY (Q/A, W/Z, M/;) affiche donc à un joueur AZERTY
+ * (public visé par ce jeu, interface entièrement en français) une lettre qu'il ne trouvera PAS à
+ * l'endroit indiqué : "KeyW" s'affiche "W", mais la touche physique portant un W sur un clavier
+ * AZERTY français envoie en réalité `KeyZ` (verified) — la manette d'éjection semblait alors "ne
+ * pas marcher" (retour utilisateur), alors qu'elle répondait bien à `KeyW`, simplement pas à la
+ * touche que l'utilisateur pressait de bonne foi. `KeyF` (dash) et `Space` (split) n'ont jamais eu
+ * ce problème : F et Espace occupent la MÊME position sur les deux dispositions. Défaut d'éjection
+ * déplacé sur `KeyE` (E est également identique QWERTY/AZERTY, touche adjacente à l'ancienne
+ * `KeyW`) plutôt que de complexifier `keyLabel()` avec une détection de disposition (peu fiable,
+ * aucune API navigateur universelle) — un rebind manuel (Réglages) reste toujours possible pour
+ * quiconque préfère une autre touche. */
 export const DEFAULT_KEYBINDS: KeybindConfig = {
   split: { key: 'Space', gamepadButton: 0 }, // A (Xbox) / Croix (PlayStation)
   dash: { key: 'KeyF', gamepadButton: 2 }, // X (Xbox) / Carré (PlayStation)
-  eject: { key: 'KeyW', gamepadButton: 1 }, // B (Xbox) / Rond (PlayStation)
+  eject: { key: 'KeyE', gamepadButton: 1 }, // B (Xbox) / Rond (PlayStation)
 };
 
 /** Libellé lisible par action — utilisé par le HUD dash (DASH · <touche>) et l'UI de réglages. */

@@ -4,7 +4,8 @@
     "startMass": 50,
     "maxSplits": 32,
     "minSplitMass": 50,
-    "splitEnabled": false
+    "splitEnabled": false,
+    "ejectEnabled": false
   },
   "physics": {
     "v0": 245,
@@ -41,13 +42,13 @@
     "floor": 20
   },
   "arena": {
-    "width": 20000,
-    "height": 20000,
+    "width": 50000,
+    "height": 50000,
     "borderType": "STRICT_WALL"
   },
   "food": {
-    "density": 10,
-    "respawnRatePerSecond": 200,
+    "density": 5,
+    "respawnRatePerSecond": 300,
     "pelletTypes": [
       {
         "color": "vert",
@@ -109,7 +110,23 @@
       "maxWithHumans": 15,
       "minWithHumans": 6,
       "rampHumans": 5,
-      "massMultipliers": [50, 40, 30, 25, 20, 15, 12, 10, 8, 7, 6, 5, 4, 3, 2]
+      "massMultipliers": [
+        50,
+        40,
+        30,
+        25,
+        20,
+        15,
+        12,
+        10,
+        8,
+        7,
+        6,
+        5,
+        4,
+        3,
+        2
+      ]
     },
     "idleDespawn": {
       "enabled": true,

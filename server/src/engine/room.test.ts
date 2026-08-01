@@ -198,6 +198,31 @@ describe('Room — reset automatique (Lot 2.4)', () => {
     expect(room.world.getPlayer('p1')?.nickname).toBe('Alice');
   });
 
+  it('notifie onPlayerDeath pour chaque joueur ENCORE EN VIE avant de le respawn (retour utilisateur : "le score n\'est pas enregistré quand le salon se reset")', () => {
+    const mod: GameMod = {
+      id: 'test',
+      onPlayerJoin: (world, playerId) => {
+        world.spawnPiece(playerId, { x: 0, y: 0 }, 50);
+      },
+    };
+    const room = new Room(mod, { mapSize: 1000, tickRateHz: 20, resetSchedule: null });
+    room.addPlayer('p1', 'Alice'); // vivant au moment du reset
+    room.addPlayer('p2', 'Bob');
+    for (const pieceId of [...room.world.getPlayer('p2')!.pieceIds]) room.world.removeEntity(pieceId);
+    // Bob n'a plus aucun morceau (mort avant le reset, en attente de respawn) : ne doit PAS
+    // déclencher `onPlayerDeath` une seconde fois — seul Alice était réellement en vie.
+    const deathListener = vi.fn();
+    room.onPlayerDeath(deathListener);
+
+    room.reset();
+
+    expect(deathListener).toHaveBeenCalledTimes(1);
+    expect(deathListener).toHaveBeenCalledWith('p1', {
+      killerNickname: undefined,
+      survivalTimeSec: expect.any(Number),
+    });
+  });
+
   it('notifie les listeners onReset à chaque reset, manuel ou automatique', () => {
     const mod: GameMod = { id: 'test' };
     const room = new Room(mod, { mapSize: 1000, tickRateHz: 20, resetSchedule: null });

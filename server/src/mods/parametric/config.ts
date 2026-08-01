@@ -41,6 +41,10 @@ export interface ParametricModConfig {
     /** `false` désactive entièrement le split pour ce mode (demande utilisateur : Hardcore ne
      * garde que le Dash) — absent = activé, voir `splitEnabled()` (physics.ts). */
     splitEnabled?: boolean;
+    /** `false` désactive entièrement l'éjection de masse (touche configurable, défaut `W`) pour
+     * ce mode (demande utilisateur : Hardcore ne garde que le Dash, pas de nourrissage volontaire
+     * d'un allié) — absent = activée, voir `ejectEnabled()` (physics.ts). */
+    ejectEnabled?: boolean;
   };
 
   physics: {

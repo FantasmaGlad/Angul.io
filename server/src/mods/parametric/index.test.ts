@@ -252,6 +252,20 @@ describe('createParametricMod — éjection de masse', () => {
     const finalSpeed = Math.hypot(particle!.velocity.x, particle!.velocity.y);
     expect(finalSpeed).toBeLessThan(initialSpeed * 0.01);
   });
+
+  it('ne fait rien quand `config.player.ejectEnabled` est `false` (Hardcore : ne garder que le Dash, pas de nourrissage volontaire d’un allié)', () => {
+    const config = testConfig({ eject: { amount: 5 }, player: { ...testConfig().player, ejectEnabled: false } });
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    world.spawnPiece('p1', { x: 500, y: 500 }, 100);
+
+    mod.onPlayerInput?.(world, 'p1', { target: { x: 600, y: 500 }, intensity: 1, split: false, eject: true });
+
+    const [piece] = world.getPiecesByOwner('p1');
+    expect(piece!.mass).toBeCloseTo(100, 6); // inchangé
+    expect(world.allEntities().filter((e) => e.kind === 'particle')).toHaveLength(0);
+  });
 });
 
 describe('createParametricMod — fusion', () => {
@@ -497,6 +511,30 @@ describe('createParametricMod — manger', () => {
     // Seuil franchi : absorption engagée (progressive, voir `beginConsumption`) — puis mangée.
     finishConsumption(mod, world, config);
     expect(world.getEntity(victimClose.id)).toBeUndefined();
+  });
+
+  it('mange une cible traversée en un seul tick à haute vitesse (Dash), même si la distance de FIN de tick seule montre un chevauchement insuffisant', () => {
+    // Reproduit le retour utilisateur "réactivité de manger lente à haute vitesse" : un attaquant
+    // qui traverse ENTIÈREMENT sa cible en un seul tick (previousPosition -> position) doit la
+    // manger si son trajet est passé par un point de chevauchement suffisant, même si sa position
+    // de FIN de tick (déjà repassée de l'autre côté) ne montre plus, seule, que 160px d'écart —
+    // exactement la distance jugée insuffisante par le test "exige au moins 70%" ci-dessus.
+    const config = testConfig();
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Attacker');
+    world.addPlayer('p2', 'Victim');
+
+    const victim = world.spawnPiece('p2', { x: 500, y: 500 }, 100);
+    victim.previousPosition = { x: 500, y: 500 }; // immobile ce tick
+
+    const attacker = world.spawnPiece('p1', { x: 660, y: 500 }, 1000);
+    // A traversé le centre de la victime (500,500) ce tick — trajet 340px -> 660px sur l'axe X.
+    attacker.previousPosition = { x: 340, y: 500 };
+
+    mod.onCollision?.(world, attacker, victim, 0.05);
+    finishConsumption(mod, world, config);
+    expect(world.getEntity(victim.id)).toBeUndefined();
   });
 
   it('ne mange pas et ne repousse pas deux blobs si le chevauchement est < 70%', () => {

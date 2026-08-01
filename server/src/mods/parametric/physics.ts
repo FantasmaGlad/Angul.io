@@ -38,6 +38,13 @@ export function splitEnabled(config: ParametricModConfig): boolean {
   return config.player.splitEnabled ?? true;
 }
 
+/** Repli si `config.player.ejectEnabled` est absent — l'éjection de masse reste activée par
+ * défaut (Vanilla ne le renseigne pas) ; seul Hardcore le passe explicitement à `false` (demande
+ * utilisateur : ne garder que le Dash, pas de nourrissage volontaire d'un allié). */
+export function ejectEnabled(config: ParametricModConfig): boolean {
+  return config.player.ejectEnabled ?? true;
+}
+
 /** Repli si `config.eating.eatOverlapFraction` est absent — 0.7 (70%, arrondi de 2/3) : valeur
  * d'origine du seuil, reprise telle quelle (voir historique de `handleEatAttempt`,
  * mods/parametric/index.ts et mods/hardcore/index.ts). */

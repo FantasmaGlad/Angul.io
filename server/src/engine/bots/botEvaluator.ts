@@ -8,7 +8,28 @@ export interface BotStateMemory {
   lastWanderAngle?: number;
   lastDir?: Vector2;
   lastSplitAtMs?: number;
+  /** Horodatage (`performance.now()`) depuis lequel ce bot est resté "contre" un mur en continu
+   * (voir `WALL_STUCK_FACTOR_THRESHOLD`/`WALL_STUCK_MAX_MS` ci-dessous) — `undefined` tant qu'il
+   * n'y est pas collé. Remis à zéro dès qu'il s'en écarte suffisamment. */
+  wallStuckSinceMs?: number;
 }
+
+/** Seuil de `wallFactor` (0 loin du mur, 1 collé dessus) au-delà duquel un bot est considéré
+ * "contre" le mur pour la mesure de temps ci-dessous — pas 1.0 strictement : un bot déjà très
+ * proche du bord souffre du même frottement visuel qu'un bot qui le touche exactement. */
+const WALL_STUCK_FACTOR_THRESHOLD = 0.6;
+/** Durée maximale (ms) qu'un bot peut rester "contre" un mur avant que ce module ne force son
+ * échappée (retour utilisateur : "il faut qu'ils évitent de rester contre un mur trop longtemps,
+ * 2 secondes max") — voir le commentaire d'en-tête du mélange `wallFactor` plus bas : ce mélange
+ * pointe déjà dans la bonne direction dès que `wallFactor > 0`, mais le lissage de direction
+ * (`directionSmoothing`, EMA à chaque ÉVALUATION, pas chaque tick) combiné à la cadence
+ * d'évaluation "ambiante" des bots (2 Hz par défaut, `updateFrequencyHz`, botManager.ts) fait que
+ * converger d'un cap pointant DANS le mur vers un cap pointant à l'opposé prend en pratique
+ * plusieurs SECONDES (~4s mesuré à 2Hz/0.25 de lissage) avant que le bot ne s'en écarte
+ * franchement — largement au-dessus de ce qu'un spectateur perçoit comme "un bot qui évite les
+ * murs". Passé ce délai, l'échappée COURT-CIRCUITE le lissage habituel (voir plus bas) : direction
+ * imposée directement à `away`, intensité maximale, jusqu'à ce que le bot quitte la zone de marge. */
+const WALL_STUCK_MAX_MS = 2000;
 
 export function computeBotInput(
   world: World,
@@ -229,8 +250,21 @@ export function computeBotInput(
     wallFactor = Math.max(wallFactor, f);
   }
 
+  // Mesure du temps passé "contre" le mur (voir WALL_STUCK_MAX_MS) — indépendante de la décision
+  // ci-dessous, doit rester à jour même quand `wallFactor` est sous le seuil (bot qui vient de
+  // s'écarter : le compteur doit repartir de zéro, pas juste ne plus avancer).
+  const nowMs = performance.now();
+  if (wallFactor >= WALL_STUCK_FACTOR_THRESHOLD) {
+    memory.wallStuckSinceMs ??= nowMs;
+  } else {
+    memory.wallStuckSinceMs = undefined;
+  }
+  const wallStuckTooLong =
+    memory.wallStuckSinceMs !== undefined && nowMs - memory.wallStuckSinceMs >= WALL_STUCK_MAX_MS;
+
+  let away: Vector2 | undefined;
   if (wallFactor > 0) {
-    const away = normalize(wallPush);
+    away = normalize(wallPush);
     const blendedDir = normalize({
       x: targetDir.x * (1 - wallFactor) + away.x * wallFactor,
       y: targetDir.y * (1 - wallFactor) + away.y * wallFactor,
@@ -250,6 +284,15 @@ export function computeBotInput(
       x: memory.lastDir.x + (normDir.x - memory.lastDir.x) * lerpRate,
       y: memory.lastDir.y + (normDir.y - memory.lastDir.y) * lerpRate,
     });
+  }
+  // Passé WALL_STUCK_MAX_MS collé au mur, COURT-CIRCUITE le lissage ci-dessus : celui-ci est
+  // exactement ce qui, combiné à la cadence d'évaluation ambiante des bots, fait traîner
+  // l'échappée sur plusieurs secondes (voir le commentaire de WALL_STUCK_MAX_MS) — direction
+  // imposée directement à `away` (pleine intensité) le temps que le bot quitte la marge, plutôt
+  // que de continuer à converger lentement vers elle évaluation après évaluation.
+  if (wallStuckTooLong && away) {
+    normDir = away;
+    intensity = 1;
   }
   memory.lastDir = normDir;
 

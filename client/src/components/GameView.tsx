@@ -747,6 +747,27 @@ export default function GameView({
       const frameDt = Math.min(50, lastFrameAt > 0 ? now - lastFrameAt : 16);
       lastFrameAt = now;
 
+      // Filet de sécurité (retour utilisateur : "écran blanc, parfois la page crash et n'affiche
+      // plus le jeu") : `requestAnimationFrame` n'a AUCUN mécanisme de rattrapage intégré — une
+      // exception non interceptée n'importe où dans le corps de `frame()` (donnée serveur
+      // inattendue, cas limite de rendu...) interrompt silencieusement la chaîne de rappels, sans
+      // jamais planter l'onglet ni afficher la moindre erreur : plus aucun `requestAnimationFrame`
+      // n'est reprogrammé, le canvas reste figé sur sa dernière frame dessinée (ou blanc si
+      // l'exception survenait avant le tout premier dessin). `ErrorBoundary.tsx` ne couvre QUE les
+      // exceptions levées pendant le rendu React — jamais celles-ci, qui se produisent dans une
+      // boucle impérative hors de l'arbre React. Le `try`/`catch` ci-dessous ne change rien au cas
+      // normal (aucun coût, aucune différence de comportement) ; il garantit seulement qu'une
+      // exception ponctuelle ne tue plus JAMAIS la boucle de jeu : la frame fautive est perdue,
+      // journalisée, et la suivante reprend normalement au prochain rappel.
+      try {
+        frameBody(now, frameDt);
+      } catch (error) {
+        console.error('[GameView] frame() a levé une exception — frame ignorée, boucle relancée.', error);
+      }
+      rafId = requestAnimationFrame(frame);
+    }
+
+    function frameBody(now: number, frameDt: number): void {
       const logicStart = performance.now();
 
       // Prédiction locale : avance le(s) morceau(x) du joueur avec la même formule que le
@@ -905,8 +926,6 @@ export default function GameView({
           },
         });
       }
-
-      rafId = requestAnimationFrame(frame);
     }
     rafId = requestAnimationFrame(frame);
 

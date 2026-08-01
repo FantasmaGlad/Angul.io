@@ -2,11 +2,25 @@ import { describe, expect, it } from 'vitest';
 import {
   accelerationForMass,
   applyPassiveDecay,
+  ejectEnabled,
   foodTargetCount,
   randomFoodMass,
   velocityForMass,
 } from './physics.js';
 import { testConfig } from './testConfig.js';
+
+describe('ejectEnabled — repli sur `true` (Vanilla), désactivable par mode (Hardcore)', () => {
+  it('activée par défaut si `config.player.ejectEnabled` est absent', () => {
+    expect(ejectEnabled(testConfig())).toBe(true);
+  });
+
+  it('désactivée quand `config.player.ejectEnabled` vaut `false` (Hardcore : ne garder que le Dash)', () => {
+    const config = testConfig();
+    expect(ejectEnabled({ ...config, player: { ...config.player, ejectEnabled: false } })).toBe(
+      false,
+    );
+  });
+});
 
 describe('velocityForMass — v(m) = MAX(Vfloor, V0·kv·(M0/m)^gamma)', () => {
   const config = testConfig();

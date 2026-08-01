@@ -216,8 +216,12 @@ export class World {
    * tick — voir `findOverlappingPairs` (passe "tunneling"). Se ramène à la distance ponctuelle si
    * l'une des deux entités n'a aucun déplacement relatif ce tick (`dd === 0`, ex. nourriture
    * immobile) ou n'a pas encore de `previousPosition` (entité tout juste créée ce tick, rien à
-   * balayer). */
-  private sweptMinDistance(a: Entity, b: Entity): number {
+   * balayer).
+   *
+   * Publique (pas seulement interne à `findOverlappingPairs`) : réutilisée par la décision de
+   * "manger" un joueur (`handleEatAttempt`, mods/parametric/index.ts) — voir son commentaire pour
+   * pourquoi la distance de FIN de tick seule ne suffit pas à haute vitesse. */
+  sweptMinDistance(a: Entity, b: Entity): number {
     const prevA = a.previousPosition ?? a.position;
     const prevB = b.previousPosition ?? b.position;
     const px = prevA.x - prevB.x;

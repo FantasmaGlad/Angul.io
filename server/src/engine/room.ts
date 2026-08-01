@@ -135,8 +135,31 @@ export class Room {
    * connectés (pas de déconnexion, pas de perte de pseudo) ; `onReset` notifie le réseau pour
    * qu'il prévienne chaque client (voir net/server.ts, réutilise le message `died` existant —
    * la sensation "je viens de mourir, je respawn" est exactement ce qui se passe). Invocable
-   * automatiquement (planification) ou manuellement (tests, admin plus tard). */
+   * automatiquement (planification) ou manuellement (tests, admin plus tard).
+   *
+   * Chaque joueur ENCORE EN VIE au moment du reset (`pieceIds.length > 0`) est d'abord annoncé
+   * aux `deathListeners`, EXACTEMENT comme une mort normale (voir la boucle de `tick()`) — sans
+   * ça, la vie en cours d'un joueur était silencieusement effacée sans jamais être créditée
+   * (retour utilisateur : "quand le salon se reset, rien n'est enregistré", ni le score/meilleur
+   * score ni l'XP — `RoomInstance.handleDeath`, engine/worker/roomInstance.ts, est l'unique
+   * abonné réel de `deathListeners` et fait déjà tout ce travail — masse de pointe/XP de la vie
+   * lues puis remises à zéro, message transmis à `broadcast.ts` qui crédite la DB — pour une
+   * mort ordinaire ; un reset s'y annonce désormais de la même façon AVANT que les morceaux ne
+   * disparaissent, plutôt que de contourner ce pipeline). `killerNickname` reste `undefined`
+   * (personne n'a mangé personne) ; `survivalTimeSec` mesure la vie écoulée jusqu'à CE reset,
+   * comme pour toute mort. Fait AVANT de vider le monde : `handleDeath` a besoin de lire la
+   * masse de pointe/l'XP encore intacts de cette vie. */
   reset(): void {
+    const now = performance.now();
+    for (const player of this.world.allPlayers()) {
+      if (player.pieceIds.length === 0) continue;
+      const info: PlayerDeathInfo = {
+        killerNickname: undefined,
+        survivalTimeSec: (now - player.spawnedAtMs) / 1000,
+      };
+      for (const listener of this.deathListeners) listener(player.id, info);
+    }
+
     for (const entity of this.world.allEntities()) this.world.removeEntity(entity.id);
     for (const player of this.world.allPlayers()) this.mod.onPlayerJoin?.(this.world, player.id);
     this.botManager?.onReset();

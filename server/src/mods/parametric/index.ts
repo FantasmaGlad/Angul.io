@@ -27,6 +27,7 @@ import {
   applyPassiveDecay,
   accelerationForMass,
   eatOverlapFraction,
+  ejectEnabled,
   foodTargetCount,
   randomFoodMass,
   splitEnabled,
@@ -330,6 +331,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
    * ne peut pas aboutir ce tick-ci est simplement ignoré, comme un split en-dessous de
    * `minSplitMass`. */
   function tryEjectMass(world: World, piece: Entity): void {
+    if (!ejectEnabled(config)) return;
     const state = pieceState(piece);
     if (state.ejectCooldownS > 0) return;
 
@@ -392,7 +394,19 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
 
     if (!hasMassAdvantage(attacker, target)) return false;
 
-    const dist = distance(attacker.position, target.position);
+    // Distance minimale sur tout le trajet du tick (pas seulement la position de FIN de tick,
+    // voir World.sweptMinDistance) : sans ce minimum, un attaquant rapide (Dash, gros morceau
+    // lancé après un split) qui traverse ENTIÈREMENT sa cible en un seul tick peut déjà l'avoir
+    // dépassée au moment où cette fonction s'exécute — la distance de fin de tick redevient
+    // grande, l'aire de recouvrement retombe à 0, et la cible n'est jamais mangée malgré un
+    // passage à travers parfaitement réel (retour utilisateur : "manger les joueurs" peu réactif
+    // à haute vitesse). `findOverlappingPairs` détecte déjà cette paire via sa passe tunneling
+    // (sinon `onCollision` ne serait jamais appelé pour elle), mais ne fait que DÉTECTER la
+    // proximité — la décision de manger, elle, recalculait sa propre distance indépendamment.
+    const dist = Math.min(
+      distance(attacker.position, target.position),
+      world.sweptMinDistance(attacker, target),
+    );
     const overlap = circleOverlapArea(attacker.radius, target.radius, dist);
     if (overlap <= 0) return false;
 
