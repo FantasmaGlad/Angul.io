@@ -197,6 +197,34 @@ export async function listModes(): Promise<string[]> {
   return parseErrorOr<string[]>(response, 'Liste des modes impossible.');
 }
 
+export async function getModConfig(token: string, modId: string): Promise<any> {
+  const response = await fetch(`/api/admin/mods/${encodeURIComponent(modId)}`, {
+    headers: authHeaders(token),
+  });
+  return parseErrorOr<any>(response, 'Chargement du mod impossible.');
+}
+
+export async function updateModConfig(
+  token: string,
+  modId: string,
+  configPayload: any,
+): Promise<{ success: boolean; note: string }> {
+  const response = await fetch(`/api/admin/mods/${encodeURIComponent(modId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
+    body: JSON.stringify(configPayload),
+  });
+  return parseErrorOr<{ success: boolean; note: string }>(response, 'Sauvegarde du mod impossible.');
+}
+
+export async function reloadServerSync(token: string): Promise<{ success: boolean; message: string }> {
+  const response = await fetch('/api/admin/server/reload', {
+    method: 'POST',
+    headers: authHeaders(token),
+  });
+  return parseErrorOr<{ success: boolean; message: string }>(response, 'Synchronisation impossible.');
+}
+
 export async function runRoomAction(
   token: string,
   roomId: string,

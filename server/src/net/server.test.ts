@@ -1621,11 +1621,46 @@ describe.skipIf(!DATABASE_URL)('startGameServer (avec comptes joueurs)', () => {
 
         await new Promise((resolve) => setTimeout(resolve, 50));
         // Le serveur ne plante pas et la room continue de fonctionner
-        expect(socket.readyState).toBe(WebSocket.OPEN);
+        expect(socket.readyState).toBe(1);
         socket.close();
       } finally {
         customHandle.close();
       }
+    });
+
+    it('supporte GET/PUT /api/admin/mods/:id et POST /api/admin/server/reload (v6.1)', async () => {
+      const { port } = await startServer();
+      const loginResponse = await fetch(`http://localhost:${port}/api/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'admin', password: 'adminpass123' }),
+      });
+      const { token } = (await loginResponse.json()) as { token: string };
+
+      // GET /api/admin/mods/vanilla
+      const getModRes = await fetch(`http://localhost:${port}/api/admin/mods/vanilla`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(getModRes.status).toBe(200);
+      const modConfig = (await getModRes.json()) as { id: string };
+      expect(modConfig.id).toBe('vanilla');
+
+      // PUT /api/admin/mods/vanilla
+      const putModRes = await fetch(`http://localhost:${port}/api/admin/mods/vanilla`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(modConfig),
+      });
+      expect(putModRes.status).toBe(200);
+
+      // POST /api/admin/server/reload
+      const reloadRes = await fetch(`http://localhost:${port}/api/admin/server/reload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(reloadRes.status).toBe(200);
+      const reloadBody = (await reloadRes.json()) as { success: boolean };
+      expect(reloadBody.success).toBe(true);
     });
   });
 });

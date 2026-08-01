@@ -11,6 +11,7 @@ admin/public/
 .env
 .env.*
 !.env.example
+server/rooms.local.json
 *.log
 .DS_Store
 coverage/

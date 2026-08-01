@@ -1,7 +1,7 @@
 {
   "version": 1,
   "generatedFrom": "structure.md",
-  "lastReviewed": "2026-07-31 (v5.5)",
+  "lastReviewed": "2026-08-01 (v6.2)",
   "note": "Cartographie machine-readable du depot, en complement de structure.md (lisible par un humain) et README.md (architecture/modding en detail). Sert de source au serveur MCP local que .mcp.json enregistre aupres de Claude Code (.gemini/mcp/server.mjs, PAS .claude/mcp/server.mjs qui existe aussi mais n'est pas celui lance) et a son equivalent Gemini/Antigravity — .gemini/project-structure.json est un SYMLINK vers CE fichier (../.claude/project-structure.json), pas une copie separee : les deux plateformes lisent toujours exactement le meme contenu, rien a resynchroniser manuellement. Ce fichier ET .claude/mcp/** SONT commites (voir structure.md §1bis) — outillage de projet partage, pas une preference locale. Mets a jour CE fichier ET structure.md dans le meme commit si tu ajoutes/deplaces/supprimes un fichier important — sinon les deux deviennent trompeurs.",
   "workspaces": [
     {
@@ -916,6 +916,29 @@
       "description": "Actions admin par salon (kick/freeze/godmode/spawn food...) ; GET/PUT /api/admin/base-rooms (server/rooms.json, cahier_des_charges_admin.md §13)."
     },
     {
+      "path": "server/src/net/http/routes/adminMods.ts",
+      "workspace": "server",
+      "tags": [
+        "reseau",
+        "http",
+        "admin",
+        "api",
+        "mods"
+      ],
+      "description": "GET/PUT /api/admin/mods/:id (edition fine des parametres de mod) et POST /api/admin/server/reload (synchronisation a chaud)."
+    },
+    {
+      "path": "server/rooms.local.json",
+      "workspace": "server",
+      "tags": [
+        "admin",
+        "salons",
+        "config",
+        "local"
+      ],
+      "description": "Fichier local non-synchronise avec git (.gitignore) contenant les salons de l'accueil personnalises par l'admin."
+    },
+    {
       "path": "server/rooms.json",
       "workspace": "server",
       "tags": [
@@ -923,7 +946,7 @@
         "salons",
         "config"
       ],
-      "description": "Salons permanents de l'accueil (nom + mode), edites via l'interface admin (Configuration, §13). Hors de server/configs/ (pas un mod)."
+      "description": "Salons permanents de l'accueil par defaut (nom + mode), edites via l'interface admin (Configuration, §13). Hors de server/configs/ (pas un mod)."
     },
     {
       "path": "server/src/roomsConfig.ts",

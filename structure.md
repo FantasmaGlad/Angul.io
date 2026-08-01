@@ -272,8 +272,9 @@ Angul.io/
 │           │       ├── auth.ts              POST /api/auth/register, /login, /logout, GET /api/account/me
 │           │       ├── health.ts            GET /api/admin/health (métriques de charge par salon)
 │           │       ├── admin.ts             POST /api/admin/login, /logout, GET/PATCH /api/admin/players
-│           │       └── adminRooms.ts        Actions admin par salon (kick/freeze/godmode/spawn food…),
+│           │       ├── adminRooms.ts        Actions admin par salon (kick/freeze/godmode/spawn food…),
 │           │                                  GET/PUT /api/admin/base-rooms (server/rooms.json, §13)
+│           │       └── adminMods.ts         GET/PUT /api/admin/mods/:id (édition de mod) & POST /api/admin/server/reload
 │           └── ws/
 │               ├── connectionHandler.ts     Connexions WS joueur/spectateur, validation stricte d'inputs
 │               └── broadcast.ts            Boucle onTick → EntitySnapshot[] par salon (interest management)

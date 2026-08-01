@@ -21,6 +21,11 @@ import {
   handleAdminTransfer,
   handleAdminUpdateBaseRooms,
 } from './routes/adminRooms.js';
+import {
+  handleAdminGetModConfig,
+  handleAdminServerReload,
+  handleAdminUpdateModConfig,
+} from './routes/adminMods.js';
 import { handleAdminHealth } from './routes/health.js';
 import { handleGetAvatars } from './routes/avatars.js';
 import {
@@ -191,6 +196,21 @@ export async function handleHttpRequest(
 
   if (url.pathname === '/api/admin/broadcast' && req.method === 'POST') {
     await handleAdminBroadcast(runtimes, admin, req, res);
+    return;
+  }
+
+  if (url.pathname === '/api/admin/server/reload' && req.method === 'POST') {
+    handleAdminServerReload(roomManager, admin, req, res);
+    return;
+  }
+
+  const adminModMatch = /^\/api\/admin\/mods\/([^/]+)$/.exec(url.pathname);
+  if (adminModMatch && req.method === 'GET') {
+    handleAdminGetModConfig(admin, decodeURIComponent(adminModMatch[1]!), req, res);
+    return;
+  }
+  if (adminModMatch && req.method === 'PUT') {
+    await handleAdminUpdateModConfig(admin, availableModIds, decodeURIComponent(adminModMatch[1]!), req, res);
     return;
   }
 

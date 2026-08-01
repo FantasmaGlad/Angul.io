@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { ParametricModConfig } from './config.js';
 
@@ -26,4 +26,10 @@ export function listAvailableModIds(): string[] {
     .filter((file) => file.endsWith('.json'))
     .map((file) => file.slice(0, -'.json'.length))
     .sort();
+}
+
+export function saveModConfig(id: string, config: ParametricModConfig): void {
+  const path = `${CONFIGS_DIR}/${id}.json`;
+  const content = `${JSON.stringify(config, null, 2)}\n`;
+  writeFileSync(path, content, 'utf-8');
 }

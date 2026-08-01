@@ -251,10 +251,10 @@ export class RenderEngine {
     isSpectator = false,
   ): EntitySnapshot[] {
     const stateIntervalMs = 1000 / (this.serverTickRateHz || 30);
-    const minDelayMs = Math.max(70, stateIntervalMs * 2.1);
+    const minDelayMs = Math.max(70, stateIntervalMs * 1.25);
     const maxDelayMs = stateIntervalMs * 6;
     const interpDelayMs = clamp(
-      stateIntervalMs * 2.1 + this.jitterEmaMs * JITTER_MARGIN_FACTOR,
+      stateIntervalMs * 1.25 + this.jitterEmaMs * JITTER_MARGIN_FACTOR,
       minDelayMs,
       maxDelayMs,
     );

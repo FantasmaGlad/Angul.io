@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
  * par `listAvailableModIds()`) : un fichier de plus dans ce dossier serait interprété à tort comme
  * un mod supplémentaire. */
 const ROOMS_CONFIG_PATH = fileURLToPath(new URL('../rooms.json', import.meta.url));
+const LOCAL_ROOMS_CONFIG_PATH = fileURLToPath(new URL('../rooms.local.json', import.meta.url));
 
 /** Un salon permanent de l'accueil (§8.4/§13 cahier_des_charges_admin.md) — capacité/taille/bots
  * restent définis par la config du mod lui-même (`server/configs/<modId>.json`), pas dupliqués
@@ -20,23 +21,30 @@ export interface BaseRoomConfig {
 export function loadBaseRoomsConfig(): BaseRoomConfig[] {
   let raw: string;
   try {
-    raw = readFileSync(ROOMS_CONFIG_PATH, 'utf-8');
+    raw = readFileSync(LOCAL_ROOMS_CONFIG_PATH, 'utf-8');
   } catch {
-    throw new Error(`Configuration des salons de base introuvable (attendue à ${ROOMS_CONFIG_PATH})`);
+    try {
+      raw = readFileSync(ROOMS_CONFIG_PATH, 'utf-8');
+    } catch {
+      throw new Error(`Configuration des salons de base introuvable (attendue à ${ROOMS_CONFIG_PATH})`);
+    }
   }
   const parsed: unknown = JSON.parse(raw);
   if (!Array.isArray(parsed)) {
-    throw new Error('server/rooms.json doit contenir un tableau de { name, modId }.');
+    throw new Error('Le fichier de salons doit contenir un tableau de { name, modId }.');
   }
   return parsed as BaseRoomConfig[];
 }
 
-/** Écrit `server/rooms.json` (utilisé par la route admin `PUT /api/admin/base-rooms`, §13) — les
- * salons déjà démarrés ne sont PAS recréés à la volée (`RoomManager` ne sait pas fermer un salon
- * permanent existant, voir cahier des charges §8.4, pas encore implémenté) : un changement ne
- * s'applique qu'au prochain redémarrage du serveur, cohérent avec le reste du modèle de
- * déploiement de ce dépôt (voir .claude/launch.json, `deploySteps`, un redémarrage fait déjà
- * partie de chaque déploiement). */
+/** Écrit `server/rooms.local.json` (et `server/rooms.json` en secours) — utilisé par la route admin
+ * `PUT /api/admin/base-rooms`. Permet de conserver les modifications locales des salons de l'accueil
+ * sans qu'elles ne soient écrasées par git. */
 export function saveBaseRoomsConfig(rooms: BaseRoomConfig[]): void {
-  writeFileSync(ROOMS_CONFIG_PATH, `${JSON.stringify(rooms, null, 2)}\n`, 'utf-8');
+  const content = `${JSON.stringify(rooms, null, 2)}\n`;
+  writeFileSync(LOCAL_ROOMS_CONFIG_PATH, content, 'utf-8');
+  try {
+    writeFileSync(ROOMS_CONFIG_PATH, content, 'utf-8');
+  } catch {
+    // Fichier principal optionnel si restreint
+  }
 }

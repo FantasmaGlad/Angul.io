@@ -90,6 +90,30 @@ describe('RenderEngine — ligne de temps ancrée sur le numéro de tick', () =>
 
     expect(engine.missedTickCount).toBe(2);
   });
+
+  it('interpole en continu à 10 Hz (mode spectateur / lobby) sans gel d’affichage à t=0', () => {
+    const engine = new RenderEngine();
+    const nowSpy = vi.spyOn(performance, 'now');
+
+    // 10 Hz spectateur : snapshots toutes les 100 ms (tickRateHz = 10)
+    nowSpy.mockReturnValueOnce(1000);
+    engine.pushSnapshot([entity('1', 0)], 1, 10);
+    nowSpy.mockReturnValueOnce(1100);
+    engine.pushSnapshot([entity('1', 100)], 2, 10);
+    nowSpy.mockReturnValueOnce(1200);
+    engine.pushSnapshot([entity('1', 200)], 3, 10);
+
+    // À t_client = 1250ms (50ms après le 3e snapshot à 1200ms) :
+    // renderTime = 1250 - 125 = 1125ms (situé de façon fluide entre 1100ms et 1200ms)
+    nowSpy.mockReturnValueOnce(1250);
+    const res = engine.getInterpolatedEntities(16, { x: 0, y: 0, scale: 1 }, 2000, 2000, undefined, true);
+    const own = res.find((e) => e.i === '1');
+
+    expect(own).toBeDefined();
+    // Doit être entre 100 et 200 (exactement ~125 à t=0.25 d'interpolation), pas gelé à 100 (t=0)
+    expect(own!.x).toBeGreaterThan(100);
+    expect(own!.x).toBeLessThan(200);
+  });
 });
 
 /** Le culling de viewport a été déplacé EN AMONT de l'interpolation/du lissage (voir le
