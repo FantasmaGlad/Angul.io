@@ -474,11 +474,11 @@ export class RoomInstance {
         const radius = interestRadiusForMass(totalOwnMass);
         const radiusSq = radius * radius;
 
-        // Morceaux (joueurs/bots) : filtre brute-force par distance (nombre borné — voir
+        // Morceaux (joueurs/bots/virus) : filtre brute-force par distance (nombre borné — voir
         // interestFilter.ts, pas besoin d'index spatial dédié) + les propres morceaux du joueur
         // TOUJOURS inclus, même hors rayon (le client en a besoin hors caméra pour la
         // prédiction/HUD, voir cahier des charges §3.4).
-        pieces ??= allEntities.filter((e) => e.kind === 'piece');
+        pieces ??= allEntities.filter((e) => e.kind === 'piece' || e.kind === 'virus');
         const pieceSnapshots: ReturnType<typeof toSnapshot>[] = ownPieces.map(toSnapshot);
         const includedPieceIds = new Set<EntityId>(ownPieces.map((p) => p.id));
         for (const piece of pieces) {

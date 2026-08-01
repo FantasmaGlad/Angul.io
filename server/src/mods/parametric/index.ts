@@ -406,10 +406,11 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     const ejectedMass = half * config.split.ejectEfficiency;
     const ejectedPosition = add(piece.position, scale(dir, piece.radius * 2));
     const ejected = world.spawnPiece(playerId, ejectedPosition, ejectedMass);
-    ejected.velocity = scale(
-      dir,
-      velocityForMass(ejectedMass, config) * config.split.ejectSpeedFactor,
-    );
+    const launchSpeed =
+      velocityForMass(ejectedMass, config) * config.split.ejectSpeedFactor;
+    ejected.velocity = scale(dir, launchSpeed);
+    // Impulsion vers l'avant sur le morceau d'origine pour avancer de concert sans s'entasser
+    piece.velocity = scale(dir, launchSpeed * 0.25);
 
     const ejectedState = pieceState(ejected);
     ejectedState.inputTarget = { ...originState.inputTarget };
@@ -419,12 +420,9 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
   }
 
   /** Éjection de masse (demande utilisateur) : recrache une particule de masse fixe
-   * (`config.eject.amount`) dans la direction visée — une simple particule de nourriture
+   * (`config.eject.amount`) dans la direction visée avec la VÉLOCITÉ D'UN SPLIT — une simple particule de nourriture
    * (`world.spawnParticle`), mangeable par n'importe qui, y compris un adversaire, pas un morceau
-   * possédé comme le split. Refuse en silence (pas d'erreur envoyée au client) sous
-   * `EJECT_MIN_MASS_MULTIPLIER × amount` ou pendant le cooldown anti-spam — un input "eject" qui
-   * ne peut pas aboutir ce tick-ci est simplement ignoré, comme un split en-dessous de
-   * `minSplitMass`. */
+   * possédé comme le split. */
   function tryEjectMass(world: World, piece: Entity): void {
     if (!ejectEnabled(config)) return;
     const state = pieceState(piece);
@@ -439,9 +437,14 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     world.setMass(piece, piece.mass - amount);
     state.ejectCooldownS = EJECT_COOLDOWN_SECONDS;
 
-    const ejectedPosition = add(piece.position, scale(dir, piece.radius + 5));
+    // Décalage du spawn au-delà du rayon du blob pour éviter la ré-absorption immédiate ce même tick
+    const ejectedPosition = add(piece.position, scale(dir, piece.radius + 15));
     const ejected = world.spawnParticle(ejectedPosition, particleValue);
-    ejected.velocity = scale(dir, EJECT_LAUNCH_SPEED_PX_PER_S);
+
+    // Même vélocité d'expulsion qu'un divisement
+    const launchSpeed =
+      velocityForMass(particleValue, config) * config.split.ejectSpeedFactor;
+    ejected.velocity = scale(dir, launchSpeed);
   }
 
   /** Cooldown de fusion mass-dépendant : T(m) = Tbase + gamma_rec*m (par morceau, feuille
@@ -453,7 +456,9 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     const stateB = pieceState(b);
     const requiredA = config.merge.baseTimeSec + config.merge.massFactor * stateA.massAtSplit;
     const requiredB = config.merge.baseTimeSec + config.merge.massFactor * stateB.massAtSplit;
-    if (stateA.splitElapsedS < requiredA || stateB.splitElapsedS < requiredB) return false;
+    // Délai de grâce minimal de 0.5s pour laisser les morceaux divisés s'écarter proprement sans ré-absorption instantanée
+    const minGrace = 0.5;
+    if (stateA.splitElapsedS < Math.max(minGrace, requiredA) || stateB.splitElapsedS < Math.max(minGrace, requiredB)) return false;
 
     const dist = distance(a.position, b.position);
     if (dist <= a.radius + b.radius + 1.0) {

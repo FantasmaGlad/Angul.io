@@ -5,11 +5,11 @@
     "maxSplits": 64,
     "minSplitMass": 50,
     "splitEnabled": true,
-    "ejectEnabled": false
+    "ejectEnabled": true
   },
   "physics": {
     "v0": 300,
-    "speedMultiplier": 1.5,
+    "speedMultiplier": 5.0,
     "speedMassExponent": 0.0333,
     "velocityFloor": 20,
     "accelerationBase": 6750,
@@ -18,7 +18,7 @@
   },
   "split": {
     "ejectEfficiency": 1.0,
-    "ejectSpeedFactor": 4.5
+    "ejectSpeedFactor": 9.0
   },
   "eject": {
     "amount": 5
