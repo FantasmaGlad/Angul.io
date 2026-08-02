@@ -436,6 +436,10 @@ function partitionEatenFood(entities: EntitySnapshot[]): { visible: EntitySnapsh
   const eaten: EatenFood[] = [];
   const visible = entities.filter((entity) => {
     if (entity.k !== 'f') return true;
+    // Ne pas masquer artificiellement les particules de nourriture en vol (éjection W) —
+    // elles suivent la trajectoire autoritaire du serveur et ne doivent pas clignoter
+    // ni faire de rollback visuel lors du survol d'un morceau.
+    if (entity.vx || entity.vy) return true;
     for (const c of creatures) {
       const dx = entity.x - c.x;
       const dy = entity.y - c.y;

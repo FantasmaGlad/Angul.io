@@ -63,9 +63,10 @@ const PING_INTERVAL_MS = 1000;
  * isolé (un seul échantillon/s), assez réactif pour suivre une vraie dégradation en quelques
  * secondes. */
 const LATENCY_EMA_ALPHA = 0.25;
-/** Marge de sécurité (ms) ajoutée à l'estimation lissée — biaise délibérément vers une latence
- * surestimée plutôt que sous-estimée (voir le commentaire sur `smoothedLatencyMs`). */
-const LATENCY_SAFETY_MARGIN_MS = 15;
+/** Marge de sécurité (ms) ajoutée à l'estimation lissée — ramenée à 0 pour que la fenêtre de rejeu
+ * corresponde exactement au temps serveur sans surestimer la latence ni créer de rollback visuel
+ * artificiel à chaque tick. */
+const LATENCY_SAFETY_MARGIN_MS = 0;
 const MAP_UNITS_TO_METERS = 0.01;
 
 /** `LeaderboardEntry` du protocole + `isSelf` calculé côté client (comparaison à `selfPlayerId`)
