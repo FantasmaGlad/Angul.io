@@ -201,14 +201,26 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     };
   }
 
-  /** Vérifie si une position de nourriture/pellet chevaucherait une pièce (joueur/bot) ou une particule (autre pellet) existante. */
+  /** Vérifie si une position de nourriture/pellet chevaucherait une pièce (joueur/bot) ou une
+   * particule (autre pellet) existante — requête spatiale bornée (`World.queryNearby`) plutôt
+   * qu'un scan de `world.allEntities()` : appelée à CHAQUE tentative de position lors d'un spawn
+   * de nourriture (jusqu'à 90 tentatives, voir `randomFoodPosition`), donc en continu au rythme du
+   * respawn (`food.respawnRatePerSecond`) — un scan complet de TOUTES les entités du salon à
+   * chaque tentative, sur la carte Hardcore (~5000 pastilles cible), restait un coût dominant même
+   * après avoir corrigé les autres scans redondants de `onTick` (voir son commentaire). Le rayon de
+   * recherche couvre le rayon maximal d'une entité DE LA GRILLE (`spatialHash.maxGridEntityRadius`)
+   * — les entités plus grosses (Blobs Challenger...) sont de toute façon toujours retournées par
+   * `queryNearby`, quel que soit ce rayon (voir son commentaire, `getLargeEntities`). */
   function isPositionOccupiedForFood(
     world: World,
     pos: Vector2,
     foodRadius: number,
     pelletBuffer: number = 2,
   ): boolean {
-    for (const entity of world.allEntities()) {
+    const searchRadius = foodRadius + Math.max(pelletBuffer, 5) + world.spatialHash.maxGridEntityRadius();
+    for (const id of world.queryNearby(pos, searchRadius)) {
+      const entity = world.getEntity(id);
+      if (!entity) continue;
       if (entity.kind === 'piece' || entity.ownerId !== undefined) {
         const dist = distance(pos, entity.position);
         if (dist < entity.radius + foodRadius + 5) {
@@ -238,19 +250,23 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     return randomPositionInMap(margin);
   }
 
-  /** Vérifie si une position de spawn de joueur/robot chevaucherait ou serait trop proche d'un joueur/robot existant. */
+  /** Vérifie si une position de spawn de joueur/robot chevaucherait ou serait trop proche d'un
+   * joueur/robot existant — requête spatiale bornée, même raisonnement que
+   * `isPositionOccupiedForFood` ci-dessus (moins fréquent ici, au join/respawn seulement, mais même
+   * coût O(n) par tentative sans ce correctif). */
   function isPositionOccupiedForPlayer(
     world: World,
     pos: Vector2,
     spawnRadius: number,
     safeBuffer: number,
   ): boolean {
-    for (const entity of world.allEntities()) {
-      if (entity.kind === 'piece') {
-        const dist = distance(pos, entity.position);
-        if (dist < entity.radius + spawnRadius + safeBuffer) {
-          return true;
-        }
+    const searchRadius = spawnRadius + safeBuffer + world.spatialHash.maxGridEntityRadius();
+    for (const id of world.queryNearby(pos, searchRadius)) {
+      const entity = world.getEntity(id);
+      if (!entity || entity.kind !== 'piece') continue;
+      const dist = distance(pos, entity.position);
+      if (dist < entity.radius + spawnRadius + safeBuffer) {
+        return true;
       }
     }
     return false;
@@ -290,7 +306,11 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     const mass = config.player.startMass;
     const spawnRadius = Math.sqrt((config.areaConstant * mass) / PI);
     const margin = Math.sqrt((config.areaConstant * mass) / 3);
-    world.spawnPiece(playerId, randomSafePlayerPosition(world, margin, spawnRadius), mass);
+    const piece = world.spawnPiece(playerId, randomSafePlayerPosition(world, margin, spawnRadius), mass);
+    // Voir le commentaire sur l'insertion immédiate de la nourriture dans `onTick` — même angle
+    // mort ici si deux joueurs rejoignent/respawnent au même tick (`isPositionOccupiedForPlayer`,
+    // via `queryNearby`, ne verrait pas le premier avant la prochaine `rebuildSpatialHash()` sinon).
+    world.spatialHash.insert(piece);
   }
 
   function explodePiece(world: World, piece: Entity, count: number): Entity[] {
@@ -327,8 +347,12 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     return result;
   }
 
+  /** Requête spatiale bornée — même raisonnement que `isPositionOccupiedForFood` ci-dessus. */
   function isPositionOccupiedForVirus(world: World, pos: Vector2, virusRadius: number): boolean {
-    for (const entity of world.allEntities()) {
+    const searchRadius = virusRadius + 10 + world.spatialHash.maxGridEntityRadius();
+    for (const id of world.queryNearby(pos, searchRadius)) {
+      const entity = world.getEntity(id);
+      if (!entity) continue;
       const dist = distance(pos, entity.position);
       if (dist < entity.radius + virusRadius + 10) return true;
     }
@@ -545,9 +569,9 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
    * marque : Hardcore délègue toujours son `onTick` à celui du mod paramétrique en premier (voir
    * mods/hardcore/index.ts), donc ses propres cibles sont drainées ici aussi — un seul point
    * d'implémentation du "temps qu'il faut pour manger quelqu'un", jamais dupliqué par mod. */
-  function advanceConsumptions(world: World, dt: number): void {
+  function advanceConsumptions(world: World, dt: number, entities: readonly Entity[]): void {
     const duration = absorptionDurationSec(config);
-    for (const entity of world.allEntities()) {
+    for (const entity of entities) {
       if (entity.kind !== 'piece') continue;
       const consumption = pieceState(entity).consumedBy;
       if (!consumption) continue;
@@ -605,7 +629,25 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     },
 
     onTick(world: World, dt: number) {
-      for (const entity of world.allEntities()) {
+      // Une seule capture des entités du salon pour tout ce tick, réutilisée par TOUTES les passes
+      // ci-dessous — `world.allEntities()` copie TOUTES les entités (`[...map.values()]`, O(n)
+      // ALLOUÉ à chaque appel), et était appelée jusqu'à 6 fois séparées dans cette seule méthode
+      // (mouvement/decay, advanceConsumptions, comptage nourriture, comptage virus, réaction en
+      // chaîne, dégonflement virus) — un coût mesuré comme dominant sur la carte Hardcore (~5000
+      // pastilles cible, très supérieur aux ~100-1600 des autres modes) une fois l'IA de dash des
+      // bots elle-même corrigée (voir mods/hardcore/index.ts) : le TPS Hardcore restait bas malgré
+      // ce premier correctif. Rien n'apparaît/ne disparaît entre ces passes AVANT les boucles de
+      // spawn de nourriture/virus plus bas (comportement inchangé : les entités spawnées PENDANT ce
+      // tick n'étaient de toute façon jamais concernées par la réaction en chaîne/le dégonflement
+      // virus, qui ne s'appliquent qu'à des morceaux/virus déjà marqués/déjà assez massifs).
+      const allEntities = world.allEntities();
+      let particleCount = 0;
+      let virusCount = 0;
+
+      for (const entity of allEntities) {
+        if (entity.kind === 'particle') particleCount++;
+        else if (entity.kind === 'virus') virusCount++;
+
         if (entity.kind !== 'piece') {
           // Frottement des particules éjectées (éjection de masse) — la nourriture normale a
           // toujours une vélocité nulle à son spawn, ce frottement n'a donc d'effet que sur les
@@ -649,11 +691,10 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         if (decayedMass !== entity.mass) world.setMass(entity, decayedMass);
       }
 
-      advanceConsumptions(world, dt);
+      advanceConsumptions(world, dt, allEntities);
 
       const allPlayers = world.allPlayers();
       const humanCount = allPlayers.filter((p) => !isBotId(p.id)).length;
-      const particleCount = world.allEntities().filter((e) => e.kind === 'particle').length;
       const target = foodTargetCount(config, humanCount);
       if (particleCount < target) {
         foodSpawnCredit += config.food.respawnRatePerSecond * dt;
@@ -661,17 +702,22 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         foodSpawnCredit -= toSpawn;
         for (let i = 0; i < toSpawn; i++) {
           const foodMass = randomFoodMass(config);
-          world.spawnParticle(randomFoodPosition(world, 1, foodMass), foodMass);
+          const spawned = world.spawnParticle(randomFoodPosition(world, 1, foodMass), foodMass);
+          // Inséré immédiatement dans la grille spatiale (pas seulement à la prochaine
+          // `world.rebuildSpatialHash()`, qui n'a lieu qu'une fois par tick APRÈS `onTick`, voir
+          // Room.tick()) — sinon `isPositionOccupiedForFood` (via `queryNearby`) ne verrait jamais
+          // les pastilles DÉJÀ spawnées PLUS TÔT dans CETTE MÊME boucle, un angle mort que l'ancien
+          // scan de `world.allEntities()` (qui lit la Map en direct) n'avait pas.
+          world.spatialHash.insert(spawned);
         }
       }
 
       // Maintenance de la population de virus (taux de 5 virus/s universel jusqu'à la limite)
       if (config.virus?.enabled) {
-        const virusEntities = world.allEntities().filter((e) => e.kind === 'virus');
         const vTarget = targetVirusCount();
-        if (virusEntities.length < vTarget) {
+        if (virusCount < vTarget) {
           virusSpawnCredit += 5 * dt;
-          const toSpawn = Math.min(Math.floor(virusSpawnCredit), vTarget - virusEntities.length);
+          const toSpawn = Math.min(Math.floor(virusSpawnCredit), vTarget - virusCount);
           virusSpawnCredit -= toSpawn;
           for (let i = 0; i < toSpawn; i++) {
             const vType = config.virus.type;
@@ -680,6 +726,8 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
             const pos = randomVirusPosition(world, 1, vRadius);
             const v = world.spawnVirus(pos, initialMass, vType);
             v.radius = vRadius;
+            // Voir le commentaire équivalent sur l'insertion immédiate de la nourriture ci-dessus.
+            world.spatialHash.insert(v);
           }
         } else {
           virusSpawnCredit = 0;
@@ -687,7 +735,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
       }
 
       // 2e étape de la réaction en chaîne pour Virus Bleu (4x4 = 16)
-      for (const entity of world.allEntities()) {
+      for (const entity of allEntities) {
         if (entity.kind === 'piece') {
           const state = pieceState(entity);
           if (state.chainReactionPending) {
@@ -698,7 +746,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
       }
 
       // Dégonflement du Virus Rouge (type 2) et régurgitation de pellets ID 1 (+2 à +5 px du bord)
-      for (const virus of world.allEntities()) {
+      for (const virus of allEntities) {
         if (virus.kind === 'virus' && virus.virusId === 2 && virus.mass > 300) {
           const massLost = Math.min(virus.mass - 300, 30 * dt);
           world.setMass(virus, virus.mass - massLost);

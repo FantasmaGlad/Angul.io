@@ -105,6 +105,36 @@ describe('createParametricMod — onPlayerJoin & règles d’apparition', () => 
       }
     }
   });
+
+  it("insère immédiatement une pastille nouvellement spawnée dans la grille spatiale, visible via queryNearby dans le MÊME tick (pas seulement à la prochaine rebuildSpatialHash, qui n'a lieu qu'une fois par tick APRÈS onTick, voir Room.tick())", () => {
+    // Test DIRECT du mécanisme (voir World.spatialHash.insert dans onTick) plutôt qu'une vérification
+    // indirecte "aucune pastille ne chevauche une autre" : cette dernière approche, essayée d'abord,
+    // dépend de la probabilité de collision ET du rayon RÉEL des pastilles (massToRadius, différent
+    // du rayon interne utilisé par randomFoodPosition pour éviter les chevauchements, cf. son propre
+    // écart préexistant, hors périmètre ici) — trop fragile comme garde de non-régression. Ici, on
+    // vérifie directement que la grille spatiale contient bien les pastilles fraîchement spawnées.
+    const config = testConfig({
+      food: { ...testConfig().food, density: 100, respawnRatePerSecond: 50 },
+    });
+    const mod = createParametricMod(config);
+    const world = freshWorld();
+
+    mod.onTick?.(world, 1.0);
+
+    const particles = world.allEntities().filter((e) => e.kind === 'particle');
+    expect(particles.length).toBeGreaterThan(1);
+
+    // Sans l'insertion immédiate (voir onTick), la grille spatiale resterait complètement VIDE ici
+    // (jamais reconstruite dans ce test, qui appelle onTick directement — voir Room.tick() pour
+    // l'ordre réel) : `queryNearby` depuis la position de n'importe quelle pastille ne trouverait
+    // alors JAMAIS les autres, quel que soit le rayon de recherche.
+    const first = particles[0]!;
+    const searchRadius = Math.hypot(config.arena.width, config.arena.height); // couvre toute la carte
+    const nearbyIds = world.queryNearby(first.position, searchRadius);
+    const particleIds = new Set(particles.map((p) => p.id));
+    const nearbyOtherParticles = nearbyIds.filter((id) => id !== first.id && particleIds.has(id));
+    expect(nearbyOtherParticles.length).toBeGreaterThan(0);
+  });
 });
 
 describe('createParametricMod — onTick (vitesse/accélération)', () => {

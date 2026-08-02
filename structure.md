@@ -244,7 +244,14 @@ Angul.io/
 │       │   │   ├── pieceState.ts                  État par-morceau (cible, cooldowns) hors du World générique
 │       │   │   ├── border.ts / .test.ts           4 types de bord de carte (mur/rebond/toroïdal/toxique)
 │       │   │   ├── virus.test.ts                  Tests unitaires des 3 types de virus (Vert/Rouge/Bleu, duplication, réactions en chaîne)
-│       │   │   └── index.ts                       createParametricMod() — implémente GameMod depuis la config
+│       │   │   └── index.ts                       createParametricMod() — implémente GameMod depuis la config.
+│       │   │                                        onTick (v10.2) : UN SEUL world.allEntities() par tick
+│       │   │                                        (était jusqu'à 6 appels séparés). isPositionOccupiedFor*
+│       │   │                                        (v10.2) : world.queryNearby borné au lieu d'un scan
+│       │   │                                        complet à chaque tentative de spawn, + insertion
+│       │   │                                        immédiate dans spatialHash à chaque spawn (sinon les
+│       │   │                                        entités spawnées DANS LA MÊME boucle onTick restaient
+│       │   │                                        invisibles à queryNearby jusqu'au tick suivant)
 │       │   └── hardcore/
 │       │       └── index.ts / .test.ts            createHardcoreMod() — COMPOSE parametric (voir README).
 │       │                                            IA de dash des bots (onTick) throttlée à 200ms + bornée
@@ -306,7 +313,10 @@ Angul.io/
 │       ├── support.ts                 Contenu de la page Soutenir (lien de don, texte)
 │       ├── net.ts / net.test.ts       Connexion WebSocket au serveur de jeu (reconnexion auto)
 │       ├── input.ts                   Capture souris/clavier/manette → cible + intensité + actions
-│       ├── prediction.ts / .test.ts   PRÉDICTION LOCALE + réconciliation du blob du joueur (voir README)
+│       ├── prediction.ts / .test.ts   PRÉDICTION LOCALE + réconciliation du blob du joueur (voir README).
+│       │                               chunkHistoryForReplay (v10.2) : retrait de la branche "isTurning"
+│       │                               (v10.1) qui violait le matching de discrétisation serveur pendant
+│       │                               un virage — toujours UN SEUL bloc par tick désormais, même en virage
 │       ├── reconcileLatency.ts / .test.ts  estimatedLatencyMsFromAnchor() — convertit l'ancrage horloge de
 │       │                               RenderEngine (serverTimeMsForTick) en latence pour reconcile(), à la
 │       │                               place du ping 1Hz lissé (repli uniquement) (v10.2)

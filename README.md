@@ -478,6 +478,16 @@ exacte pour la physique). Toute nouvelle formule de mouvement doit rester **iden
 `shared/src/movement.ts` (utilisé par les deux côtés) sous peine de réintroduire des corrections
 perpétuelles visibles à chaque tick réseau.
 
+`chunkHistoryForReplay` regroupe TOUJOURS en un seul bloc par tick (cible = dernier échantillon),
+**même pendant un virage** (v10.2) — une variante testait un rejeu fin échantillon-par-échantillon
+pendant un virage détecté (v10.1), mais cette détection comparait des `target` en coordonnées MONDE
+ABSOLUES qui dérivent avec la caméra (laquelle suit le blob, `input.ts` `getTarget`), donc se
+déclenchait quasi en permanence dès que le blob bougeait — et surtout, ce rejeu fin comparait alors
+`predicted.position` à une trajectoire que le serveur (qui n'applique jamais qu'UNE cible par tick)
+n'a physiquement jamais calculée, réintroduisant le biais que le regroupement par tick est censé
+éliminer. Le petit saut géométrique d'un virage mergé en un seul pas reste dans la bande lissée par
+`visualOffset` — c'est ce lissage qui absorbe ce cas, pas une raison de sacrifier le matching serveur.
+
 Si tu ajoutes une mécanique qui déplace un morceau du joueur en dehors de `step()`/`integrate()`
 (un nouveau type d'impulsion, par ex.), regarde comment `applyDash` journalise son impulsion dans
 `pendingDashes` pour que `reconcile()` puisse la rejouer — sans ça, un `state` reçu APRÈS

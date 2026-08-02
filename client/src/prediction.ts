@@ -589,10 +589,33 @@ export class LocalPrediction {
    * durée cumulée correspond au pas serveur (1/`serverTickRateHz`) avant rejeu — plutôt qu'un
    * `integrate()` par échantillon fin.
    *
-   * Preserve les sous-pas lors d'un virage (cible en mouvement rapide/changement de direction) :
-   * l'intégration d'un virage par 12 sous-pas fins décrit une courbe lisse, alors que 1 seul pas
-   * grossier vers la cible finale ferait un saut en corde d'arc (erreur géométrique de 30-60px),
-   * perçu comme du lag/rollback lors des changements de direction de la souris. */
+   * TOUJOURS un seul bloc par tick, cible = DERNIER échantillon du bloc — y compris pendant un
+   * virage, jamais un rejeu fin échantillon par échantillon. Une variante "préserve les sous-pas
+   * pendant un virage" a été essayée (v10.1, "Smooth turn direction changes without rollback") :
+   * rejouer un virage en sous-pas fins fait certes correspondre le résultat du rejeu à ce que
+   * `step()` a déjà affiché EN DIRECT, mais viole exactement le principe qui justifie cette
+   * fonction (voir le paragraphe suivant) — le SERVEUR, lui, n'applique jamais qu'UNE seule cible
+   * par tick (celle du dernier `input` reçu), jamais un sous-pas par frame de rendu. Rejouer en
+   * sous-pas fins pendant un virage compare donc `predicted.position` à une trajectoire que le
+   * serveur n'a PHYSIQUEMENT JAMAIS calculée, réintroduisant précisément le biais que le
+   * regroupement par tick est censé éliminer — perçu comme un tremblement/mini rollback CONTINU
+   * pendant les virages (retour utilisateur, persistant malgré v10.1), pas seulement à leur
+   * déclenchement. Aggravé par le fait que la détection "isTurning" d'origine comparait des
+   * `target` en coordonnées MONDE ABSOLUES, qui dérivent en permanence avec la caméra (laquelle
+   * suit le blob, voir `input.ts` `getTarget`, `target = camera + direction·portée`) — donc quasi
+   * toujours "vraie" dès que le blob est simplement en mouvement en ligne droite, pas seulement
+   * lors d'un vrai changement de cap.
+   *
+   * Le petit saut géométrique d'un virage mergé en un seul pas ("corde d'arc", jusqu'à 30-60px
+   * selon l'ancien calibrage) reste largement dans la bande lissée par `visualOffset`
+   * (`RECONCILE_SNAP_THRESHOLD_PX` >= 120px, voir `reconcile()`) — absorbé en douceur, jamais un
+   * télétransport brut : exactement ce que ce lissage existe pour gérer, pas une raison de
+   * sacrifier le matching du serveur, qui élimine le biais À LA SOURCE plutôt que de le maquiller
+   * après coup.
+   *
+   * Le pas fin de `step()` lui-même n'a pas besoin de changer : c'est ce qui rend le rendu EN
+   * DIRECT fluide et indépendant du framerate. Seul le REJEU doit matcher la discrétisation
+   * serveur. */
   private chunkHistoryForReplay(
     samples: InputSample[],
     serverTickRateHz: number | undefined,
@@ -607,33 +630,27 @@ export class LocalPrediction {
 
     const tickSeconds = 1 / serverTickRateHz;
     const chunks: Array<{ dtSeconds: number; target: Vector2; intensity: number }> = [];
-    let currentChunkSamples: InputSample[] = [];
     let accDtSeconds = 0;
+    let lastTarget: Vector2 | undefined;
+    let lastIntensity = 0;
 
     for (const sample of samples) {
-      currentChunkSamples.push(sample);
       accDtSeconds += sample.dtSeconds;
+      lastTarget = sample.target;
+      lastIntensity = sample.intensity;
+      // Tolérance flottante : la somme de plusieurs `FIXED_STEP_SECONDS` peut manquer `tickSeconds`
+      // de quelques ulps même quand elle le couvre exactement (ex. 8×1/240s vs 1/30s).
       if (accDtSeconds >= tickSeconds - 1e-9) {
-        const firstTarget = currentChunkSamples[0]!.target;
-        const isTurning = currentChunkSamples.some(
-          (s) => distance(s.target, firstTarget) > 1.0,
-        );
-        if (isTurning) {
-          for (const s of currentChunkSamples) {
-            chunks.push({ dtSeconds: s.dtSeconds, target: s.target, intensity: s.intensity });
-          }
-        } else {
-          const last = currentChunkSamples[currentChunkSamples.length - 1]!;
-          chunks.push({ dtSeconds: accDtSeconds, target: last.target, intensity: last.intensity });
-        }
+        chunks.push({ dtSeconds: accDtSeconds, target: lastTarget, intensity: lastIntensity });
         accDtSeconds = 0;
-        currentChunkSamples = [];
+        lastTarget = undefined;
       }
     }
-    if (currentChunkSamples.length > 0) {
-      for (const s of currentChunkSamples) {
-        chunks.push({ dtSeconds: s.dtSeconds, target: s.target, intensity: s.intensity });
-      }
+    // Reliquat plus court qu'un tick plein (fin de fenêtre de rejeu) : rejoué tel quel, borné par
+    // construction à moins de `tickSeconds` — pas de biais significatif sur un intervalle aussi
+    // court.
+    if (accDtSeconds > 0 && lastTarget) {
+      chunks.push({ dtSeconds: accDtSeconds, target: lastTarget, intensity: lastIntensity });
     }
     return chunks;
   }
