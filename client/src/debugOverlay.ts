@@ -211,6 +211,12 @@ export interface NetworkSyncInfo {
    * un décrochage réseau (drop de bufferedAmount côté serveur, Wi-Fi instable...) même quand
    * l'extrapolation locale masque le trou visuellement. */
   missedTicks?: number;
+  /** Latence utilisée par `LocalPrediction.reconcile()` pour ancrer son rejeu (voir
+   * `estimatedLatencyMsFromAnchor`, reconcileLatency.ts) — dérivée de l'ancrage horloge de
+   * `RenderEngine` (résolution ~20Hz), PAS de `rttMs`/le ping 1Hz ci-dessus. Affichée séparément
+   * pour pouvoir comparer les deux en jeu (vérification manuelle du correctif "mini rollback") ;
+   * absente tant que `RenderEngine` n'a pas encore reçu son tout premier `state`. */
+  reconcileLatencyMs?: number;
 }
 
 export interface HardwareInfo {
@@ -333,6 +339,9 @@ export function formatDebugText(snapshot: DebugSnapshot): string {
   }
   if (snapshot.networkSync?.missedTicks !== undefined) {
     lines.push(`Missed Ticks: ${snapshot.networkSync.missedTicks}`);
+  }
+  if (snapshot.networkSync?.reconcileLatencyMs !== undefined) {
+    lines.push(`Reconcile Latency: ${Math.round(snapshot.networkSync.reconcileLatencyMs)} ms`);
   }
   lines.push('');
 

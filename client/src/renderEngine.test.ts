@@ -116,6 +116,59 @@ describe('RenderEngine — ligne de temps ancrée sur le numéro de tick', () =>
   });
 });
 
+/** `serverTimeMsForTick` — extraite de la formule interne de `pushSnapshot` (voir son commentaire)
+ * pour être réutilisée par `LocalPrediction.reconcile()` (prediction.ts, via GameView.tsx) comme
+ * source de latence de réconciliation, à la place du ping 1Hz lissé. Cette suite vérifie
+ * directement l'accesseur plutôt que seulement son effet indirect sur l'interpolation (déjà
+ * couvert ci-dessus). */
+describe('RenderEngine — serverTimeMsForTick (ancrage réutilisable pour la réconciliation locale)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('renvoie undefined avant tout pushSnapshot, et de nouveau après reset()', () => {
+    const engine = new RenderEngine();
+    expect(engine.serverTimeMsForTick(1)).toBeUndefined();
+
+    const nowSpy = vi.spyOn(performance, 'now');
+    nowSpy.mockReturnValueOnce(1000);
+    engine.pushSnapshot([entity('1', 0)], 1, 30);
+    expect(engine.serverTimeMsForTick(1)).toBeDefined();
+
+    engine.reset();
+    expect(engine.serverTimeMsForTick(1)).toBeUndefined();
+  });
+
+  it('vaut exactement l’horloge client au tick d’ancrage (premier pushSnapshot)', () => {
+    const engine = new RenderEngine();
+    const nowSpy = vi.spyOn(performance, 'now');
+
+    nowSpy.mockReturnValueOnce(1000);
+    engine.pushSnapshot([entity('1', 0)], 1, 30); // ancre : tick 1 == horloge client 1000
+
+    expect(engine.serverTimeMsForTick(1)).toBe(1000);
+  });
+
+  it('reflète la correction douce (EMA 5%) de l’ancrage après un second pushSnapshot', () => {
+    const engine = new RenderEngine();
+    const nowSpy = vi.spyOn(performance, 'now');
+    const tickIntervalMs = 1000 / 30;
+
+    nowSpy.mockReturnValueOnce(0);
+    engine.pushSnapshot([entity('1', 0)], 1, 30); // ancre : epochTick=1, epochClientMs=0
+    nowSpy.mockReturnValueOnce(40);
+    engine.pushSnapshot([entity('1', 100)], 2, 30);
+
+    // Même calcul que `pushSnapshot` (voir son commentaire) : expectedEpochMs = 40 - 1*tickIntervalMs,
+    // puis epochClientMs += (expectedEpochMs - epochClientMs) * 0.05.
+    const expectedEpochMs = 40 - 1 * tickIntervalMs;
+    const expectedEpochClientMs = 0 + (expectedEpochMs - 0) * 0.05;
+
+    expect(engine.serverTimeMsForTick(1)).toBeCloseTo(expectedEpochClientMs, 6); // epochTick lui-même ne bouge jamais
+    expect(engine.serverTimeMsForTick(2)).toBeCloseTo(expectedEpochClientMs + tickIntervalMs, 6);
+  });
+});
+
 /** Le culling de viewport a été déplacé EN AMONT de l'interpolation/du lissage (voir le
  * commentaire de `getInterpolatedEntities`, `fromEntities`/`toEntities`) — cette suite vérifie
  * que le résultat visible reste identique à l'ancien pipeline (cull APRÈS), pas seulement que la

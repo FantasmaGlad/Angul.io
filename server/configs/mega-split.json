@@ -104,7 +104,7 @@
     },
     "idleDespawn": {
       "enabled": true,
-      "afterMinutes": 10
+      "afterMinutes": 2
     }
   },
   "room": {

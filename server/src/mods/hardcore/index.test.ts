@@ -269,3 +269,55 @@ describe('createHardcoreMod — Dash (touche F)', () => {
     expect((mod as any).getDashState(world, 'p1').charges).toBe(5);
   });
 });
+
+describe('createHardcoreMod — IA de dash des bots (requête spatiale bornée, pas allEntities())', () => {
+  it('un bot fonce (dash) sur une proie plus petite à portée, détectée via queryNearby', () => {
+    const config = testConfig();
+    const mod = createHardcoreMod(config);
+    const world = freshWorld();
+    world.addPlayer('bot-1', 'Robibou');
+    world.addPlayer('p2', 'Prey');
+    mod.onPlayerJoin?.(world, 'bot-1');
+
+    const botPiece = world.getPiecesByOwner('bot-1')[0]!;
+    botPiece.position = { x: 500, y: 500 };
+    botPiece.velocity = { x: 0, y: 0 };
+    world.setMass(botPiece, 200);
+    world.spawnPiece('p2', { x: 700, y: 500 }, 100); // 200px, sous le rayon de 500px
+
+    // La requête spatiale (`world.queryNearby`) ne voit que ce que `rebuildSpatialHash()` a
+    // indexé — normalement fait par `Room.tick()` à chaque tick, doit être fait manuellement ici
+    // puisque ce test appelle `mod.onTick` directement, hors de `Room.tick()`.
+    world.rebuildSpatialHash();
+
+    // Un seul appel avec dt >= BOT_DASH_AI_INTERVAL_MS (200ms) suffit à franchir le seuil de
+    // l'accumulateur de throttle dès la première évaluation.
+    mod.onTick?.(world, 0.25);
+
+    expect(botPiece.velocity.x).toBeGreaterThan(0); // propulsé vers la proie (x croissant)
+    expect((mod as any).getDashState(world, 'bot-1').charges).toBe(4);
+  });
+
+  it("n'évalue pas l'IA de dash avant l'intervalle de throttle (200ms), même avec une proie à portée", () => {
+    const config = testConfig();
+    const mod = createHardcoreMod(config);
+    const world = freshWorld();
+    world.addPlayer('bot-1', 'Robibou');
+    world.addPlayer('p2', 'Prey');
+    mod.onPlayerJoin?.(world, 'bot-1');
+
+    const botPiece = world.getPiecesByOwner('bot-1')[0]!;
+    botPiece.position = { x: 500, y: 500 };
+    botPiece.velocity = { x: 0, y: 0 };
+    world.setMass(botPiece, 200);
+    world.spawnPiece('p2', { x: 700, y: 500 }, 100);
+    world.rebuildSpatialHash();
+
+    // 50ms < 200ms : l'accumulateur n'a pas encore franchi le seuil, aucune évaluation.
+    mod.onTick?.(world, 0.05);
+
+    expect(botPiece.velocity.x).toBeCloseTo(0, 6);
+    expect(botPiece.velocity.y).toBeCloseTo(0, 6);
+    expect((mod as any).getDashState(world, 'bot-1').charges).toBe(5);
+  });
+});

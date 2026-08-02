@@ -100,6 +100,7 @@ describe('formatDebugText', () => {
         netOutKbps: 2.1,
         interpBufferMs: 50,
         interpSnapshots: 2,
+        reconcileLatencyMs: 22.4,
       },
       hardware: {
         cpuCores: 16,
@@ -125,6 +126,7 @@ describe('formatDebugText', () => {
     expect(text).toContain('RTT (Ping): 18 ms | Server TPS: 20/20');
     expect(text).toContain('Net In: 24.5 KB/s (20 pkt/s) | Net Out: 2.1 KB/s | Connexion: 4g');
     expect(text).toContain('Interp Buffer: 50 ms (2 snapshots)');
+    expect(text).toContain('Reconcile Latency: 22 ms');
 
     expect(text).toContain('-- MEMORY --');
     expect(text).toContain('JS Heap: 11 / 43 MB');
@@ -152,6 +154,8 @@ describe('formatDebugText', () => {
     expect(text).toContain('Target: Illimité (Vsync)');
     // Pas de ping reçu, pas de TPS serveur connu : tirets plutôt que 0 ou une valeur plausible.
     expect(text).toContain('RTT (Ping): — | Server TPS: —');
+    // Pas de latence de réconciliation connue (avant le tout premier `state`) : ligne omise.
+    expect(text).not.toContain('Reconcile Latency');
     // Pas de `performance.memory` (ex. Firefox/Safari) : section entière omise.
     expect(text).not.toContain('-- MEMORY --');
     // Pas de GPU lisible (protection navigateur) : message explicite, pas un nom de carte inventé.

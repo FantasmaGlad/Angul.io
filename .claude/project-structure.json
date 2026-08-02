@@ -1,7 +1,7 @@
 {
   "version": 1,
   "generatedFrom": "structure.md",
-  "lastReviewed": "2026-08-02 (v9.7)",
+  "lastReviewed": "2026-08-02 (v10.1)",
   "note": "Cartographie machine-readable du depot, en complement de structure.md (lisible par un humain) et README.md (architecture/modding en detail). Sert de source au serveur MCP local que .mcp.json enregistre aupres de Claude Code (.gemini/mcp/server.mjs, PAS .claude/mcp/server.mjs qui existe aussi mais n'est pas celui lance) et a son equivalent Gemini/Antigravity — .gemini/project-structure.json est un SYMLINK vers CE fichier (../.claude/project-structure.json), pas une copie separee : les deux plateformes lisent toujours exactement le meme contenu, rien a resynchroniser manuellement. Ce fichier ET .claude/mcp/** SONT commites (voir structure.md §1bis) — outillage de projet partage, pas une preference locale. Mets a jour CE fichier ET structure.md dans le meme commit si tu ajoutes/deplaces/supprimes un fichier important — sinon les deux deviennent trompeurs.",
   "workspaces": [
     {
@@ -654,7 +654,7 @@
         "idle-despawn",
         "comportement"
       ],
-      "description": "Population de bots : normaux (uniquement a 0 humain) + Challengers (permanents, decroissance avec le nb d'humains, plafond dur maxTotal) + despawn d'inactivite (idleDespawn). Charge aussi le BotBehaviorConfig (loadBotBehaviorConfig(config.behaviorId), une seule fois a la construction) transmis a computeBotInput a chaque evaluation."
+      "description": "Population de bots : normaux (uniquement a 0 humain) + Challengers (permanents, decroissance avec le nb d'humains, plafond dur maxTotal) + despawn d'inactivite (idleDespawn, config.idleDespawn.afterMinutes = 2 dans les 4 modes depuis v10.2, etait 10 — retour utilisateur : liberer les ressources d'un salon vide plus vite). Charge aussi le BotBehaviorConfig (loadBotBehaviorConfig(config.behaviorId), une seule fois a la construction) transmis a computeBotInput a chaque evaluation."
     },
     {
       "path": "server/src/mods/parametric/config.ts",
@@ -740,7 +740,7 @@
         "dash",
         "gamemod"
       ],
-      "description": "createHardcoreMod() — COMPOSE parametric : absorption x massGainMultiplier, Dash (DASH_IMPULSE_SPEED=4050). Score/XP credites normalement a la mort (transformScoreForAccount non surcharge, contrairement a une ancienne version)."
+      "description": "createHardcoreMod() — COMPOSE parametric : absorption x massGainMultiplier, Dash (DASH_IMPULSE_SPEED=4050). Score/XP credites normalement a la mort (transformScoreForAccount non surcharge, contrairement a une ancienne version). IA de dash des bots (onTick, v10.2) : throttlee a 200ms (etait chaque tick) et bornee via world.queryNearby (etait world.allEntities(), un scan complet de TOUTES les entites du salon — jusqu'a ~5000 pastilles sur la grande carte Hardcore — pour CHAQUE bot a CHAQUE tick, cause du TPS Hardcore observe a ~8-10/20 alors que les autres modes tenaient 20+/20, aucun autre mode n'ayant cette IA de dash)."
     },
     {
       "path": "server/src/accounts/accountsRepository.ts",
@@ -1202,7 +1202,19 @@
         "reconciliation",
         "dash"
       ],
-      "description": "PREDICTION LOCALE + reconciliation du blob du joueur, applyDash (DASH_IMPULSE_SPEED=4050, synchronise avec le serveur). Seuil de lissage (`snapThresholdPx` dans reconcile()) desormais DYNAMIQUE, toujours >= au seuil d'ignorance de gigue (jusqu'a ~220px en plein Dash) — l'ancien seuil fixe (120px, RECONCILE_SNAP_THRESHOLD_PX) tombait sous ce seuil pendant un Dash a pleine vitesse, faisant sauter au lieu de lisser certaines corrections reelles (v5.5, retour utilisateur : 'lag avec roll back' au dash)."
+      "description": "PREDICTION LOCALE + reconciliation du blob du joueur, applyDash (DASH_IMPULSE_SPEED=4050, synchronise avec le serveur). Seuil de lissage (`snapThresholdPx` dans reconcile()) desormais DYNAMIQUE, toujours >= au seuil d'ignorance de gigue (jusqu'a ~220px en plein Dash) — l'ancien seuil fixe (120px, RECONCILE_SNAP_THRESHOLD_PX) tombait sous ce seuil pendant un Dash a pleine vitesse, faisant sauter au lieu de lisser certaines corrections reelles (v5.5, retour utilisateur : 'lag avec roll back' au dash). `reconcile()` recoit desormais son `estimatedLatencyMs` via `estimatedLatencyMsFromAnchor` (reconcileLatency.ts), plus le ping 1Hz brut (v10.2, retour utilisateur : 'mini roll back' persistant meme en ligne droite, cause dominante = imprecision de `sinceMs`)."
+    },
+    {
+      "path": "client/src/reconcileLatency.ts",
+      "workspace": "client",
+      "tags": [
+        "prediction",
+        "reconciliation",
+        "interpolation",
+        "reseau",
+        "latence"
+      ],
+      "description": "estimatedLatencyMsFromAnchor() — convertit l'ancrage horloge de RenderEngine (serverTimeMsForTick) en latence pour LocalPrediction.reconcile(), a la place du ping 1Hz lisse (smoothedLatencyMs, qui ne sert plus que de repli). Fonction pure extraite pour rester testable independamment de GameView.tsx (aucun fichier de test pour ce composant dans ce repo) (v10.2)."
     },
     {
       "path": "client/src/renderEngine.ts",
@@ -1213,7 +1225,7 @@
         "spectateur",
         "tick-rate"
       ],
-      "description": "INTERPOLATION reseau des entites distantes, snapshotQueue (buffer, expose pour le F3 interpSnapshots), sensible a serverTickRateHz (voir welcome.tickRateHz reduit pour spectateurs). Le lissage exponentiel anti-tressautement s'applique desormais AUSSI en mode spectateur (v5.5, retour utilisateur : bots tremblotants dans le fond du lobby vs fluides en partie) — l'ancienne optimisation qui le sautait pour ce mode supposait a tort qu'un fond decoratif n'en avait pas besoin."
+      "description": "INTERPOLATION reseau des entites distantes, snapshotQueue (buffer, expose pour le F3 interpSnapshots), sensible a serverTickRateHz (voir welcome.tickRateHz reduit pour spectateurs). Le lissage exponentiel anti-tressautement s'applique desormais AUSSI en mode spectateur (v5.5, retour utilisateur : bots tremblotants dans le fond du lobby vs fluides en partie) — l'ancienne optimisation qui le sautait pour ce mode supposait a tort qu'un fond decoratif n'en avait pas besoin. `serverTimeMsForTick(tick)` (v10.2) expose publiquement l'ancrage epochTick/epochClientMs (deja utilise en interne par pushSnapshot) — reutilise par `client/src/reconcileLatency.ts` pour la reconciliation du joueur local, qui n'avait jusque-la aucun acces a cette horloge deja eprouvee pour les entites distantes."
     },
     {
       "path": "client/src/render.ts",
@@ -1244,7 +1256,7 @@
         "f3",
         "diagnostic"
       ],
-      "description": "Ecran de diagnostic F3 (FPS, reseau, tick, gigue, systeme) — chaque valeur doit etre une mesure reelle, jamais inventee."
+      "description": "Ecran de diagnostic F3 (FPS, reseau, tick, gigue, systeme) — chaque valeur doit etre une mesure reelle, jamais inventee. NetworkSyncInfo.reconcileLatencyMs (v10.2) : latence effectivement utilisee par reconcile() (voir reconcileLatency.ts), affichee separement de rttMs pour comparer les deux en jeu."
     },
     {
       "path": "client/src/components/Home.tsx",
@@ -1370,7 +1382,7 @@
         "f3",
         "dash"
       ],
-      "description": "LE seul composant qui touche au canvas en partie — boucle de rendu, connexion WebSocket (envoie guestSkin au join initial), HUD (stats/leaderboard/minimap/dash/ecran de mort), toggle F3. Ecran de connexion initial (MIN_CONNECTING_SCREEN_MS) reduit a 500ms (v5.5, etait 2000ms). doRespawn()/le bouton Rejouer appellent connection.ensureConnected() avant d'envoyer le `join` (voir net.ts)."
+      "description": "LE seul composant qui touche au canvas en partie — boucle de rendu, connexion WebSocket (envoie guestSkin au join initial), HUD (stats/leaderboard/minimap/dash/ecran de mort), toggle F3. Ecran de connexion initial (MIN_CONNECTING_SCREEN_MS) reduit a 500ms (v5.5, etait 2000ms). doRespawn()/le bouton Rejouer appellent connection.ensureConnected() avant d'envoyer le `join` (voir net.ts). Handler `state` (v10.2) : `renderEngine.pushSnapshot()` appele AVANT `prediction.reconcile()` (ordre inverse de l'historique) pour que l'ancrage horloge de renderEngine soit frais pour CE tick avant d'etre lu par `estimatedLatencyMsFromAnchor` (reconcileLatency.ts)."
     },
     {
       "path": "client/src/pages/PageLayout.tsx",
@@ -1635,6 +1647,7 @@
     "reseau/interpolation-prediction": [
       "client/src/renderEngine.ts",
       "client/src/prediction.ts",
+      "client/src/reconcileLatency.ts",
       "server/src/engine/worker/snapshotBuilder.ts"
     ],
     "reseau/filtrage-interet": [

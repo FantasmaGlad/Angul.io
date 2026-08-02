@@ -89,6 +89,17 @@ export function createHardcoreMod(
   const HARDCORE_MAX_DASHES = 5;
   const dashStates = new Map<PlayerId, DashState>();
 
+  /** Intervalle entre deux évaluations de l'IA de dash des bots (voir `onTick` ci-dessous) — PAS
+   * chaque tick : avant ce correctif, cette IA scannait `world.allEntities()` (TOUTES les entités
+   * du salon, jusqu'à ~5000 pastilles sur la grande carte Hardcore) pour CHAQUE bot À CHAQUE tick,
+   * un coût qui ralentissait directement le tick du salon entier (`Room.tick` appelle `mod.onTick`
+   * de façon synchrone) — mesuré en prod : TPS Hardcore ~8-10/20 quand les autres modes (aucun
+   * n'a cette IA de dash) tenaient 20-22/20. 200ms reste largement assez réactif pour une décision
+   * d'attaque/fuite (comparé aux 500ms/2Hz de l'IA de déplacement ambiante normale, voir
+   * `botManager.ts` `updateFrequencyHz`), tout en divisant ce coût par ~10. */
+  const BOT_DASH_AI_INTERVAL_MS = 200;
+  let botDashAiAccumulatorMs = 0;
+
   function getOrCreateDashState(playerId: PlayerId): DashState {
     let state = dashStates.get(playerId);
     if (!state) {
@@ -174,44 +185,56 @@ export function createHardcoreMod(
           }
         }
       }
-      // Intelligence Artificielle Hardcore : Les bots utilisent le Dash pour attaquer ou fuir
-      const now = performance.now();
-      for (const player of world.allPlayers()) {
-        if (!isBotId(player.id)) continue;
-        const pieces = world.getPiecesByOwner(player.id);
-        if (pieces.length !== 1) continue;
-        const piece = pieces[0]!;
-        const dashState = getOrCreateDashState(player.id);
-        if (dashState.charges <= 0 || now - dashState.lastDashTimeMs < 3000) continue;
+      // Intelligence Artificielle Hardcore : Les bots utilisent le Dash pour attaquer ou fuir —
+      // throttlée à `BOT_DASH_AI_INTERVAL_MS` (voir sa constante) plutôt qu'évaluée chaque tick.
+      botDashAiAccumulatorMs += dt * 1000;
+      if (botDashAiAccumulatorMs >= BOT_DASH_AI_INTERVAL_MS) {
+        botDashAiAccumulatorMs = 0;
+        const now = performance.now();
+        for (const player of world.allPlayers()) {
+          if (!isBotId(player.id)) continue;
+          const pieces = world.getPiecesByOwner(player.id);
+          if (pieces.length !== 1) continue;
+          const piece = pieces[0]!;
+          const dashState = getOrCreateDashState(player.id);
+          if (dashState.charges <= 0 || now - dashState.lastDashTimeMs < 3000) continue;
 
-        let dashTarget: Vector2 | undefined;
-        for (const other of world.allEntities()) {
-          if (!other.ownerId || other.ownerId === player.id) continue;
-          const dist = distance(piece.position, other.position);
-          if (dist > 500) continue;
+          // Requête spatiale bornée (voir `World.queryNearby`, spatialHash) plutôt que
+          // `world.allEntities()` : l'ancienne version copiait/scannait TOUTES les entités du
+          // salon (nourriture comprise, ~5000 sur la grande carte Hardcore) pour ne retenir que
+          // celles à 500px — exactement ce que cette requête filtre déjà nativement, sans copier
+          // le reste.
+          let dashTarget: Vector2 | undefined;
+          const nearbyIds = world.queryNearby(piece.position, 500);
+          for (const nearbyId of nearbyIds) {
+            const other = world.getEntity(nearbyId);
+            if (!other || !other.ownerId || other.ownerId === player.id) continue;
+            const dist = distance(piece.position, other.position);
+            if (dist > 500) continue;
 
-          if (piece.mass >= other.mass * 1.25) {
-            dashTarget = other.position; // Attaque
-            break;
-          } else if (other.mass >= piece.mass * 1.25) {
-            const dx = piece.position.x - other.position.x;
-            const dy = piece.position.y - other.position.y;
-            const len = Math.hypot(dx, dy);
-            if (len > 0) {
-              dashTarget = { x: piece.position.x + (dx / len) * 500, y: piece.position.y + (dy / len) * 500 }; // Fuite
+            if (piece.mass >= other.mass * 1.25) {
+              dashTarget = other.position; // Attaque
+              break;
+            } else if (other.mass >= piece.mass * 1.25) {
+              const dx = piece.position.x - other.position.x;
+              const dy = piece.position.y - other.position.y;
+              const len = Math.hypot(dx, dy);
+              if (len > 0) {
+                dashTarget = { x: piece.position.x + (dx / len) * 500, y: piece.position.y + (dy / len) * 500 }; // Fuite
+              }
+              break;
             }
-            break;
           }
-        }
 
-        if (dashTarget) {
-          dashState.charges -= 1;
-          dashState.lastDashTimeMs = now;
-          const dx = dashTarget.x - piece.position.x;
-          const dy = dashTarget.y - piece.position.y;
-          const len = Math.hypot(dx, dy);
-          const dir: Vector2 = len > 0 ? { x: dx / len, y: dy / len } : { x: 1, y: 0 };
-          piece.velocity = add(piece.velocity, scale(dir, dashSpeedForMass(piece.mass)));
+          if (dashTarget) {
+            dashState.charges -= 1;
+            dashState.lastDashTimeMs = now;
+            const dx = dashTarget.x - piece.position.x;
+            const dy = dashTarget.y - piece.position.y;
+            const len = Math.hypot(dx, dy);
+            const dir: Vector2 = len > 0 ? { x: dx / len, y: dy / len } : { x: 1, y: 0 };
+            piece.velocity = add(piece.velocity, scale(dir, dashSpeedForMass(piece.mass)));
+          }
         }
       }
     },

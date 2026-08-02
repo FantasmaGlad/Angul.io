@@ -36,6 +36,7 @@ import { attachInput, type InputTracker } from '../input.js';
 import { keyLabel, loadKeybinds } from '../keybinds.js';
 import { GameConnection } from '../net.js';
 import { LocalPrediction } from '../prediction.js';
+import { estimatedLatencyMsFromAnchor } from '../reconcileLatency.js';
 import {
   BASE_SCALE,
   computeCamera,
@@ -278,10 +279,12 @@ export default function GameView({
     // `undefined` tant qu'aucun `pong` n'est encore arrivé (écran F3, RTT) — distinct de `0`, qui
     // afficherait une latence mesurée alors qu'aucune mesure n'a encore eu lieu.
     let lastPingMs: number | undefined;
-    /** Latence aller simple lissée (EMA) + marge de sécurité — utilisée UNIQUEMENT pour le rejeu
-     * de réconciliation (prediction.ts), jamais pour l'affichage (`lastPingMs` brut reste
-     * inchangé, voir écran F3/rapport admin). Un seul échantillon de ping brut (mesuré 1x/s,
-     * PING_INTERVAL_MS) peut ponctuellement sous-estimer la vraie latence par simple gigue réseau
+    /** Latence aller simple lissée (EMA) + marge de sécurité — sert de REPLI pour le rejeu de
+     * réconciliation (prediction.ts, voir `estimatedLatencyMsFromAnchor`/`serverTimeMsForTick`,
+     * source principale depuis l'ancrage horloge de `renderEngine`), jamais pour l'affichage
+     * (`lastPingMs` brut reste inchangé, voir écran F3/rapport admin). Un seul échantillon de ping
+     * brut (mesuré 1x/s, PING_INTERVAL_MS) peut ponctuellement sous-estimer la vraie latence par
+     * simple gigue réseau
      * — et sous-estimer fait rejouer TROP PEU de l'historique local : la position reconstruite au
      * rejeu se retrouve alors légèrement en retard sur la position réellement prédite pendant un
      * déplacement, et la réconciliation la tire en arrière à chaque `state` avant que le
@@ -291,6 +294,10 @@ export default function GameView({
      * l'en-tête de prediction.ts). D'où le lissage (amorti les pics bas isolés) et la marge fixe
      * (biaise délibérément vers l'estimation la moins risquée des deux). */
     let smoothedLatencyMs: number | undefined;
+    // Dernière latence effectivement utilisée par `reconcile()` (voir son calcul dans le handler
+    // `state`) — pur diagnostic (écran F3, `Reconcile Latency`), pour comparer visuellement en jeu
+    // la nouvelle estimation ancrée sur `renderEngine` à `rttMs`/le ping brut ci-dessus.
+    let lastReconcileLatencyMs: number | undefined;
     let lastComboLevel: number | undefined;
     let comboHideTimer: ReturnType<typeof setTimeout> | undefined;
     let announcementHideTimer: ReturnType<typeof setTimeout> | undefined;
@@ -553,11 +560,32 @@ export default function GameView({
             cameraInitialized = true;
           }
         }
+        // Poussé AVANT `reconcile()` (pas après, contrairement à l'ordre historique) : l'ancrage
+        // horloge de `renderEngine` (`epochTick`/`epochClientMs`, voir son commentaire) doit être
+        // fraîchement recalé pour CE tick avant d'être lu ci-dessous — sinon `reconcile()`
+        // utiliserait l'ancrage tel qu'il était laissé par le `state` PRÉCÉDENT.
+        renderEngine.pushSnapshot(
+          message.entities,
+          message.tick,
+          serverTickRateHz,
+          message.entitiesFull,
+          message.removedFoodIds,
+        );
         if (selfPlayerId && movementConfig) {
-          // Latence aller simple estimée, lissée + marge de sécurité (voir `smoothedLatencyMs`) —
-          // détermine depuis quel instant rejouer l'historique d'inputs local lors de la
-          // réconciliation (voir prediction.ts).
-          const estimatedLatencyMs = smoothedLatencyMs;
+          // Latence aller simple estimée — détermine depuis quel instant rejouer l'historique
+          // d'inputs local lors de la réconciliation (voir prediction.ts `reconcile`/`sinceMs`).
+          // Dérivée de l'ancrage horloge de `renderEngine` (déjà éprouvé pour l'interpolation des
+          // entités distantes : résolution ~20Hz, insensible à la gigue par paquet), PAS du ping
+          // `smoothedLatencyMs` (1Hz, moyenne lissée) — celui-ci ne sert plus que de repli avant le
+          // tout premier `pushSnapshot()` de la session (voir `estimatedLatencyMsFromAnchor`),
+          // normalement inatteignable puisque l'appel ci-dessus vient de le garantir.
+          const anchoredServerTimeMs = renderEngine.serverTimeMsForTick(message.tick);
+          const estimatedLatencyMs = estimatedLatencyMsFromAnchor(
+            anchoredServerTimeMs,
+            smoothedLatencyMs,
+            performance.now(),
+          );
+          lastReconcileLatencyMs = estimatedLatencyMs;
           // Vélocité autoritaire par morceau (voir protocol.ts `self.pieces`) — permet à
           // `reconcile()` de ré-ancrer `predicted.velocity` avant de rejouer l'historique, au lieu
           // de repartir de la vélocité déjà avancée en direct (voir prediction.ts).
@@ -573,13 +601,6 @@ export default function GameView({
             authoritativeVelocities,
           );
         }
-        renderEngine.pushSnapshot(
-          message.entities,
-          message.tick,
-          serverTickRateHz,
-          message.entitiesFull,
-          message.removedFoodIds,
-        );
         serverTpsCurrent = tickRateTracker.record(latestSnapshotAt);
         if (message.leaderboard) {
           setLeaderboard(
@@ -1032,6 +1053,7 @@ export default function GameView({
             // F3 n'est inventée).
             interpSnapshots: renderEngine.snapshotQueue.length,
             missedTicks: renderEngine.missedTickCount,
+            reconcileLatencyMs: lastReconcileLatencyMs,
           },
           hardware: {
             cpuCores: systemInfo.hardwareConcurrency,

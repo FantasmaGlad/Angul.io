@@ -227,11 +227,15 @@ export class LocalPrediction {
    * absorption), puis ancre chaque morceau connu sur la vérité serveur et rejoue l'historique
    * d'inputs récent par-dessus (voir le commentaire d'en-tête).
    *
-   * `estimatedLatencyMs` : estimation de la latence aller simple (RTT mesuré / 2, voir
-   * GameView.tsx `lastPingMs`) — détermine à partir de quel instant du journal rejouer. Une
-   * estimation imprécise ne casse rien (juste un peu plus/moins de rejeu que l'idéal), contrairement
-   * à l'ancienne approche blend/snap qui accumulait une erreur systématique proportionnelle à la
-   * latence RÉELLE quelle que soit la précision de l'estimation.
+   * `estimatedLatencyMs` : estimation de la latence aller simple — détermine à partir de quel
+   * instant du journal rejouer. Dérivée par l'appelant (GameView.tsx) de l'ancrage horloge de
+   * `RenderEngine` (`serverTimeMsForTick`, voir renderEngine.ts et `estimatedLatencyMsFromAnchor`,
+   * reconcileLatency.ts) — résolution ~20Hz, insensible à la gigue par paquet individuel — plutôt
+   * que du ping mesuré (RTT/2, `GameView.tsx` `lastPingMs`/`smoothedLatencyMs`, 1Hz lissé), qui ne
+   * sert plus que de repli avant le tout premier `state` de la session. Une estimation imprécise ne
+   * casse rien (juste un peu plus/moins de rejeu que l'idéal), contrairement à l'ancienne approche
+   * blend/snap qui accumulait une erreur systématique proportionnelle à la latence RÉELLE quelle
+   * que soit la précision de l'estimation.
    *
    * `serverTickRateHz` : cadence de tick du salon (reçue dans `welcome`, voir GameView.tsx) —
    * détermine la granularité à laquelle regrouper le rejeu (voir `chunkHistoryForReplay`).

@@ -246,7 +246,11 @@ Angul.io/
 │       │   │   ├── virus.test.ts                  Tests unitaires des 3 types de virus (Vert/Rouge/Bleu, duplication, réactions en chaîne)
 │       │   │   └── index.ts                       createParametricMod() — implémente GameMod depuis la config
 │       │   └── hardcore/
-│       │       └── index.ts / .test.ts            createHardcoreMod() — COMPOSE parametric (voir README)
+│       │       └── index.ts / .test.ts            createHardcoreMod() — COMPOSE parametric (voir README).
+│       │                                            IA de dash des bots (onTick) throttlée à 200ms + bornée
+│       │                                            via world.queryNearby (v10.2, était world.allEntities()
+│       │                                            à chaque tick pour chaque bot — cause du TPS Hardcore
+│       │                                            observé à ~8-10/20 vs 20+/20 les autres modes)
 │       ├── accounts/                  Comptes joueurs
 │       │   ├── accountsRepository.ts / .test.ts   Requêtes SQL (players, player_best_scores)
 │       │   ├── passwords.ts / .test.ts            Hachage/vérification argon2
@@ -303,7 +307,12 @@ Angul.io/
 │       ├── net.ts / net.test.ts       Connexion WebSocket au serveur de jeu (reconnexion auto)
 │       ├── input.ts                   Capture souris/clavier/manette → cible + intensité + actions
 │       ├── prediction.ts / .test.ts   PRÉDICTION LOCALE + réconciliation du blob du joueur (voir README)
-│       ├── renderEngine.ts / .test.ts INTERPOLATION réseau des entités distantes (voir README)
+│       ├── reconcileLatency.ts / .test.ts  estimatedLatencyMsFromAnchor() — convertit l'ancrage horloge de
+│       │                               RenderEngine (serverTimeMsForTick) en latence pour reconcile(), à la
+│       │                               place du ping 1Hz lissé (repli uniquement) (v10.2)
+│       ├── renderEngine.ts / .test.ts INTERPOLATION réseau des entités distantes (voir README).
+│       │                               serverTimeMsForTick(tick) (v10.2) expose l'ancrage horloge
+│       │                               epochTick/epochClientMs, réutilisé par reconcileLatency.ts
 │       ├── render.ts / render.test.ts Rendu Canvas 2D (caméra, dessin, culling viewport)
 │       ├── stats.ts / stats.test.ts   Agrégation des morceaux du joueur (masse, barycentre, vitesse)
 │       └── debugOverlay.ts / .test.ts Écran de diagnostic F3 (FPS, réseau, tick, gigue, système)
@@ -368,7 +377,7 @@ Angul.io/
 | `AssetPreloader.tsx` | Précharge les images de skins avant affichage du jeu (évite un flash sans texture) |
 | `ErrorBoundary.tsx` | Filet de sécurité React (évite un écran blanc total sur exception de rendu) |
 | `AudioSettings.tsx` / `KeybindSettings.tsx` | Réglages son / remapping des touches (accessibles depuis Paramètres) |
-| `GameView.tsx` | **Le seul composant qui touche au canvas en partie** — boucle de rendu (`requestAnimationFrame`), connexion WebSocket, HUD (stats/leaderboard/minimap/dash/écran de mort) — voir README §Réseau pour le détail de sa boucle. Écran de connexion initial limité à 500ms (`MIN_CONNECTING_SCREEN_MS`) ; `doRespawn()`/le bouton Rejouer forcent une reconnexion immédiate (`ensureConnected()`, `net.ts`) avant d'envoyer le `join` |
+| `GameView.tsx` | **Le seul composant qui touche au canvas en partie** — boucle de rendu (`requestAnimationFrame`), connexion WebSocket, HUD (stats/leaderboard/minimap/dash/écran de mort) — voir README §Réseau pour le détail de sa boucle. Écran de connexion initial limité à 500ms (`MIN_CONNECTING_SCREEN_MS`) ; `doRespawn()`/le bouton Rejouer forcent une reconnexion immédiate (`ensureConnected()`, `net.ts`) avant d'envoyer le `join`. Handler `state` (v10.2) : `renderEngine.pushSnapshot()` appelé AVANT `prediction.reconcile()` (ordre inversé) pour que l'ancrage horloge de `renderEngine` soit frais avant d'être lu par `estimatedLatencyMsFromAnchor` |
 
 ### 4.2 Client — sous-pages (`client/src/pages/`)
 

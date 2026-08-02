@@ -222,7 +222,7 @@ export class RenderEngine {
     }
     this.lastArrivalMs = nowMs;
 
-    const serverTimeMs = this.epochClientMs! + (tick - this.epochTick) * tickIntervalMs;
+    const serverTimeMs = this.serverTimeMsForTick(tick)!;
 
     const pieces: EntitySnapshot[] = [];
     const receivedFood: EntitySnapshot[] = [];
@@ -244,6 +244,20 @@ export class RenderEngine {
     if (this.snapshotQueue.length > 20) {
       this.snapshotQueue.shift();
     }
+  }
+
+  /** Traduit un numéro de tick en horodatage "horloge client" via l'ancrage
+   * `epochTick`/`epochClientMs` (voir leur commentaire) — extrait de la formule interne de
+   * `pushSnapshot` pour être réutilisé par `LocalPrediction.reconcile()` (voir prediction.ts,
+   * appelé depuis GameView.tsx) : la même horloge "temps serveur ancré", déjà éprouvée pour
+   * l'interpolation des entités distantes, sert désormais aussi de source de latence pour la
+   * réconciliation du blob local — au lieu d'une moyenne de ping lissée à 1Hz, insensible à la
+   * gigue par paquet individuel. `undefined` uniquement avant le tout premier `pushSnapshot()`
+   * depuis la construction/le dernier `reset()`. */
+  public serverTimeMsForTick(tick: number): number | undefined {
+    if (this.epochTick === undefined || this.epochClientMs === undefined) return undefined;
+    const tickIntervalMs = 1000 / this.serverTickRateHz;
+    return this.epochClientMs + (tick - this.epochTick) * tickIntervalMs;
   }
 
   public getInterpolatedEntities(

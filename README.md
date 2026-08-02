@@ -460,16 +460,23 @@ indépendant du framerate réel (`FIXED_STEP_SECONDS = 1/240`, accumulateur clas
 "fix your timestep").
 
 À chaque `state` reçu, `reconcile()` ancre la position prédite sur la position autoritaire puis
-**rejoue** l'historique d'inputs local depuis l'instant estimé de cette capture serveur (RTT/2),
-plutôt que de corriger la position par un blend/snap naïf — un blend proportionnel à l'écart
-tirerait visiblement le blob en arrière à chaque paquet reçu dès que la latence devient
-significative. Le résidu de rejeu **en-dessous** d'un seuil dynamique (`accélération_effective ×
-dt_tick² / 2`, voir `RECONCILE_IGNORE_*`) est traité comme du bruit de discrétisation et ignoré ;
-au-dessus (répulsion, croissance...) il est absorbé dans un `visualOffset` séparé, résorbé à
-vitesse plafonnée (jamais dans la position simulée, qui doit rester exacte pour la physique).
-Toute nouvelle formule de mouvement doit rester **identique** entre `shared/src/movement.ts`
-(utilisé par les deux côtés) sous peine de réintroduire des corrections perpétuelles visibles à
-chaque tick réseau.
+**rejoue** l'historique d'inputs local depuis l'instant estimé de cette capture serveur, plutôt que
+de corriger la position par un blend/snap naïf — un blend proportionnel à l'écart tirerait
+visiblement le blob en arrière à chaque paquet reçu dès que la latence devient significative. Cet
+instant (`sinceMs`) est dérivé de `renderEngine.serverTimeMsForTick(tick)` (voir
+`client/src/reconcileLatency.ts` `estimatedLatencyMsFromAnchor`, v10.2) — la même horloge ancrée sur
+le numéro de tick que celle du pipeline ci-dessus (résolution ~20Hz, insensible à la gigue par
+paquet), **pas** un simple ping RTT/2 lissé à 1Hz (`smoothedLatencyMs` ne sert plus que de repli
+avant le tout premier `state` de la session) : une estimation imprécise ici décale le point de départ
+du rejeu d'une fraction de tick, ce qui peut faire basculer un bloc entier de rejeu dedans/dehors
+(`chunkHistoryForReplay` regroupe par tick) — la cause dominante d'un ancien symptôme "mini rollback"
+visible même en ligne droite, à vitesse de croisière. Le résidu de rejeu **en-dessous** d'un seuil
+dynamique (`accélération_effective × dt_tick² / 2`, voir `RECONCILE_IGNORE_*`) est traité comme du
+bruit de discrétisation et ignoré ; au-dessus (répulsion, croissance...) il est absorbé dans un
+`visualOffset` séparé, résorbé à vitesse plafonnée (jamais dans la position simulée, qui doit rester
+exacte pour la physique). Toute nouvelle formule de mouvement doit rester **identique** entre
+`shared/src/movement.ts` (utilisé par les deux côtés) sous peine de réintroduire des corrections
+perpétuelles visibles à chaque tick réseau.
 
 Si tu ajoutes une mécanique qui déplace un morceau du joueur en dehors de `step()`/`integrate()`
 (un nouveau type d'impulsion, par ex.), regarde comment `applyDash` journalise son impulsion dans
