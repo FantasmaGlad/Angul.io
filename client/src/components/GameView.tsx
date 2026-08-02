@@ -48,7 +48,6 @@ import {
 import { navigate } from '../router.js';
 import {
   loadFpsSliderIndex,
-  loadHideEatFlash,
   loadVsyncEnabled,
   minFrameIntervalMs as computeMinFrameIntervalMs,
 } from '../settings.js';
@@ -747,10 +746,6 @@ export default function GameView({
     let batteryInfo: BatteryInfo | undefined;
     let debugVisible = false;
 
-    const hideEatFlash = loadHideEatFlash();
-    let eatFlashIntensity = 0;
-    let previousCreatureIds = new Set<string>();
-
     const minFrameIntervalMs = computeMinFrameIntervalMs(loadVsyncEnabled(), loadFpsSliderIndex());
     // `undefined` = pas de plafond logiciel (Vsync ou palier "Illimité") : impossible de connaître
     // le taux de rafraîchissement réel de l'écran depuis le JS, donc rien à afficher comme cible
@@ -934,25 +929,6 @@ export default function GameView({
       const camera = latestCamera;
       const logicStepMs = performance.now() - logicStart;
 
-      const currentCreatureIds = new Set(entities.filter((e) => e.k === 'c').map((e) => e.i));
-      if (previousCreatureIds.size > 0 && !hideEatFlash) {
-        let creatureEaten = false;
-        for (const prevId of previousCreatureIds) {
-          if (!currentCreatureIds.has(prevId)) {
-            creatureEaten = true;
-            break;
-          }
-        }
-        if (creatureEaten) {
-          eatFlashIntensity = 1.0;
-        }
-      }
-      previousCreatureIds = currentCreatureIds;
-
-      if (eatFlashIntensity > 0) {
-        eatFlashIntensity = Math.max(0, eatFlashIntensity - frameDt / 300);
-      }
-
       const drawStart = performance.now();
       const renderInfo = renderFrame(
         ctx!,
@@ -964,9 +940,6 @@ export default function GameView({
         selfPlayerId,
         mapSize,
         currentModId,
-        false,
-        hideEatFlash,
-        eatFlashIntensity,
       );
       const drawTimeMs = performance.now() - drawStart;
       // Purge définitive des pastilles mangées ce cadre (voir renderEngine.ts `forgetFood`) —
