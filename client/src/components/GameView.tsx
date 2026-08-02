@@ -950,7 +950,7 @@ export default function GameView({
       previousCreatureIds = currentCreatureIds;
 
       if (eatFlashIntensity > 0) {
-        eatFlashIntensity = Math.max(0, eatFlashIntensity - (now - lastFrameAt) / 300);
+        eatFlashIntensity = Math.max(0, eatFlashIntensity - frameDt / 300);
       }
 
       const drawStart = performance.now();
