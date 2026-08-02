@@ -5,6 +5,7 @@ import {
   computeCamera,
   cullEntitiesForViewport,
   foodColorForMass,
+  getSkinImage,
   interpolateEntities,
 } from './render.js';
 
@@ -145,5 +146,17 @@ describe('foodColorForMass — types de particules (v8.0)', () => {
 
   it('retombe sur une couleur de repli pour une masse inconnue (mod futur)', () => {
     expect(foodColorForMass(999)).toBe(foodColorForMass(1));
+  });
+});
+
+describe('getSkinImage — filtrage des noms d’avatars invalides / hex colors', () => {
+  it('renvoie null pour un code couleur Hex (#ffffff) sans tenter de charger un fichier', () => {
+    expect(getSkinImage('#ffffff')).toBeNull();
+    expect(getSkinImage('#ff0000')).toBeNull();
+  });
+
+  it('renvoie null pour une chaîne vide ou invalide', () => {
+    expect(getSkinImage('')).toBeNull();
+    expect(getSkinImage('rgb(255,255,255)')).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AdminRoomAction, EntitySnapshot } from '@angulio/shared';
-import { SKIN_IMAGE_MAP } from '@angulio/shared';
+import { SKIN_IMAGE_MAP, SKINS } from '@angulio/shared';
 import {
   computeFitCamera,
   renderFrame,
@@ -149,7 +149,7 @@ export default function RoomStudio({ token, onAuthError, initialRoomId, onBack }
    * `undefined`. Un seul à la fois (imposé aussi côté serveur, voir connectionHandler.ts). */
   const [possessedPlayerId, setPossessedPlayerId] = useState<string | undefined>(undefined);
   const [appearanceNicknameDraft, setAppearanceNicknameDraft] = useState('');
-  const [appearanceColorDraft, setAppearanceColorDraft] = useState('#ffffff');
+  const [appearanceSkinDraft, setAppearanceSkinDraft] = useState('');
   /** Glissière logarithmique de masse (§9.2, 10 → 100 000) — valeur stockée en LOG10 (1 à 5), pas
    * en masse brute : un pas linéaire en log donne un ressenti de glissière uniforme sur toute la
    * plage, contrairement à un pas linéaire en masse (les 10 premiers % de la course couvriraient
@@ -1448,23 +1448,32 @@ export default function RoomStudio({ token, onAuthError, initialRoomId, onBack }
                         style={{ fontSize: 12.5, padding: '7px 10px' }}
                       />
                       <div style={{ display: 'flex', gap: 6 }}>
-                        <input
-                          type="color"
-                          value={appearanceColorDraft}
-                          onChange={(e) => setAppearanceColorDraft(e.target.value)}
-                          style={{ width: 36, height: 32, padding: 2, cursor: 'pointer' }}
-                        />
+                        <select
+                          value={appearanceSkinDraft}
+                          onChange={(e) => setAppearanceSkinDraft(e.target.value)}
+                          style={{ flex: 1, fontSize: 12, padding: '6px 8px' }}
+                        >
+                          <option value="">Skin inchangé</option>
+                          {SKINS.map((skin) => (
+                            <option key={skin} value={skin}>
+                              {skin}
+                            </option>
+                          ))}
+                        </select>
                         <button
                           className="btn-ghost"
                           type="button"
-                          style={{ flex: 1 }}
                           onClick={() => {
                             const nickname = appearanceNicknameDraft.trim() || undefined;
-                            runAction(
-                              { kind: 'setAppearance', playerId: selectedPlayer.playerId, nickname, color: appearanceColorDraft },
-                              'Apparence mise à jour',
-                            );
-                            setAppearanceNicknameDraft('');
+                            const color = appearanceSkinDraft || undefined;
+                            if (nickname || color) {
+                              runAction(
+                                { kind: 'setAppearance', playerId: selectedPlayer.playerId, nickname, color },
+                                'Apparence mise à jour',
+                              );
+                              setAppearanceNicknameDraft('');
+                              setAppearanceSkinDraft('');
+                            }
                           }}
                         >
                           Appliquer

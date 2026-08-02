@@ -42,17 +42,46 @@ export async function serveStatic(
   }
 
   try {
-    await stat(filePath);
+    const fileStat = await stat(filePath);
+    if (fileStat.isDirectory()) {
+      if (!extname(requestedPath)) {
+        filePath = join(rootDir, 'index.html');
+        const indexStat = await stat(filePath).catch(() => null);
+        if (!indexStat || indexStat.isDirectory()) {
+          res.writeHead(404);
+          res.end();
+          return;
+        }
+      } else {
+        res.writeHead(404);
+        res.end();
+        return;
+      }
+    }
   } catch {
     const insensitivePath = await findCaseInsensitiveFile(rootDir, requestedPath);
     if (insensitivePath) {
-      filePath = insensitivePath;
+      const insensitiveStat = await stat(insensitivePath).catch(() => null);
+      if (insensitiveStat && !insensitiveStat.isDirectory()) {
+        filePath = insensitivePath;
+      } else {
+        res.writeHead(404);
+        res.end();
+        return;
+      }
     } else if (requestedPath.startsWith('/assets/')) {
       const rootAssetsDir = resolve(rootDir, '../../assets');
       const rootAssetPath = requestedPath.slice('/assets'.length);
       const rootInsensitive = await findCaseInsensitiveFile(rootAssetsDir, rootAssetPath);
       if (rootInsensitive) {
-        filePath = rootInsensitive;
+        const rootStat = await stat(rootInsensitive).catch(() => null);
+        if (rootStat && !rootStat.isDirectory()) {
+          filePath = rootInsensitive;
+        } else {
+          res.writeHead(404);
+          res.end();
+          return;
+        }
       } else {
         res.writeHead(404);
         res.end();
@@ -61,7 +90,12 @@ export async function serveStatic(
     } else if (!extname(requestedPath)) {
       filePath = join(rootDir, 'index.html');
       try {
-        await stat(filePath);
+        const indexStat = await stat(filePath);
+        if (indexStat.isDirectory()) {
+          res.writeHead(404);
+          res.end();
+          return;
+        }
       } catch {
         res.writeHead(404);
         res.end();
@@ -79,7 +113,14 @@ export async function serveStatic(
       ? 'no-store, no-cache, must-revalidate, max-age=0'
       : 'public, max-age=86400';
   res.writeHead(200, { 'Content-Type': contentTypeFor(filePath), 'Cache-Control': cacheControl });
-  createReadStream(filePath).pipe(res);
+  const stream = createReadStream(filePath);
+  stream.on('error', () => {
+    if (!res.headersSent) {
+      res.writeHead(404);
+      res.end();
+    }
+  });
+  stream.pipe(res);
 }
 
 export function contentTypeFor(filePath: string): string {

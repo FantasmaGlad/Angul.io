@@ -12,6 +12,9 @@ export { BASE_SCALE };
 const skinImageCache = new Map<string, HTMLImageElement>();
 
 export function getSkinImage(skinId: string): HTMLImageElement | null {
+  if (!skinId || skinId.startsWith('#') || skinId.startsWith('rgb') || skinId.includes('#')) {
+    return null;
+  }
   const url =
     SKIN_IMAGE_MAP[skinId] ??
     (skinId.startsWith('/') ? skinId : `/assets/Profil/${skinId}.png`);

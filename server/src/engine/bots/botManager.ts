@@ -535,4 +535,12 @@ export class BotManager {
       });
     }
   }
+
+  /** Synchronise le pseudo d'un bot lorsqu'il est modifié à la volée par l'admin. */
+  onPlayerNicknameChanged(playerId: PlayerId, nickname: string): void {
+    const bot = this.activeBots.get(playerId);
+    if (bot) {
+      bot.nickname = nickname;
+    }
+  }
 }

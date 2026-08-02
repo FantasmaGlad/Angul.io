@@ -742,6 +742,15 @@ describe('startGameServer', () => {
     expect(await response.json()).toEqual(['vanilla', 'hardcore']);
   });
 
+  it('GET /assets/Profil/ ou asset dossier renvoie 404 sans planter le serveur', async () => {
+    const manager = makeManager(testResolver());
+    handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });
+    const port = await handle.whenReady;
+
+    const response = await fetch(`http://localhost:${port}/assets/Profil/`);
+    expect(response.status).toBe(404);
+  });
+
   it('GET /api/avatars renvoie la liste dynamique des avatars scannés dans assets/Profil', async () => {
     const manager = makeManager(testResolver());
     handle = startGameServer(manager, { port: 0, rateLimitMaxAttempts: 0 });

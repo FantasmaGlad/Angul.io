@@ -463,8 +463,13 @@ export class Room {
     const player = this.world.getPlayer(playerId);
     if (!player) return false;
     const trimmedNickname = appearance.nickname?.trim();
-    if (trimmedNickname) player.nickname = trimmedNickname;
-    if (appearance.skin !== undefined) player.skin = appearance.skin;
+    if (trimmedNickname) {
+      player.nickname = trimmedNickname;
+      if (this.botManager) {
+        this.botManager.onPlayerNicknameChanged(playerId, trimmedNickname);
+      }
+    }
+    if (appearance.skin !== undefined && appearance.skin !== '') player.skin = appearance.skin;
     return true;
   }
 
