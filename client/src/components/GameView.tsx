@@ -371,8 +371,8 @@ export default function GameView({
         // produirait un aller "fantôme" jamais confirmé par le serveur, corrigé en rollback visible
         // dès le `state` suivant (voir le commentaire de `currentCanDash`). Rien à faire du tout
         // plutôt qu'une animation qui n'aboutira jamais.
-        if (!currentCanDash) return;
-        dashZoomBonus = 0.10;
+        // Zoom au dash retiré dans hardcore (demande v9.7)
+        dashZoomBonus = 0;
         if (!canvas) return;
 
         // Direction du dash dérivée de la CIBLE D'INPUT EFFECTIVE (`input.getTarget`, la même que

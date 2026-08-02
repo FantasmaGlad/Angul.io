@@ -24,6 +24,8 @@ export interface EntitySnapshot {
   p?: string;
   /** ID du type de virus (1 = Vert, 2 = Rouge, 3 = Bleu). Present uniquement pour k === 'v'. */
   vId?: 1 | 2 | 3;
+  vx?: number;
+  vy?: number;
 }
 
 export interface ClientJoinMessage {

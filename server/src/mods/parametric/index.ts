@@ -308,7 +308,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
 
     const result: Entity[] = [piece];
     const angleStep = (PI * 2) / actualCount;
-    const speed = velocityForMass(massPerPiece, config) * (config.split.ejectSpeedFactor ?? 1.25) * 3.0;
+    const speed = velocityForMass(massPerPiece, config) * (config.split.ejectSpeedFactor ?? 1.25) * 1.5;
 
     const dir0 = { x: Math.cos(0), y: Math.sin(0) };
     piece.velocity = scale(dir0, speed);
@@ -443,15 +443,15 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     state.ejectCooldownS = EJECT_COOLDOWN_SECONDS;
 
     const particleRadius = Math.sqrt((config.areaConstant * particleValue) / PI);
-    // Décalage du spawn à 5% plus loin que le bord du blob (demande utilisateur v9.6)
-    const spawnDist = piece.radius * 1.05 + particleRadius;
+    // Décalage du spawn à 25% plus loin que le bord du blob (demande utilisateur v9.7)
+    const spawnDist = piece.radius * 1.25 + particleRadius;
     const ejectedPosition = add(piece.position, scale(dir, spawnDist));
     const ejected = world.spawnParticle(ejectedPosition, particleValue);
     ejected.data.ejectOwnerId = piece.ownerId;
-    ejected.data.ejectImmunityS = 0.25;
+    ejected.data.ejectImmunityS = 0.5;
 
     // Vélocité d'expulsion propulsée au-delà du mouvement du blob pour éviter tout collage
-    const baseLaunchSpeed = velocityForMass(particleValue, config) * (config.split.ejectSpeedFactor ?? 1.25) * 3.5;
+    const baseLaunchSpeed = velocityForMass(particleValue, config) * (config.split.ejectSpeedFactor ?? 1.25) * 4.0;
     const launchSpeed = length(piece.velocity) + baseLaunchSpeed;
     ejected.velocity = scale(dir, launchSpeed);
   }
@@ -702,6 +702,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         if (virus.kind === 'virus' && virus.virusId === 2 && virus.mass > 300) {
           const massLost = Math.min(virus.mass - 300, 30 * dt);
           world.setMass(virus, virus.mass - massLost);
+          virus.radius = 150 * Math.sqrt(virus.mass / 300);
           virus.data.spitCredit = ((virus.data.spitCredit as number) ?? 0) + massLost;
           while ((virus.data.spitCredit as number) >= 1) {
             virus.data.spitCredit = (virus.data.spitCredit as number) - 1;
@@ -743,6 +744,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
           }
         } else if (vId === 2) {
           world.setMass(virus, virus.mass + particle.mass);
+          virus.radius = 150 * Math.sqrt(virus.mass / 300);
         }
         return;
       }

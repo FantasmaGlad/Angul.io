@@ -290,10 +290,8 @@ export function attachInput(
       const intensity = Math.min(1, (distPx - MOUSE_DEADZONE_PX) / (CONTROL_RADIUS_PX - MOUSE_DEADZONE_PX));
       const dirX = dx / distPx;
       const dirY = dy / distPx;
-      // Projeter la cible suffisamment loin devant le blob dans la direction de la souris pour que
-      // la position simulée ne dépasse jamais la cible en une seule frame (ce qui inverserait la
-      // direction à 180° et causait des saccades/tressautements près du centre).
-      const projectedDistWorld = Math.max(300, distPx / camera.scale);
+      const MOUSE_TARGET_OFFSET_WORLD_PX = 4000;
+      const projectedDistWorld = Math.max(MOUSE_TARGET_OFFSET_WORLD_PX, distPx / camera.scale);
       const target: Vector2 = {
         x: camera.x + dirX * projectedDistWorld,
         y: camera.y + dirY * projectedDistWorld,

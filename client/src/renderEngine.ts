@@ -325,6 +325,23 @@ export class RenderEngine {
     // Pour éviter tout pop visuel d'entité entre snapA et snapB, l'interpolation se fait d'abord
     const interpolated = interpolateEntities(fromEntities, toEntities, t);
 
+    // Affichage instantané des nouvelles particules éjectées (W) présentes dans le dernier snapshot
+    const latestSnap = this.snapshotQueue[this.snapshotQueue.length - 1];
+    if (latestSnap && latestSnap !== snapB) {
+      for (const entity of latestSnap.entities) {
+        if (entity.k === 'f' && (entity.vx || entity.vy)) {
+          if (!interpolated.some((e) => e.i === entity.i)) {
+            const dtSec = Math.max(0, (performance.now() - latestSnap.serverTimeMs) / 1000);
+            interpolated.push({
+              ...entity,
+              x: entity.x + (entity.vx ?? 0) * dtSec,
+              y: entity.y + (entity.vy ?? 0) * dtSec,
+            });
+          }
+        }
+      }
+    }
+
     // Lissage exponentiel APPLIQUÉ AUSSI en mode spectateur (retour utilisateur : "les robots vus
     // depuis le lobby sont légèrement tremblotants, alors qu'en partie ils sont fluides") — une
     // ancienne optimisation sautait ce lissage pour le fond décoratif de l'accueil, en supposant
