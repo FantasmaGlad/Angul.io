@@ -870,7 +870,8 @@ export default function GameView({
 
       let dx = targetCamera.x - latestCamera.x;
       let dy = targetCamera.y - latestCamera.y;
-      if (mapSize && mapSize > 0) {
+      const isTorusMap = movementConfig?.borderType === 'TOROIDAL';
+      if (isTorusMap && mapSize && mapSize > 0) {
         if (Math.abs(dx) > mapSize / 2) {
           dx = dx > 0 ? dx - mapSize : dx + mapSize;
         }
@@ -881,8 +882,13 @@ export default function GameView({
       let newX = latestCamera.x + dx * cameraPosLerp;
       let newY = latestCamera.y + dy * cameraPosLerp;
       if (mapSize && mapSize > 0) {
-        newX = ((newX % mapSize) + mapSize) % mapSize;
-        newY = ((newY % mapSize) + mapSize) % mapSize;
+        if (isTorusMap) {
+          newX = ((newX % mapSize) + mapSize) % mapSize;
+          newY = ((newY % mapSize) + mapSize) % mapSize;
+        } else {
+          newX = Math.max(0, Math.min(mapSize, newX));
+          newY = Math.max(0, Math.min(mapSize, newY));
+        }
       }
 
       latestCamera = {

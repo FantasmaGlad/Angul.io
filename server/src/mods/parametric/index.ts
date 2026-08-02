@@ -308,15 +308,15 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
 
     const result: Entity[] = [piece];
     const angleStep = (PI * 2) / actualCount;
-    const speed = velocityForMass(massPerPiece, config) * (config.split.ejectSpeedFactor ?? 1.25);
+    const speed = velocityForMass(massPerPiece, config) * (config.split.ejectSpeedFactor ?? 1.25) * 3.0;
 
-    const dir0 = { x: 1, y: 0 };
+    const dir0 = { x: Math.cos(0), y: Math.sin(0) };
     piece.velocity = scale(dir0, speed);
 
     for (let i = 1; i < actualCount; i++) {
       const angle = i * angleStep;
       const dir = { x: Math.cos(angle), y: Math.sin(angle) };
-      const spawnPos = add(piece.position, scale(dir, piece.radius + 5));
+      const spawnPos = add(piece.position, scale(dir, piece.radius + 12));
       const newPiece = world.spawnPiece(piece.ownerId, spawnPos, massPerPiece);
       newPiece.velocity = scale(dir, speed);
       const state = pieceState(newPiece);
@@ -336,10 +336,10 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
   }
 
   function randomVirusPosition(world: World, margin: number, virusRadius: number): Vector2 {
-    for (let attempt = 0; attempt < 40; attempt++) {
-      const candidate = randomPositionInMap(margin);
-      if (!isPositionOccupiedForVirus(world, candidate, virusRadius)) {
-        return candidate;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const pos = randomPositionInMap(margin);
+      if (!isPositionOccupiedForVirus(world, pos, virusRadius)) {
+        return pos;
       }
     }
     return randomPositionInMap(margin);
@@ -348,7 +348,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
   function targetVirusCount(): number {
     if (!config.virus?.enabled) return 0;
     const vType = config.virus.type;
-    const defaultDensity5k = vType === 2 ? 12 : vType === 3 ? 2 : 8;
+    const defaultDensity5k = vType === 2 ? 4 : vType === 3 ? 2 : 8;
     const density5k = config.virus.densityPer5k ?? defaultDensity5k;
     const areaIn5k = (config.arena.width * config.arena.height) / (5000 * 5000);
     return Math.max(1, Math.round(areaIn5k * density5k));
@@ -443,12 +443,15 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     state.ejectCooldownS = EJECT_COOLDOWN_SECONDS;
 
     const particleRadius = Math.sqrt((config.areaConstant * particleValue) / PI);
-    // Décalage du spawn à partir de 2 px plus loin que le rayon du blob (demande utilisateur)
-    const ejectedPosition = add(piece.position, scale(dir, piece.radius + 2 + particleRadius));
+    // Décalage du spawn à 5% plus loin que le bord du blob (demande utilisateur v9.6)
+    const spawnDist = piece.radius * 1.05 + particleRadius;
+    const ejectedPosition = add(piece.position, scale(dir, spawnDist));
     const ejected = world.spawnParticle(ejectedPosition, particleValue);
+    ejected.data.ejectOwnerId = piece.ownerId;
+    ejected.data.ejectImmunityS = 0.25;
 
     // Vélocité d'expulsion propulsée au-delà du mouvement du blob pour éviter tout collage
-    const baseLaunchSpeed = velocityForMass(particleValue, config) * (config.split.ejectSpeedFactor ?? 1.25) * 2.5;
+    const baseLaunchSpeed = velocityForMass(particleValue, config) * (config.split.ejectSpeedFactor ?? 1.25) * 3.5;
     const launchSpeed = length(piece.velocity) + baseLaunchSpeed;
     ejected.velocity = scale(dir, launchSpeed);
   }
@@ -611,6 +614,9 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
           // particule).
           if (entity.velocity.x !== 0 || entity.velocity.y !== 0) {
             entity.velocity = scale(entity.velocity, Math.max(0, 1 - EJECT_FRICTION_PER_SEC * dt));
+          }
+          if (entity.data.ejectImmunityS !== undefined) {
+            entity.data.ejectImmunityS = Math.max(0, (entity.data.ejectImmunityS as number) - dt);
           }
           continue;
         }
@@ -783,6 +789,10 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
       // Nourriture mangée par un morceau
       if (a.kind === 'particle' || b.kind === 'particle') {
         const [particle, piece] = a.kind === 'particle' ? [a, b] : [b, a];
+        const immunity = (particle.data.ejectImmunityS as number) ?? 0;
+        const ownerId = particle.data.ejectOwnerId as string | undefined;
+        if (immunity > 0 && ownerId === piece.ownerId) return;
+
         if (piece.mass >= config.eating.minMassToEatFood) {
           const efficiency = config.eating.foodEfficiency ?? 1.0;
           const gainedMass = particle.mass * efficiency;

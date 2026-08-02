@@ -1,7 +1,7 @@
 {
   "version": 1,
   "generatedFrom": "structure.md",
-  "lastReviewed": "2026-08-02 (v9.5)",
+  "lastReviewed": "2026-08-02 (v9.6)",
   "note": "Cartographie machine-readable du depot, en complement de structure.md (lisible par un humain) et README.md (architecture/modding en detail). Sert de source au serveur MCP local que .mcp.json enregistre aupres de Claude Code (.gemini/mcp/server.mjs, PAS .claude/mcp/server.mjs qui existe aussi mais n'est pas celui lance) et a son equivalent Gemini/Antigravity — .gemini/project-structure.json est un SYMLINK vers CE fichier (../.claude/project-structure.json), pas une copie separee : les deux plateformes lisent toujours exactement le meme contenu, rien a resynchroniser manuellement. Ce fichier ET .claude/mcp/** SONT commites (voir structure.md §1bis) — outillage de projet partage, pas une preference locale. Mets a jour CE fichier ET structure.md dans le meme commit si tu ajoutes/deplaces/supprimes un fichier important — sinon les deux deviennent trompeurs.",
   "workspaces": [
     {
