@@ -89,22 +89,23 @@ describe('Virus Mechanics', () => {
     expect(p2Pieces.length).toBe(16);
   });
 
-  it('Virus Rouge (ID 2): consumes small players (<12 mass), explodes large players (>=300 mass) into 32 pieces', () => {
+  it('Virus Rouge (ID 2): consumes smaller players (< 300 mass), explodes large players (>= 315 mass) into 32 pieces', () => {
     const config = createTestConfig(2);
     const mod = createParametricMod(config);
     const world = new World({ mapSize: 10000 });
 
     const virus = world.spawnVirus({ x: 500, y: 500 }, 300, 2);
     world.addPlayer('p1', 'Player 1');
-    const tinyPiece = world.spawnPiece('p1', { x: 500, y: 500 }, 10);
+    const smallPiece = world.spawnPiece('p1', { x: 500, y: 500 }, 150);
 
-    // Virus rouge consomme le petit joueur (<12)
-    mod.onCollision(world, tinyPiece, virus, 0.016);
-    expect(world.getEntity(tinyPiece.id)).toBeUndefined();
+    // Virus rouge consomme le joueur plus petit (< 300)
+    mod.onCollision(world, smallPiece, virus, 0.016);
+    expect(world.getEntity(smallPiece.id)).toBeUndefined();
+    expect(virus.mass).toBe(450);
 
-    // Grand joueur (masse 350 >= 300) mange le virus rouge
+    // Grand joueur (masse 500 >= 315) mange le virus rouge
     world.addPlayer('p2', 'Player 2');
-    const bigPiece = world.spawnPiece('p2', { x: 500, y: 500 }, 350);
+    const bigPiece = world.spawnPiece('p2', { x: 500, y: 500 }, 500);
 
     mod.onCollision(world, bigPiece, virus, 0.016);
     expect(world.getEntity(virus.id)).toBeUndefined();

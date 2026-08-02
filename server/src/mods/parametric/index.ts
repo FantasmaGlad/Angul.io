@@ -813,12 +813,14 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
           return;
         }
 
-        if (vId === 2) { // Rouge (Mass 300, Manger >= 315+, Div 32, consomme < 12)
-          if (piece.mass < 12) {
+        if (vId === 2) { // Rouge (Mass 300 carnivore, mange les blobs plus petits < virus.mass, explose si >= minMassToEat)
+          if (piece.mass < virus.mass) {
+            world.setMass(virus, virus.mass + piece.mass);
+            virus.radius = 150 * Math.sqrt(virus.mass / 300);
             finalizeConsumedEntity(world, undefined, piece, piece.mass);
             return;
           }
-          if (piece.mass < minMassToEat) return; // Se cache dedans
+          if (piece.mass < minMassToEat) return; // Se cache dedans si taille similaire mais insuffisante pour l'absorber
           world.setMass(piece, piece.mass + virus.mass);
           world.removeEntity(virus.id);
           explodePiece(world, piece, 32);
