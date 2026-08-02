@@ -186,6 +186,7 @@ export interface ParametricModConfig {
     enabled: boolean;
     type: 1 | 2 | 3;
     densityPer10k?: number;
+    densityPer5k?: number;
   };
 
   /** Réglages de salon par défaut pour ce mode — utilisés par `server/src/index.ts` pour les

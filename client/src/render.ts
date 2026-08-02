@@ -294,7 +294,86 @@ export function renderFrame(
     drawCalls++;
   }
 
-  // Couche 1.5 : Rendu des virus (sous les joueurs)
+  const renderCreature = (entity: typeof visibleEntities[0]) => {
+    const screenX = toScreenX(entity.x);
+    const screenY = toScreenY(entity.y);
+    const screenRadius = entity.r * camera.scale;
+
+    if (screenX + screenRadius < 0 || screenX - screenRadius > canvasWidth) return;
+    if (screenY + screenRadius < 0 || screenY - screenRadius > canvasHeight) return;
+
+    const skinId = colorFor(entity, nicknames, colors);
+    const radius = Math.max(1, screenRadius);
+    const circularImg = getCircularSkinImage(skinId);
+
+    if (circularImg) {
+      const drawCenterX = Math.round(screenX);
+      const drawCenterY = Math.round(screenY);
+      const drawRadius = Math.round(radius);
+      ctx.drawImage(
+        circularImg,
+        drawCenterX - drawRadius,
+        drawCenterY - drawRadius,
+        drawRadius * 2,
+        drawRadius * 2,
+      );
+    } else {
+      ctx.beginPath();
+      ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+      ctx.fillStyle = colorForSkinFallback(skinId);
+      ctx.fill();
+    }
+
+    ctx.beginPath();
+    ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+    ctx.lineWidth = Math.max(1, radius * 0.04);
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+    ctx.stroke();
+    drawCalls++;
+
+    const nickname = entity.p && nicknames.get(entity.p);
+    const showNickname = Boolean(nickname) && entity.m >= 100;
+    if (showNickname) {
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const fontSize = fitNicknameFontSizePx(ctx, nickname!, screenRadius);
+      ctx.font = `bold ${fontSize}px sans-serif`;
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.fillText(nickname!, screenX, screenY);
+      drawCalls++;
+
+      if (selfPlayerId && entity.p === selfPlayerId) {
+        const massFontSize = Math.max(9, fontSize * 0.7);
+        ctx.font = `normal ${massFontSize}px sans-serif`;
+        ctx.fillText(String(Math.floor(entity.m)), screenX, screenY + fontSize * 0.85);
+        drawCalls++;
+      }
+    } else if (selfPlayerId && entity.p === selfPlayerId) {
+      const massFontSize = Math.max(9, screenRadius * 0.3 * 0.7);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = `normal ${massFontSize}px sans-serif`;
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.fillText(String(Math.floor(entity.m)), screenX, screenY);
+      drawCalls++;
+    }
+  };
+
+  const sortedCreatures = visibleEntities
+    .filter((e) => e.k === 'c')
+    .sort((a, b) => a.m - b.m);
+
+  // Couche 1.5 : Morceaux de créatures plus petits qu'un virus (masse < 130) -> sous les virus
+  const smallCreatures = sortedCreatures.filter((e) => e.m < 130);
+  for (const entity of smallCreatures) {
+    renderCreature(entity);
+  }
+
+  // Couche 1.8 : Rendu des virus
   const virusEntities = visibleEntities.filter((e) => e.k === 'v');
   for (const entity of virusEntities) {
     const screenX = toScreenX(entity.x);
@@ -328,98 +407,10 @@ export function renderFrame(
     drawCalls++;
   }
 
-  // Couche 2 : Rendu des créatures/joueurs triés par masse CROISSANTE (le plus gros au-dessus)
-  const sortedCreatures = visibleEntities
-    .filter((e) => e.k === 'c')
-    .sort((a, b) => a.m - b.m);
-
-  for (const entity of sortedCreatures) {
-    const screenX = toScreenX(entity.x);
-    const screenY = toScreenY(entity.y);
-    const screenRadius = entity.r * camera.scale;
-
-    if (screenX + screenRadius < 0 || screenX - screenRadius > canvasWidth) continue;
-    if (screenY + screenRadius < 0 || screenY - screenRadius > canvasHeight) continue;
-
-    const skinId = colorFor(entity, nicknames, colors);
-    const radius = Math.max(1, screenRadius);
-    const circularImg = getCircularSkinImage(skinId);
-
-    if (circularImg) {
-      // Position/rayon ARRONDIS au pixel entier, uniquement pour ce `drawImage` (le cercle de
-      // contour et le texte juste en-dessous gardent leurs coordonnées sous-pixel intactes) —
-      // `screenX`/`screenY`/`radius` sont des flottants qui varient légèrement à CHAQUE frame
-      // (lerp de caméra, interpolation réseau), même pour un blob immobile en coordonnées monde.
-      // Une image détaillée (avatar) rééchantillonnée par le filtrage bilinéaire du canvas à une
-      // phase sous-pixel différente à chaque frame "grouille"/tremble visiblement, alors qu'un
-      // simple aplat de couleur (cercle, texte) n'a pas ce problème (rien à rééchantillonner).
-      // Ancrer le rectangle de destination sur des entiers stabilise cette phase d'une frame à
-      // l'autre tant que la position/taille réelle n'a pas assez bougé pour changer de pixel —
-      // le blob et sa croissance restent visuellement fluides, seul le grouillement disparaît.
-      const drawCenterX = Math.round(screenX);
-      const drawCenterY = Math.round(screenY);
-      const drawRadius = Math.round(radius);
-      ctx.drawImage(
-        circularImg,
-        drawCenterX - drawRadius,
-        drawCenterY - drawRadius,
-        drawRadius * 2,
-        drawRadius * 2,
-      );
-    } else {
-      ctx.beginPath();
-      ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
-      ctx.fillStyle = colorForSkinFallback(skinId);
-      ctx.fill();
-    }
-
-    ctx.beginPath();
-    ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
-    ctx.lineWidth = Math.max(1, radius * 0.04);
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
-    ctx.stroke();
-    drawCalls++;
-
-    const nickname = entity.p && nicknames.get(entity.p);
-    // Le pseudo n'est affiché qu'au-delà de 100 de masse (demande utilisateur) — un tout petit
-    // morceau (juste après un split, ou en fin de vie) ne l'affiche plus, mais garde son label de
-    // masse perso ci-dessous si c'est le morceau du joueur lui-même.
-    const showNickname = Boolean(nickname) && entity.m >= 100;
-    if (showNickname) {
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      // Ajusté à la largeur réelle du pseudo (`fitNicknameFontSizePx`, mesuré via
-      // `ctx.measureText`) pour TOUT joueur, bot ou humain (demande utilisateur) — un pseudo de
-      // joueur humain peut aller jusqu'à 20 caractères (`maxLength`, PlayPanel.tsx), largement
-      // assez pour déborder du cercle avec l'ancien ratio fixe (`screenRadius * 0.3`, jamais
-      // mesuré) sur un petit morceau, contrairement aux pseudos de bots déjà correctement ajustés.
-      const fontSize = fitNicknameFontSizePx(ctx, nickname!, screenRadius);
-      // Gras (demande utilisateur) — plus lisible par-dessus un skin/fond de blob coloré qu'un
-      // trait fin, notamment aux petites tailles de police.
-      ctx.font = `bold ${fontSize}px sans-serif`;
-      ctx.fillStyle = '#ffffff';
-      ctx.shadowColor = 'transparent';
-      ctx.shadowBlur = 0;
-      ctx.fillText(nickname!, screenX, screenY);
-      drawCalls++;
-
-      if (selfPlayerId && entity.p === selfPlayerId) {
-        const massFontSize = Math.max(9, fontSize * 0.7);
-        ctx.font = `normal ${massFontSize}px sans-serif`;
-        ctx.fillText(String(Math.floor(entity.m)), screenX, screenY + fontSize * 0.85);
-        drawCalls++;
-      }
-    } else if (selfPlayerId && entity.p === selfPlayerId) {
-      const massFontSize = Math.max(9, screenRadius * 0.3 * 0.7);
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.font = `normal ${massFontSize}px sans-serif`;
-      ctx.fillStyle = '#ffffff';
-      ctx.shadowColor = 'transparent';
-      ctx.shadowBlur = 0;
-      ctx.fillText(String(Math.floor(entity.m)), screenX, screenY);
-      drawCalls++;
-    }
+  // Couche 2 : Morceaux de créatures plus grands ou égaux au virus (masse >= 130) -> au-dessus des virus
+  const largeCreatures = sortedCreatures.filter((e) => e.m >= 130);
+  for (const entity of largeCreatures) {
+    renderCreature(entity);
   }
 
   return {

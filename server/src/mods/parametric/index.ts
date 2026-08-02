@@ -308,7 +308,10 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
 
     const result: Entity[] = [piece];
     const angleStep = (PI * 2) / actualCount;
-    const speed = velocityForMass(massPerPiece, config) * 1.25;
+    const speed = velocityForMass(massPerPiece, config) * (config.split.ejectSpeedFactor ?? 1.25);
+
+    const dir0 = { x: 1, y: 0 };
+    piece.velocity = scale(dir0, speed);
 
     for (let i = 1; i < actualCount; i++) {
       const angle = i * angleStep;
@@ -344,9 +347,11 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
 
   function targetVirusCount(): number {
     if (!config.virus?.enabled) return 0;
-    const areaIn10k = (config.arena.width * config.arena.height) / 100_000_000;
-    const density = config.virus.densityPer10k ?? 2;
-    return Math.max(1, Math.round(areaIn10k * density));
+    const vType = config.virus.type;
+    const defaultDensity5k = vType === 2 ? 12 : vType === 3 ? 2 : 8;
+    const density5k = config.virus.densityPer5k ?? defaultDensity5k;
+    const areaIn5k = (config.arena.width * config.arena.height) / (5000 * 5000);
+    return Math.max(1, Math.round(areaIn5k * density5k));
   }
 
   /**
@@ -437,13 +442,14 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     world.setMass(piece, piece.mass - amount);
     state.ejectCooldownS = EJECT_COOLDOWN_SECONDS;
 
-    // Décalage du spawn au-delà du rayon du blob pour éviter la ré-absorption immédiate ce même tick
-    const ejectedPosition = add(piece.position, scale(dir, piece.radius + 15));
+    const particleRadius = Math.sqrt((config.areaConstant * particleValue) / PI);
+    // Décalage du spawn à partir de 2 px plus loin que le rayon du blob (demande utilisateur)
+    const ejectedPosition = add(piece.position, scale(dir, piece.radius + 2 + particleRadius));
     const ejected = world.spawnParticle(ejectedPosition, particleValue);
 
-    // Même vélocité d'expulsion qu'un divisement
-    const launchSpeed =
-      velocityForMass(particleValue, config) * config.split.ejectSpeedFactor;
+    // Vélocité d'expulsion propulsée au-delà du mouvement du blob pour éviter tout collage
+    const baseLaunchSpeed = velocityForMass(particleValue, config) * (config.split.ejectSpeedFactor ?? 1.25) * 2.5;
+    const launchSpeed = length(piece.velocity) + baseLaunchSpeed;
     ejected.velocity = scale(dir, launchSpeed);
   }
 
@@ -627,18 +633,9 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         // reste aussi réactif qu'avant pour accélérer, mais conserve désormais nettement plus son
         // élan en freinant (voir `decelerationForMass`/`MovementConfig.decelerationMassExponent`).
         const isDecelerating = length(targetVelocity) < length(entity.velocity);
-        const speedV = length(entity.velocity);
-        const speedT = length(targetVelocity);
-        let turnFactor = 1.0;
-        if (speedV > 1 && speedT > 1) {
-          const dotProd = (entity.velocity.x * targetVelocity.x + entity.velocity.y * targetVelocity.y) / (speedV * speedT);
-          if (dotProd < 0.8) {
-            turnFactor = 1.0 + (0.8 - dotProd) * 2.5;
-          }
-        }
-        const rate = (isDecelerating
+        const rate = isDecelerating
           ? decelerationForMass(entity.mass, config)
-          : accelerationForMass(entity.mass, config)) * turnFactor;
+          : accelerationForMass(entity.mass, config);
         const maxChange = rate * accelIntensity * dt;
         entity.velocity = moveToward(entity.velocity, targetVelocity, maxChange);
 
@@ -673,10 +670,10 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
           for (let i = 0; i < toSpawn; i++) {
             const vType = config.virus.type;
             const initialMass = vType === 2 ? 300 : 200;
-            const vRadius = vType === 2 ? 150 : Math.sqrt((config.areaConstant * initialMass) / PI);
+            const vRadius = vType === 2 ? 150 : 100;
             const pos = randomVirusPosition(world, 1, vRadius);
             const v = world.spawnVirus(pos, initialMass, vType);
-            if (vType === 2) v.radius = 150;
+            v.radius = vRadius;
           }
         } else {
           virusSpawnCredit = 0;
