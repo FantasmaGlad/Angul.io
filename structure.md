@@ -185,7 +185,10 @@ Angul.io/
 │       ├── db/pool.ts                 Pool de connexions PostgreSQL (paresseux)
 │       ├── engine/                    Moteur de jeu générique — IDENTIQUE pour tout mod (voir README)
 │       │   ├── types.ts                     Entity, PlayerId, PlayerState…
-│       │   ├── world.ts / world.test.ts     Monde de simulation (entités, grille spatiale)
+│       │   ├── world.ts / world.test.ts     Monde de simulation (entités, grille spatiale).
+│       │   │                                 findOverlappingPairs (v11.0) : exclusion des particules de
+│       │   │                                 nourriture du début de la boucle broad-phase (-99.9% lookups).
+│       │   │                                 spatialCellSize adaptative (v11.0) : calculée selon mapSize (50 à 250px)
 │       │   ├── spatialHash.ts / .test.ts    Grille de collision broad-phase (évite le O(n²))
 │       │   ├── mod.ts                       Interface GameMod — LE contrat de modding (voir README)
 │       │   ├── modRegistry.ts               Résout un modId → { mod, mapSize, movement, room… }
@@ -314,9 +317,9 @@ Angul.io/
 │       ├── net.ts / net.test.ts       Connexion WebSocket au serveur de jeu (reconnexion auto)
 │       ├── input.ts                   Capture souris/clavier/manette → cible + intensité + actions
 │       ├── prediction.ts / .test.ts   PRÉDICTION LOCALE + réconciliation du blob du joueur (voir README).
-│       │                               chunkHistoryForReplay (v10.2) : retrait de la branche "isTurning"
-│       │                               (v10.1) qui violait le matching de discrétisation serveur pendant
-│       │                               un virage — toujours UN SEUL bloc par tick désormais, même en virage
+│       │                               maxJitterPx (v11.0) : ajustement du plafond de tolérance de gigue
+│       │                               hors-dash à 2.5x le rayon pour absorber la discrétisation des virages
+│       │                               sans décalage visuel lissé (suppression du lag au virage)
 │       ├── reconcileLatency.ts / .test.ts  estimatedLatencyMsFromAnchor() — convertit l'ancrage horloge de
 │       │                               RenderEngine (serverTimeMsForTick) en latence pour reconcile(), à la
 │       │                               place du ping 1Hz lissé (repli uniquement) (v10.2)

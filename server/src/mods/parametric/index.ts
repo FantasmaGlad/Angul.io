@@ -629,6 +629,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     },
 
     onTick(world: World, dt: number) {
+      world.rebuildSpatialHash();
       // Une seule capture des entités du salon pour tout ce tick, réutilisée par TOUTES les passes
       // ci-dessous — `world.allEntities()` copie TOUTES les entités (`[...map.values()]`, O(n)
       // ALLOUÉ à chaque appel), et était appelée jusqu'à 6 fois séparées dans cette seule méthode

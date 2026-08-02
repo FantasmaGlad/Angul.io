@@ -376,7 +376,7 @@ export class LocalPrediction {
       const isDashing = currentSpeed > velocityForMass(predicted.mass, movement) * 1.5;
       const maxJitterPx = isDashing
         ? RECONCILE_JITTER_TOLERANCE_MAX_PX
-        : Math.max(RECONCILE_IGNORE_FLOOR_PX, massToRadius(predicted.mass));
+        : Math.max(RECONCILE_IGNORE_FLOOR_PX, massToRadius(predicted.mass) * 2.5);
 
       const replayChunkJitterPx = Math.min(
         maxJitterPx,

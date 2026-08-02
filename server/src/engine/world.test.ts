@@ -55,8 +55,9 @@ describe('World — fusion (mergeEntities)', () => {
 describe('World — findOverlappingPairs', () => {
   it('détecte deux entités dont les cercles se chevauchent', () => {
     const world = new World({ mapSize: 1000 });
-    const a = world.spawnParticle({ x: 0, y: 0 }, 50); // rayon ≈ 7.07
-    const b = world.spawnParticle({ x: 5, y: 0 }, 50); // distance 5 < 2*7.07 -> overlap
+    world.addPlayer('p1', 'Alice');
+    const a = world.spawnPiece('p1', { x: 0, y: 0 }, 50); // rayon ≈ 7.07
+    const b = world.spawnPiece('p1', { x: 5, y: 0 }, 50); // distance 5 < 2*7.07 -> overlap
     world.rebuildSpatialHash();
     const pairs = world.findOverlappingPairs();
     expect(pairs).toHaveLength(1);
@@ -141,13 +142,13 @@ describe('World — findOverlappingPairs', () => {
   describe('test balayé (correctif tunneling — retour utilisateur : un petit morceau splitté traversé sans être mangé)', () => {
     it("détecte une collision qui ne se produit qu'EN COURS de trajet ce tick (ni au départ, ni à l'arrivée)", () => {
       const world = new World({ mapSize: 1000 });
+      world.addPlayer('p1', 'Alice');
       // Petite entité stationnaire (rayon ≈ 7.07) au milieu du trajet de l'autre.
       const stationary = world.spawnParticle({ x: 100, y: 0 }, 50);
       stationary.previousPosition = { x: 100, y: 0 };
       // Entité rapide : partie de (0,0), arrivée à (200,0) ce tick — traverse (100,0) en plein
-      // milieu du trajet, sans jamais se recouvrir ni au départ ni à l'arrivée (distance finale
-      // 100px, très supérieure à la somme des rayons ≈ 14.14px).
-      const fast = world.spawnParticle({ x: 200, y: 0 }, 50);
+      // milieu du trajet.
+      const fast = world.spawnPiece('p1', { x: 200, y: 0 }, 50);
       fast.previousPosition = { x: 0, y: 0 };
       world.rebuildSpatialHash();
 
@@ -161,9 +162,10 @@ describe('World — findOverlappingPairs', () => {
 
     it('ne détecte rien si le trajet balayé passe à côté sans jamais recouper le rayon', () => {
       const world = new World({ mapSize: 1000 });
+      world.addPlayer('p1', 'Alice');
       const stationary = world.spawnParticle({ x: 100, y: 100 }, 50); // rayon ≈ 7.07
       stationary.previousPosition = { x: 100, y: 100 };
-      const fast = world.spawnParticle({ x: 200, y: 0 }, 50); // trajet horizontal, y=0 partout
+      const fast = world.spawnPiece('p1', { x: 200, y: 0 }, 50); // trajet horizontal, y=0 partout
       fast.previousPosition = { x: 0, y: 0 };
       world.rebuildSpatialHash();
 
@@ -172,16 +174,10 @@ describe('World — findOverlappingPairs', () => {
   });
 
   describe('grandes entités (Blobs Challenger et assimilés, voir spatialHash.ts)', () => {
-    // Régression : une grande entité (jamais insérée dans la grille, voir SpatialHash) dont le
-    // rayon dépasse largement le rayon de recherche fixe (`cellSize`) de `queryNearby` doit quand
-    // même être appariée avec une petite entité en bordure de son PROPRE grand rayon — bug
-    // constaté et corrigé lors du calibrage initial de ce correctif (une version intermédiaire
-    // manquait ce chevauchement, la requête de la petite entité découvrant bien la grande, mais
-    // l'ordre `entity.id < otherId` désignait alors la grande comme "responsable" de la paire —
-    // dont la propre requête, à rayon fixe, ne pouvait pas se voir aussi loin).
     it('détecte le chevauchement entre une grande entité et une petite entité en bordure de son rayon', () => {
       const world = new World({ mapSize: 20000 });
-      const giant = world.spawnParticle({ x: 10000, y: 10000 }, 2500); // rayon ≈ 222.7 (> 50*1.5)
+      world.addPlayer('p1', 'Alice');
+      const giant = world.spawnPiece('p1', { x: 10000, y: 10000 }, 2500); // rayon ≈ 222.7
       const small = world.spawnParticle(
         { x: 10000 + giant.radius - 5, y: 10000 },
         10,
@@ -196,7 +192,8 @@ describe('World — findOverlappingPairs', () => {
 
     it("ne détecte rien pour une petite entité hors de portée d'une grande", () => {
       const world = new World({ mapSize: 20000 });
-      const giant = world.spawnParticle({ x: 10000, y: 10000 }, 2500);
+      world.addPlayer('p1', 'Alice');
+      const giant = world.spawnPiece('p1', { x: 10000, y: 10000 }, 2500);
       world.spawnParticle({ x: 10000 + giant.radius + 100, y: 10000 }, 10); // 100px au-delà du bord
       world.rebuildSpatialHash();
       expect(world.findOverlappingPairs()).toHaveLength(0);
@@ -204,8 +201,10 @@ describe('World — findOverlappingPairs', () => {
 
     it('détecte le chevauchement entre deux grandes entités', () => {
       const world = new World({ mapSize: 20000 });
-      const giantA = world.spawnParticle({ x: 10000, y: 10000 }, 2500);
-      const giantB = world.spawnParticle({ x: 10000 + giantA.radius, y: 10000 }, 2500); // centres distants du rayon d'un seul -> chevauchement franc
+      world.addPlayer('p1', 'Alice');
+      world.addPlayer('p2', 'Bob');
+      const giantA = world.spawnPiece('p1', { x: 10000, y: 10000 }, 2500);
+      const giantB = world.spawnPiece('p2', { x: 10000 + giantA.radius, y: 10000 }, 2500);
       world.rebuildSpatialHash();
       const pairs = world.findOverlappingPairs();
       expect(pairs).toHaveLength(1);

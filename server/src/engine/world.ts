@@ -40,7 +40,8 @@ export class World {
   constructor(options: WorldOptions) {
     this.mapSize = options.mapSize;
     this.kArea = options.kArea ?? 3;
-    this.spatialHash = new SpatialHash(options.spatialCellSize ?? 50);
+    const defaultCellSize = Math.max(50, Math.min(250, Math.floor(options.mapSize / 200)));
+    this.spatialHash = new SpatialHash(options.spatialCellSize ?? defaultCellSize);
   }
 
   // --- Entités ---------------------------------------------------------
@@ -303,17 +304,20 @@ export class World {
 
     const maxGridRadius = this.spatialHash.maxGridEntityRadius();
     for (const entity of this.entities.values()) {
-      // Une grande entité n'interroge PAS ici (voir le commentaire ci-dessus, catégorie 1) : la
-      // catégorie 2 émet déjà toutes ses paires, à une portée dimensionnée sur sa propre taille.
-      if (entity.radius > maxGridRadius) continue;
+      // Les pastilles de nourriture (particle) sont immobiles et ne rentrent jamais en collision
+      // entre elles. Seules les pièces et virus initient la recherche broad-phase.
+      if (entity.kind === 'particle' || entity.radius > maxGridRadius) continue;
       const nearbyIds = this.spatialHash.queryNearbyForReach(
         entity.position,
         entity.radius * PARTICLE_EAT_MARGIN + maxGridRadius,
       );
       for (const otherId of nearbyIds) {
-        if (!(entity.id < otherId)) continue;
         const other = this.entities.get(otherId);
-        if (other && this.isOverlapping(entity, other)) pairs.push([entity, other]);
+        if (!other) continue;
+        // Si 'other' est aussi une entité active (piece/virus), dédoublonnage par ordre d'ID.
+        // Si 'other' est une pastille, 'other' n'initiera pas sa propre requête, donc cette paire est acceptée.
+        if (other.kind !== 'particle' && !(entity.id < otherId)) continue;
+        if (this.isOverlapping(entity, other)) pairs.push([entity, other]);
       }
     }
 
@@ -322,6 +326,7 @@ export class World {
     const largeEntities = this.spatialHash.getLargeEntities();
     const maxSmallReach = maxGridRadius;
     for (const large of largeEntities) {
+      if (large.kind === 'particle') continue;
       const nearbyIds = this.spatialHash.queryRadius(large.position, large.radius + maxSmallReach);
       for (const otherId of nearbyIds) {
         const other = this.entities.get(otherId);
@@ -333,6 +338,7 @@ export class World {
       for (let j = i + 1; j < largeEntities.length; j++) {
         const a = largeEntities[i]!;
         const b = largeEntities[j]!;
+        if (a.kind === 'particle' && b.kind === 'particle') continue;
         if (this.isOverlapping(a, b)) pairs.push([a, b]);
       }
     }
@@ -359,6 +365,7 @@ export class World {
     let sweptPairKeys: Set<string> | undefined;
 
     for (const entity of this.entities.values()) {
+      if (entity.kind === 'particle') continue;
       if (!entity.previousPosition) continue;
       const dx = entity.position.x - entity.previousPosition.x;
       const dy = entity.position.y - entity.previousPosition.y;
@@ -376,10 +383,7 @@ export class World {
           entity.kind === 'piece' && other.kind === 'particle'
             ? entity.radius * PARTICLE_EAT_MARGIN
             : entity.radius;
-        const radB =
-          other.kind === 'piece' && entity.kind === 'particle'
-            ? other.radius * PARTICLE_EAT_MARGIN
-            : other.radius;
+        const radB = other.radius;
         if (this.sweptMinDistance(entity, other) >= radA + radB) continue;
 
         sweptPairKeys ??= new Set();

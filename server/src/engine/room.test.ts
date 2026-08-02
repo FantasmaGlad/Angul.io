@@ -40,8 +40,9 @@ describe('Room — cycle de vie des hooks', () => {
       onCollision: () => calls.push('onCollision'),
     };
     const room = makeDeterministicRoom(mod, 0.05);
-    room.world.spawnParticle({ x: 0, y: 0 }, 10);
-    room.world.spawnParticle({ x: 1, y: 0 }, 10); // chevauchement garanti (rayons ≈ 1.78)
+    room.world.addPlayer('p1', 'Alice');
+    room.world.spawnPiece('p1', { x: 0, y: 0 }, 10);
+    room.world.spawnPiece('p1', { x: 1, y: 0 }, 10); // chevauchement garanti (rayons ≈ 1.78)
 
     room.tick();
 
