@@ -746,29 +746,31 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         const [piece, virus] = a.kind === 'piece' ? [a, b] : [b, a];
         const vId = virus.virusId ?? 1;
 
-        if (vId === 1) { // Vert (Mass 130, Div 16)
-          if (piece.mass < 130) return; // Petit joueur inoffensif (se cache dedans)
-          world.setMass(piece, piece.mass + 130);
+        const minMassToEat = virus.mass * 1.05; // 5% de plus que la masse du virus (demande v9.5)
+
+        if (vId === 1) { // Vert (Mass 200, Manger >= 210, Div 16)
+          if (piece.mass < minMassToEat) return; // Petit joueur inoffensif (se cache dedans)
+          world.setMass(piece, piece.mass + virus.mass);
           world.removeEntity(virus.id);
           explodePiece(world, piece, 16);
           return;
         }
 
-        if (vId === 2) { // Rouge (Mass 300, Div 32, mange < 12)
+        if (vId === 2) { // Rouge (Mass 300, Manger >= 315+, Div 32, consomme < 12)
           if (piece.mass < 12) {
             finalizeConsumedEntity(world, undefined, piece, piece.mass);
             return;
           }
-          if (piece.mass < 300) return; // Se cache dedans
+          if (piece.mass < minMassToEat) return; // Se cache dedans
           world.setMass(piece, piece.mass + virus.mass);
           world.removeEntity(virus.id);
           explodePiece(world, piece, 32);
           return;
         }
 
-        if (vId === 3) { // Bleu (Mass 130, Div 4x4 = 16)
-          if (piece.mass < 130) return; // Se cache dedans
-          world.setMass(piece, piece.mass + 130);
+        if (vId === 3) { // Bleu (Mass 200, Manger >= 210, Div 4x4 = 16)
+          if (piece.mass < minMassToEat) return; // Se cache dedans
+          world.setMass(piece, piece.mass + virus.mass);
           world.removeEntity(virus.id);
           const step1 = explodePiece(world, piece, 4);
           for (const p of step1) {

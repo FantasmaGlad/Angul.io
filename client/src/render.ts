@@ -367,8 +367,8 @@ export function renderFrame(
     .filter((e) => e.k === 'c')
     .sort((a, b) => a.m - b.m);
 
-  // Couche 1.5 : Morceaux de créatures plus petits qu'un virus (masse < 130) -> sous les virus
-  const smallCreatures = sortedCreatures.filter((e) => e.m < 130);
+  // Couche 1.5 : Morceaux de créatures plus petits qu'un virus (masse < 210) -> sous les virus
+  const smallCreatures = sortedCreatures.filter((e) => e.m < 210);
   for (const entity of smallCreatures) {
     renderCreature(entity);
   }
@@ -407,8 +407,8 @@ export function renderFrame(
     drawCalls++;
   }
 
-  // Couche 2 : Morceaux de créatures plus grands ou égaux au virus (masse >= 130) -> au-dessus des virus
-  const largeCreatures = sortedCreatures.filter((e) => e.m >= 130);
+  // Couche 2 : Morceaux de créatures plus grands ou égaux au virus (masse >= 210) -> au-dessus des virus
+  const largeCreatures = sortedCreatures.filter((e) => e.m >= 210);
   for (const entity of largeCreatures) {
     renderCreature(entity);
   }
