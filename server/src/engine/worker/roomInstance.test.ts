@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { BotConfig } from '../../mods/parametric/config.js';
 import { createParametricMod } from '../../mods/parametric/index.js';
 import { testConfig } from '../../mods/parametric/testConfig.js';
+import type { PlayerId, PlayerInput } from '../types.js';
 import type { ModResolver } from '../roomManager.js';
 import type { TickPayload } from './protocol.js';
 import { applyRoomBotCountOverride, RoomInstance } from './roomInstance.js';
@@ -339,6 +340,287 @@ describe('RoomInstance — adminAction(\'spawnBot\') bots personnalisés (§9.3/
     expect(result.ok).toBe(true);
     expect(instance.room.botManager?.activeBotCount).toBe(before + 1);
 
+    instance.destroy();
+  });
+});
+
+/** Phase P4 (plan-implementation-admin.md §6) : drag & drop, marionnette, apparence à la volée,
+ * spawn virus/vagues de bots, relais dash/eject du Blob Dieu. Mod factice avec un espion
+ * `onPlayerInput` (au lieu du vrai mod paramétrique) pour les actions qui doivent seulement
+ * vérifier CE QUI EST RELAYÉ à `mod.onPlayerInput`/`Room.handleInput`, indépendamment de toute
+ * règle de jeu réelle — plus rapide et plus ciblé que de dérouler une vraie physique. */
+describe("RoomInstance — adminAction P4 (contrôle & marionnette, cahier_des_charges_admin.md §9-§10)", () => {
+  function makeInputSpyInstance(): {
+    instance: RoomInstance;
+    inputs: Array<{ playerId: PlayerId; input: PlayerInput }>;
+  } {
+    const inputs: Array<{ playerId: PlayerId; input: PlayerInput }> = [];
+    const resolver: ModResolver = () => ({
+      mod: {
+        id: 'test-input-spy',
+        onPlayerJoin: (world, id) => {
+          world.spawnPiece(id, { x: 100, y: 100 }, 50);
+        },
+        onPlayerInput: (world, playerId, input) => {
+          inputs.push({ playerId, input });
+        },
+      },
+      mapSize: 2000,
+    });
+    const instance = new RoomInstance(
+      { id: 'room-spy', modId: 'test', tickRateHz: 20, maxPlayers: 30, resetSchedule: null },
+      resolver,
+    );
+    return { instance, inputs };
+  }
+
+  it("dragMove translate TOUS les morceaux du joueur par le même delta (§9.1) — offsets relatifs préservés", () => {
+    const { instance } = makeInputSpyInstance();
+    const playerId = '1';
+    instance.room.addPlayer(playerId, 'Drag');
+    // Un 2e morceau volontairement décalé (simule un joueur splitté) — `onPlayerJoin` du mod
+    // factice n'en spawne qu'un seul à (100,100).
+    instance.room.world.spawnPiece(playerId, { x: 140, y: 160 }, 30);
+
+    const result = instance.adminAction({ kind: 'dragMove', playerId, x: 500, y: 500 });
+    expect(result.ok).toBe(true);
+
+    const pieces = instance.room.world.getPiecesByOwner(playerId);
+    expect(pieces).toHaveLength(2);
+    // Barycentre (masse 50 à (100,100), masse 30 à (140,160)) = (115, 122.5) avant translation ;
+    // delta = (500-115, 500-122.5) appliqué identiquement aux deux morceaux.
+    const big = pieces.find((p) => p.mass === 50)!;
+    const small = pieces.find((p) => p.mass === 30)!;
+    expect(small.position.x - big.position.x).toBeCloseTo(140 - 100, 5); // offset relatif inchangé
+    expect(small.position.y - big.position.y).toBeCloseTo(160 - 100, 5);
+    const totalMass = pieces.reduce((s, p) => s + p.mass, 0);
+    const centerX = pieces.reduce((s, p) => s + p.position.x * p.mass, 0) / totalMass;
+    const centerY = pieces.reduce((s, p) => s + p.position.y * p.mass, 0) / totalMass;
+    expect(centerX).toBeCloseTo(500, 5);
+    expect(centerY).toBeCloseTo(500, 5);
+
+    instance.destroy();
+  });
+
+  it("dragMove renvoie false pour un joueur sans morceau", () => {
+    const { instance } = makeInputSpyInstance();
+    const result = instance.adminAction({ kind: 'dragMove', playerId: 'inconnu', x: 1, y: 1 });
+    expect(result.ok).toBe(false);
+    instance.destroy();
+  });
+
+  it("possess suspend l'input NORMAL (vrai client ou bot, même Room.handleInput) — seul possessInput fait autorité (§9.3)", () => {
+    const { instance, inputs } = makeInputSpyInstance();
+    const playerId = '1';
+    instance.room.addPlayer(playerId, 'Marionnette');
+
+    expect(instance.adminAction({ kind: 'possess', playerId }).ok).toBe(true);
+
+    // Input "normal" (chemin emprunté par un vrai client WS, `RoomInstance.input`) — doit être
+    // ignoré tant que le joueur est possédé.
+    instance.input(playerId, { target: { x: 1, y: 1 }, intensity: 1, split: false });
+    expect(inputs).toHaveLength(0);
+
+    // possessInput contourne volontairement la suspension.
+    const possessResult = instance.adminAction({
+      kind: 'possessInput',
+      playerId,
+      x: 9,
+      y: 9,
+      intensity: 1,
+      split: false,
+      dash: true,
+      eject: true,
+    });
+    expect(possessResult.ok).toBe(true);
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]).toEqual({
+      playerId,
+      input: { target: { x: 9, y: 9 }, intensity: 1, split: false, dash: true, eject: true },
+    });
+
+    // unpossess restaure l'input normal.
+    expect(instance.adminAction({ kind: 'unpossess', playerId }).ok).toBe(true);
+    instance.input(playerId, { target: { x: 2, y: 2 }, intensity: 1, split: false });
+    expect(inputs).toHaveLength(2);
+
+    instance.destroy();
+  });
+
+  it("possessInput est refusé (ok:false) si le joueur n'est pas actuellement possédé", () => {
+    const { instance, inputs } = makeInputSpyInstance();
+    const playerId = '1';
+    instance.room.addPlayer(playerId, 'PasPossede');
+
+    const result = instance.adminAction({
+      kind: 'possessInput',
+      playerId,
+      x: 1,
+      y: 1,
+      intensity: 1,
+      split: false,
+    });
+    expect(result.ok).toBe(false);
+    expect(inputs).toHaveLength(0);
+
+    instance.destroy();
+  });
+
+  it("possess sur un joueur inconnu renvoie false", () => {
+    const { instance } = makeInputSpyInstance();
+    expect(instance.adminAction({ kind: 'possess', playerId: 'inconnu' }).ok).toBe(false);
+    instance.destroy();
+  });
+
+  it("godInput relaie dash/eject à Room.handleInput (§10.4, extension du Blob Dieu)", () => {
+    const { instance, inputs } = makeInputSpyInstance();
+    const godId = 'admin-god-1';
+    expect(instance.adminAction({ kind: 'enableGodmode', playerId: godId, nickname: 'Dieu' }).ok).toBe(true);
+
+    const result = instance.adminAction({
+      kind: 'godInput',
+      playerId: godId,
+      x: 42,
+      y: 43,
+      intensity: 1,
+      split: false,
+      dash: true,
+      eject: true,
+    });
+    expect(result.ok).toBe(true);
+
+    const godInput = inputs.find((entry) => entry.playerId === godId);
+    expect(godInput?.input).toEqual({
+      target: { x: 42, y: 43 },
+      intensity: 1,
+      split: false,
+      dash: true,
+      eject: true,
+    });
+
+    instance.destroy();
+  });
+
+  it("setAppearance met à jour nickname/skin ET rediffuse via le même canal que onPlayerJoin (§9.4)", () => {
+    const { instance } = makeInputSpyInstance();
+    const playerId = '1';
+    instance.room.addPlayer(playerId, 'AvantChangement');
+
+    const joinEvents: Array<{ playerId: PlayerId; nickname: string; skin?: string }> = [];
+    instance.onPlayerJoin((event) => joinEvents.push(event));
+
+    const result = instance.adminAction({
+      kind: 'setAppearance',
+      playerId,
+      nickname: 'ApresChangement',
+      color: '#abcdef',
+    });
+    expect(result.ok).toBe(true);
+
+    const player = instance.room.world.getPlayer(playerId);
+    expect(player?.nickname).toBe('ApresChangement');
+    expect(player?.skin).toBe('#abcdef');
+
+    expect(joinEvents).toHaveLength(1);
+    expect(joinEvents[0]).toEqual({ playerId, nickname: 'ApresChangement', skin: '#abcdef' });
+
+    instance.destroy();
+  });
+
+  it("setAppearance renvoie false pour un joueur inconnu", () => {
+    const { instance } = makeInputSpyInstance();
+    const result = instance.adminAction({ kind: 'setAppearance', playerId: 'inconnu', nickname: 'X' });
+    expect(result.ok).toBe(false);
+    instance.destroy();
+  });
+
+  it('spawnVirus place un virus du type/masse/rayon attendus aux coordonnées données (§10.2)', () => {
+    const { instance } = makeInputSpyInstance();
+    const result = instance.adminAction({ kind: 'spawnVirus', x: 111, y: 222, virusType: 2 });
+    expect(result.ok).toBe(true);
+
+    const virus = instance.room.world.allEntities().find((e) => e.kind === 'virus');
+    expect(virus).toBeDefined();
+    expect(virus?.position).toEqual({ x: 111, y: 222 });
+    expect(virus?.mass).toBe(300); // vType 2 (Rouge) : formule dédiée
+    expect(virus?.radius).toBe(150);
+    expect(virus?.virusId).toBe(2);
+
+    instance.destroy();
+  });
+
+  it('spawnVirus type 1/3 utilise la formule générique (masse 200, rayon 100)', () => {
+    const { instance } = makeInputSpyInstance();
+    instance.adminAction({ kind: 'spawnVirus', x: 1, y: 1, virusType: 1 });
+    const virus = instance.room.world.allEntities().find((e) => e.kind === 'virus');
+    expect(virus?.mass).toBe(200);
+    expect(virus?.radius).toBe(100);
+    instance.destroy();
+  });
+});
+
+describe("RoomInstance — adminAction('spawnBots') vagues de bots (§10.3 cahier_des_charges_admin.md)", () => {
+  function makeBotInstance(maxPlayers = 100): RoomInstance {
+    const config = testConfig({
+      bots: {
+        enabled: true,
+        targetRatio: 0,
+        updateFrequencyHz: 2,
+        proportions: { fuis: 0, neutre: 100, agressif: 0 },
+        challengers: {
+          enabled: false,
+          baselineCount: 0,
+          minWithHumans: 0,
+          maxWithHumans: 0,
+          rampHumans: 1,
+          massMultipliers: [],
+        },
+      },
+    });
+    const mod = createParametricMod(config);
+    const resolver: ModResolver = () => ({ mod, mapSize: 4000, bots: config.bots });
+    return new RoomInstance(
+      { id: 'room-bot-waves', modId: 'test', tickRateHz: 20, maxPlayers, resetSchedule: null },
+      resolver,
+    );
+  }
+
+  it('spawn N bots en une action, personnalité aléatoire par bot, masse partagée appliquée à chacun (additif, ne touche pas spawnBot)', () => {
+    const instance = makeBotInstance();
+    const before = instance.room.botManager?.activeBotCount ?? 0;
+
+    const result = instance.adminAction({ kind: 'spawnBots', count: 5, mass: 1234 });
+    expect(result.ok).toBe(true);
+    expect(instance.room.botManager?.activeBotCount).toBe(before + 5);
+
+    const bots = instance.room.world.allPlayers().filter((p) => instance.room.botManager?.isBot(p.id));
+    expect(bots).toHaveLength(5);
+    for (const bot of bots) {
+      const piece = instance.room.world.getPiecesByOwner(bot.id)[0];
+      expect(piece?.mass).toBe(1234);
+    }
+
+    instance.destroy();
+  });
+
+  it('borne count à [1,50] côté serveur, pas seulement côté UI (§10.3 : "1-50")', () => {
+    const instance = makeBotInstance();
+    const before = instance.room.botManager?.activeBotCount ?? 0;
+
+    instance.adminAction({ kind: 'spawnBots', count: 999 });
+    expect(instance.room.botManager?.activeBotCount).toBe(before + 50);
+
+    instance.destroy();
+  });
+
+  it("renvoie false si les bots sont désactivés pour ce salon", () => {
+    const resolver: ModResolver = () => ({ mod: { id: 'test' }, mapSize: 2000 });
+    const instance = new RoomInstance(
+      { id: 'room-no-bots', modId: 'test', tickRateHz: 20, maxPlayers: 30, resetSchedule: null },
+      resolver,
+    );
+    const result = instance.adminAction({ kind: 'spawnBots', count: 3 });
+    expect(result.ok).toBe(false);
     instance.destroy();
   });
 });

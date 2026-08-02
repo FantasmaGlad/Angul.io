@@ -148,12 +148,29 @@ Angul.io/
 │       ├── movement.ts                Modèle vitesse/accélération en fonction de la masse — IDENTIQUE
 │       │                               client (prédiction) et serveur (autorité), voir README §Réseau
 │       ├── protocol.ts                Types des messages WebSocket client↔serveur (voir README §Réseau)
-│       ├── adminProtocol.ts           Types des messages du canal WebSocket admin dédié (`?admin=1`)
+│       ├── adminProtocol.ts           Types des messages du canal WebSocket admin dédié (`?admin=1`) —
+│       │                               P4 (plan-implementation-admin.md §6) : dragMove, possess/
+│       │                               unpossess/possessInput, setAppearance, spawnVirus, spawnBots,
+│       │                               godInput+dash/eject ; AdminPlayerInfo+isGod/possessedByAdmin
 │       ├── botIdentities.ts           Dictionnaire des identités de bots (pseudo + couleur)
 │       ├── botKillMessages.ts         Répliques affichées à l'écran de mort quand tué par un bot
 │       ├── avatarPalette.ts           Palette de couleurs d'avatar (10 skins, roster remplacé en v5.5) + repli
 │       │                               déterministe par pseudo
-│       └── deathBanners.ts            Catalogue des bannières de l'écran de mort (déblocage par niveau)
+│       ├── deathBanners.ts            Catalogue des bannières de l'écran de mort (déblocage par niveau)
+│       └── render/                    Moteur de rendu du jeu, mutualisé client/admin (P2 refonte admin,
+│                                       ex-`client/src/render.ts`/`renderEngine.ts`) — export subpath dédié
+│                                       `@angulio/shared/render` (package.json `exports`), seul endroit de
+│                                       `shared/` qui dépend du DOM (lib ajoutée à ce tsconfig UNIQUEMENT,
+│                                       `server/` n'importe jamais ce sous-chemin)
+│           ├── index.ts                     Barrel du sous-chemin `@angulio/shared/render`
+│           ├── render.ts / .test.ts         Rendu Canvas2D (grille, nourriture, skins, culling viewport)
+│           ├── renderEngine.ts / .test.ts   Interpolation réseau des entités distantes (RenderEngine)
+│           ├── camera.ts                    Type Camera canonique + worldToScreen/screenToWorld +
+│           │                                 computeFitCamera (pur, sans DOM) — DISTINCT de
+│           │                                 `shared/src/camera.ts` (formule masse→zoom), même dossier parent
+│           ├── sectors.ts                   Grille de secteurs 3x3 A1-C3 (sectorForPosition, Minimap.tsx)
+│           └── stats.ts / .test.ts          ownAggregate (barycentre/masse du joueur local, dépendance de
+│                                             computeCamera) — `speedBetween` reste dans client/src/stats.ts
 │
 ├── server/                            Serveur de jeu
 │   ├── package.json / tsconfig.json
@@ -181,6 +198,7 @@ Angul.io/
 │   └── src/
 │       ├── index.ts                   Point d'entrée process (assemble tout, démarre le serveur)
 │       ├── roomsConfig.ts / .test.ts  Lit/écrit server/rooms.json (salons permanents de l'accueil, §13)
+│       ├── roomsDiff.ts / .test.ts    Calcul du diff pour la synchro à chaud des salons de base (diffBaseRooms)
 │       ├── log.ts / log.test.ts       Journalisation structurée (JSON sur stdout)
 │       ├── db/pool.ts                 Pool de connexions PostgreSQL (paresseux)
 │       ├── engine/                    Moteur de jeu générique — IDENTIQUE pour tout mod (voir README)
@@ -192,7 +210,13 @@ Angul.io/
 │       │   ├── spatialHash.ts / .test.ts    Grille de collision broad-phase (évite le O(n²))
 │       │   ├── mod.ts                       Interface GameMod — LE contrat de modding (voir README)
 │       │   ├── modRegistry.ts               Résout un modId → { mod, mapSize, movement, room… }
-│       │   ├── room.ts / room.test.ts       Un salon = une simulation indépendante (tick fixe)
+│       │   ├── baseRoomOptions.ts           Résolution centralisée BaseRoomConfig → CreateRoomOptions (boot + diff/apply)
+│       │   ├── room.ts / room.test.ts       Un salon = une simulation indépendante (tick fixe). P4 :
+│       │   │                                 dragMovePlayer (translate tous les morceaux par le même
+│       │   │                                 delta, offsets préservés), possessedPlayerIds (même
+│       │   │                                 mécanisme que frozenPlayerIds, gate central dans
+│       │   │                                 handleInput — BotManager n'a rien à savoir de la
+│       │   │                                 possession), spawnVirus, setAppearance, forceSpawnBots
 │       │   ├── roomManager.ts / .test.ts    Registre des salons (créer/lister/rejoindre/expirer) — un salon
 │       │   │                                 PRIVÉ n'est joignable QUE par son code d'invitation, jamais par
 │       │   │                                 son id interne (voir CreateRoomOptions.mapSize/botCount pour la
@@ -211,7 +235,13 @@ Angul.io/
 │       │   │   │                                    la même résolution faite par RoomInstance ci-dessous
 │       │   │   ├── roomInstance.ts / .test.ts      Une Room vivant DANS un worker — applique spec.mapSize
 │       │   │   │                                    (taille de carte perso) et applyRoomBotCountOverride
-│       │   │   │                                    (spec.botCount, réutilise la pyramide Challenger)
+│       │   │   │                                    (spec.botCount, réutilise la pyramide Challenger).
+│       │   │   │                                    adminAction (P4) : dragMove/possess/unpossess/
+│       │   │   │                                    possessInput/setAppearance/spawnVirus/spawnBots ;
+│       │   │   │                                    setAppearance rediffuse via playerJoinListeners
+│       │   │   │                                    (même canal que Room.addPlayer, pas de nouveau
+│       │   │   │                                    message worker/réseau) ; adminListPlayers expose
+│       │   │   │                                    désormais isGod/possessedByAdmin
 │       │   │   ├── roomWorker.ts                  Point d'entrée du worker_thread (boucle de messages)
 │       │   │   ├── snapshotBuilder.ts / .test.ts  Construit l'EntitySnapshot[] envoyé au réseau
 │       │   │   └── interestFilter.ts / .test.ts   Filtrage par intérêt réseau (v5.7) : index grossier
@@ -227,6 +257,7 @@ Angul.io/
 │       │       │                                   + DEFAULT_BOT_BEHAVIOR_CONFIG (repli/valeurs historiques)
 │       │       ├── loadBehaviorConfig.ts / .test.ts  Lit server/configs/bots/<id>.json (fusion par section
 │       │       │                                   avec le défaut), listAvailableBotBehaviorIds()
+│       │       ├── validateBehaviorConfig.ts      Validation structurelle des profils de comportement de bots
 │       │       ├── botEvaluator.ts / .test.ts     IA décisionnelle (utility evaluation) — pilotée par un
 │       │       │                                   BotBehaviorConfig injecté (voir ci-dessus), plus aucune
 │       │       │                                   constante codée en dur
@@ -236,13 +267,19 @@ Angul.io/
 │       │                                           avec le nombre d'humains connectés) + despawn
 │       │                                           d'inactivité (idleDespawn) + plafond dur (maxTotal).
 │       │                                           Charge aussi le BotBehaviorConfig une fois à la
-│       │                                           construction (loadBotBehaviorConfig(config.behaviorId))
+│       │                                           construction (loadBotBehaviorConfig(config.behaviorId)).
+│       │                                           forceSpawnMany (P4, §10.3) : vague de N bots (1-50),
+│       │                                           personnalité aléatoire par bot, behaviorId optionnel
+│       │                                           résolu PAR BOT (ActiveBot.behaviorConfig, prioritaire
+│       │                                           sur le behaviorConfig du salon dans update()) — additif,
+│       │                                           ne touche pas forceSpawnOne (bot personnalisé unitaire)
 │       ├── mods/                      Modes de jeu — voir README §Modding pour la philosophie
 │       │   ├── parametric/                  Mod générique piloté à 100% par un JSON (server/configs/*.json)
 │       │   │   ├── config.ts                      Schéma TypeScript complet de la config JSON
 │       │   │   │                                    (BotConfig.behaviorId référence un fichier
 │       │   │   │                                    server/configs/bots/<id>.json, absent = 'default')
 │       │   │   ├── loadConfig.ts                  Lit/valide server/configs/<modId>.json
+│       │   │   ├── validateConfig.ts / .test.ts   Validation champ-à-champ stricte des configurations de mods
 │       │   │   ├── physics.ts                     Formules dérivées de la config (vitesse/accel/décroissance…)
 │       │   │   ├── pieceState.ts                  État par-morceau (cible, cooldowns) hors du World générique
 │       │   │   ├── border.ts / .test.ts           4 types de bord de carte (mur/rebond/toroïdal/toxique)
@@ -270,12 +307,15 @@ Angul.io/
 │       │   │                                       (createScoreClaim/consume, symétrique de sessionStore.ts)
 │       │   └── service.ts / .test.ts              Logique métier (inscription/connexion/profil)
 │       ├── admin/
-│       │   ├── adminAuth.ts / .test.ts            Authentification admin (mot de passe unique ou comptes nommés)
-│       │   └── adminUsersRepository.ts            Requêtes SQL (table admin_users)
+│       │   ├── activityLog.ts / .test.ts  Journalisation en mémoire des événements admin récents (/api/admin/activity)
+│       │   ├── adminAuth.ts / .test.ts    Authentification admin (mot de passe unique ou comptes nommés)
+│       │   └── adminUsersRepository.ts    Requêtes SQL (table admin_users)
 │       └── net/                       Architecture réseau — voir README §Réseau pour le flux complet
 │           ├── rateLimiter.ts               Rate limiter par fenêtre glissante
 │           ├── server.ts / .test.ts         Point d'assemblage HTTP + WebSocket (startGameServer)
 │           ├── metrics.ts                   Snapshot santé serveur (event loop, ticks) pour /api/admin/health
+│           ├── metrics/
+│           │   └── healthHistory.ts / .test.ts Historique glissant des métriques de santé (/api/admin/health/history)
 │           ├── botKillGif.ts                Résout le GIF affiché à l'écran de mort quand tué par un bot
 │           ├── http/
 │           │   ├── httpUtils.ts             Lecture JSON, extraction IP/token Bearer, réponses JSON
@@ -285,13 +325,21 @@ Angul.io/
 │           │       ├── lobby.ts             GET/POST /api/rooms (mapSize/botCount pour un salon privé
 │           │       │                          personnalisé), GET /api/modes, GET /api/stats
 │           │       ├── auth.ts              POST /api/auth/register, /login, /logout, GET /api/account/me
-│           │       ├── health.ts            GET /api/admin/health (métriques de charge par salon)
+│           │       ├── health.ts            GET /api/admin/health & GET /api/admin/health/history (historique glissant)
+│           │       ├── activity.ts          GET /api/admin/activity (journal d'activité admin récent)
 │           │       ├── admin.ts             POST /api/admin/login, /logout, GET/PATCH /api/admin/players
-│           │       ├── adminRooms.ts        Actions admin par salon (kick/freeze/godmode/spawn food…),
-│           │                                  GET/PUT /api/admin/base-rooms (server/rooms.json, §13)
-│           │       └── adminMods.ts         GET/PUT /api/admin/mods/:id (édition de mod) & POST /api/admin/server/reload
+│           │       ├── adminRooms.ts        Actions admin par salon, GET/PUT/POST diff/apply /api/admin/base-rooms (synchro à chaud)
+│           │       └── adminMods.ts         GET/PUT /api/admin/mods/:id (édition mod), GET/PUT /api/admin/bot-behaviors/:id
+│           │                                  (édition profil bot), listAvailableBotBehaviorIds()
 │           └── ws/
-│               ├── connectionHandler.ts     Connexions WS joueur/spectateur, validation stricte d'inputs
+│               ├── connectionHandler.ts     Connexions WS joueur/spectateur, validation stricte d'inputs.
+│               │                              Canal admin (P4, §9.3) : registre local par connexion
+│               │                              (ownedGodPlayerIds/ownedFrozenPlayerIds/possessedPlayerId,
+│               │                              simples variables de closure — pas une map globale) qui
+│               │                              libère godmode/gel/possession à la fermeture de CETTE
+│               │                              connexion uniquement, sans affecter une autre session admin
+│               │                              coexistante ; un `possess` bascule automatiquement depuis
+│               │                              une possession précédente de la même connexion
 │               └── broadcast.ts            Boucle onTick → EntitySnapshot[] par salon (interest management)
 │
 ├── client/                            Client joueur (React + Vite) — voir README §Réseau pour le pipeline
@@ -323,12 +371,15 @@ Angul.io/
 │       ├── reconcileLatency.ts / .test.ts  estimatedLatencyMsFromAnchor() — convertit l'ancrage horloge de
 │       │                               RenderEngine (serverTimeMsForTick) en latence pour reconcile(), à la
 │       │                               place du ping 1Hz lissé (repli uniquement) (v10.2)
-│       ├── renderEngine.ts / .test.ts INTERPOLATION réseau des entités distantes (voir README).
-│       │                               serverTimeMsForTick(tick) (v10.2) expose l'ancrage horloge
-│       │                               epochTick/epochClientMs, réutilisé par reconcileLatency.ts
-│       ├── render.ts / render.test.ts Rendu Canvas 2D (caméra, dessin, culling viewport)
-│       ├── stats.ts / stats.test.ts   Agrégation des morceaux du joueur (masse, barycentre, vitesse)
-│       └── debugOverlay.ts / .test.ts Écran de diagnostic F3 (FPS, réseau, tick, gigue, système)
+│       │                               (RenderEngine lui-même : voir `shared/src/render/renderEngine.ts`,
+│       │                               déplacé de ce dossier en P2 refonte admin — réimporté d'ici sans
+│       │                               changement de comportement, voir shared/src/render/ ci-dessus)
+│       ├── stats.ts / stats.test.ts   speedBetween (vitesse instantanée du joueur) — ownAggregate a
+│       │                               déménagé dans `shared/src/render/stats.ts` (P2, dépendance de
+│       │                               computeCamera, shared/ ne peut pas importer client/)
+│       └── debugOverlay.ts / .test.ts Écran de diagnostic F3 (FPS, réseau, tick, gigue, système) — grille
+│                                       de secteurs 10x10 (calculateGridSector) DISTINCTE de la grille 3x3
+│                                       A1-C3 de shared/src/render/sectors.ts (Minimap.tsx), non unifiées
 │   └── src/components/                Composants de jeu/accueil (voir §4.1)
 │   └── src/pages/                     Sous-pages plein écran (voir §4.2)
 │
@@ -337,19 +388,59 @@ Angul.io/
     ├── vite.config.ts                 base: '/admin/' (préfixe d'URL), pas de publicDir
     ├── public/                        ⚠️ GÉNÉRÉ par `vite build` — jamais édité à la main, gitignored
     └── src/
-        ├── main.tsx / App.tsx         Point d'entrée + état racine (login, vue active, 7 vues §4)
+        ├── main.tsx / App.tsx         Point d'entrée + état racine (login, vue active, 6 vues §4 —
+        │                               "Salons" fusionné P3/A11 : SalonsMode {list}|{studio,roomId}
+        │                               porté par App.tsx, remplace les ex-onglets séparés "Salons &
+        │                               Écrans"/"Studio de contrôle")
         ├── styles.css                 Design system "glassmorphisme blanc" (cahier_des_charges_admin.md §14)
-        ├── adminApi.ts                Client API admin HTTP (comptes, salons, actions, modes)
-        ├── adminSocket.ts             Canal WebSocket admin dédié (`?admin=1`) — POV + Studio de contrôle
-        ├── entityCanvas.ts            Géométrie/interpolation PURES partagées POV/Studio (indépendantes du rendu)
-        ├── pixiEntityRenderer.ts      Moteur de rendu GPU PixiJS du canva (§10.2, remplace l'ancien Canvas2D)
+        ├── adminApi.ts                Client API admin HTTP (comptes, salons, actions, modes,
+        │                               listBotBehaviors — P4, §10.3, GET /api/admin/bot-behaviors)
+        ├── adminSocket.ts             Canal WebSocket admin dédié (`?admin=1`) — miniatures live du niveau
+        │                               liste (RoomThumbnail) + Studio, une connexion par usage ; `state` porte
+        │                               tick/entitiesFull/removedFoodIds (P2, comme le canal joueur/spectateur)
+        │                               pour alimenter le `RenderEngine` partagé
+        ├── entityCanvas.ts            pieceAtScreenPoint (hit-testing souris) — seule fonction encore propre
+        │                               à l'admin ; Camera/worldToScreen/screenToWorld/AdminSnapshotBuffer ont
+        │                               déménagé/disparu au profit de `@angulio/shared/render` (P2, A16 :
+        │                               suppression de PixiJS, `grep -r pixi admin/` vide)
         └── components/
-            ├── Sidebar.tsx                 Navigation latérale, 7 entrées (§4 : opérationnel/gouvernance)
-            ├── ConnectionStatusDot.tsx      Indicateur connexion WS temps réel (§10.3, POV + Studio)
+            ├── Sidebar.tsx                 Navigation latérale, 6 entrées (§4 : opérationnel/gouvernance) —
+            │                                 une seule entrée "Salons" depuis la fusion P3/A11
+            ├── ConnectionStatusDot.tsx      Indicateur connexion WS temps réel (§10.3, miniatures + Studio)
             ├── DashboardView.tsx            Tableau de bord (§6) : santé serveur, salons, activité récente
-            ├── PlayersView.tsx              Recherche/édition de comptes joueurs (§7)
-            ├── RoomsView.tsx                Salons & Écrans (§8 : carrousel, filtres/tri, kick motivé, POV)
-            ├── CreativeView.tsx             Studio de contrôle (§9 : 3 zones contexte/observation/intervention)
+            ├── PlayersView.tsx              Recherche/édition de comptes joueurs (§7), filtres niveau/XP (A13)
+            ├── RoomsView.tsx                Salons — niveau LISTE (§7.1, fusion P3/A11) : grille de cartes
+            │                                 (remplace l'ex-carrousel), filtres mode/visibilité/tri, miniature
+            │                                 live optionnelle par carte (RoomThumbnail, ~5 FPS, moteur de
+            │                                 rendu partagé, activable/désactivable). Plus de tableau de
+            │                                 joueurs ni de bouton kick à ce niveau : clic sur une carte →
+            │                                 RoomStudio.tsx (niveau détail)
+            ├── RoomStudio.tsx               Salons — niveau STUDIO (§7.2, fusion P3/A11, ex-CreativeView.tsx
+            │                                 avant fusion avec RoomsView.tsx) : 3 zones contexte/observation/
+            │                                 intervention, bouton retour liste + sélecteur de salon en en-tête.
+            │                                 Canvas partagé avec le jeu (P2) : caméra fit-to-map à l'ouverture,
+            │                                 zoom molette centré curseur (Ctrl+molette = masse continue sur
+            │                                 le joueur sélectionné, P4/§9.2), double-clic = suivi+zoom
+            │                                 rapproché (remplace l'ex-mode POV séparé du niveau liste), halo
+            │                                 de sélection, tooltip de survol, marqueurs d'événement
+            │                                 (mort/disparition), minimap intégrée, bouton plein écran
+            │                                 (Fullscreen API sur .creative-canvas-wrap). Transfert vers un
+            │                                 autre salon relocalisé ici (onglet Sanctions) depuis l'ex-tableau
+            │                                 de joueurs de RoomsView.tsx. P4 (§9-§10, plan-implementation-
+            │                                 admin.md §6) : déplacement physique du barycentre au clic-glissé
+            │                                 (spawnMode 'move', dragMove, remplace l'ex-détournement de
+            │                                 godInput), glissière de masse logarithmique, marionnette
+            │                                 (posséder/rendre la main, badge MARIONNETTE, contrôles clavier
+            │                                 partagés avec le Dieu — Espace/F/E split/dash/eject, mêmes
+            │                                 touches par défaut que le jeu), apparence à la volée (pseudo/
+            │                                 couleur de session), pinceau nourriture (clic maintenu),
+            │                                 placement de virus (3 types sélectionnables), vagues de bots
+            │                                 (1-50, profil de comportement optionnel)
+            ├── StudioMinimap.tsx            Minimap du Studio (P2, §8.3-8.4) : secteurs A1-C3 mutualisés
+            │                                 (shared/src/render/sectors.ts), fenêtre caméra, points chauds,
+            │                                 clic pour recentrer — dessinée impérativement par RoomStudio.tsx
+            ├── KickModal.tsx                Modale de motif de kick partagée Salons/Studio (P1, A1) — motif
+            │                                 obligatoire, réellement transmis au serveur et journalisé
             ├── ModerationView.tsx           Modération (§11) — v1 : liste des comptes bannis
             ├── EconomyView.tsx              Économie & Boosts (§12) — placeholder "Bientôt disponible"
             └── ConfigurationView.tsx        Configuration (§13) : salons permanents de l'accueil éditables
@@ -368,7 +459,7 @@ Angul.io/
 | **Manifeste PWA** | `client/static/manifest.json` | Nom, couleurs, icônes déclarées à l'OS pour l'installation |
 | **Service worker** | `client/static/service-worker.js` | Cache offline de la coquille statique |
 | **Styles/design tokens** | `client/src/styles.css`, `admin/src/styles.css` | CSS pur, pas de préprocesseur |
-| **Rendu du jeu (cellules, pastilles, grille)** | `client/src/render.ts` | Nourriture/grille procédurales (couleur dérivée de la masse) ; joueurs/bots utilisent un skin (image PNG, voir `SKIN_IMAGE_MAP`, `shared/src/avatarPalette.ts`) ou un repli couleur uni |
+| **Rendu du jeu (cellules, pastilles, grille)** | `shared/src/render/render.ts` (P2, ex-`client/src/render.ts`, mutualisé avec `admin/`) | Nourriture/grille procédurales (couleur dérivée de la masse) ; joueurs/bots utilisent un skin (image PNG, voir `SKIN_IMAGE_MAP`, `shared/src/avatarPalette.ts`) ou un repli couleur uni |
 | **Police** | Aucune — pile système (`-apple-system, ... sans-serif`) | Pas de police web externe |
 
 ---
@@ -385,8 +476,8 @@ Angul.io/
 | `PlayPanel.tsx` | Colonne centre : compteur de joueurs connectés, pseudo, bouton "Rejoindre" |
 | `CreateRoomPanel.tsx` | Colonne droite : création de salon privé (Premium, nombre de robots fixe ou min/max et taille de carte personnalisables) + rejoindre par code — un salon PRIVÉ est rejoint via son CODE d'invitation, jamais son id interne |
 | `BottomBar.tsx` | Pied de page : version, marque, lien Soutenir |
-| `SpectatorBackground.tsx` | Fond animé : connexion WS lecture seule (`?spectate=1`), réutilise `render.ts` |
-| `Minimap.tsx` | Mini-carte 3x3 (secteurs A1-C3) affichée en jeu |
+| `SpectatorBackground.tsx` | Fond animé : connexion WS lecture seule (`?spectate=1`), réutilise `shared/src/render/render.ts` ; `computeFitCamera` (calcul pur) vit désormais dans ce module partagé, ce composant ne fait plus que mesurer son propre DOM (nav/footer) avant de lui déléguer |
+| `Minimap.tsx` | Mini-carte 3x3 (secteurs A1-C3) affichée en jeu — grille déléguée à `sectorForPosition` (`shared/src/render/sectors.ts`, P2, mutualisée avec `StudioMinimap.tsx` de l'admin) |
 | `AssetPreloader.tsx` | Précharge les images de skins avant affichage du jeu (évite un flash sans texture) |
 | `ErrorBoundary.tsx` | Filet de sécurité React (évite un écran blanc total sur exception de rendu) |
 | `AudioSettings.tsx` / `KeybindSettings.tsx` | Réglages son / remapping des touches (accessibles depuis Paramètres) |
@@ -414,7 +505,7 @@ et `navigate(path)` (`history.pushState` + redéclenchement manuel de `popstate`
 
 ### 4.4 Admin (`admin/src/components/`)
 
-Voir §2 ci-dessus (`Sidebar`, `PlayersView`, `RoomsView`, `CreativeView`) — architecture détaillée
+Voir §2 ci-dessus (`Sidebar`, `PlayersView`, `RoomsView`, `RoomStudio`) — architecture détaillée
 dans le cahier des charges admin local (non committé, voir §1).
 
 ---

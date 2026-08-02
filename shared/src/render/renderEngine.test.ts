@@ -1,4 +1,4 @@
-import type { EntitySnapshot } from '@angulio/shared';
+import type { EntitySnapshot } from '../protocol.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RenderEngine } from './renderEngine.js';
 

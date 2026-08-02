@@ -1,8 +1,7 @@
 import type { ServerMessage } from '@angulio/shared';
+import { computeFitCamera as computeFitCameraPure, renderFrame, RenderEngine, type Camera } from '@angulio/shared/render';
 import { useEffect, useRef, useState } from 'react';
 import { GameConnection } from '../net.js';
-import { renderFrame, type Camera } from '../render.js';
-import { RenderEngine } from '../renderEngine.js';
 
 import {
   loadFpsSliderIndex,
@@ -26,27 +25,15 @@ interface SpectatorState {
 /** Ajuste la carte à l'espace RÉELLEMENT visible du viewport, pas au viewport entier — la nav du
  * haut (`.top-nav`, quasi opaque) et le pied de page (`.bottom-bar`) sont en position statique
  * PAR-DESSUS ce fond `position: fixed`, et recouvrent donc une bande en haut et en bas quel que
- * soit le calcul de caméra. Avant ce correctif, `computeFitCamera` ajustait la carte au viewport
- * ENTIER (`canvas.height`) : la carte "tenait" bien dans le canvas, mais ses bords haut/bas
- * tombaient sous la nav/le footer et semblaient "coupés" (demande utilisateur) — la carte ENTIÈRE
- * n'était jamais réellement visible. Ici, l'échelle et le centre vertical de la caméra sont
- * calculés pour que la carte tienne et soit centrée dans la bande NON recouverte
- * (`safeTop..safeBottom`), pas dans le canvas entier. */
+ * soit le calcul de caméra. Le calcul pur (fit-to-map dans une bande verticale sûre) vit dans
+ * `@angulio/shared/render` (`computeFitCamera`, P2, plan-implementation-admin.md §4.1) — ce
+ * wrapper ne fait plus que mesurer le DOM propre au lobby (nav/footer) avant de lui déléguer le
+ * calcul, pour que le studio admin (autre mise en page, pas de nav/footer) puisse réutiliser
+ * exactement la même formule sans dépendre du DOM du lobby. */
 function computeFitCamera(mapSize: number, canvas: HTMLCanvasElement): Camera {
   const navHeight = document.querySelector('.top-nav')?.getBoundingClientRect().height ?? 0;
   const footerHeight = document.querySelector('.bottom-bar')?.getBoundingClientRect().height ?? 0;
-  const safeHeight = Math.max(1, canvas.height - navHeight - footerHeight);
-  const fitScale = Math.min(canvas.width / mapSize, safeHeight / mapSize);
-
-  // Centre de la bande visible (entre nav et footer), en px écran depuis le haut du canvas.
-  const safeCenterScreenY = navHeight + safeHeight / 2;
-  // `toScreenY` (render.ts) : screenY = (worldY - camera.y) * scale + canvas.height/2. On veut que
-  // le centre monde (mapSize/2) tombe à `safeCenterScreenY` plutôt qu'au centre du canvas entier —
-  // on décale donc `camera.y` de l'écart correspondant, converti en unités monde.
-  const screenCenterOffset = safeCenterScreenY - canvas.height / 2;
-  const cameraY = mapSize / 2 - screenCenterOffset / fitScale;
-
-  return { x: mapSize / 2, y: cameraY, scale: fitScale };
+  return computeFitCameraPure(mapSize, canvas.width, canvas.height, navHeight, footerHeight);
 }
 
 interface SpectatorBackgroundProps {

@@ -6,6 +6,7 @@ import {
   type AdminSearchQuery,
 } from '../../../accounts/service.js';
 import type { AdminAuth } from '../../../admin/adminAuth.js';
+import { logAdminEvent } from '../../../admin/activityLog.js';
 import { logEvent } from '../../../log.js';
 import { RateLimiter } from '../../rateLimiter.js';
 import { getBearerToken, getClientIp, isRecord, readJsonBody, respondJson } from '../httpUtils.js';
@@ -48,7 +49,7 @@ export async function handleAdminLogin(
     respondJson(res, 401, { error: "Nom d'utilisateur ou mot de passe incorrect." });
     return;
   }
-  logEvent('admin_login', { username });
+  logAdminEvent('admin_login', { username });
   respondJson(res, 200, { token });
 }
 
@@ -185,7 +186,7 @@ export async function handleAdminUpdatePlayer(
       respondJson(res, 404, { error: 'Compte introuvable.' });
       return;
     }
-    logEvent('admin_account_updated', { accountId });
+    logAdminEvent('admin_account_updated', { accountId });
     respondJson(res, 200, updated);
   } catch (error) {
     if (error instanceof AccountError) {
@@ -244,6 +245,6 @@ export async function handleAdminResetBestScore(
 
   const modeId = isRecord(body) && typeof body.modeId === 'string' ? body.modeId : undefined;
   await accounts.resetBestScoreForAdmin(accountId, modeId);
-  logEvent('admin_best_score_reset', { accountId, modeId });
+  logAdminEvent('admin_best_score_reset', { accountId, modeId });
   respondJson(res, 200, { success: true });
 }

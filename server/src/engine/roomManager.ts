@@ -51,6 +51,12 @@ export interface CreateRoomOptions {
   /** Population de bots personnalisée — voir `RoomSpec.botCount` (worker/protocol.ts). Bornes
    * (0-50) validées côté HTTP (net/http/routes/lobby.ts), pas ici. */
   botCount?: { min: number; max: number };
+  /** Id stable de `BaseRoomConfig` (P6, §8.1 plan-implementation-admin.md, roomsConfig.ts) —
+   * uniquement pour un salon créé à partir de `rooms.json`/`rooms.local.json` ; `undefined` pour
+   * un salon créé depuis le lobby joueur (pas de config de base associée). Permet à
+   * `findByBaseRoomId` de retrouver de façon fiable "le salon vivant pour cette entrée", sans
+   * dépendre du nom (fragile, voir l'ancien `handleAdminServerReload`). */
+  baseRoomId?: string;
 }
 
 /** Vue publique d'un salon, sans exposer la `Room` ni ses internes (utilisée par le lobby, Lot 2.2). */
@@ -89,6 +95,8 @@ export interface ManagedRoom {
    * de production, qui passe toujours par `handle` pour rester valable avec `WorkerRoomHost`. */
   readonly room: Room | undefined;
   readonly maxPlayers: number;
+  /** Voir `CreateRoomOptions.baseRoomId`. */
+  readonly baseRoomId?: string;
 }
 
 interface RoomEntry extends ManagedRoom {
@@ -98,8 +106,10 @@ interface RoomEntry extends ManagedRoom {
   /** Planification de reset résolue à la création (voir `createRoom`) — retenue ici (en plus
    * d'être transmise au `RoomSpec` envoyé au host) pour que `nextResetAtMsOf` puisse calculer le
    * prochain horodatage à la demande, y compris pour un salon hébergé par un worker (le calcul
-   * lui-même est pur et n'a besoin d'aucun état de simulation, voir `resetSchedule.ts`). */
-  readonly resetSchedule: RoomResetSchedule | undefined;
+   * lui-même est pur et n'a besoin d'aucun état de simulation, voir `resetSchedule.ts`). PAS
+   * `readonly` (P6, §8.3) : `setRoomResetSchedule` la met à jour pour un salon vivant reconfiguré
+   * à chaud, sinon `nextResetAtMsOf` continuerait d'afficher l'ancienne planification. */
+  resetSchedule: RoomResetSchedule | undefined;
 }
 
 export interface RoomManagerOptions {
@@ -199,6 +209,7 @@ export class RoomManager {
       handle,
       room: handle.localRoom,
       maxPlayers,
+      baseRoomId: options.baseRoomId,
       permanent: options.permanent ?? false,
       lastNonEmptyAt: Date.now(),
       resetSchedule: resetSchedule ?? undefined,
@@ -247,6 +258,14 @@ export class RoomManager {
     return [...this.rooms.values()];
   }
 
+  /** Retrouve le salon vivant issu d'une entrée `rooms.json` donnée (P6, §8.1) — appariement par
+   * `baseRoomId` STABLE, contrairement à l'ancien `handleAdminServerReload` qui comparait les noms
+   * (`r.name === base.name`, fragile dès qu'un salon était renommé). `undefined` si ce salon de
+   * base n'a jamais été créé, ou vient d'être fermé (voir `closeRoom`). */
+  findByBaseRoomId(baseRoomId: string): ManagedRoom | undefined {
+    return [...this.rooms.values()].find((entry) => entry.baseRoomId === baseRoomId);
+  }
+
   /** Notifié à chaque création de salon, y compris après le démarrage du serveur réseau (lobby,
    * Lot 2.2) — permet à net/server.ts de brancher sa diffusion d'état sur chaque nouvelle room
    * sans que `RoomManager` ait besoin de connaître quoi que ce soit du réseau. */
@@ -290,6 +309,46 @@ export class RoomManager {
     const entry = this.rooms.get(id);
     if (!entry) return; // déjà supprimé par un autre chemin (ex. vidé puis élagué avant l'échéance)
     this.removeEntry(entry, 'duration_expired');
+  }
+
+  /** Fermeture à chaud demandée par l'admin (P6, §8.2/§12.1 cahier_des_charges_admin.md, A4) —
+   * évacue et détruit l'instance comme `expireRoom`/`pruneEmptyRooms` (même `removeEntry`, donc
+   * mêmes garanties : sockets fermées par `net/server.ts` `onRoomRemoved`). L'annonce préalable
+   * aux joueurs (§12.1 : "annonce préalable de 10 s") est à la charge de l'APPELANT (voir
+   * adminRooms.ts, routes diff/apply) : `RoomManager` reste volontairement agnostique du réseau
+   * (aucun accès aux sockets ici, même principe que le reste de cette classe) — `delaySeconds`
+   * ne fait que différer la destruction elle-même, pour laisser le temps à cette annonce
+   * network-side d'être vue avant que le salon ne disparaisse. `false` si le salon n'existe déjà
+   * plus (fermeture concurrente, ou id invalide). */
+  closeRoom(id: string, options: { reason?: string; delaySeconds?: number } = {}): boolean {
+    if (!this.rooms.has(id)) return false;
+    const delayMs = Math.max(0, (options.delaySeconds ?? 0) * 1000);
+    const reason = options.reason ?? 'admin_closed';
+    if (delayMs === 0) {
+      const entry = this.rooms.get(id);
+      if (entry) this.removeEntry(entry, reason);
+    } else {
+      setTimeout(() => {
+        const stillThere = this.rooms.get(id);
+        if (stillThere) this.removeEntry(stillThere, reason);
+      }, delayMs);
+    }
+    return true;
+  }
+
+  /** Reprogramme le reset automatique d'un salon VIVANT sans reset immédiat (P6, §8.3) — met à
+   * jour à la fois le minuteur réel (`Room.setResetSchedule`, via l'action admin dédiée pour
+   * traverser la frontière worker) ET la copie locale (`RoomEntry.resetSchedule`) dont dépend
+   * `nextResetAtMsOf` pour rester exacte. `false` si le salon n'existe pas. */
+  async setRoomResetSchedule(
+    id: string,
+    schedule: RoomResetSchedule | null,
+  ): Promise<boolean> {
+    const entry = this.rooms.get(id);
+    if (!entry) return false;
+    await entry.handle.adminAction({ kind: 'setResetSchedule', schedule });
+    entry.resetSchedule = schedule ?? undefined;
+    return true;
   }
 
   /** Point de suppression unique d'un salon, quelle que soit la raison (`pruneEmptyRooms` ou

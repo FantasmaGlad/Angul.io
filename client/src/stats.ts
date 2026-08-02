@@ -1,51 +1,8 @@
-import type { EntitySnapshot } from '@angulio/shared';
-
-export interface OwnAggregate {
-  /** Masse totale (somme de tous les morceaux du joueur). */
-  mass: number;
-  /** Barycentre pondéré par la masse. */
-  x: number;
-  y: number;
-}
-
-/** Agrège les morceaux du joueur (masse totale + barycentre pondéré) — même calcul que
- * `computeCamera` (render.ts), qui l'utilise pour centrer la caméra ; factorisé ici pour aussi
- * servir le panneau de stats (Masse) sans dupliquer la boucle. */
-export function ownAggregate(
-  entities: EntitySnapshot[],
-  selfPlayerId: string | undefined,
-  mapSize?: number,
-): OwnAggregate | undefined {
-  const ownPieces = entities.filter((entity) => entity.p === selfPlayerId);
-  if (ownPieces.length === 0) return undefined;
-
-  let mass = 0;
-  const refPiece = ownPieces[0]!;
-  let x = 0;
-  let y = 0;
-  for (const piece of ownPieces) {
-    mass += piece.m;
-    let dx = piece.x - refPiece.x;
-    let dy = piece.y - refPiece.y;
-    if (mapSize && mapSize > 0) {
-      if (Math.abs(dx) > mapSize / 2) {
-        dx = dx > 0 ? dx - mapSize : dx + mapSize;
-      }
-      if (Math.abs(dy) > mapSize / 2) {
-        dy = dy > 0 ? dy - mapSize : dy + mapSize;
-      }
-    }
-    x += (refPiece.x + dx) * piece.m;
-    y += (refPiece.y + dy) * piece.m;
-  }
-  let finalX = x / mass;
-  let finalY = y / mass;
-  if (mapSize && mapSize > 0) {
-    finalX = ((finalX % mapSize) + mapSize) % mapSize;
-    finalY = ((finalY % mapSize) + mapSize) % mapSize;
-  }
-  return { mass, x: finalX, y: finalY };
-}
+/** `ownAggregate`/`OwnAggregate` ont déménagé dans `@angulio/shared/render` (P2,
+ * plan-implementation-admin.md §4.1) — `computeCamera` (shared/src/render/render.ts) en dépend, et
+ * `shared/` ne peut pas importer depuis `client/`. Réimportés ici tels quels par les appelants
+ * existants (GameView.tsx) depuis `@angulio/shared/render` plutôt que d'être ré-exportés depuis ce
+ * fichier, pour ne garder ici que ce qui reste réellement propre au client. */
 
 /** Vitesse instantanée approximative (unités de carte par seconde), dérivée de deux positions
  * successives réellement observées. Le protocole ne transmet pas la vélocité des entités (Lot

@@ -95,10 +95,32 @@ export interface AdminRoomView {
   players: Array<AdminPlayerInfo & { ping?: number }>;
 }
 
+export interface ApiFieldError {
+  path: string;
+  message: string;
+}
+
+/** Erreur HTTP typée (A6, plan-implementation-admin.md §3.1) — porte le `status` de la réponse,
+ * pour que les appelants puissent réagir à un `401` précisément plutôt qu'à une sous-chaîne du
+ * message d'erreur (fragile : dépend du texte exact renvoyé par le serveur, voir `App.tsx`). */
+export class AdminApiError extends Error {
+  readonly status: number;
+  readonly errors?: ApiFieldError[];
+  constructor(status: number, message: string, errors?: ApiFieldError[]) {
+    super(message);
+    this.name = 'AdminApiError';
+    this.status = status;
+    this.errors = errors;
+  }
+}
+
 async function parseErrorOr<T>(response: Response, fallback: string): Promise<T> {
   if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? fallback);
+    const body = (await response.json().catch(() => ({}))) as {
+      error?: string;
+      errors?: ApiFieldError[];
+    };
+    throw new AdminApiError(response.status, body.error ?? fallback, body.errors);
   }
   return (await response.json()) as T;
 }
@@ -163,7 +185,47 @@ export async function listRooms(token: string): Promise<AdminRoomView[]> {
   return parseErrorOr<AdminRoomView[]>(response, 'Liste des salons impossible.');
 }
 
+/** Tableau de bord (P5, §6/§7 cahier_des_charges_admin.md — plan-implementation-admin.md §7.1). */
+export interface HealthSnapshot {
+  uptimeSec: number;
+  eventLoopDelay: { meanMs: number; p95Ms: number; p99Ms: number; maxMs: number } | undefined;
+  cpu: { userMs: number; systemMs: number; elapsedMs: number; busyRatio: number };
+  memory: { rssMb: number; heapUsedMb: number };
+  rooms: Array<{ roomId: string; name: string; playerCount: number; tickAvgMs: number; tickP95Ms: number; tickOverruns: number }>;
+  dbOk: boolean;
+}
+
+export async function getHealth(token: string): Promise<HealthSnapshot> {
+  const response = await fetch('/api/admin/health', { headers: authHeaders(token) });
+  return parseErrorOr<HealthSnapshot>(response, 'Santé serveur indisponible.');
+}
+
+export interface HealthHistoryPoint {
+  atMs: number;
+  playersOnline: number;
+  tickAvgMs: number;
+  eventLoopP99Ms: number | undefined;
+  dbOk: boolean;
+}
+
+export async function getHealthHistory(token: string, hours: number): Promise<HealthHistoryPoint[]> {
+  const response = await fetch(`/api/admin/health/history?hours=${hours}`, { headers: authHeaders(token) });
+  return parseErrorOr<HealthHistoryPoint[]>(response, 'Historique de santé indisponible.');
+}
+
+export interface AdminActivityEntry {
+  atMs: number;
+  event: string;
+  fields: Record<string, unknown>;
+}
+
+export async function getActivity(token: string): Promise<AdminActivityEntry[]> {
+  const response = await fetch('/api/admin/activity', { headers: authHeaders(token) });
+  return parseErrorOr<AdminActivityEntry[]>(response, 'Activité récente indisponible.');
+}
+
 export interface BaseRoomConfig {
+  id?: string;
   name: string;
   modId: string;
   mapSize?: number;
@@ -171,10 +233,14 @@ export interface BaseRoomConfig {
   resetDurationMin?: number;
 }
 
-/** Salons permanents de l'accueil (§8.4/§13 cahier_des_charges_admin.md, `server/rooms.json`) —
- * un changement ne prend effet qu'au prochain redémarrage du serveur (voir la note renvoyée par
- * `updateBaseRooms`, affichée telle quelle côté UI plutôt que de laisser croire à un effet
- * immédiat). */
+export interface RoomDiffResult {
+  id: string;
+  name: string;
+  status: 'created' | 'closed' | 'hot-reconfigured' | 'recreated' | 'unchanged';
+  affectedPlayers: number;
+}
+
+/** Salons permanents de l'accueil (§8.4/§13 cahier_des_charges_admin.md, `server/rooms.json`). */
 export async function getBaseRooms(token: string): Promise<BaseRoomConfig[]> {
   const response = await fetch('/api/admin/base-rooms', { headers: authHeaders(token) });
   return parseErrorOr<BaseRoomConfig[]>(response, 'Liste des salons de base impossible.');
@@ -192,12 +258,73 @@ export async function updateBaseRooms(
   return parseErrorOr<{ success: boolean; note: string }>(response, 'Mise à jour impossible.');
 }
 
+export async function diffBaseRooms(
+  token: string,
+  rooms: BaseRoomConfig[],
+): Promise<RoomDiffResult[]> {
+  const response = await fetch('/api/admin/base-rooms/diff', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
+    body: JSON.stringify({ rooms }),
+  });
+  return parseErrorOr<RoomDiffResult[]>(response, 'Calcul du diff impossible.');
+}
+
+export async function applyBaseRooms(
+  token: string,
+  rooms: BaseRoomConfig[],
+): Promise<{
+  success: boolean;
+  rooms: BaseRoomConfig[];
+  diff: Array<RoomDiffResult & { applied: boolean }>;
+}> {
+  const response = await fetch('/api/admin/base-rooms/apply', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
+    body: JSON.stringify(rooms),
+  });
+  return parseErrorOr<{
+    success: boolean;
+    rooms: BaseRoomConfig[];
+    diff: Array<RoomDiffResult & { applied: boolean }>;
+  }>(response, 'Application des salons impossible.');
+}
+
 /** `GET /api/modes` — même route publique que le lobby joueur (pas d'info sensible, juste la
- * liste des ids de mods chargés côté serveur), réutilisée en lecture seule pour le module
- * Configuration (§13) : l'édition de profil demande une route admin dédiée, pas encore faite. */
+ * liste des ids de mods chargés côté serveur). */
 export async function listModes(): Promise<string[]> {
   const response = await fetch('/api/modes');
   return parseErrorOr<string[]>(response, 'Liste des modes impossible.');
+}
+
+/** Vagues de bots (§10.3 cahier_des_charges_admin.md, P4) — profils de comportement disponibles
+ * (`server/configs/bots/*.json`). */
+export async function listBotBehaviors(token: string): Promise<string[]> {
+  const response = await fetch('/api/admin/bot-behaviors', { headers: authHeaders(token) });
+  return parseErrorOr<string[]>(response, 'Liste des profils de comportement impossible.');
+}
+
+export async function getBotBehavior(token: string, id: string): Promise<unknown> {
+  const response = await fetch(`/api/admin/bot-behaviors/${encodeURIComponent(id)}`, {
+    headers: authHeaders(token),
+  });
+  return parseErrorOr<unknown>(response, 'Chargement du comportement impossible.');
+}
+
+export async function updateBotBehavior(
+  token: string,
+  id: string,
+  config: unknown,
+): Promise<{ success: boolean; behaviorId: string }> {
+  const response = await fetch(`/api/admin/bot-behaviors/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
+    body: JSON.stringify(config),
+  });
+  return parseErrorOr<{ success: boolean; behaviorId: string }>(
+    response,
+    'Sauvegarde du comportement impossible.',
+  );
 }
 
 export async function getModConfig(token: string, modId: string): Promise<any> {
@@ -220,14 +347,6 @@ export async function updateModConfig(
   return parseErrorOr<{ success: boolean; note: string }>(response, 'Sauvegarde du mod impossible.');
 }
 
-export async function reloadServerSync(token: string): Promise<{ success: boolean; message: string }> {
-  const response = await fetch('/api/admin/server/reload', {
-    method: 'POST',
-    headers: authHeaders(token),
-  });
-  return parseErrorOr<{ success: boolean; message: string }>(response, 'Synchronisation impossible.');
-}
-
 export async function runRoomAction(
   token: string,
   roomId: string,
@@ -241,11 +360,16 @@ export async function runRoomAction(
   return parseErrorOr<AdminActionResult>(response, 'Action impossible.');
 }
 
-export async function kickPlayer(token: string, roomId: string, playerId: string): Promise<void> {
+export async function kickPlayer(
+  token: string,
+  roomId: string,
+  playerId: string,
+  reason: string,
+): Promise<void> {
   const response = await fetch(`/api/admin/rooms/${encodeURIComponent(roomId)}/kick`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
-    body: JSON.stringify({ playerId }),
+    body: JSON.stringify({ playerId, reason }),
   });
   await parseErrorOr(response, 'Expulsion impossible.');
 }

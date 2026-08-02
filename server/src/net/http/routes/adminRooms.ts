@@ -1,14 +1,18 @@
+import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AdminRoomAction } from '@angulio/shared';
 import type { AdminAuth } from '../../../admin/adminAuth.js';
+import { logAdminEvent } from '../../../admin/activityLog.js';
+import { resolveBaseRoomCreateOptions } from '../../../engine/baseRoomOptions.js';
+import { resolveMod } from '../../../engine/modRegistry.js';
 import { ADMIN_TICK_DIVISOR } from '../../../engine/worker/snapshotBuilder.js';
 import type { RoomManager } from '../../../engine/roomManager.js';
-import { logEvent } from '../../../log.js';
 import {
   loadBaseRoomsConfig,
   saveBaseRoomsConfig,
   type BaseRoomConfig,
 } from '../../../roomsConfig.js';
+import { diffBaseRooms, validateBaseRoomsPayload, type RoomDiffEntry } from '../../../roomsDiff.js';
 import type { RoomRuntime } from '../../ws/broadcast.js';
 import { isRecord, readJsonBody, respondJson } from '../httpUtils.js';
 import { requireAdmin } from './admin.js';
@@ -91,13 +95,25 @@ export async function handleAdminRoomAction(
 
   const action = body.action as unknown as AdminRoomAction;
   const result = await managed.handle.adminAction(action);
-  logEvent('admin_room_action', { roomId, kind: action.kind, ok: result.ok });
+  logAdminEvent('admin_room_action', { roomId, kind: action.kind, ok: result.ok });
   respondJson(res, 200, result);
 }
 
-/** `POST /api/admin/rooms/:id/kick` — `{ playerId }` (§3.3, "Expulsion"). Ferme directement la
- * socket réseau : plus fiable qu'un message applicatif (le client pourrait ignorer un message,
- * jamais une fermeture de connexion). */
+/** Le motif de kick sert de raison de fermeture WebSocket (RFC 6455 : 123 octets UTF-8 max, la
+ * lib `ws` lève sinon) — tronque au pire cas plutôt que de risquer un throw sur un motif saisi
+ * avec des caractères accentués (2 octets chacun en UTF-8). */
+function truncateForWsCloseReason(text: string, maxBytes = 123): string {
+  let result = text;
+  while (Buffer.byteLength(result, 'utf8') > maxBytes) {
+    result = result.slice(0, -1);
+  }
+  return result;
+}
+
+/** `POST /api/admin/rooms/:id/kick` — `{ playerId, reason }` (A1, plan-implementation-admin.md
+ * §3.2 : motif désormais obligatoire et transmis au serveur — auparavant capturé côté UI mais
+ * jamais envoyé). Ferme directement la socket réseau : plus fiable qu'un message applicatif (le
+ * client pourrait ignorer un message, jamais une fermeture de connexion). */
 export async function handleAdminKick(
   runtimes: Map<string, RoomRuntime>,
   admin: AdminAuth | undefined,
@@ -116,6 +132,12 @@ export async function handleAdminKick(
   }
 
   const playerId = isRecord(body) && typeof body.playerId === 'string' ? body.playerId : undefined;
+  const reason = isRecord(body) && typeof body.reason === 'string' ? body.reason.trim() : '';
+  if (!reason) {
+    respondJson(res, 400, { error: "Motif d'expulsion requis." });
+    return;
+  }
+
   const runtime = runtimes.get(roomId);
   const socket = playerId ? runtime?.sockets.get(playerId) : undefined;
   if (!socket) {
@@ -123,8 +145,8 @@ export async function handleAdminKick(
     return;
   }
 
-  logEvent('admin_kick', { roomId, playerId });
-  socket.close(4403, 'Expulsé par un administrateur.');
+  logAdminEvent('admin_kick', { roomId, playerId, reason });
+  socket.close(4403, truncateForWsCloseReason(reason));
   respondJson(res, 200, { success: true });
 }
 
@@ -172,7 +194,7 @@ export async function handleAdminTransfer(
     return;
   }
 
-  logEvent('admin_transfer', { roomId, playerId, targetRoomId });
+  logAdminEvent('admin_transfer', { roomId, playerId, targetRoomId });
   socket.send(JSON.stringify({ type: 'forceRoomChange', roomId: targetRoomId }));
   respondJson(res, 200, { success: true });
 }
@@ -223,7 +245,7 @@ export async function handleAdminBroadcast(
     }
   }
 
-  logEvent('admin_broadcast', { roomId: roomId ?? 'global', sent });
+  logAdminEvent('admin_broadcast', { roomId: roomId ?? 'global', sent });
   respondJson(res, 200, { success: true, sent });
 }
 
@@ -254,10 +276,11 @@ function isValidBaseRoomsPayload(body: unknown, availableModIds: string[]): body
   );
 }
 
-/** `PUT /api/admin/base-rooms` — `BaseRoomConfig[]` (§13) : réécrit `server/rooms.json`. Ne
- * recrée/ferme AUCUN salon en direct (§8.4 pas encore implémenté, voir le commentaire de
- * `saveBaseRoomsConfig`) — le changement s'applique au prochain redémarrage du serveur, annoncé
- * explicitement dans la réponse pour que l'UI admin ne laisse pas croire à un effet immédiat. */
+/** `PUT /api/admin/base-rooms` — `BaseRoomConfig[]` (§13) : réécrit `server/rooms.json` SANS
+ * l'appliquer aux salons vivants (voir décision §2.3 plan-implementation-admin.md : reste séparée
+ * des routes `diff`/`apply` ci-dessous, qui persistent ET appliquent). Conservée telle quelle pour
+ * un usage programmatique direct (script, outillage externe) ; l'interface admin elle-même passe
+ * désormais exclusivement par `diff`/`apply` (§8.5, ConfigurationView.tsx). */
 export async function handleAdminUpdateBaseRooms(
   admin: AdminAuth | undefined,
   availableModIds: string[],
@@ -281,15 +304,221 @@ export async function handleAdminUpdateBaseRooms(
     return;
   }
 
+  // Complète les ids manquants (P6, §8.1) — cette route reste un simple write (jamais d'apply),
+  // mais ne doit jamais écrire une entrée sans id : `loadBaseRoomsConfig` migrerait sinon
+  // silencieusement au prochain chargement, avec un id DIFFÉRENT de celui que cet appel pensait
+  // avoir écrit (rupture de l'appariement `baseRoomId` pour tout salon déjà vivant).
+  const rooms = body.map((room) => (room.id ? room : { ...room, id: randomUUID() }));
+
   try {
-    saveBaseRoomsConfig(body);
-    logEvent('admin_base_rooms_updated', { count: body.length });
+    saveBaseRoomsConfig(rooms);
+    logAdminEvent('admin_base_rooms_updated', { count: rooms.length });
     respondJson(res, 200, {
       success: true,
-      rooms: body,
-      note: 'Effectif au prochain redémarrage du serveur.',
+      rooms,
+      note: 'Sauvegardé. Utilisez « Appliquer les changements » pour synchroniser les salons vivants sans redémarrage.',
     });
   } catch (error) {
     respondJson(res, 500, { error: (error as Error).message });
   }
+}
+
+/** Annonce en jeu avant une fermeture/recréation (§12.1 cahier_des_charges_admin.md : "annonce
+ * préalable de 10 s") — même forme de message que `handleAdminBroadcast` ci-dessus, mais ciblée
+ * sur UN SEUL salon sans passer par la route HTTP publique (appelée en interne par `apply`). */
+function announceToRoom(runtimes: Map<string, RoomRuntime>, roomId: string, text: string, durationMs: number): void {
+  const runtime = runtimes.get(roomId);
+  if (!runtime) return;
+  const message = JSON.stringify({ type: 'announcement', text, color: '#ffffff', durationMs });
+  for (const [playerId, socket] of runtime.sockets) {
+    if (runtime.spectatorIds.has(playerId)) continue;
+    if (socket.readyState === socket.OPEN) socket.send(message);
+  }
+}
+
+/** Délai (s) entre l'annonce en jeu et la fermeture/recréation effective d'un salon impacté par
+ * `apply` (§12.1 cahier_des_charges_admin.md : "annonce préalable de 10 s"). */
+const APPLY_ANNOUNCE_DELAY_SEC = 10;
+const APPLY_ANNOUNCE_DURATION_MS = 8000;
+
+/** `POST /api/admin/base-rooms/diff` (P6, §8.4 plan-implementation-admin.md) — AUCUNE écriture :
+ * calcule le plan de diff (créé/fermé/reconfiguré à chaud/recréé) entre `rooms.json` actuel et la
+ * config proposée, pour la modale de confirmation côté UI (§8.5) avant tout `apply`. */
+export async function handleAdminDiffBaseRooms(
+  roomManager: RoomManager,
+  admin: AdminAuth | undefined,
+  availableModIds: string[],
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  if (!requireAdmin(admin, req, res)) return;
+
+  let body: unknown;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    respondJson(res, 400, { error: (error as Error).message });
+    return;
+  }
+
+  const rooms = isRecord(body) ? body.rooms : undefined;
+  const validated = validateBaseRoomsPayload(rooms, availableModIds);
+  if (!validated.ok) {
+    respondJson(res, 400, { errors: validated.errors });
+    return;
+  }
+
+  const previous = loadBaseRoomsConfig();
+  const diff = diffBaseRooms(previous, validated.value);
+  const enriched = diff.map((entry) => {
+    const live = entry.id ? roomManager.findByBaseRoomId(entry.id) : undefined;
+    const affectedPlayers =
+      live && (entry.status === 'closed' || entry.status === 'recreated')
+        ? roomManager.playerCountOf(live)
+        : 0;
+    return { ...entry, affectedPlayers };
+  });
+  respondJson(res, 200, enriched);
+}
+
+/** `POST /api/admin/base-rooms/apply` (P6, §8.4) — persiste `rooms.json` PUIS exécute le diff :
+ * création (`roomManager.createRoom`), fermeture (`closeRoom`, §8.2), reconfiguration à chaud
+ * (`switchMod`+`reset` pour `modId`, `setRoomResetSchedule` pour `resetDurationMin` — jamais les
+ * deux en même temps que `mapSize`/`maxPlayers`, qui déclenchent une recréation à la place),
+ * recréation (`closeRoom` puis `createRoom` avec les nouvelles valeurs, après le même délai
+ * d'annonce que `closeRoom` seul). Chaque salon fermé/recréé reçoit d'abord une annonce en jeu
+ * (§12.1, "10 s") ; la reconfiguration à chaud (mode/reset) n'expulse personne, aucune annonce. */
+export async function handleAdminApplyBaseRooms(
+  roomManager: RoomManager,
+  runtimes: Map<string, RoomRuntime>,
+  admin: AdminAuth | undefined,
+  availableModIds: string[],
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  if (!requireAdmin(admin, req, res)) return;
+
+  let body: unknown;
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    respondJson(res, 400, { error: (error as Error).message });
+    return;
+  }
+
+  const roomsInput = isRecord(body) ? body.rooms : undefined;
+  const validated = validateBaseRoomsPayload(roomsInput, availableModIds);
+  if (!validated.ok) {
+    respondJson(res, 400, { errors: validated.errors });
+    return;
+  }
+
+  // Ids fraîchement assignés AVANT le diff (pas après) : une entrée 'created' ne doit jamais
+  // matcher accidentellement une entrée précédente, voir diffBaseRooms (appariement PAR ID).
+  const finalRooms: BaseRoomConfig[] = validated.value.map((room) =>
+    room.id ? room : { ...room, id: randomUUID() },
+  );
+  const previous = loadBaseRoomsConfig();
+  const diff = diffBaseRooms(previous, finalRooms);
+  const previousById = new Map(previous.map((room) => [room.id, room]));
+  const finalById = new Map(finalRooms.map((room) => [room.id, room]));
+
+  // Persisté AVANT d'appliquer (pas après) : si le process s'arrête au milieu de l'application,
+  // l'état sur disque reflète déjà l'intention — un redémarrage recrée alors depuis `rooms.json`
+  // exactement ce qui restait à faire, plutôt que de revenir en arrière.
+  saveBaseRoomsConfig(finalRooms);
+
+  const results: Array<RoomDiffEntry & { applied: boolean }> = [];
+
+  for (const entry of diff) {
+    switch (entry.status) {
+      case 'unchanged':
+        results.push({ ...entry, applied: true });
+        break;
+
+      case 'created': {
+        const base = finalById.get(entry.id);
+        if (base) {
+          roomManager.createRoom({
+            ...resolveBaseRoomCreateOptions(base, resolveMod),
+            visibility: 'public',
+            permanent: true,
+          });
+        }
+        results.push({ ...entry, applied: Boolean(base) });
+        break;
+      }
+
+      case 'hot-reconfigured': {
+        const base = finalById.get(entry.id);
+        const prevBase = previousById.get(entry.id);
+        const live = roomManager.findByBaseRoomId(entry.id);
+        if (base && prevBase && live) {
+          if (prevBase.modId !== base.modId) {
+            await live.handle.adminAction({ kind: 'switchMod', modId: base.modId });
+            await live.handle.adminAction({ kind: 'reset' });
+          }
+          if (prevBase.resetDurationMin !== base.resetDurationMin) {
+            const schedule =
+              base.resetDurationMin && base.resetDurationMin > 0
+                ? ({ type: 'everyNMinutes', minutes: base.resetDurationMin, timeZone: 'Europe/Paris' } as const)
+                : null;
+            await roomManager.setRoomResetSchedule(live.id, schedule);
+          }
+        }
+        results.push({ ...entry, applied: Boolean(base && prevBase && live) });
+        break;
+      }
+
+      case 'closed': {
+        const live = roomManager.findByBaseRoomId(entry.id);
+        if (live) {
+          announceToRoom(
+            runtimes,
+            live.id,
+            `Ce salon ferme pour maintenance dans ${APPLY_ANNOUNCE_DELAY_SEC} secondes...`,
+            APPLY_ANNOUNCE_DURATION_MS,
+          );
+          roomManager.closeRoom(live.id, { reason: 'admin_closed', delaySeconds: APPLY_ANNOUNCE_DELAY_SEC });
+        }
+        results.push({ ...entry, applied: Boolean(live) });
+        break;
+      }
+
+      case 'recreated': {
+        const base = finalById.get(entry.id);
+        const live = roomManager.findByBaseRoomId(entry.id);
+        if (base && live) {
+          announceToRoom(
+            runtimes,
+            live.id,
+            `Ce salon redémarre pour maintenance dans ${APPLY_ANNOUNCE_DELAY_SEC} secondes...`,
+            APPLY_ANNOUNCE_DURATION_MS,
+          );
+          roomManager.closeRoom(live.id, { reason: 'admin_recreated', delaySeconds: APPLY_ANNOUNCE_DELAY_SEC });
+          setTimeout(
+            () => {
+              roomManager.createRoom({
+                ...resolveBaseRoomCreateOptions(base, resolveMod),
+                visibility: 'public',
+                permanent: true,
+              });
+            },
+            APPLY_ANNOUNCE_DELAY_SEC * 1000 + 250,
+          );
+        }
+        results.push({ ...entry, applied: Boolean(base && live) });
+        break;
+      }
+    }
+  }
+
+  logAdminEvent('admin_base_rooms_applied', {
+    count: finalRooms.length,
+    created: results.filter((r) => r.status === 'created').length,
+    closed: results.filter((r) => r.status === 'closed').length,
+    recreated: results.filter((r) => r.status === 'recreated').length,
+    hotReconfigured: results.filter((r) => r.status === 'hot-reconfigured').length,
+  });
+  respondJson(res, 200, { success: true, rooms: finalRooms, diff: results });
 }

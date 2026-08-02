@@ -1,6 +1,7 @@
-import type { EntitySnapshot } from '@angulio/shared';
-import { clamp } from '@angulio/shared';
-import { cullEntitiesForViewport, interpolateEntities, type Camera } from './render.js';
+import type { EntitySnapshot } from '../protocol.js';
+import { clamp } from '../vector.js';
+import type { Camera } from './camera.js';
+import { cullEntitiesForViewport, interpolateEntities } from './render.js';
 
 /** Un snapshot reçu, positionné sur une ligne de temps "serveur" ancrée localement (voir
  * `RenderEngine.pushSnapshot`) plutôt que sur l'heure d'arrivée réseau brute. */

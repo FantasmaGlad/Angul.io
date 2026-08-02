@@ -116,6 +116,24 @@ export function handleWsConnection(
       buildVersion,
     });
 
+    // Backfill pseudo/couleur des joueurs déjà connectés (A5, plan-implementation-admin.md §3.8)
+    // — symétrique à la branche spectateur ci-dessous : sans ça, un admin qui ouvre un salon en
+    // cours de partie ne voyait ni pseudo ni couleur tant qu'un joueur ne rejoignait pas à nouveau.
+    for (const [pId, nickname] of runtime.nicknameByPlayer.entries()) {
+      const color = runtime.colorByPlayer.get(pId) ?? skinForNickname(nickname);
+      send(socket, { type: 'player', playerId: pId, nickname, color });
+    }
+
+    // Registre des interventions dont CETTE connexion admin est responsable (§9.3
+    // cahier_des_charges_admin.md, garde-fou marionnette/godmode/gel) — volontairement des
+    // variables de closure scoped à CETTE connexion (pas une map globale `adminConnectionId ->
+    // interventions`) : plusieurs connexions admin peuvent coexister (même compte, onglets
+    // multiples), chacune ne doit libérer QUE ce qu'elle a elle-même déclenché à sa propre
+    // fermeture (voir `socket.on('close', ...)` plus bas).
+    const ownedGodPlayerIds = new Set<PlayerId>();
+    const ownedFrozenPlayerIds = new Set<PlayerId>();
+    let possessedPlayerId: PlayerId | undefined;
+
     socket.on('message', (raw: Buffer): void => {
       let parsed: unknown;
       try {
@@ -131,19 +149,77 @@ export function handleWsConnection(
         return;
       }
       const message = parsed as AdminClientActionMessage;
-      void managed.handle.adminAction(message.action).then((result) => {
+      const action = message.action;
+
+      void (async () => {
+        // Un seul blob possédé à la fois PAR CETTE CONNEXION (§9.3) — bascule automatiquement
+        // plutôt que d'exiger un `unpossess` explicite avant de posséder une nouvelle cible.
+        if (action.kind === 'possess' && possessedPlayerId && possessedPlayerId !== action.playerId) {
+          await managed.handle.adminAction({ kind: 'unpossess', playerId: possessedPlayerId });
+          possessedPlayerId = undefined;
+        }
+
+        const result = await managed.handle.adminAction(action);
+
+        if (result.ok) {
+          switch (action.kind) {
+            case 'enableGodmode':
+              ownedGodPlayerIds.add(action.playerId);
+              break;
+            case 'disableGodmode':
+              ownedGodPlayerIds.delete(action.playerId);
+              break;
+            case 'freeze':
+              ownedFrozenPlayerIds.add(action.playerId);
+              break;
+            case 'unfreeze':
+              ownedFrozenPlayerIds.delete(action.playerId);
+              break;
+            case 'possess':
+              possessedPlayerId = action.playerId;
+              break;
+            case 'unpossess':
+              if (possessedPlayerId === action.playerId) possessedPlayerId = undefined;
+              break;
+          }
+        }
+
         if (socket.readyState === socket.OPEN) {
           socket.send(
             JSON.stringify({ type: 'admin_action_result', actionId: message.actionId, result }),
           );
         }
-      });
+      })();
     });
 
+    // État fiable des joueurs (A3, plan-implementation-admin.md §3.9) — poussé à ~1Hz plutôt que
+    // dérivé des snapshots `state` (qui ne portent pas `isFrozen`). Réutilise `adminListPlayers()`,
+    // déjà utilisé par `GET /api/admin/rooms`, pas de nouvelle logique de calcul côté moteur.
+    const adminPlayersInterval = setInterval(() => {
+      void managed.handle.adminListPlayers().then((players) => {
+        if (socket.readyState === socket.OPEN) {
+          socket.send(JSON.stringify({ type: 'adminPlayers', players }));
+        }
+      });
+    }, 1000);
+
     socket.on('close', () => {
+      clearInterval(adminPlayersInterval);
       runtime.sockets.delete(adminViewerId);
       runtime.spectatorIds.delete(adminViewerId);
       managed.handle.disconnectViewer(adminViewerId);
+      // Garde-fou (§9.3, §19.6 critère d'acceptation cahier_des_charges_admin.md) : la
+      // déconnexion de CETTE connexion libère toute possession/godmode/gel qu'ELLE a déclenché —
+      // jamais ceux d'une autre connexion admin coexistante (voir le registre ci-dessus).
+      if (possessedPlayerId) {
+        void managed.handle.adminAction({ kind: 'unpossess', playerId: possessedPlayerId });
+      }
+      for (const playerId of ownedGodPlayerIds) {
+        void managed.handle.adminAction({ kind: 'disableGodmode', playerId });
+      }
+      for (const playerId of ownedFrozenPlayerIds) {
+        void managed.handle.adminAction({ kind: 'unfreeze', playerId });
+      }
     });
     return;
   }

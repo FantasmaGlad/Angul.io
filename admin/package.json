@@ -1,6 +1,6 @@
 {
   "name": "@angulio/admin",
-  "version": "11.0.0",
+  "version": "12.0.0",
   "private": true,
   "type": "module",
   "main": "./src/main.tsx",
@@ -11,7 +11,6 @@
   },
   "dependencies": {
     "@angulio/shared": "*",
-    "pixi.js": "^8.19.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

@@ -64,12 +64,21 @@ export class Room {
   /** Joueurs gelés par l'admin (§4.3, "Gel/Freeze") — vecteurs de vitesse forcés à zéro chaque
    * tick, entrée ignorée tant qu'ils y figurent (voir `handleInput`/`tick`). */
   private readonly frozenPlayerIds = new Set<PlayerId>();
+  /** Marionnette (§9.3, P4) — un joueur/bot possédé ignore son input NORMAL (`handleInput`, qu'il
+   * vienne d'un vrai client WebSocket ou de l'IA d'un bot, voir `BotManager.update` qui appelle
+   * exactement le même `handleInput`) ; seul `possessInput` (contourne volontairement ce garde-fou)
+   * fait autorité tant qu'il y figure. Même mécanisme que `frozenPlayerIds` ci-dessus — aucune
+   * modification nécessaire côté `BotManager`, qui continue d'appeler `handleInput` sans savoir
+   * qu'il est possédé, exactement comme il le fait déjà pour un bot gelé. */
+  private readonly possessedPlayerIds = new Set<PlayerId>();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private resetTimer: ReturnType<typeof setTimeout> | undefined;
   private lastTickAt = 0;
   private nextTickTargetAt = 0;
   private tickCount = 0;
-  private readonly resetSchedule: RoomResetSchedule | undefined;
+  /** PAS `readonly` (P6, §8.3 plan-implementation-admin.md) : `setResetSchedule` la reprogramme
+   * pour un salon vivant sans reset immédiat (voir plus bas). */
+  private resetSchedule: RoomResetSchedule | undefined;
   private readonly stateListeners: Array<(tick: number) => void> = [];
   private readonly deathListeners: Array<(playerId: PlayerId, info: PlayerDeathInfo) => void> = [];
   private readonly resetListeners: Array<() => void> = [];
@@ -117,6 +126,18 @@ export class Room {
   stop(): void {
     if (this.timer) clearTimeout(this.timer);
     if (this.resetTimer) clearTimeout(this.resetTimer);
+  }
+
+  /** Reprogramme le reset automatique SANS déclencher de reset immédiat (P6, §8.3
+   * cahier_des_charges_admin.md — synchro à chaud d'un salon d'accueil dont `resetDurationMin` a
+   * changé) : annule le minuteur en cours, remplace `resetSchedule`, reprogramme depuis MAINTENANT
+   * (`scheduleReset` recalcule toujours la prochaine échéance à partir de l'heure réelle, jamais
+   * un report bête de l'ancienne échéance — même logique que le déclenchement normal, voir son
+   * commentaire). `null`/`undefined` désactive tout reset automatique pour ce salon. */
+  setResetSchedule(schedule: RoomResetSchedule | null | undefined): void {
+    if (this.resetTimer) clearTimeout(this.resetTimer);
+    this.resetSchedule = schedule ?? undefined;
+    this.scheduleReset();
   }
 
   private scheduleReset(): void {
@@ -291,6 +312,11 @@ export class Room {
     // la libérer, pour un salon de longue durée — fuite mineure mais désormais bien plus
     // fréquente qu'avant (une entrée par déconnexion, pas seulement par action admin manuelle).
     this.frozenPlayerIds.delete(id);
+    // Même raisonnement que `frozenPlayerIds.delete(id)` ci-dessus : sans ça, une possession
+    // orpheline (joueur déconnecté/retiré pendant qu'il était possédé) laissait une entrée morte,
+    // et un futur `playerId` ré-attribué (compteur séquentiel, voir `RoomInstance.join`) aurait pu
+    // hériter silencieusement d'une possession qui n'était plus la sienne.
+    this.possessedPlayerIds.delete(id);
     if (!this.botManager?.isBot(id)) {
       this.botManager?.adjustPopulation();
     }
@@ -298,7 +324,28 @@ export class Room {
 
   handleInput(playerId: PlayerId, input: PlayerInput): void {
     if (this.frozenPlayerIds.has(playerId)) return;
+    if (this.possessedPlayerIds.has(playerId)) return; // suspendu : voir `possessInput`
     this.mod.onPlayerInput?.(this.world, playerId, input);
+  }
+
+  // --- Marionnette (§9.3, P4) --------------------------------------------------------------
+
+  /** Contourne volontairement la suspension de `handleInput` ci-dessus — seul point d'entrée qui
+   * fait autorité pour un joueur actuellement possédé (voir `setPossessed`). Appelé QUE le joueur
+   * soit réellement possédé ou non : un `possessInput` reçu après un `unpossess`/une déconnexion
+   * (message en vol) reste inoffensif, simplement redondant avec l'input normal qui a repris la
+   * main entre-temps. */
+  possessInput(playerId: PlayerId, input: PlayerInput): void {
+    this.mod.onPlayerInput?.(this.world, playerId, input);
+  }
+
+  setPossessed(playerId: PlayerId, possessed: boolean): void {
+    if (possessed) this.possessedPlayerIds.add(playerId);
+    else this.possessedPlayerIds.delete(playerId);
+  }
+
+  isPossessed(playerId: PlayerId): boolean {
+    return this.possessedPlayerIds.has(playerId);
   }
 
   // --- Actions admin (cahier_des_charges_admin.md §4.3-4.4) -------------------------------
@@ -339,6 +386,32 @@ export class Room {
     return true;
   }
 
+  /** Déplacement physique du barycentre (§9.1) — translate chaque morceau du joueur par le même
+   * delta (nouveau barycentre - ancien), ce qui préserve automatiquement leurs offsets relatifs
+   * (contrairement à une reconstitution "en cercle" autour du point cible). Aucun clamp aux bords
+   * de la carte ici : le prochain tick applique déjà `mod.onPostMove` (bordure) à toute position,
+   * qu'elle vienne de la physique normale ou d'un déplacement admin — même repli que le reste du
+   * moteur (voir `Room.tick()`). `false` si le joueur n'a aucun morceau. */
+  dragMovePlayer(playerId: PlayerId, target: { x: number; y: number }): boolean {
+    const pieces = this.world.getPiecesByOwner(playerId);
+    if (pieces.length === 0) return false;
+    let totalMass = 0;
+    let cx = 0;
+    let cy = 0;
+    for (const piece of pieces) {
+      totalMass += piece.mass;
+      cx += piece.position.x * piece.mass;
+      cy += piece.position.y * piece.mass;
+    }
+    if (totalMass <= 0) return false;
+    const dx = target.x - cx / totalMass;
+    const dy = target.y - cy / totalMass;
+    for (const piece of pieces) {
+      piece.position = { x: piece.position.x + dx, y: piece.position.y + dy };
+    }
+    return true;
+  }
+
   /** Split forcé (§4.3) — synthétise un input `split: true` plutôt que de dupliquer la logique de
    * split (propre à chaque mod, voir `mods/parametric/index.ts` `trySplitPiece`) : générique et
    * toujours cohérent avec les règles réelles du mod actif (masse min, nombre max de morceaux…).
@@ -370,6 +443,31 @@ export class Room {
     this.world.spawnParticle(position, mass);
   }
 
+  /** Spawn de virus manuel à des coordonnées précises (§10.2) — formule masse/rayon dupliquée
+   * depuis la maintenance organique du mod paramétrique (`mods/parametric/index.ts`, "vType === 2
+   * ? 300/150 : 200/100") plutôt que réutilisée : `Room` reste indépendante du mod actif
+   * (`GameMod` générique, jamais couplée à `ParametricModConfig`), et cette constante d'équilibrage
+   * change rarement. */
+  spawnVirus(position: { x: number; y: number }, virusType: 1 | 2 | 3): void {
+    const mass = virusType === 2 ? 300 : 200;
+    const radius = virusType === 2 ? 150 : 100;
+    const virus = this.world.spawnVirus(position, mass, virusType);
+    virus.radius = radius;
+  }
+
+  /** Apparence à la volée (§9.4) — met à jour l'état de SESSION du joueur (`PlayerState`, jamais le
+   * compte persistant en base) ; le rappel au réseau (rediffusion du message `player`) est à la
+   * charge de l'appelant (voir `RoomInstance.adminAction`, qui réutilise `playerJoinListeners`
+   * pour ça — `Room` elle-même ne connaît aucune socket). `false` si le joueur est inconnu. */
+  setAppearance(playerId: PlayerId, appearance: { nickname?: string; skin?: string }): boolean {
+    const player = this.world.getPlayer(playerId);
+    if (!player) return false;
+    const trimmedNickname = appearance.nickname?.trim();
+    if (trimmedNickname) player.nickname = trimmedNickname;
+    if (appearance.skin !== undefined) player.skin = appearance.skin;
+    return true;
+  }
+
   /** Vide toutes les pastilles de nourriture du salon (§4.4, "Nettoyage") — renvoie le nombre
    * retiré (affichage admin). */
   clearFood(): number {
@@ -396,6 +494,17 @@ export class Room {
   forceSpawnBot(options?: CustomBotSpawnOptions): boolean {
     if (!this.botManager) return false;
     this.botManager.forceSpawnOne(options);
+    return true;
+  }
+
+  /** Vague de bots (§10.3) — ADDITIF, ne touche pas `forceSpawnBot` ci-dessus (bot personnalisé
+   * unitaire, existant, inchangé — voir plan-implementation-admin.md §1). Chaque bot de la vague
+   * garde une personnalité aléatoire (fuis/neutre/agressif, comme un spawn ambiant normal) ; seuls
+   * `mass`/`behaviorProfile` sont partagés par tous. `false` si les bots sont désactivés pour ce
+   * salon. */
+  forceSpawnBots(count: number, mass?: number, behaviorProfile?: string): boolean {
+    if (!this.botManager) return false;
+    this.botManager.forceSpawnMany(count, { mass, behaviorId: behaviorProfile });
     return true;
   }
 

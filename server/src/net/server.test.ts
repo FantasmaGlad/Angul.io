@@ -9,6 +9,7 @@ import type { GameMod } from '../engine/mod.js';
 import { resolveMod } from '../engine/modRegistry.js';
 import { RoomManager, type ModResolver } from '../engine/roomManager.js';
 import { createLocalRoomHost } from '../engine/worker/roomHost.js';
+import { loadBaseRoomsConfig, saveBaseRoomsConfig, type BaseRoomConfig } from '../roomsConfig.js';
 import { startGameServer, type GameServerHandle } from './server.js';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -1373,13 +1374,145 @@ describe.skipIf(!DATABASE_URL)('startGameServer (avec comptes joueurs)', () => {
       const afterPut = await fetch(`http://localhost:${port}/api/admin/base-rooms`, {
         headers: authHeaders,
       });
-      expect(await afterPut.json()).toEqual(draft);
+      const afterPutRooms = (await afterPut.json()) as Array<{ id: string; name: string; modId: string }>;
+      // P6, §8.1 plan-implementation-admin.md : `PUT` complète désormais un `id` stable manquant
+      // (jamais fourni par ce `draft`, écrit avant l'introduction de ce champ) — le reste du
+      // contenu doit rester identique.
+      expect(afterPutRooms).toHaveLength(1);
+      expect(typeof afterPutRooms[0]!.id).toBe('string');
+      expect(afterPutRooms[0]!.id.length).toBeGreaterThan(0);
+      expect({ name: afterPutRooms[0]!.name, modId: afterPutRooms[0]!.modId }).toEqual(draft[0]);
     } finally {
       await fetch(`http://localhost:${port}/api/admin/base-rooms`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify(original),
       });
+    }
+  });
+
+  it('POST /api/admin/base-rooms/diff et /apply — synchro à chaud (P6, §8.4 plan-implementation-admin.md)', async () => {
+    const { port, manager } = await startServer();
+
+    const loginResponse = await fetch(`http://localhost:${port}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'adminpass123' }),
+    });
+    const { token } = (await loginResponse.json()) as { token: string };
+    const authHeaders = { Authorization: `Bearer ${token}` };
+
+    // Salon vivant lié à une entrée de base (baseRoomId) — simule ce que server/src/index.ts fait
+    // au boot (voir resolveBaseRoomCreateOptions), sans dépendre du vrai rooms.json du dépôt.
+    const baseId = randomUUID();
+    const liveRoom = manager.createRoom({
+      name: 'Salon Base',
+      modId: 'vanilla',
+      visibility: 'public',
+      permanent: true,
+      maxPlayers: 30,
+      baseRoomId: baseId,
+    });
+
+    const originalOnDisk = loadBaseRoomsConfig();
+    const previousConfig: BaseRoomConfig[] = [
+      { id: baseId, name: 'Salon Base', modId: 'vanilla', mapSize: 15000, maxPlayers: 30, resetDurationMin: 120 },
+    ];
+    saveBaseRoomsConfig(previousConfig);
+
+    try {
+      // --- diff : aucune écriture, calcule juste le plan -------------------------------------
+      const unauthorizedDiff = await fetch(`http://localhost:${port}/api/admin/base-rooms/diff`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rooms: previousConfig }),
+      });
+      expect(unauthorizedDiff.status).toBe(401);
+
+      const proposedHotReconfig: BaseRoomConfig[] = [
+        { id: baseId, name: 'Salon Base', modId: 'hardcore', mapSize: 15000, maxPlayers: 30, resetDurationMin: 120 },
+      ];
+      const diffRes = await fetch(`http://localhost:${port}/api/admin/base-rooms/diff`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({ rooms: proposedHotReconfig }),
+      });
+      expect(diffRes.status).toBe(200);
+      const diffBody = (await diffRes.json()) as Array<{ id: string; status: string; affectedPlayers: number }>;
+      expect(diffBody).toEqual([{ id: baseId, name: 'Salon Base', status: 'hot-reconfigured', affectedPlayers: 0 }]);
+      // Aucune écriture disque déclenchée par /diff seul.
+      expect(loadBaseRoomsConfig()).toEqual(previousConfig);
+
+      const invalidDiff = await fetch(`http://localhost:${port}/api/admin/base-rooms/diff`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({ rooms: [{ name: '', modId: 'vanilla', mapSize: 15000, maxPlayers: 30, resetDurationMin: 0 }] }),
+      });
+      expect(invalidDiff.status).toBe(400);
+
+      // --- apply : persiste ET applique --------------------------------------------------------
+      // 1) hot-reconfigured (modId) : switchMod appliqué IMMÉDIATEMENT, aucune expulsion.
+      const applyHotRes = await fetch(`http://localhost:${port}/api/admin/base-rooms/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({ rooms: proposedHotReconfig }),
+      });
+      expect(applyHotRes.status).toBe(200);
+      const applyHotBody = (await applyHotRes.json()) as { diff: Array<{ status: string; applied: boolean }> };
+      expect(applyHotBody.diff).toEqual([{ id: baseId, name: 'Salon Base', status: 'hot-reconfigured', applied: true }]);
+      expect(manager.getManagedRoom(liveRoom.id)).toBeDefined(); // toujours vivant, jamais expulsé
+      expect(loadBaseRoomsConfig()).toEqual(proposedHotReconfig); // persisté
+
+      // 2) created : un salon apparaît immédiatement, sans délai.
+      const newRoomDraft: BaseRoomConfig = {
+        id: '',
+        name: 'Nouveau Salon',
+        modId: 'vanilla',
+        mapSize: 15000,
+        maxPlayers: 30,
+        resetDurationMin: 120,
+      };
+      const roomsBeforeCreate = manager.allManagedRooms().length;
+      const applyCreateRes = await fetch(`http://localhost:${port}/api/admin/base-rooms/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({ rooms: [...proposedHotReconfig, newRoomDraft] }),
+      });
+      expect(applyCreateRes.status).toBe(200);
+      const applyCreateBody = (await applyCreateRes.json()) as {
+        rooms: BaseRoomConfig[];
+        diff: Array<{ id: string; status: string; applied: boolean }>;
+      };
+      const createdEntry = applyCreateBody.diff.find((e) => e.status === 'created');
+      expect(createdEntry?.applied).toBe(true);
+      expect(applyCreateBody.rooms).toHaveLength(2);
+      expect(applyCreateBody.rooms.every((r) => typeof r.id === 'string' && r.id.length > 0)).toBe(true);
+      expect(manager.allManagedRooms().length).toBe(roomsBeforeCreate + 1);
+
+      // 3) closed : la config disque est mise à jour immédiatement, mais le salon vivant reste
+      // joignable jusqu'à l'échéance du délai d'annonce (§12.1, "10 s") — pas de destruction
+      // synchrone dans la réponse HTTP elle-même.
+      const applyCloseRes = await fetch(`http://localhost:${port}/api/admin/base-rooms/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({ rooms: [] }),
+      });
+      expect(applyCloseRes.status).toBe(400); // tableau vide rejeté par la validation (A10)
+
+      const keepOnlyNewRoom = [applyCreateBody.rooms.find((r) => r.name === 'Nouveau Salon')!];
+      const applyCloseAllRes = await fetch(`http://localhost:${port}/api/admin/base-rooms/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({ rooms: keepOnlyNewRoom }),
+      });
+      expect(applyCloseAllRes.status).toBe(200);
+      const applyCloseAllBody = (await applyCloseAllRes.json()) as { diff: Array<{ status: string }> };
+      expect(applyCloseAllBody.diff.some((e) => e.status === 'closed')).toBe(true);
+      // Toujours vivant juste après la réponse HTTP (destruction différée de 10s, voir closeRoom).
+      expect(manager.getManagedRoom(liveRoom.id)).toBeDefined();
+      expect(loadBaseRoomsConfig()).toHaveLength(1);
+    } finally {
+      saveBaseRoomsConfig(originalOnDisk);
     }
   });
 
@@ -1422,7 +1555,7 @@ describe.skipIf(!DATABASE_URL)('startGameServer (avec comptes joueurs)', () => {
     socket.close();
   });
 
-  it('POST /api/admin/rooms/:id/kick ferme la connexion du joueur ciblé (§3.3)', async () => {
+  it('POST /api/admin/rooms/:id/kick exige un motif et ferme la connexion du joueur ciblé avec (§3.3, A1)', async () => {
     const { port, manager } = await startServer();
     const room = manager.createRoom({ name: 'Kick', modId: 'test', visibility: 'public' });
 
@@ -1439,13 +1572,25 @@ describe.skipIf(!DATABASE_URL)('startGameServer (avec comptes joueurs)', () => {
     await waitUntil(() => messages.some((m) => m.type === 'welcome'));
     const playerId = messages.find((m) => m.type === 'welcome')!.playerId as string;
 
-    const kickResponse = await fetch(`http://localhost:${port}/api/admin/rooms/${room.id}/kick`, {
+    const noReasonResponse = await fetch(`http://localhost:${port}/api/admin/rooms/${room.id}/kick`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
       body: JSON.stringify({ playerId }),
     });
+    expect(noReasonResponse.status).toBe(400);
+
+    const closeEvent = new Promise<{ code: number; reason: Buffer }>((resolve) =>
+      socket.once('close', (code, reason) => resolve({ code, reason })),
+    );
+    const kickResponse = await fetch(`http://localhost:${port}/api/admin/rooms/${room.id}/kick`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({ playerId, reason: 'Spam' }),
+    });
     expect(kickResponse.status).toBe(200);
-    await waitUntil(() => socket.readyState === WebSocket.CLOSED);
+    const { code, reason } = await closeEvent;
+    expect(code).toBe(4403);
+    expect(reason.toString()).toBe('Spam');
   });
 
   it('POST /api/admin/broadcast diffuse une annonce à tous les joueurs connectés (§4.6)', async () => {
@@ -1518,6 +1663,69 @@ describe.skipIf(!DATABASE_URL)('startGameServer (avec comptes joueurs)', () => {
     expect(actionResult).toMatchObject({ result: { ok: true } });
 
     adminSocket.close();
+  });
+
+  it('canal WS admin (?admin=1) : welcome porte mapSize, backfill pseudo/couleur des joueurs déjà connectés, et pousse adminPlayers avec isFrozen à jour (A3/A5, plan-implementation-admin.md §3.8-3.9)', async () => {
+    const { port, manager } = await startServer();
+    const room = manager.createRoom({ name: 'AdminPlayers', modId: 'test', visibility: 'public' });
+
+    const player = await connectedClient(port, room.id);
+    const playerMessages = collectMessages(player);
+    player.send(JSON.stringify({ type: 'join', nickname: 'Erin' }));
+    await waitUntil(() => playerMessages.some((m) => m.type === 'welcome'));
+    const playerId = playerMessages.find((m) => m.type === 'welcome')!.playerId as string;
+
+    const loginResponse = await fetch(`http://localhost:${port}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'adminpass123' }),
+    });
+    const { token: adminToken } = (await loginResponse.json()) as { token: string };
+
+    const adminSocket = new WebSocket(
+      `ws://localhost:${port}/?roomId=${room.id}&admin=1&token=${encodeURIComponent(adminToken)}`,
+    );
+    const adminMessages = collectMessages(adminSocket);
+    await waitForOpen(adminSocket);
+
+    // welcome porte mapSize (déjà vrai côté serveur avant ce correctif — voir §1 du plan : le
+    // vrai bug était que le client le jetait, pas une absence côté serveur).
+    await waitUntil(() => adminMessages.some((m) => m.type === 'welcome'));
+    const welcome = adminMessages.find((m) => m.type === 'welcome')!;
+    expect(typeof welcome.mapSize).toBe('number');
+
+    // Backfill : Erin a rejoint AVANT la connexion admin, son pseudo/couleur doivent arriver
+    // sans qu'elle ait besoin de rejoindre à nouveau (symétrique à la branche spectateur).
+    await waitUntil(() =>
+      adminMessages.some((m) => m.type === 'player' && m.playerId === playerId && m.nickname === 'Erin'),
+    );
+
+    adminSocket.send(
+      JSON.stringify({
+        type: 'admin_action',
+        actionId: 'freeze-1',
+        action: { kind: 'freeze', playerId },
+      }),
+    );
+    await waitUntil(() =>
+      adminMessages.some((m) => m.type === 'admin_action_result' && m.actionId === 'freeze-1'),
+    );
+
+    // Poussé à ~1Hz : la première itération après le freeze doit refléter isFrozen: true.
+    await waitUntil(
+      () =>
+        adminMessages.some(
+          (m) =>
+            m.type === 'adminPlayers' &&
+            (m.players as Array<{ playerId: string; isFrozen: boolean }>).some(
+              (p) => p.playerId === playerId && p.isFrozen,
+            ),
+        ),
+      2000,
+    );
+
+    adminSocket.close();
+    player.close();
   });
 
   describe('Sécurité, Rate Limiting & Validation Input', () => {
@@ -1628,7 +1836,7 @@ describe.skipIf(!DATABASE_URL)('startGameServer (avec comptes joueurs)', () => {
       }
     });
 
-    it('supporte GET/PUT /api/admin/mods/:id et POST /api/admin/server/reload (v6.1)', async () => {
+    it('supporte GET/PUT /api/admin/mods/:id (v6.1)', async () => {
       const { port } = await startServer();
       const loginResponse = await fetch(`http://localhost:${port}/api/admin/login`, {
         method: 'POST',
@@ -1652,15 +1860,82 @@ describe.skipIf(!DATABASE_URL)('startGameServer (avec comptes joueurs)', () => {
         body: JSON.stringify(modConfig),
       });
       expect(putModRes.status).toBe(200);
+    });
 
-      // POST /api/admin/server/reload
-      const reloadRes = await fetch(`http://localhost:${port}/api/admin/server/reload`, {
+    it('GET /api/admin/bot-behaviors liste les profils de comportement disponibles (P4, §10.3 cahier_des_charges_admin.md)', async () => {
+      const { port } = await startServer();
+      const loginResponse = await fetch(`http://localhost:${port}/api/admin/login`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'admin', password: 'adminpass123' }),
+      });
+      const { token } = (await loginResponse.json()) as { token: string };
+
+      const unauthorized = await fetch(`http://localhost:${port}/api/admin/bot-behaviors`);
+      expect(unauthorized.status).toBe(401);
+
+      const res = await fetch(`http://localhost:${port}/api/admin/bot-behaviors`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      expect(reloadRes.status).toBe(200);
-      const reloadBody = (await reloadRes.json()) as { success: boolean };
-      expect(reloadBody.success).toBe(true);
+      expect(res.status).toBe(200);
+      const ids = (await res.json()) as string[];
+      expect(Array.isArray(ids)).toBe(true);
+      expect(ids).toContain('default');
+    });
+
+    it('GET /api/admin/health porte désormais dbOk (P5, §7.1 plan-implementation-admin.md)', async () => {
+      const { port } = await startServer();
+      const loginResponse = await fetch(`http://localhost:${port}/api/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'admin', password: 'adminpass123' }),
+      });
+      const { token } = (await loginResponse.json()) as { token: string };
+
+      const unauthorized = await fetch(`http://localhost:${port}/api/admin/health`);
+      expect(unauthorized.status).toBe(401);
+
+      const res = await fetch(`http://localhost:${port}/api/admin/health`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { dbOk: boolean; rooms: unknown[] };
+      expect(typeof body.dbOk).toBe('boolean');
+      expect(Array.isArray(body.rooms)).toBe(true);
+    });
+
+    it('GET /api/admin/health/history et GET /api/admin/activity (P5, §7.1/§7.2)', async () => {
+      const { port } = await startServer();
+      const loginResponse = await fetch(`http://localhost:${port}/api/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'admin', password: 'adminpass123' }),
+      });
+      const { token } = (await loginResponse.json()) as { token: string };
+
+      const historyUnauthorized = await fetch(`http://localhost:${port}/api/admin/health/history`);
+      expect(historyUnauthorized.status).toBe(401);
+      const historyRes = await fetch(`http://localhost:${port}/api/admin/health/history?hours=6`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(historyRes.status).toBe(200);
+      // `startHealthHistory` n'est démarré que par server/src/index.ts (jamais par
+      // `startGameServer` lui-même, voir son commentaire) — cette suite ne l'a jamais démarré,
+      // le buffer est donc systématiquement vide ici, mais la route doit répondre 200 avec un
+      // tableau valide plutôt qu'une erreur.
+      expect(await historyRes.json()).toEqual([]);
+
+      const activityUnauthorized = await fetch(`http://localhost:${port}/api/admin/activity`);
+      expect(activityUnauthorized.status).toBe(401);
+      const activityRes = await fetch(`http://localhost:${port}/api/admin/activity`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(activityRes.status).toBe(200);
+      const activity = (await activityRes.json()) as Array<{ event: string }>;
+      expect(Array.isArray(activity)).toBe(true);
+      // `admin_login` vient d'être journalisé via `logAdminEvent` (voir admin.ts) — doit
+      // apparaître en tête (plus récent en premier).
+      expect(activity[0]?.event).toBe('admin_login');
     });
   });
 });

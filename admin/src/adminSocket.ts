@@ -4,21 +4,50 @@
  * absolue) et envoi d'actions (`admin_action`) corrélées par `actionId`. */
 import type {
   AdminActionResult,
+  AdminPlayerInfo,
   AdminRoomAction,
   EntitySnapshot,
   LeaderboardEntry,
+  MovementConfig,
 } from '@angulio/shared';
 
+/** `welcome` admin complet (A5 corrigé, plan-implementation-admin.md §1/§3.8) — le serveur envoie
+ * déjà tous ces champs pour la connexion admin (`connectionHandler.ts`, identique à la branche
+ * spectateur) ; jusqu'ici seul `tickRateHz` était lu ici, le reste (dont `mapSize`, la vraie
+ * cause des caméras de repli codées en dur 7500/7500) était silencieusement jeté. */
+export interface AdminWelcomeInfo {
+  tickRateHz: number;
+  mapSize: number;
+  movement: MovementConfig;
+  buildVersion?: string;
+  nextResetAtMs?: number;
+}
+
+/** `state` admin complet (P2, plan-implementation-admin.md §4.1) — le canal admin porte les mêmes
+ * champs que le `state` joueur/spectateur (`tick`, `entitiesFull`, `removedFoodIds`, voir
+ * `shared/src/protocol.ts` `WorldStateMessage`), nécessaires au `RenderEngine` partagé
+ * (`pushSnapshot`) désormais utilisé par le Studio — jusqu'ici seul `entities`/`leaderboard`
+ * étaient lus, le reste silencieusement jeté (sans conséquence avant, l'admin utilisait son propre
+ * `AdminSnapshotBuffer` simplifié, qui n'en avait pas besoin). */
+export interface AdminStateInfo {
+  entities: EntitySnapshot[];
+  tick: number;
+  entitiesFull?: boolean;
+  removedFoodIds?: string[];
+  leaderboard?: LeaderboardEntry[];
+}
+
 export interface AdminSocketCallbacks {
-  onState?: (entities: EntitySnapshot[], leaderboard?: LeaderboardEntry[]) => void;
-  onPlayerInfo?: (playerId: string, nickname: string, skin?: string) => void;
-  /** `welcome` (cahier_des_charges_admin.md §10.1) — transmet la cadence RÉELLE d'envoi du canal
-   * admin (`tickRateHz` du protocole, déjà = `roomManager.tickRateHz / ADMIN_TICK_DIVISOR` côté
-   * serveur, voir connectionHandler.ts). Jamais écouté avant ce correctif — `AdminSnapshotBuffer`
-   * restait figé à un `updateIntervalMs` codé en dur (50ms), désynchronisé de la cadence réelle
-   * dès qu'elle diffère (c'était déjà le cas avant même ce correctif : 20/2=10Hz réels vs 50ms
-   * supposés) — la cause du "gel" périodique perçu dans le canva (§2.3). */
-  onWelcome?: (tickRateHz: number) => void;
+  onState?: (state: AdminStateInfo) => void;
+  /** Le champ réel du message `player` s'appelle `color`, jamais `skin` (voir
+   * `connectionHandler.ts`/`broadcast.ts`) — un ancien nommage `skin` ici faisait que ce
+   * callback ne recevait jamais rien, et donc que l'admin n'affichait jamais les vrais skins. */
+  onPlayerInfo?: (playerId: string, nickname: string, color?: string) => void;
+  onWelcome?: (welcome: AdminWelcomeInfo) => void;
+  /** État fiable des joueurs (A3, plan-implementation-admin.md §3.9) — poussé par le serveur à
+   * ~1Hz, source du badge GELÉ (et futurs badges MARIONNETTE/DIEU, §9.5) : remplace la dérivation
+   * depuis les snapshots `state`, qui ne portent aucun état "gelé". */
+  onAdminPlayers?: (players: AdminPlayerInfo[]) => void;
   onClose?: (reason: string) => void;
 }
 
@@ -51,16 +80,29 @@ export function connectAdminSocket(
     const typed = message as { type?: string };
 
     if (typed.type === 'state') {
-      const state = message as { entities: EntitySnapshot[]; leaderboard?: LeaderboardEntry[] };
-      callbacks.onState?.(state.entities, state.leaderboard);
+      callbacks.onState?.(message as AdminStateInfo);
     } else if (typed.type === 'welcome') {
-      const welcome = message as { tickRateHz?: number };
-      if (typeof welcome.tickRateHz === 'number' && welcome.tickRateHz > 0) {
-        callbacks.onWelcome?.(welcome.tickRateHz);
+      const welcome = message as Partial<AdminWelcomeInfo>;
+      if (
+        typeof welcome.tickRateHz === 'number' &&
+        welcome.tickRateHz > 0 &&
+        typeof welcome.mapSize === 'number' &&
+        welcome.movement
+      ) {
+        callbacks.onWelcome?.({
+          tickRateHz: welcome.tickRateHz,
+          mapSize: welcome.mapSize,
+          movement: welcome.movement,
+          buildVersion: welcome.buildVersion,
+          nextResetAtMs: welcome.nextResetAtMs,
+        });
       }
     } else if (typed.type === 'player') {
-      const info = message as { playerId: string; nickname: string; skin?: string };
-      callbacks.onPlayerInfo?.(info.playerId, info.nickname, info.skin);
+      const info = message as { playerId: string; nickname: string; color?: string };
+      callbacks.onPlayerInfo?.(info.playerId, info.nickname, info.color);
+    } else if (typed.type === 'adminPlayers') {
+      const payload = message as { players: AdminPlayerInfo[] };
+      callbacks.onAdminPlayers?.(payload.players);
     } else if (typed.type === 'admin_action_result') {
       const response = message as { actionId: string; result: AdminActionResult };
       const request = pending.get(response.actionId);

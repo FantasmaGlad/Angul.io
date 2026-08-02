@@ -13,13 +13,14 @@ interface NavItem {
   soon?: boolean;
 }
 
-/** §4 cahier_des_charges_admin.md — 7 entrées, séparées en deux groupes : "opérationnel"
- * (usage quotidien) et "gouvernance" (supervision/administration du serveur lui-même). */
+/** §4 cahier_des_charges_admin.md — 6 entrées (A11 : fusion "Salons & Écrans" + "Studio de
+ * contrôle" en une seule entrée "Salons", plan-implementation-admin.md §5.1), séparées en deux
+ * groupes : "opérationnel" (usage quotidien) et "gouvernance" (supervision/administration du
+ * serveur lui-même). */
 const OPERATIONAL_ITEMS: NavItem[] = [
   { view: 'dashboard', label: 'Tableau de bord', icon: 'dashboard' },
   { view: 'joueurs', label: 'Joueurs', icon: 'group' },
-  { view: 'salons', label: 'Salons & Écrans', icon: 'stadia_controller' },
-  { view: 'creatif', label: 'Studio de contrôle', icon: 'palette' },
+  { view: 'salons', label: 'Salons', icon: 'stadia_controller' },
 ];
 const GOVERNANCE_ITEMS: NavItem[] = [
   { view: 'moderation', label: 'Modération', icon: 'gavel' },
@@ -43,7 +44,7 @@ function NavButton({ item, active, onClick }: { item: NavItem; active: boolean; 
   );
 }
 
-/** Navigation latérale (§4 cahier_des_charges_admin.md) — 7 entrées. */
+/** Navigation latérale (§4 cahier_des_charges_admin.md) — 6 entrées. */
 export default function Sidebar({ view, onChangeView, onLogout }: SidebarProps) {
   return (
     <aside className="sidebar">

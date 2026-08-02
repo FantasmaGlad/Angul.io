@@ -25,6 +25,11 @@ interface ActiveBot {
   memory: BotStateMemory;
   rank?: number;
   accumulatorMs: number;
+  /** Réglage fin explicite (§10.3, `spawnBots{behaviorProfile}`) — `undefined` = comportement
+   * normal, hérite du profil du salon (`BotManager.behavior`, voir `update()`). Résolu une seule
+   * fois au spawn (voir `spawnBot`), jamais recalculé par tick (un fichier de comportement ne
+   * change pas en cours de partie, même raisonnement que `BotManager.behavior`). */
+  behaviorConfig?: BotBehaviorConfig;
 }
 
 export class BotManager {
@@ -116,7 +121,7 @@ export class BotManager {
           bot.id,
           bot.profile,
           bot.memory,
-          this.behavior,
+          bot.behaviorConfig ?? this.behavior,
         );
         bot.memory = memory;
         this.room.handleInput(bot.id, input);
@@ -334,6 +339,10 @@ export class BotManager {
       memory: {},
       rank,
       accumulatorMs: offsetMs,
+      // Réglage fin explicite (§10.3) — `loadBotBehaviorConfig` replie silencieusement sur
+      // `DEFAULT_BOT_BEHAVIOR_CONFIG` si l'id est invalide/introuvable (voir son commentaire),
+      // jamais d'exception ici pour un id fourni par l'admin.
+      behaviorConfig: customOptions?.behaviorId ? loadBotBehaviorConfig(customOptions.behaviorId) : undefined,
     };
 
     // Déterministe (hash du pseudo, comme un invité sans compte, voir `colorForNickname`) plutôt
@@ -510,5 +519,20 @@ export class BotManager {
         options.x !== undefined ||
         options.y !== undefined);
     this.spawnBot(isCustom ? 'neutre' : undefined, undefined, undefined, undefined, options);
+  }
+
+  /** Vague de bots (§10.3 cahier_des_charges_admin.md, `spawnBots{count,mass?,behaviorProfile?}`)
+   * — appelle directement `spawnBot` (pas `forceSpawnOne`) : une vague garde une personnalité
+   * ALÉATOIRE par bot (comme un peuplement ambiant normal), là où `forceSpawnOne` force `'neutre'`
+   * dès qu'un champ personnalisé est fourni (bot unitaire, comportement inchangé — voir plus haut).
+   * `count` borné [1,50] ici (§10.3 : "1-50"), pas seulement côté UI. */
+  forceSpawnMany(count: number, options?: { mass?: number; behaviorId?: string }): void {
+    const clamped = Math.max(1, Math.min(50, Math.floor(count) || 1));
+    for (let i = 0; i < clamped; i++) {
+      this.spawnBot(undefined, undefined, undefined, undefined, {
+        mass: options?.mass,
+        behaviorId: options?.behaviorId,
+      });
+    }
   }
 }

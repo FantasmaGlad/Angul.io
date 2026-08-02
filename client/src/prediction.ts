@@ -302,20 +302,22 @@ export class LocalPrediction {
         predicted.velocity = { ...knownVelocity };
       }
       // Un Dash appliqué localement APRÈS l'instant serveur que cette vérité représente (`sinceMs`,
-      // voir plus haut) n'a par construction pas encore pu être reçu/traité par le serveur —
-      // `knownVelocity` (quand connue) reste alors celle d'AVANT le dash. Avant ce correctif,
-      // l'impulsion n'était réappliquée que si `knownVelocity` était ABSENTE (branche `else`
-      // désormais retirée) : dès que le serveur envoyait un `state` autoritaire (quasi toujours,
-      // `authoritativeVelocities` est renseignée dès que `self.pieces` existe), ce `state` — même
-      // produit par le serveur AVANT qu'il ait reçu l'input du dash — écrasait purement et
-      // simplement la vélocité locale déjà boostée, sans jamais la restituer : le dash "revenait en
-      // arrière" visuellement jusqu'au `state` suivant (retour utilisateur, Hardcore : rollback ~1
-      // fois sur 2, selon qu'un tel `state` "en retard" arrivait ou non dans cette fenêtre). Réappliquée
-      // ici dans TOUS les cas plutôt que seulement en l'absence de `knownVelocity` : un dash déjà
-      // intégré par le serveur a `d.atMs < sinceMs`, donc filtré par `pendingDashes.filter` ci-dessous
-      // — son impulsion (déjà présente dans `knownVelocity` reçue) n'est alors pas rajoutée une
-      // seconde fois.
-      const activeDashes = this.pendingDashes.filter((d) => d.atMs >= sinceMs);
+      // voir plus haut) — ou reçu par le serveur après sa capture — n'est pas encore intégré dans
+      // le snapshot autoritaire. `knownVelocity` reste alors celle d'AVANT le dash.
+      // Prendre en compte la marge de transit réseau (aller simple ~RTT/2) + le délai d'exécution
+      // du tick serveur (1/serverTickRateHz) pour ne pas expirer l'impulsion prématurément sur les
+      // snapshots intermédiaires reçus avant que le serveur n'exécute le dash.
+      const tickMs = serverTickRateHz && serverTickRateHz > 0 ? 1000 / serverTickRateHz : 50;
+      const networkMarginMs = Math.max(20, estimatedLatencyMs) + tickMs + 30;
+      const activeDashes = this.pendingDashes.filter((d) => {
+        const isWithinWindow = sinceMs < d.atMs + networkMarginMs + 200;
+        const isPreExecutionServerTime = sinceMs < d.atMs + networkMarginMs;
+        const impulseLen = length(d.impulse);
+        const velocityLacksImpulse = knownVelocity
+          ? impulseLen > 0 && length(knownVelocity) < impulseLen * 0.4
+          : true;
+        return isWithinWindow && (isPreExecutionServerTime || velocityLacksImpulse);
+      });
       for (const dash of activeDashes) {
         predicted.velocity = add(predicted.velocity, dash.impulse);
       }

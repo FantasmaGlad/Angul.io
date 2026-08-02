@@ -13,7 +13,9 @@ import {
   handleAdminUpdatePlayer,
 } from './routes/admin.js';
 import {
+  handleAdminApplyBaseRooms,
   handleAdminBroadcast,
+  handleAdminDiffBaseRooms,
   handleAdminGetBaseRooms,
   handleAdminKick,
   handleAdminListRooms,
@@ -22,11 +24,15 @@ import {
   handleAdminUpdateBaseRooms,
 } from './routes/adminRooms.js';
 import {
+  handleAdminGetBotBehavior,
   handleAdminGetModConfig,
-  handleAdminServerReload,
+  handleAdminListBotBehaviors,
+  handleAdminUpdateBotBehavior,
   handleAdminUpdateModConfig,
 } from './routes/adminMods.js';
-import { handleAdminHealth } from './routes/health.js';
+import { listAvailableBotBehaviorIds } from '../../engine/bots/loadBehaviorConfig.js';
+import { handleAdminActivity } from './routes/activity.js';
+import { handleAdminHealth, handleAdminHealthHistory } from './routes/health.js';
 import { handleGetAvatars } from './routes/avatars.js';
 import {
   handleClaimScore,
@@ -158,7 +164,17 @@ export async function handleHttpRequest(
   }
 
   if (url.pathname === '/api/admin/health' && req.method === 'GET') {
-    handleAdminHealth(roomManager, admin, req, res);
+    await handleAdminHealth(roomManager, admin, req, res);
+    return;
+  }
+
+  if (url.pathname === '/api/admin/health/history' && req.method === 'GET') {
+    handleAdminHealthHistory(admin, url, req, res);
+    return;
+  }
+
+  if (url.pathname === '/api/admin/activity' && req.method === 'GET') {
+    handleAdminActivity(admin, req, res);
     return;
   }
 
@@ -194,13 +210,38 @@ export async function handleHttpRequest(
     return;
   }
 
+  if (url.pathname === '/api/admin/base-rooms/diff' && req.method === 'POST') {
+    await handleAdminDiffBaseRooms(roomManager, admin, availableModIds, req, res);
+    return;
+  }
+  if (url.pathname === '/api/admin/base-rooms/apply' && req.method === 'POST') {
+    await handleAdminApplyBaseRooms(roomManager, runtimes, admin, availableModIds, req, res);
+    return;
+  }
+
   if (url.pathname === '/api/admin/broadcast' && req.method === 'POST') {
     await handleAdminBroadcast(runtimes, admin, req, res);
     return;
   }
 
-  if (url.pathname === '/api/admin/server/reload' && req.method === 'POST') {
-    handleAdminServerReload(roomManager, admin, req, res);
+  if (url.pathname === '/api/admin/bot-behaviors' && req.method === 'GET') {
+    handleAdminListBotBehaviors(admin, req, res);
+    return;
+  }
+
+  const adminBotBehaviorMatch = /^\/api\/admin\/bot-behaviors\/([^/]+)$/.exec(url.pathname);
+  if (adminBotBehaviorMatch && req.method === 'GET') {
+    handleAdminGetBotBehavior(
+      admin,
+      decodeURIComponent(adminBotBehaviorMatch[1]!),
+      listAvailableBotBehaviorIds(),
+      req,
+      res,
+    );
+    return;
+  }
+  if (adminBotBehaviorMatch && req.method === 'PUT') {
+    await handleAdminUpdateBotBehavior(admin, decodeURIComponent(adminBotBehaviorMatch[1]!), req, res);
     return;
   }
 

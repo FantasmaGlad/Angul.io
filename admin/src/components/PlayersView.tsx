@@ -12,10 +12,16 @@ import {
 
 interface PlayersViewProps {
   token: string;
-  onAuthError: (message: string) => void;
+  onAuthError: (error: unknown) => void;
 }
 
 const PAGE_SIZE = 20;
+
+function parseOptionalInt(value: string): number | undefined {
+  if (!value.trim()) return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
 
 function generateRandomPassword(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%';
@@ -31,6 +37,12 @@ export default function PlayersView({ token, onAuthError }: PlayersViewProps) {
   const [ip, setIp] = useState('');
   const [premiumOnly, setPremiumOnly] = useState(false);
   const [bannedOnly, setBannedOnly] = useState(false);
+  /** Filtres niveau/XP (A13, plan-implementation-admin.md §3.5) — déjà supportés par
+   * `AdminSearchQuery`/`parseAdminSearchQuery` côté serveur, jusqu'ici absents de cette vue. */
+  const [minLevel, setMinLevel] = useState('');
+  const [maxLevel, setMaxLevel] = useState('');
+  const [minXp, setMinXp] = useState('');
+  const [maxXp, setMaxXp] = useState('');
   const [sortBy, setSortBy] = useState<NonNullable<AdminSearchQuery['sortBy']>>('pseudo');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [offset, setOffset] = useState(0);
@@ -62,6 +74,10 @@ export default function PlayersView({ token, onAuthError }: PlayersViewProps) {
           ip: ip.trim() || undefined,
           premium: premiumOnly || undefined,
           banned: bannedOnly || undefined,
+          minLevel: parseOptionalInt(minLevel),
+          maxLevel: parseOptionalInt(maxLevel),
+          minXp: parseOptionalInt(minXp),
+          maxXp: parseOptionalInt(maxXp),
           sortBy,
           sortDir,
           limit: PAGE_SIZE,
@@ -74,7 +90,7 @@ export default function PlayersView({ token, onAuthError }: PlayersViewProps) {
       } catch (error) {
         const message = (error as Error).message;
         setSearchError(message);
-        onAuthError(message);
+        onAuthError(error);
       }
     })();
   };
@@ -206,6 +222,34 @@ export default function PlayersView({ token, onAuthError }: PlayersViewProps) {
             />
             Bannis uniquement
           </label>
+          <input
+            type="number"
+            value={minLevel}
+            onChange={(event) => setMinLevel(event.target.value)}
+            placeholder="Niveau min"
+            style={{ maxWidth: 100 }}
+          />
+          <input
+            type="number"
+            value={maxLevel}
+            onChange={(event) => setMaxLevel(event.target.value)}
+            placeholder="Niveau max"
+            style={{ maxWidth: 100 }}
+          />
+          <input
+            type="number"
+            value={minXp}
+            onChange={(event) => setMinXp(event.target.value)}
+            placeholder="XP min"
+            style={{ maxWidth: 100 }}
+          />
+          <input
+            type="number"
+            value={maxXp}
+            onChange={(event) => setMaxXp(event.target.value)}
+            placeholder="XP max"
+            style={{ maxWidth: 100 }}
+          />
           <select value={sortBy} onChange={(event) => setSortBy(event.target.value as typeof sortBy)}>
             <option value="pseudo">Trier : Pseudo</option>
             <option value="level">Trier : Niveau</option>

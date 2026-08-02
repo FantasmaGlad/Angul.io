@@ -41,3 +41,17 @@ export async function resetPoolForTests(): Promise<void> {
     pool = undefined;
   }
 }
+
+/** Signal de disponibilité DB (P5, §5.2 cahier_des_charges_admin.md — alerte "base de données
+ * indisponible") — `true` si `DATABASE_URL` n'est simplement pas configurée (déploiement sans
+ * comptes joueurs, un choix valide, pas une panne) OU si la requête légère aboutit ; `false`
+ * uniquement si une base EST configurée mais ne répond pas. */
+export async function checkDbHealth(): Promise<boolean> {
+  if (!process.env.DATABASE_URL) return true;
+  try {
+    await getPool().query('SELECT 1');
+    return true;
+  } catch {
+    return false;
+  }
+}

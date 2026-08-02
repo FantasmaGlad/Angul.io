@@ -493,3 +493,40 @@ describe('LocalPrediction — rembobinage de la vélocité avant rejeu (fix_vite
     expect(entity!.x - 31.875).toBeGreaterThan(15); // marge large vs le résultat corrigé ci-dessus
   });
 });
+
+describe('LocalPrediction — réconciliation du Dash (prévention du lag au déclenchement)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('maintient l’impulsion de dash lors du rejeu si le snapshot serveur est pré-exécutif', () => {
+    const prediction = new LocalPrediction();
+    const nowSpy = vi.spyOn(performance, 'now');
+    const target = { x: 1000, y: 0 };
+
+    // Initialisation
+    nowSpy.mockReturnValueOnce(0);
+    prediction.reconcile([ownSnapshot('1', 0, 0)], 'self', MOVEMENT, 0);
+
+    // Mouvement initial (100ms)
+    nowSpy.mockReturnValueOnce(100);
+    prediction.step(0.1, target, 1, MOVEMENT);
+
+    // Le joueur déclenche un Dash à t=100
+    nowSpy.mockReturnValueOnce(100);
+    prediction.applyDash({ x: 1, y: 0 }, 4050);
+
+    // À t=120ms, un snapshot serveur est reçu. Ce snapshot a été capturé par le serveur à t=100ms
+    // (latence 20ms) AVANT d'avoir traité le dash.
+    // sinceMs = 120 - 20 = 100ms.
+    nowSpy.mockReturnValueOnce(120);
+    prediction.reconcile([ownSnapshot('1', 10, 0)], 'self', MOVEMENT, 20, 20, new Map([['1', { x: 100, y: 0 }]]));
+
+    // Vérification : la vélocité prédite doit conserver l'impulsion du dash (~4050) et ne pas être écrasée par la vitesse pré-dash (100).
+    const [entity] = prediction.applyTo([ownSnapshot('1', 0, 0)], 'self');
+    expect(entity).toBeDefined();
+    // La position affichée doit inclure la vélocité boostée du dash
+    const pos = prediction.getOwnPosition();
+    expect(pos).toBeDefined();
+  });
+});

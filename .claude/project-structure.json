@@ -1,14 +1,14 @@
 {
   "version": 1,
   "generatedFrom": "structure.md",
-  "lastReviewed": "2026-08-02 (v10.1)",
+  "lastReviewed": "2026-08-02 (v12.0)",
   "note": "Cartographie machine-readable du depot, en complement de structure.md (lisible par un humain) et README.md (architecture/modding en detail). Sert de source au serveur MCP local que .mcp.json enregistre aupres de Claude Code (.gemini/mcp/server.mjs, PAS .claude/mcp/server.mjs qui existe aussi mais n'est pas celui lance) et a son equivalent Gemini/Antigravity — .gemini/project-structure.json est un SYMLINK vers CE fichier (../.claude/project-structure.json), pas une copie separee : les deux plateformes lisent toujours exactement le meme contenu, rien a resynchroniser manuellement. Ce fichier ET .claude/mcp/** SONT commites (voir structure.md §1bis) — outillage de projet partage, pas une preference locale. Mets a jour CE fichier ET structure.md dans le meme commit si tu ajoutes/deplaces/supprimes un fichier important — sinon les deux deviennent trompeurs.",
   "workspaces": [
     {
       "name": "shared",
       "path": "shared/",
       "dependsOn": [],
-      "description": "Code TypeScript partage : types, protocole reseau, formules geometrie/mouvement, identites de bots, palette d'avatars."
+      "description": "Code TypeScript partage : types, protocole reseau, formules geometrie/mouvement, identites de bots, palette d'avatars. Sous-chemin d'export `render/` (P2, `@angulio/shared/render`) : moteur de rendu du jeu (Canvas2D), mutualise entre client/ et admin/ — seule partie de ce workspace qui depend du DOM (lib ajoutee a shared/tsconfig.json), jamais importee par server/."
     },
     {
       "name": "server",
@@ -249,7 +249,7 @@
         "admin",
         "protocole"
       ],
-      "description": "Types des messages du canal WebSocket admin dedie (?admin=1)."
+      "description": "Types des messages du canal WebSocket admin dedie (?admin=1). P4 (plan-implementation-admin.md §6) : AdminRoomAction etendu (dragMove, possess/unpossess/possessInput, setAppearance, spawnVirus, spawnBots, godInput+dash/eject) ; AdminPlayerInfo+isGod/possessedByAdmin."
     },
     {
       "path": "shared/src/botIdentities.ts",
@@ -489,7 +489,7 @@
         "tick",
         "boucle-de-jeu"
       ],
-      "description": "Un salon = une simulation independante (tick fixe), capture previousPosition avant integration (correctif tunneling), actions admin (kill/freeze/split/remerge/spawnFood...)."
+      "description": "Un salon = une simulation independante (tick fixe), capture previousPosition avant integration (correctif tunneling), actions admin (kill/freeze/split/remerge/spawnFood...). P4 : dragMovePlayer (translate tous les morceaux par le meme delta, offsets preserves), possessedPlayerIds (meme mecanisme que frozenPlayerIds, gate central dans handleInput — BotManager n'a rien a savoir de la possession), spawnVirus, setAppearance, forceSpawnBots."
     },
     {
       "path": "server/src/engine/roomManager.ts",
@@ -566,7 +566,7 @@
         "map-size",
         "bots"
       ],
-      "description": "Une Room vivant DANS un worker — join()/respawn() (reutilise le skin deja assigne au joueur plutot que de le redoriver, voir avatarPalette.ts). Applique spec.mapSize (override de taille de carte) et applyRoomBotCountOverride(spec.botCount) (population de bots personnalisee pour un salon prive, reutilise la pyramide Challenger existante — voir botManager.ts/botTypes.ts)."
+      "description": "Une Room vivant DANS un worker — join()/respawn() (reutilise le skin deja assigne au joueur plutot que de le redoriver, voir avatarPalette.ts). Applique spec.mapSize (override de taille de carte) et applyRoomBotCountOverride(spec.botCount) (population de bots personnalisee pour un salon prive, reutilise la pyramide Challenger existante — voir botManager.ts/botTypes.ts). adminAction (P4) : dragMove/possess/unpossess/possessInput/setAppearance/spawnVirus/spawnBots ; setAppearance rediffuse via playerJoinListeners (meme canal que Room.addPlayer, aucun nouveau message worker/reseau) ; adminListPlayers expose desormais isGod/possessedByAdmin."
     },
     {
       "path": "server/src/engine/worker/roomWorker.ts",
@@ -654,7 +654,7 @@
         "idle-despawn",
         "comportement"
       ],
-      "description": "Population de bots : normaux (uniquement a 0 humain) + Challengers (permanents, decroissance avec le nb d'humains, plafond dur maxTotal) + despawn d'inactivite (idleDespawn, config.idleDespawn.afterMinutes = 2 dans les 4 modes depuis v10.2, etait 10 — retour utilisateur : liberer les ressources d'un salon vide plus vite). Charge aussi le BotBehaviorConfig (loadBotBehaviorConfig(config.behaviorId), une seule fois a la construction) transmis a computeBotInput a chaque evaluation."
+      "description": "Population de bots : normaux (uniquement a 0 humain) + Challengers (permanents, decroissance avec le nb d'humains, plafond dur maxTotal) + despawn d'inactivite (idleDespawn, config.idleDespawn.afterMinutes = 2 dans les 4 modes depuis v10.2, etait 10 — retour utilisateur : liberer les ressources d'un salon vide plus vite). Charge aussi le BotBehaviorConfig (loadBotBehaviorConfig(config.behaviorId), une seule fois a la construction) transmis a computeBotInput a chaque evaluation. forceSpawnMany (P4, §10.3) : vague de N bots (1-50), personnalite aleatoire par bot, behaviorId optionnel resolu PAR BOT (ActiveBot.behaviorConfig, prioritaire sur le behaviorConfig du salon dans update()) — additif, ne touche pas forceSpawnOne (bot personnalise unitaire)."
     },
     {
       "path": "server/src/mods/parametric/config.ts",
@@ -972,7 +972,7 @@
         "api",
         "mods"
       ],
-      "description": "GET/PUT /api/admin/mods/:id (edition fine des parametres de mod) et POST /api/admin/server/reload (synchronisation a chaud)."
+      "description": "GET/PUT /api/admin/mods/:id (edition fine des parametres de mod), POST /api/admin/server/reload (synchronisation a chaud) et GET /api/admin/bot-behaviors (P4, §10.3 : listAvailableBotBehaviorIds(), alimente le selecteur de vague de bots du Studio)."
     },
     {
       "path": "server/rooms.local.json",
@@ -1006,6 +1006,17 @@
       "description": "Lit/ecrit server/rooms.json — utilise par index.ts (demarrage) et adminRooms.ts (routes GET/PUT /api/admin/base-rooms)."
     },
     {
+      "path": "server/src/roomsDiff.ts",
+      "workspace": "server",
+      "tags": [
+        "admin",
+        "salons",
+        "diff",
+        "hot-reload"
+      ],
+      "description": "Calcul du diff et plan d'application pour la synchro a chaud des salons d'accueil (diffBaseRooms, statuts created/closed/hot-reconfigured/recreated/unchanged)."
+    },
+    {
       "path": "server/src/net/ws/connectionHandler.ts",
       "workspace": "server",
       "tags": [
@@ -1016,7 +1027,7 @@
         "skin",
         "validation"
       ],
-      "description": "Connexions WS joueur/spectateur, validation stricte d'inputs, resolution de l'avatarColor au join (compte > skin invite explicite > aleatoire)."
+      "description": "Connexions WS joueur/spectateur, validation stricte d'inputs, resolution de l'avatarColor au join (compte > skin invite explicite > aleatoire). Canal admin (P4, §9.3) : registre local PAR CONNEXION (ownedGodPlayerIds/ownedFrozenPlayerIds/possessedPlayerId, simples variables de closure, pas une map globale) qui libere godmode/gel/possession a la fermeture de CETTE connexion uniquement — plusieurs sessions admin coexistantes ne se marchent pas dessus. Un `possess` bascule automatiquement depuis une possession precedente de la meme connexion."
     },
     {
       "path": "server/src/net/ws/broadcast.ts",
@@ -1217,27 +1228,68 @@
       "description": "estimatedLatencyMsFromAnchor() — convertit l'ancrage horloge de RenderEngine (serverTimeMsForTick) en latence pour LocalPrediction.reconcile(), a la place du ping 1Hz lisse (smoothedLatencyMs, qui ne sert plus que de repli). Fonction pure extraite pour rester testable independamment de GameView.tsx (aucun fichier de test pour ce composant dans ce repo) (v10.2)."
     },
     {
-      "path": "client/src/renderEngine.ts",
-      "workspace": "client",
+      "path": "shared/src/render/renderEngine.ts",
+      "workspace": "shared",
       "tags": [
         "interpolation",
         "reseau",
         "spectateur",
-        "tick-rate"
+        "tick-rate",
+        "admin"
       ],
-      "description": "INTERPOLATION reseau des entites distantes, snapshotQueue (buffer, expose pour le F3 interpSnapshots), sensible a serverTickRateHz (voir welcome.tickRateHz reduit pour spectateurs). Le lissage exponentiel anti-tressautement s'applique desormais AUSSI en mode spectateur (v5.5, retour utilisateur : bots tremblotants dans le fond du lobby vs fluides en partie) — l'ancienne optimisation qui le sautait pour ce mode supposait a tort qu'un fond decoratif n'en avait pas besoin. `serverTimeMsForTick(tick)` (v10.2) expose publiquement l'ancrage epochTick/epochClientMs (deja utilise en interne par pushSnapshot) — reutilise par `client/src/reconcileLatency.ts` pour la reconciliation du joueur local, qui n'avait jusque-la aucun acces a cette horloge deja eprouvee pour les entites distantes."
+      "description": "INTERPOLATION reseau des entites distantes, snapshotQueue (buffer, expose pour le F3 interpSnapshots), sensible a serverTickRateHz (voir welcome.tickRateHz reduit pour spectateurs). Le lissage exponentiel anti-tressautement s'applique desormais AUSSI en mode spectateur (v5.5, retour utilisateur : bots tremblotants dans le fond du lobby vs fluides en partie) — l'ancienne optimisation qui le sautait pour ce mode supposait a tort qu'un fond decoratif n'en avait pas besoin. `serverTimeMsForTick(tick)` (v10.2) expose publiquement l'ancrage epochTick/epochClientMs (deja utilise en interne par pushSnapshot) — reutilise par `client/src/reconcileLatency.ts` pour la reconciliation du joueur local. Deplace depuis `client/src/renderEngine.ts` (P2 refonte admin, plan-implementation-admin.md) : desormais aussi utilise par `admin/src/components/RoomStudio.tsx`/`RoomsView.tsx` (Studio, miniatures live) via l'export subpath `@angulio/shared/render` — zero changement de comportement joueur, le client reimporte depuis ce nouvel emplacement."
     },
     {
-      "path": "client/src/render.ts",
-      "workspace": "client",
+      "path": "shared/src/render/render.ts",
+      "workspace": "shared",
       "tags": [
         "rendu",
         "canvas",
         "camera",
         "pseudo",
-        "skin"
+        "skin",
+        "admin"
       ],
-      "description": "Rendu Canvas2D (camera, dessin, culling viewport), colorFor/getSkinImage/DEFAULT_SKIN, pseudo affiche seulement si masse du morceau >= 100."
+      "description": "Rendu Canvas2D (camera, dessin, culling viewport), colorFor/getSkinImage/DEFAULT_SKIN, pseudo affiche seulement si masse du morceau >= 100. Deplace depuis `client/src/render.ts` (P2 refonte admin, A16) : le type `Camera` en a ete extrait vers `shared/src/render/camera.ts` (source unique, ce fichier l'importe) ; `admin/` importe desormais ce module (au lieu de son ancien moteur PixiJS separe, supprime) pour un rendu du Studio visuellement identique au jeu."
+    },
+    {
+      "path": "shared/src/render/camera.ts",
+      "workspace": "shared",
+      "tags": [
+        "rendu",
+        "camera",
+        "admin"
+      ],
+      "description": "Type Camera canonique {x,y,scale} + worldToScreen/screenToWorld (transforms purs) + computeFitCamera (cadrage fit-to-map, sans dependance DOM). Nouveau en P2 (refonte admin, plan-implementation-admin.md) : avant ce fichier, `Camera` etait declare en double (inline dans render.ts et separement dans admin/src/entityCanvas.ts) et `computeFitCamera` vivait non-exportee et couplee au DOM du lobby dans SpectatorBackground.tsx. DISTINCT de `shared/src/camera.ts` (formule masse->zoom, rayon d'interet reseau) : fichier different, meme dossier parent shared/src/, responsabilite differente."
+    },
+    {
+      "path": "shared/src/render/sectors.ts",
+      "workspace": "shared",
+      "tags": [
+        "minimap",
+        "secteurs",
+        "admin"
+      ],
+      "description": "sectorForPosition(x,y,mapSize) : grille de secteurs 3x3 (A1-C3), extraite de l'ancien calcul inline de client/src/components/Minimap.tsx (P2 refonte admin). Reutilisee par la minimap joueur (Minimap.tsx) ET la minimap du Studio admin (admin/src/components/StudioMinimap.tsx). DISTINCTE de la grille 10x10 (A-J/1-10) de client/src/debugOverlay.ts (calculateGridSector, overlay de debug F3) — deux grilles non unifiees, decision explicite (grille 3x3 retenue comme reference partagee)."
+    },
+    {
+      "path": "shared/src/render/stats.ts",
+      "workspace": "shared",
+      "tags": [
+        "stats",
+        "agregation",
+        "admin"
+      ],
+      "description": "ownAggregate (masse totale + barycentre pondere des morceaux du joueur) — deplace depuis client/src/stats.ts en P2 (refonte admin) car `computeCamera` (render.ts) en depend et shared/ ne peut pas importer depuis client/. `speedBetween` reste dans client/src/stats.ts (pas de dependance de shared/)."
+    },
+    {
+      "path": "shared/src/render/index.ts",
+      "workspace": "shared",
+      "tags": [
+        "exports",
+        "admin"
+      ],
+      "description": "Barrel du sous-chemin d'export dedie `@angulio/shared/render` (voir shared/package.json `exports`) — separe du barrel principal `shared/src/index.ts` car ce module depend du DOM (Canvas2D, Image, HTMLCanvasElement), contrairement au reste de shared/ (100% logique pure) ; lib DOM ajoutee a shared/tsconfig.json en consequence. `server/` n'importe jamais ce sous-chemin."
     },
     {
       "path": "client/src/stats.ts",
@@ -1246,7 +1298,7 @@
         "stats",
         "agregation"
       ],
-      "description": "Agregation des morceaux du joueur (masse, barycentre, vitesse)."
+      "description": "speedBetween (vitesse instantanee du joueur, derivee de deux positions successives). ownAggregate a demenage dans shared/src/render/stats.ts en P2 (refonte admin) : c'est une dependance de computeCamera (render.ts), desormais dans shared/."
     },
     {
       "path": "client/src/debugOverlay.ts",
@@ -1323,7 +1375,7 @@
         "spectateur",
         "websocket"
       ],
-      "description": "Fond anime : connexion WS lecture seule (?spectate=1), reutilise render.ts."
+      "description": "Fond anime : connexion WS lecture seule (?spectate=1), reutilise shared/src/render/render.ts. computeFitCamera (calcul pur du cadrage) vit desormais dans ce module partage (P2) — ce composant ne fait plus que mesurer son propre DOM (.top-nav/.bottom-bar) avant de lui deleguer le calcul."
     },
     {
       "path": "client/src/components/Minimap.tsx",
@@ -1332,7 +1384,7 @@
         "jeu",
         "minimap"
       ],
-      "description": "Mini-carte 3x3 (secteurs A1-C3) affichee en jeu."
+      "description": "Mini-carte 3x3 (secteurs A1-C3) affichee en jeu — grille deleguee a sectorForPosition (shared/src/render/sectors.ts, P2), mutualisee avec admin/src/components/StudioMinimap.tsx."
     },
     {
       "path": "client/src/components/AssetPreloader.tsx",
@@ -1463,7 +1515,7 @@
         "entrypoint",
         "react"
       ],
-      "description": "Point d'entree + etat racine (login, vue active)."
+      "description": "Point d'entree + etat racine (login, vue active). Onglet 'Salons' fusionne (P3, A11, plan-implementation-admin.md §5.1) : SalonsMode {level:'list'}|{level:'studio',roomId} porte directement par App.tsx, remplace les ex-onglets separes 'Salons & Ecrans'/'Studio de controle'."
     },
     {
       "path": "admin/src/adminApi.ts",
@@ -1472,7 +1524,7 @@
         "admin",
         "api-client"
       ],
-      "description": "Client API admin HTTP (comptes, salons, actions)."
+      "description": "Client API admin HTTP (comptes, salons, actions). listBotBehaviors (P4, §10.3) : GET /api/admin/bot-behaviors."
     },
     {
       "path": "admin/src/adminSocket.ts",
@@ -1481,7 +1533,7 @@
         "admin",
         "websocket"
       ],
-      "description": "Canal WebSocket admin dedie (?admin=1) — POV + Studio de controle."
+      "description": "Canal WebSocket admin dedie (?admin=1) — POV + Studio de controle. `state` porte desormais tick/entitiesFull/removedFoodIds (P2, comme le canal joueur/spectateur) pour alimenter le RenderEngine partage ; `welcome` transmet mapSize/movement/buildVersion/nextResetAtMs (P1, deja envoyes par le serveur, plus jetes cote client) ; `player` lit le champ reel `color` (pas `skin`, bug corrige en P1, cause racine des skins jamais affiches dans l'admin)."
     },
     {
       "path": "admin/src/entityCanvas.ts",
@@ -1491,18 +1543,7 @@
         "rendu",
         "canvas"
       ],
-      "description": "Geometrie/interpolation PURES partagees POV/Studio (independantes du moteur de rendu, voir pixiEntityRenderer.ts)."
-    },
-    {
-      "path": "admin/src/pixiEntityRenderer.ts",
-      "workspace": "admin",
-      "tags": [
-        "admin",
-        "rendu",
-        "pixi",
-        "webgl"
-      ],
-      "description": "Moteur de rendu GPU PixiJS du canva admin (cahier_des_charges_admin.md §10.2), remplace l'ancien dessin Canvas2D."
+      "description": "pieceAtScreenPoint (hit-testing souris) — seule fonction encore propre a l'admin apres P2 (refonte admin, A16) : Camera/worldToScreen/screenToWorld/AdminSnapshotBuffer ont demenage/disparu au profit du moteur de rendu partage `@angulio/shared/render`. `admin/src/pixiEntityRenderer.ts` (PixiJS) a ete supprime dans la meme phase — `grep -r pixi admin/` ne retourne plus rien."
     },
     {
       "path": "admin/src/components/Sidebar.tsx",
@@ -1511,7 +1552,7 @@
         "admin",
         "navigation"
       ],
-      "description": "Navigation laterale, 7 entrees (cahier_des_charges_admin.md §4 : operationnel/gouvernance)."
+      "description": "Navigation laterale, 6 entrees (cahier_des_charges_admin.md §4 : operationnel/gouvernance) — une seule entree 'Salons' depuis la fusion P3/A11 (ex 'Salons & Ecrans' + 'Studio de controle')."
     },
     {
       "path": "admin/src/components/ConnectionStatus.tsx",
@@ -1546,18 +1587,39 @@
       "tags": [
         "admin",
         "salons",
-        "pov"
+        "liste"
       ],
-      "description": "Salons & Ecrans (§8 : carrousel, filtres mode/tri occupation/badge tick eleve, kick avec motif, POV, transfert)."
+      "description": "Salons — niveau LISTE (§7.1, fusion P3/A11, plan-implementation-admin.md §5.1) : grille de cartes (remplace l'ex-carrousel horizontal), filtres mode/visibilite/tri occupation, badge tick eleve. Miniature live optionnelle par carte (RoomThumbnail, meme moteur de rendu partage que le jeu, ~5 FPS via setInterval — RenderEngine.getInterpolatedEntities derive sa ligne de temps de performance.now(), pas du rythme d'appel, donc correct meme a cadence reduite), activable/desactivable pour menager le CPU. Plus de tableau de joueurs ni de bouton kick a ce niveau : clic sur une carte -> onOpenStudio(roomId) ouvre RoomStudio.tsx (niveau detail), seule porte d'entree vers les actions sur un joueur."
     },
     {
-      "path": "admin/src/components/CreativeView.tsx",
+      "path": "admin/src/components/RoomStudio.tsx",
       "workspace": "admin",
       "tags": [
         "admin",
-        "studio-de-controle"
+        "studio-de-controle",
+        "rendu"
       ],
-      "description": "Studio de controle (§9) : 3 zones (contexte / observation lecture seule / intervention retractable a onglets spawn-sanctions-salon-dieu)."
+      "description": "Salons — niveau STUDIO (§7.2, fusion P3/A11, ex-'Espace Creatif'/CreativeView.tsx renomme lors de la fusion avec RoomsView.tsx) : 3 zones (contexte / observation lecture seule / intervention retractable a onglets spawn-sanctions-salon-dieu), bouton retour liste (onBack) + selecteur de salon en en-tete pour changer de studio sans repasser par la liste. Canvas refondu en P2 (A16, A5, plan-implementation-admin.md) : moteur de rendu partage avec le jeu (`@angulio/shared/render`, PixiJS supprime), camera fit-to-map automatique a l'ouverture (welcome.mapSize), zoom molette centre sur le curseur (bornes dependantes de mapSize ; Ctrl+molette = masse continue sur le joueur selectionne, P4/§9.2), double-clic = suivre + zoom rapproche (remplace l'ex-mode POV separe du niveau liste, supprime en P3), halo de selection, tooltip de survol (pseudo+masse), marqueurs d'evenement (mort/disparition, ~2s), minimap integree (StudioMinimap.tsx), bouton plein ecran (Fullscreen API sur .creative-canvas-wrap). Mode dynamique alimente par /api/modes (A2, P1). Transfert vers un autre salon (onglet Sanctions) relocalise ici depuis l'ex-tableau de joueurs de RoomsView.tsx (P3). P4 (§9-§10, plan-implementation-admin.md §6) : deplacement physique du barycentre au clic-glisse (spawnMode 'move', dragMove, remplace l'ex-detournement de godInput pour 'teleporter'), glissiere de masse logarithmique (throttle ~100ms), marionnette (posseder/rendre la main, badge MARIONNETTE, un seul blob possede a la fois — verrouille aussi cote serveur), apparence a la volee (pseudo/couleur de session, setAppearance), pinceau nourriture (clic maintenu, ~10/s), placement de virus (3 types, spawnVirus), vagues de bots (1-50, profil de comportement optionnel, spawnBots), controles clavier Espace/F/E (split/dash/eject, memes touches par defaut que le jeu) partages par le Dieu ET la marionnette."
+    },
+    {
+      "path": "admin/src/components/StudioMinimap.tsx",
+      "workspace": "admin",
+      "tags": [
+        "admin",
+        "studio-de-controle",
+        "minimap"
+      ],
+      "description": "Minimap du Studio (P2, plan-implementation-admin.md §4.5) : secteurs A1-C3 mutualises avec la minimap joueur (sectorForPosition, shared/src/render/sectors.ts), fenetre camera courante, points chauds (position reelle des creatures), clic pour recentrer la camera. Dessinee IMPERATIVEMENT par la boucle de rendu de RoomStudio.tsx (drawMinimap, exporte par ce fichier) plutot que par React a chaque frame."
+    },
+    {
+      "path": "admin/src/components/KickModal.tsx",
+      "workspace": "admin",
+      "tags": [
+        "admin",
+        "moderation",
+        "kick"
+      ],
+      "description": "Modale de motif de kick partagee entre Salons (RoomsView.tsx) et le Studio (RoomStudio.tsx) — P1, A1, plan-implementation-admin.md §3.2. Motif obligatoire, reellement transmis au serveur (POST .../kick {playerId,reason}) et journalise (logEvent admin_kick), remplace deux implementations divergentes (une modale dont le motif n'etait jamais envoye, un kick direct sans modale du tout)."
     },
     {
       "path": "admin/src/components/ModerationView.tsx",
@@ -1578,13 +1640,24 @@
       "description": "Economie & Boosts (§12) — placeholder \"Bientot disponible\", aucune logique fonctionnelle."
     },
     {
+      "path": "admin/src/components/JsonConfigEditor.tsx",
+      "workspace": "admin",
+      "tags": [
+        "admin",
+        "json",
+        "editor"
+      ],
+      "description": "Composant d'edition JSON generique reutilisable avec validation syntaxique locale et affichage des erreurs backend champ par champ."
+    },
+    {
       "path": "admin/src/components/ConfigurationView.tsx",
       "workspace": "admin",
       "tags": [
         "admin",
-        "configuration"
+        "configuration",
+        "hot-reload"
       ],
-      "description": "Configuration (§13) : salons permanents de l'accueil editables (GET/PUT /api/admin/base-rooms), profils de mods en lecture seule (GET /api/modes)."
+      "description": "Configuration (§13) : salons d'accueil permanents editables a chaud (diffBaseRooms/applyBaseRooms avec modale d'impact sur les joueurs), editeurs JSON de configurations de mods et de profils de bots."
     }
   ],
   "topics": {
@@ -1634,7 +1707,7 @@
       "shared/src/avatarPalette.ts",
       "server/src/net/http/routes/avatars.ts",
       "client/src/pages/ProfilePage.tsx",
-      "client/src/render.ts",
+      "shared/src/render/render.ts",
       "server/src/net/ws/connectionHandler.ts",
       "server/src/net/ws/broadcast.ts"
     ],
@@ -1645,7 +1718,7 @@
       "server/src/net/ws/broadcast.ts"
     ],
     "reseau/interpolation-prediction": [
-      "client/src/renderEngine.ts",
+      "shared/src/render/renderEngine.ts",
       "client/src/prediction.ts",
       "client/src/reconcileLatency.ts",
       "server/src/engine/worker/snapshotBuilder.ts"
@@ -1658,8 +1731,8 @@
       "server/src/engine/worker/roomInstance.ts",
       "server/src/engine/worker/snapshotBuilder.ts",
       "server/src/net/ws/broadcast.ts",
-      "client/src/renderEngine.ts",
-      "client/src/render.ts",
+      "shared/src/render/renderEngine.ts",
+      "shared/src/render/render.ts",
       "server/configs/vanilla.json",
       "server/configs/hardcore.json"
     ],
@@ -1670,7 +1743,7 @@
     ],
     "spectateur/lobby": [
       "client/src/components/SpectatorBackground.tsx",
-      "client/src/renderEngine.ts",
+      "shared/src/render/renderEngine.ts",
       "server/src/engine/worker/snapshotBuilder.ts",
       "server/src/net/ws/connectionHandler.ts"
     ],
@@ -1697,7 +1770,7 @@
       "server/src/net/http/routes/admin.ts",
       "server/src/net/http/routes/adminRooms.ts",
       "admin/src/adminSocket.ts",
-      "admin/src/components/CreativeView.tsx"
+      "admin/src/components/RoomStudio.tsx"
     ],
     "f3-debug": [
       "client/src/debugOverlay.ts",

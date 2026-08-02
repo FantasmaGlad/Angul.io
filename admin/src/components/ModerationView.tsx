@@ -3,7 +3,7 @@ import { searchAccounts, type AdminAccountView } from '../adminApi.js';
 
 interface ModerationViewProps {
   token: string;
-  onAuthError: (message: string) => void;
+  onAuthError: (error: unknown) => void;
 }
 
 /** Module Modération (§11 cahier_des_charges_admin.md) — v1 : liste des comptes actuellement
@@ -31,7 +31,7 @@ export default function ModerationView({ token, onAuthError }: ModerationViewPro
       } catch (err) {
         const message = (err as Error).message;
         setError(message);
-        onAuthError(message);
+        onAuthError(err);
       } finally {
         setLoading(false);
       }

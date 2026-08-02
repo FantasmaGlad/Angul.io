@@ -7,7 +7,7 @@ import { navigate } from '../router.js';
 export default function BottomBar() {
   return (
     <footer className="bottom-bar">
-      <span className="game-footer-item font-semibold text-white/75 glow-sm">Version 11.0</span>
+      <span className="game-footer-item font-semibold text-white/75 glow-sm">Version 12.0</span>
       <span>Angul.io 2026</span>
       <button
         type="button"

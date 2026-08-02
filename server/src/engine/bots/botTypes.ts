@@ -33,6 +33,12 @@ export interface CustomBotSpawnOptions {
   mass?: number;
   x?: number;
   y?: number;
+  /** Profil de comportement/tuning explicite (id de `server/configs/bots/*.json`, voir
+   * `loadBotBehaviorConfig`) — AXE DISTINCT de la "personnalité" `BotProfileKind`
+   * (fuis/neutre/agressif, toujours tirée aléatoirement même quand ce champ est fourni, voir
+   * `BotManager.forceSpawnMany`) : ce champ ne change QUE le réglage fin (agressivité, seuils de
+   * split...) appliqué au sein de la personnalité obtenue, jamais la personnalité elle-même. */
+  behaviorId?: string;
 }
 
 export interface BotProportions {

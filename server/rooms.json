@@ -1,10 +1,12 @@
 [
   {
     "name": "Vanilla",
-    "modId": "vanilla"
+    "modId": "vanilla",
+    "id": "da31e39a-d78a-437f-acc1-fa91eaaa7f5d"
   },
   {
     "name": "Hardcore",
-    "modId": "hardcore"
+    "modId": "hardcore",
+    "id": "56db0c3d-501a-4f06-8569-2de14bcd8702"
   }
 ]

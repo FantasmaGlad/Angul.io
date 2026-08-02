@@ -40,17 +40,18 @@ import { estimatedLatencyMsFromAnchor } from '../reconcileLatency.js';
 import {
   BASE_SCALE,
   computeCamera,
+  ownAggregate,
   renderFrame,
+  RenderEngine,
   type Camera,
-} from '../render.js';
-import { RenderEngine } from '../renderEngine.js';
+} from '@angulio/shared/render';
 import { navigate } from '../router.js';
 import {
   loadFpsSliderIndex,
   loadVsyncEnabled,
   minFrameIntervalMs as computeMinFrameIntervalMs,
 } from '../settings.js';
-import { ownAggregate, speedBetween } from '../stats.js';
+import { speedBetween } from '../stats.js';
 import Minimap from './Minimap.js';
 import VirtualControls from './VirtualControls.js';
 

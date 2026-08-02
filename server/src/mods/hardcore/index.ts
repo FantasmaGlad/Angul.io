@@ -242,11 +242,13 @@ export function createHardcoreMod(
     onCollision(world: World, a: Entity, b: Entity, dt: number) {
       if (a.kind === 'particle' && b.kind === 'particle') return;
 
-      // Nourriture et fusion/collision dure entre morceaux du même joueur : comportement
+      // Nourriture, virus et fusion/collision dure entre morceaux du même joueur : comportement
       // inchangé, délégué tel quel au mod paramétrique sous-jacent.
       if (
         a.kind === 'particle' ||
         b.kind === 'particle' ||
+        a.kind === 'virus' ||
+        b.kind === 'virus' ||
         (a.ownerId && a.ownerId === b.ownerId)
       ) {
         base.onCollision?.(world, a, b, dt);

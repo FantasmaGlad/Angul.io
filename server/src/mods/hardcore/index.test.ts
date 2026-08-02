@@ -148,6 +148,25 @@ describe('createHardcoreMod — onCollision (nourriture et fusion, comportement 
     expect(remaining).toHaveLength(1);
     expect(remaining[0]?.mass).toBeCloseTo(200, 6);
   });
+
+  it('un joueur de masse >= 1.05 * m_virus (315+) mange le virus rouge et explose en morceaux', () => {
+    const config = testConfig();
+    const mod = createHardcoreMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Alice');
+    const bigPiece = world.spawnPiece('p1', { x: 500, y: 500 }, 350);
+    const virus = world.spawnVirus({ x: 500, y: 500 }, 300, 2);
+
+    mod.onCollision?.(world, bigPiece, virus, 1 / 20);
+
+    // Le virus rouge doit être supprimé
+    expect(world.getEntity(virus.id)).toBeUndefined();
+    // Le joueur a mangé la masse du virus (350 + 300 = 650) et a explosé en plusieurs morceaux
+    const pieces = world.getPiecesByOwner('p1');
+    expect(pieces.length).toBeGreaterThan(1);
+    const totalMass = pieces.reduce((sum, p) => sum + p.mass, 0);
+    expect(totalMass).toBeCloseTo(650, 6);
+  });
 });
 
 describe('createHardcoreMod — transformScoreForAccount', () => {

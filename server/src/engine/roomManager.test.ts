@@ -400,4 +400,83 @@ describe('RoomManager', () => {
       expect(manager.allManagedRooms().find((r) => r.id === summary.id)).toBeUndefined();
     });
   });
+
+  describe('synchro à chaud des salons de base (P6, §8.1-8.3 plan-implementation-admin.md)', () => {
+    it('findByBaseRoomId retrouve un salon par baseRoomId, pas par nom', () => {
+      const manager = makeManager();
+      const summary = manager.createRoom({
+        name: 'Vanilla',
+        modId: 'vanilla',
+        visibility: 'public',
+        baseRoomId: 'base-1',
+      });
+
+      expect(manager.findByBaseRoomId('base-1')?.id).toBe(summary.id);
+      expect(manager.findByBaseRoomId('inconnu')).toBeUndefined();
+    });
+
+    it('closeRoom(id) sans délai détruit immédiatement le salon', () => {
+      const manager = makeManager();
+      const summary = manager.createRoom({ name: 'A', modId: 'vanilla', visibility: 'public' });
+
+      expect(manager.closeRoom(summary.id)).toBe(true);
+      expect(manager.getManagedRoom(summary.id)).toBeUndefined();
+    });
+
+    it('closeRoom(id) renvoie false pour un salon déjà absent', () => {
+      const manager = makeManager();
+      expect(manager.closeRoom('inconnu')).toBe(false);
+    });
+
+    it('closeRoom(id, {delaySeconds}) diffère la destruction — le salon existe encore juste après l’appel', async () => {
+      vi.useFakeTimers();
+      try {
+        const manager = makeManager();
+        const summary = manager.createRoom({ name: 'A', modId: 'vanilla', visibility: 'public' });
+
+        expect(manager.closeRoom(summary.id, { delaySeconds: 10 })).toBe(true);
+        // Toujours vivant immédiatement après l'appel (annonce en jeu encore visible côté route
+        // appelante, voir adminRooms.ts) — seule la DESTRUCTION est différée.
+        expect(manager.getManagedRoom(summary.id)).toBeDefined();
+
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(manager.getManagedRoom(summary.id)).toBeUndefined();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('setRoomResetSchedule reprogramme le salon vivant SANS reset immédiat et met à jour nextResetAtMsOf', async () => {
+      const manager = makeManager();
+      const summary = manager.createRoom({
+        name: 'A',
+        modId: 'vanilla',
+        visibility: 'public',
+        resetSchedule: { type: 'everyNMinutes', minutes: 120, timeZone: 'Europe/Paris' },
+      });
+      const managed = manager.getManagedRoom(summary.id)!;
+      const tickBefore = managed.room!.currentTick;
+
+      const ok = await manager.setRoomResetSchedule(summary.id, {
+        type: 'everyNMinutes',
+        minutes: 30,
+        timeZone: 'Europe/Paris',
+      });
+      expect(ok).toBe(true);
+      // Aucun reset déclenché par la reprogrammation elle-même (le tick de simulation n'a pas
+      // bougé, indépendant de scheduleReset).
+      expect(managed.room!.currentTick).toBe(tickBefore);
+
+      const nextResetAtMs = manager.nextResetAtMsOf(managed)!;
+      // La nouvelle planification (30 min) doit produire une échéance nettement plus proche que
+      // l'ancienne (120 min) — comparaison large (< 31 min) plutôt qu'une valeur exacte, sensible
+      // à l'horloge murale réelle du test (voir resetSchedule.ts).
+      expect(nextResetAtMs - Date.now()).toBeLessThanOrEqual(31 * 60_000);
+    });
+
+    it('setRoomResetSchedule renvoie false pour un salon inconnu', async () => {
+      const manager = makeManager();
+      expect(await manager.setRoomResetSchedule('inconnu', null)).toBe(false);
+    });
+  });
 });

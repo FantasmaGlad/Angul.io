@@ -1,4 +1,5 @@
 import { monitorEventLoopDelay, type IntervalHistogram } from 'node:perf_hooks';
+import { checkDbHealth } from '../db/pool.js';
 import type { RoomManager } from '../engine/roomManager.js';
 import { logEvent } from '../log.js';
 
@@ -47,6 +48,8 @@ export interface HealthSnapshot {
   cpu: { userMs: number; systemMs: number; elapsedMs: number; busyRatio: number };
   memory: { rssMb: number; heapUsedMb: number };
   rooms: RoomHealthSnapshot[];
+  /** P5 (§5.2 cahier_des_charges_admin.md) — voir `checkDbHealth` (db/pool.ts). */
+  dbOk: boolean;
 }
 
 /**
@@ -56,7 +59,7 @@ export interface HealthSnapshot {
  * détaille la charge par salon (utile pour repérer LEQUEL sature le process). Sert de baseline
  * avant toute migration vers des workers dédiés (voir plan_implementation).
  */
-export function buildHealthSnapshot(roomManager: RoomManager): HealthSnapshot {
+export async function buildHealthSnapshot(roomManager: RoomManager): Promise<HealthSnapshot> {
   const eventLoopDelay = eventLoopMonitor
     ? {
         meanMs: eventLoopMonitor.mean / NS_PER_MS,
@@ -92,6 +95,8 @@ export function buildHealthSnapshot(roomManager: RoomManager): HealthSnapshot {
     };
   });
 
+  const dbOk = await checkDbHealth();
+
   return {
     uptimeSec: Math.round(process.uptime()),
     eventLoopDelay: eventLoopDelay
@@ -113,5 +118,6 @@ export function buildHealthSnapshot(roomManager: RoomManager): HealthSnapshot {
       heapUsedMb: Math.round((memoryUsage.heapUsed / 1024 / 1024) * 10) / 10,
     },
     rooms,
+    dbOk,
   };
 }

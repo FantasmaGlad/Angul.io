@@ -7,11 +7,12 @@ import { AccountsService } from './accounts/service.js';
 import { AdminAuth } from './admin/adminAuth.js';
 import { AdminUsersRepository } from './admin/adminUsersRepository.js';
 import { getPool } from './db/pool.js';
+import { resolveBaseRoomCreateOptions } from './engine/baseRoomOptions.js';
 import { listAvailableModIds, resolveMod } from './engine/modRegistry.js';
-import { TWO_HOUR_RESET_SCHEDULE } from './engine/resetSchedule.js';
 import { RoomManager } from './engine/roomManager.js';
 import { createLocalRoomHost } from './engine/worker/roomHost.js';
 import { createWorkerRoomHost } from './engine/worker/workerRoomHost.js';
+import { startHealthHistory } from './net/metrics/healthHistory.js';
 import { startGameServer } from './net/server.js';
 import { loadBaseRoomsConfig } from './roomsConfig.js';
 import { logEvent } from './log.js';
@@ -41,7 +42,6 @@ process.on('unhandledRejection', (reason) => {
 // (le "digest" ne doit PAS dépendre de ce taux, cf. son propre correctif, hors périmètre ici).
 const TICK_RATE_HZ = process.env.TICK_RATE_HZ ? Number(process.env.TICK_RATE_HZ) : 20;
 const PORT = Number(process.env.PORT ?? 8080);
-const BASE_ROOM_MAX_PLAYERS = 30;
 
 /** Nombre de threads de simulation dédiés — répartit les salons sur des threads séparés
  * (un par cœur dédié) afin d'isoler l'exécution des salons (un lag sur le salon 1 n'impacte pas le salon 2). */
@@ -57,36 +57,25 @@ const roomManager = new RoomManager(roomHost, TICK_RATE_HZ);
 // Salons publics de base toujours présents à l'accueil — liste et mode attribué à chacun lus
 // depuis `server/rooms.json` (§13 cahier_des_charges_admin.md : "ne pas hardcoder les salons
 // principaux", éditable via l'interface admin, `GET/PUT /api/admin/base-rooms`, voir
-// roomsConfig.ts) plutôt qu'un tableau codé en dur ici — un changement de ce fichier ne prend
-// effet qu'au prochain redémarrage (les salons déjà démarrés ne sont pas recréés à la volée, voir
-// le commentaire de `saveBaseRoomsConfig`). Remplis à 10-20% de bots (ratio fluctuant, voir
-// BotManager.updateFluctuatingRatio — `targetRatio` volontairement absent des configs pour
-// laisser ce ratio s'appliquer ; `BotManager.adjustPopulation` fait respawner les bots
-// automatiquement dès que leur nombre baisse). Jamais supprimés par le nettoyage automatique des
-// salons vides (durcissement avant exposition publique) : contrairement aux salons créés depuis
-// le lobby, ils doivent toujours exister, même si personne n'y joue jamais.
-//
-// Capacité et cadence de reset lues depuis `ParametricModConfig['room']` (server/configs/*.json,
-// voir mods/parametric/config.ts) — modifiables par un modder sans toucher ce fichier ; repli sur
-// `BASE_ROOM_MAX_PLAYERS`/`TWO_HOUR_RESET_SCHEDULE` uniquement pour un mod dont la config JSON
-// omet cette section.
+// roomsConfig.ts) plutôt qu'un tableau codé en dur ici. Ce peuplement initial (au boot) et les
+// routes diff/apply à chaud (P6, adminRooms.ts, éditées depuis l'onglet Configuration) partagent
+// exactement la même logique de dérivation des options (voir `resolveBaseRoomCreateOptions`,
+// engine/baseRoomOptions.ts) — un changement ultérieur de `rooms.json` via l'admin s'applique
+// désormais À CHAUD, plus besoin de redémarrer ce process (A4 cahier_des_charges_admin.md).
+// Remplis à 10-20% de bots (ratio fluctuant, voir BotManager.updateFluctuatingRatio —
+// `targetRatio` volontairement absent des configs pour laisser ce ratio s'appliquer ;
+// `BotManager.adjustPopulation` fait respawner les bots automatiquement dès que leur nombre
+// baisse). Jamais supprimés par le nettoyage automatique des salons vides (durcissement avant
+// exposition publique) : contrairement aux salons créés depuis le lobby, ils doivent toujours
+// exister, même si personne n'y joue jamais.
 const BASE_ROOMS = loadBaseRoomsConfig();
-const baseRooms = BASE_ROOMS.map((base) => {
-  const { room, mapSize: modMapSize } = resolveMod(base.modId);
-  return roomManager.createRoom({
-    name: base.name,
-    modId: base.modId,
+const baseRooms = BASE_ROOMS.map((base) =>
+  roomManager.createRoom({
+    ...resolveBaseRoomCreateOptions(base, resolveMod),
     visibility: 'public',
     permanent: true,
-    maxPlayers: base.maxPlayers ?? room?.maxPlayers ?? BASE_ROOM_MAX_PLAYERS,
-    mapSize: base.mapSize ?? modMapSize,
-    resetSchedule: base.resetDurationMin !== undefined
-      ? (base.resetDurationMin > 0
-          ? { type: 'everyNMinutes', minutes: base.resetDurationMin, timeZone: 'Europe/Paris' }
-          : undefined)
-      : (room?.resetSchedule ?? TWO_HOUR_RESET_SCHEDULE),
-  });
-});
+  }),
+);
 
 // Comptes joueurs (Lot 3.2-3.6) : optionnels — sans `DATABASE_URL`, le serveur tourne comme
 // avant (parties anonymes uniquement), pas de plantage au démarrage pour un dev/CI qui n'a pas
@@ -118,6 +107,12 @@ startGameServer(roomManager, {
   admin,
   buildVersion: BUILD_VERSION,
 });
+
+// Historique santé pour le Dashboard (P5, §7.1 plan-implementation-admin.md) — démarré une seule
+// fois ici (jamais dans `startGameServer`, appelé plusieurs fois par la suite de tests sans
+// équivalent "stop" : `healthHistory.ts` resterait sinon à échantillonner en tâche de fond pour
+// le reste du process de test).
+startHealthHistory(roomManager);
 
 const baseRoomsDescription = baseRooms
   .map((room) => `"${room.name}" (mode ${room.modId}, id ${room.id})`)

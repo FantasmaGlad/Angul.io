@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -12,8 +13,11 @@ const LOCAL_ROOMS_CONFIG_PATH = fileURLToPath(new URL('../rooms.local.json', imp
 /** Un salon permanent de l'accueil (§8.4/§13 cahier_des_charges_admin.md) — capacité/taille/bots
  * restent définis par la config du mod lui-même (`server/configs/<modId>.json`), pas dupliqués
  * ici : ce fichier ne décide QUE de la liste des salons qui existent par défaut et du mode
- * attribué à chacun. */
+ * attribué à chacun. `id` (P6, §8.1 plan-implementation-admin.md) : identifiant stable, généré
+ * une fois et jamais réattribué — remplace l'ancien appariement fragile par nom (voir
+ * `roomManager.ts` `baseRoomId`/`findByBaseRoomId`, utilisé par les routes diff/apply). */
 export interface BaseRoomConfig {
+  id: string;
   name: string;
   modId: string;
   mapSize?: number;
@@ -36,7 +40,19 @@ export function loadBaseRoomsConfig(): BaseRoomConfig[] {
   if (!Array.isArray(parsed)) {
     throw new Error('Le fichier de salons doit contenir un tableau de { name, modId }.');
   }
-  return parsed as BaseRoomConfig[];
+
+  // Migration silencieuse (§8.1) : un fichier existant écrit avant l'introduction de `id` (ou une
+  // entrée ajoutée à la main) reçoit un id fraîchement généré, persisté IMMÉDIATEMENT — jamais
+  // recalculé à une lecture suivante, sinon l'appariement (`baseRoomId`) redeviendrait aussi
+  // fragile que l'ancien appariement par nom qu'il remplace.
+  let migrated = false;
+  const rooms: BaseRoomConfig[] = (parsed as Array<Partial<BaseRoomConfig>>).map((room) => {
+    if (room.id) return room as BaseRoomConfig;
+    migrated = true;
+    return { ...room, id: randomUUID() } as BaseRoomConfig;
+  });
+  if (migrated) saveBaseRoomsConfig(rooms);
+  return rooms;
 }
 
 /** Écrit `server/rooms.local.json` (et `server/rooms.json` en secours) — utilisé par la route admin

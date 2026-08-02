@@ -626,6 +626,13 @@ input:focus {
   display: block;
   cursor: crosshair;
 }
+/* Plein écran du canvas du Studio (Fullscreen API sur .creative-canvas-wrap, pas le <canvas> seul
+   — les boutons pseudos/plein écran et la minimap doivent rester visibles/cliquables). */
+.creative-canvas-wrap:fullscreen {
+  border-radius: 0;
+  border: none;
+  background: #0a0b0f;
+}
 
 .context-menu-backdrop {
   position: fixed;
@@ -753,6 +760,61 @@ input:focus {
   border-radius: 50%;
   background: var(--danger);
   flex-shrink: 0;
+}
+
+/* --- Salons (fusion Salons & Écrans + Studio, A11) : grille de cartes du niveau liste ------ */
+.salons-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+.salons-card {
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.salons-card:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+.salons-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.salons-card-title {
+  font-weight: 700;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.salons-card-thumb,
+.salons-card-thumb-placeholder {
+  width: 100%;
+  height: 150px;
+  border-radius: var(--radius-md);
+  display: block;
+}
+.salons-card-thumb {
+  background: #12141a;
+}
+.salons-card-thumb-placeholder {
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
 }
 .activity-feed {
   list-style: none;

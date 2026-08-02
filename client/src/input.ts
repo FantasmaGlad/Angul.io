@@ -1,6 +1,6 @@
 import type { Vector2 } from '@angulio/shared';
+import type { Camera } from '@angulio/shared/render';
 import { loadKeybinds, type KeybindConfig } from './keybinds.js';
-import type { Camera } from './render.js';
 
 /** Rayon en pixels écran au-delà duquel l'intensité de déplacement est maximale (100%). En
  *-deçà, l'intensité (et donc la vitesse/accélération appliquées côté serveur) est

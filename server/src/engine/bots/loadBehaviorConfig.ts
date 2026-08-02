@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_BOT_BEHAVIOR_CONFIG, type BotBehaviorConfig } from './behaviorConfig.js';
 
@@ -46,4 +46,12 @@ export function listAvailableBotBehaviorIds(): string[] {
   } catch {
     return [];
   }
+}
+
+/** Écrit `server/configs/bots/<id>.json` (P6, §8.7 plan-implementation-admin.md — éditeur JSON,
+ * même mécanisme que `saveModConfig`, mods/parametric/loadConfig.ts). L'appelant (route HTTP) est
+ * responsable de la validation AVANT cet appel (voir `validateBotBehaviorConfig`). */
+export function saveBotBehaviorConfig(id: string, config: BotBehaviorConfig): void {
+  const path = `${BOT_CONFIGS_DIR}/${id}.json`;
+  writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`, 'utf-8');
 }

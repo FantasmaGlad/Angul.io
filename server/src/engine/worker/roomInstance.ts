@@ -6,6 +6,7 @@ import {
 } from '@angulio/shared';
 import { DEFAULT_CHALLENGER_CONFIG } from '../bots/botTypes.js';
 import type { BotConfig } from '../../mods/parametric/config.js';
+import { isGodPlayerId } from '../godmode.js';
 import { Room } from '../room.js';
 import type { ModResolver } from '../roomManager.js';
 import type { Entity, EntityId, PlayerId, PlayerInput } from '../types.js';
@@ -262,7 +263,59 @@ export class RoomInstance {
           target: { x: action.x, y: action.y },
           intensity: action.intensity,
           split: action.split,
+          dash: action.dash,
+          eject: action.eject,
         });
+        return { ok: true };
+      case 'dragMove':
+        return { ok: this.room.dragMovePlayer(action.playerId, { x: action.x, y: action.y }) };
+      case 'possess': {
+        if (!this.room.world.getPlayer(action.playerId)) return { ok: false };
+        this.room.setPossessed(action.playerId, true);
+        return { ok: true };
+      }
+      case 'unpossess':
+        this.room.setPossessed(action.playerId, false);
+        return { ok: true };
+      case 'possessInput':
+        if (!this.room.isPossessed(action.playerId)) return { ok: false };
+        this.room.possessInput(action.playerId, {
+          target: { x: action.x, y: action.y },
+          intensity: action.intensity,
+          split: action.split,
+          dash: action.dash,
+          eject: action.eject,
+        });
+        return { ok: true };
+      case 'setAppearance': {
+        const ok = this.room.setAppearance(action.playerId, {
+          nickname: action.nickname,
+          skin: action.color,
+        });
+        // Rediffusion réseau (§9.4) — réutilise EXACTEMENT le même canal que `Room.addPlayer` (voir
+        // le constructeur, `this.room.onPlayerJoin(...)` ci-dessus) : `broadcast.ts` (`wireRoom`)
+        // ne fait aucune différence entre "vrai join" et "rediffusion suite à un changement
+        // d'apparence", il met simplement à jour ses maps et renvoie `player` à tous les viewers —
+        // exactement l'effet recherché ici, sans nouveau message worker/réseau à plomber.
+        if (ok) {
+          const player = this.room.world.getPlayer(action.playerId);
+          if (player) {
+            for (const listener of this.playerJoinListeners) {
+              listener({ playerId: action.playerId, nickname: player.nickname, skin: player.skin });
+            }
+          }
+        }
+        return { ok };
+      }
+      case 'spawnVirus':
+        this.room.spawnVirus({ x: action.x, y: action.y }, action.virusType);
+        return { ok: true };
+      case 'spawnBots':
+        return {
+          ok: this.room.forceSpawnBots(action.count, action.mass, action.behaviorProfile),
+        };
+      case 'setResetSchedule':
+        this.room.setResetSchedule(action.schedule);
         return { ok: true };
       default:
         return { ok: false };
@@ -281,6 +334,8 @@ export class RoomInstance {
         .reduce((sum, piece) => sum + piece.mass, 0),
       isBot: this.room.botManager?.isBot(player.id) ?? false,
       isFrozen: this.room.isFrozen(player.id),
+      isGod: isGodPlayerId(player.id),
+      possessedByAdmin: this.room.isPossessed(player.id),
     }));
   }
 

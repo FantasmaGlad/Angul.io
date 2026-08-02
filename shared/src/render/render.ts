@@ -1,11 +1,10 @@
 import {
   BASE_SCALE,
   computeScaleForMass,
-  DEFAULT_SKIN,
-  SKIN_IMAGE_MAP,
-  skinForNickname,
-  type EntitySnapshot,
-} from '@angulio/shared';
+} from '../camera.js';
+import { DEFAULT_SKIN, SKIN_IMAGE_MAP, skinForNickname } from '../avatarPalette.js';
+import type { EntitySnapshot } from '../protocol.js';
+import type { Camera } from './camera.js';
 import { ownAggregate } from './stats.js';
 
 export { BASE_SCALE };
@@ -96,8 +95,8 @@ function getVirusImage(vId: 1 | 2 | 3): HTMLImageElement {
 }
 
 /** BASE_SCALE/MIN_SCALE/MAX_SCALE/REFERENCE_MASS (formule complète de zoom en fonction de la
- * masse) vivent désormais dans `@angulio/shared` (`camera.ts`) — le serveur en a besoin pour
- * dériver le rayon d'intérêt réseau à partir de la même masse (filtrage par intérêt, voir
+ * masse) vivent dans `shared/src/camera.ts` — le serveur en a besoin pour dériver le rayon
+ * d'intérêt réseau à partir de la même masse (filtrage par intérêt, voir
  * server/src/engine/worker/interestFilter.ts) : une seule formule des deux côtés élimine tout
  * risque de divergence entre "ce que le client affiche" et "ce que le serveur envoie". `BASE_SCALE`
  * reste ré-exporté d'ici (voir l'import ci-dessus) pour ne rien casser des appelants existants de
@@ -140,12 +139,6 @@ export function foodColorForMass(mass: number): string {
 /** Espacement de la grille en pixels *monde* (donc fixe quel que soit le zoom, comme des
  * carreaux de papier millimétré vus de plus ou moins loin). */
 const GRID_SPACING_WORLD_PX = 100;
-
-export interface Camera {
-  x: number;
-  y: number;
-  scale: number;
-}
 
 /** Centre la caméra sur le barycentre (pondéré par la masse) des morceaux du joueur, et
  * dézoome à mesure que sa masse totale augmente (comportement Agar.io classique). */

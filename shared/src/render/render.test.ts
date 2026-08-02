@@ -1,4 +1,4 @@
-import type { EntitySnapshot } from '@angulio/shared';
+import type { EntitySnapshot } from '../protocol.js';
 import { describe, expect, it } from 'vitest';
 import {
   BASE_SCALE,

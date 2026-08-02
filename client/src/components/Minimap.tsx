@@ -1,4 +1,5 @@
 import { clamp } from '@angulio/shared';
+import { sectorForPosition } from '@angulio/shared/render';
 
 interface MinimapProps {
   position?: { x: number; y: number };
@@ -21,11 +22,7 @@ export default function Minimap({ position, playerMass, mapSize }: MinimapProps)
   const scaledDiameterPx = (playerDiameterUnits / effectiveSize) * gridDimensionPx;
   const dotDiameter = Math.max(6, Math.min(60, Math.round(scaledDiameterPx)));
 
-  const colIdx = Math.min(2, Math.floor((posX / effectiveSize) * 3));
-  const rowIdx = Math.min(2, Math.floor((posY / effectiveSize) * 3));
-
-  const rowLetters = ['A', 'B', 'C'];
-  const sector = `${rowLetters[rowIdx]}${colIdx + 1}`;
+  const sector = sectorForPosition(posX, posY, effectiveSize);
 
   const cells = [
     { label: 'A1' },
