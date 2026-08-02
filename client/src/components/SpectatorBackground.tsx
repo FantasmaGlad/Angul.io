@@ -118,7 +118,18 @@ export default function SpectatorBackground({ roomId, zooming }: SpectatorBackgr
           true,
           stateRef.current.mapSize,
         );
-        renderFrame(ctx!, canvas!, entities, camera, stateRef.current.nicknames, stateRef.current.colors);
+        renderFrame(
+          ctx!,
+          canvas!,
+          entities,
+          camera,
+          stateRef.current.nicknames,
+          stateRef.current.colors,
+          undefined,
+          undefined,
+          undefined,
+          true, // hideNicknames: masquer les pseudos sur le fond de l'accueil/lobby
+        );
       }
       rafId = requestAnimationFrame(frame);
     }

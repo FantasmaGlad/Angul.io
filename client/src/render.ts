@@ -241,6 +241,7 @@ export function renderFrame(
   selfPlayerId?: string,
   mapSize?: number,
   borderType?: string,
+  hideNicknames?: boolean,
 ): RenderFrameResult {
   let drawCalls = 0;
   const canvasWidth = canvas.clientWidth;
@@ -331,7 +332,7 @@ export function renderFrame(
     ctx.stroke();
     drawCalls++;
 
-    const nickname = entity.p && nicknames.get(entity.p);
+    const nickname = hideNicknames ? undefined : (entity.p ? nicknames.get(entity.p) : undefined);
     const showNickname = Boolean(nickname) && entity.m >= 100;
     if (showNickname) {
       ctx.textAlign = 'center';
