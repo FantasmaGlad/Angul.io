@@ -44,7 +44,7 @@ export default function ModerationView({ token, onAuthError }: ModerationViewPro
       <div className="top-bar">
         <div>
           <h2>Modération</h2>
-          <p className="view-subtitle">Sanctions actives — comptes actuellement bannis.</p>
+          <p className="view-subtitle">Actions &amp; sanctions actives — comptes actuellement bannis.</p>
         </div>
       </div>
 

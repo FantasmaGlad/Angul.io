@@ -169,36 +169,48 @@ export default function DashboardView({ token, onAuthError, onOpenRoom, onGoToCo
   const [broadcastStatus, setBroadcastStatus] = useState('');
 
   useEffect(() => {
-    const refresh = (): void => {
-      void Promise.all([listRooms(token), getHealth(token), getActivity(token)])
-        .then(([roomsRes, healthRes, activityRes]) => {
-          setRooms(roomsRes);
-          setHealth(healthRes);
-          setActivity(activityRes);
-          setError('');
-        })
-        .catch((err: unknown) => {
-          setError((err as Error).message);
-          onAuthError(err);
-        });
+    let cancelled = false;
+    const refresh = async (): Promise<void> => {
+      try {
+        const roomsRes = await listRooms(token);
+        if (cancelled) return;
+        const [healthRes, activityRes] = await Promise.all([getHealth(token), getActivity(token)]);
+        if (cancelled) return;
+        setRooms(roomsRes);
+        setHealth(healthRes);
+        setActivity(activityRes);
+        setError('');
+      } catch (err: unknown) {
+        if (cancelled) return;
+        setError((err as Error).message);
+        onAuthError(err);
+      }
     };
-    refresh();
-    const interval = setInterval(refresh, REFRESH_INTERVAL_MS);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+    void refresh();
+    const interval = setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [token, onAuthError]);
 
   useEffect(() => {
-    const refreshHistory = (): void => {
-      void getHealthHistory(token, historyHours)
-        .then(setHistory)
-        .catch((err: unknown) => onAuthError(err));
+    let cancelled = false;
+    const refreshHistory = async (): Promise<void> => {
+      try {
+        const points = await getHealthHistory(token, historyHours);
+        if (!cancelled) setHistory(points);
+      } catch (err: unknown) {
+        if (!cancelled) onAuthError(err);
+      }
     };
-    refreshHistory();
-    const interval = setInterval(refreshHistory, HISTORY_REFRESH_INTERVAL_MS);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, historyHours]);
+    void refreshHistory();
+    const interval = setInterval(() => void refreshHistory(), HISTORY_REFRESH_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [token, historyHours, onAuthError]);
 
   const totalPlayers = rooms.reduce((sum, room) => sum + room.stats.playerCount, 0);
   const avgTick =

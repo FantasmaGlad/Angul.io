@@ -366,18 +366,22 @@ export default function RoomStudio({ token, onAuthError, initialRoomId, onBack }
     let dragAccumMs = 0;
 
     function resize(): void {
-      canvas!.width = canvas!.clientWidth;
-      canvas!.height = canvas!.clientHeight;
+      if (!canvas) return;
+      const w = canvas.clientWidth || (document.fullscreenElement ? window.innerWidth : 0);
+      const h = canvas.clientHeight || (document.fullscreenElement ? window.innerHeight : 0);
+      if (w > 0 && h > 0 && (canvas.width !== w || canvas.height !== h)) {
+        canvas.width = w;
+        canvas.height = h;
+      }
     }
     resize();
     window.addEventListener('resize', resize);
 
-    // Plein écran (§8.3bis) : `resize()` doit être rappelé explicitement à l'entrée/sortie — un
-    // changement de mode plein écran ne déclenche pas toujours un `resize` fenêtre fiable selon le
-    // navigateur, contrairement à un redimensionnement de fenêtre classique.
     function onFullscreenChange(): void {
-      resize();
       setIsFullscreen(document.fullscreenElement === canvasWrapRef.current);
+      resize();
+      setTimeout(resize, 50);
+      requestAnimationFrame(resize);
     }
     document.addEventListener('fullscreenchange', onFullscreenChange);
 
@@ -596,6 +600,9 @@ export default function RoomStudio({ token, onAuthError, initialRoomId, onBack }
     // interpolation que `renderFrame`/`RenderEngine` (@angulio/shared/render), plus les surcouches
     // admin (halo de sélection, tooltip de survol, marqueurs d'événement, minimap).
     function frame(): void {
+      if (canvas && (canvas.width !== canvas.clientWidth || canvas.height !== canvas.clientHeight)) {
+        resize();
+      }
       const now = performance.now();
       const dtMs = now - lastFrameAt;
       lastFrameAt = now;
@@ -1211,7 +1218,7 @@ export default function RoomStudio({ token, onAuthError, initialRoomId, onBack }
                 {(
                   [
                     ['spawn', 'Spawn'],
-                    ['sanctions', 'Sanctions'],
+                    ['sanctions', 'Actions'],
                     ['salon', 'Salon'],
                     ['god', 'Dieu'],
                   ] as const

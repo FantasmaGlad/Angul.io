@@ -629,9 +629,21 @@ input:focus {
 /* Plein écran du canvas du Studio (Fullscreen API sur .creative-canvas-wrap, pas le <canvas> seul
    — les boutons pseudos/plein écran et la minimap doivent rester visibles/cliquables). */
 .creative-canvas-wrap:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  inset: 0;
   border-radius: 0;
   border: none;
   background: #0a0b0f;
+  z-index: 9999;
+}
+.creative-canvas-wrap:fullscreen .creative-canvas {
+  width: 100vw;
+  height: 100vh;
+  flex: 1;
 }
 
 .context-menu-backdrop {
