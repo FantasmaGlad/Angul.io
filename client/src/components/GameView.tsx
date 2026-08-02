@@ -439,6 +439,9 @@ export default function GameView({
           });
         }
       },
+      () => {
+        prediction.applyEject(12);
+      },
     );
     inputRef.current = input;
 
@@ -575,6 +578,7 @@ export default function GameView({
           message.tick,
           serverTickRateHz,
           message.entitiesFull,
+          message.removedFoodIds,
         );
         serverTpsCurrent = tickRateTracker.record(latestSnapshotAt);
         if (message.leaderboard) {

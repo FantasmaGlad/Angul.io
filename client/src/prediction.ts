@@ -568,13 +568,32 @@ export class LocalPrediction {
    * n'applique qu'UNE cible par tick (celle du dernier `input` reçu), on retient la cible du DERNIER
    * échantillon du bloc pour tout le bloc plutôt que de mélanger plusieurs cibles dans un seul
    * `integrate()`. */
+  /** Déduit immédiatement `ejectMass` du plus gros morceau du joueur local lors d'une éjection W
+   * pour éviter tout décalage de masse/rayon et rollback visuel au state serveur suivant. */
+  applyEject(ejectMass = 12): void {
+    if (this.pieces.size === 0) return;
+    let largestPiece: PredictedPiece | undefined;
+    for (const piece of this.pieces.values()) {
+      if (!largestPiece || piece.mass > largestPiece.mass) largestPiece = piece;
+    }
+    if (largestPiece && largestPiece.mass > ejectMass + 1) {
+      largestPiece.mass -= ejectMass;
+    }
+  }
+
+  /** Regroupe les échantillons fins de `step()` (pas `FIXED_STEP_SECONDS`, 1/240s) en blocs dont la
+   * durée cumulée correspond au pas serveur (1/`serverTickRateHz`) avant rejeu — plutôt qu'un
+   * `integrate()` par échantillon fin.
+   *
+   * Preserve les sous-pas lors d'un virage (cible en mouvement rapide/changement de direction) :
+   * l'intégration d'un virage par 12 sous-pas fins décrit une courbe lisse, alors que 1 seul pas
+   * grossier vers la cible finale ferait un saut en corde d'arc (erreur géométrique de 30-60px),
+   * perçu comme du lag/rollback lors des changements de direction de la souris. */
   private chunkHistoryForReplay(
     samples: InputSample[],
     serverTickRateHz: number | undefined,
   ): Array<{ dtSeconds: number; target: Vector2; intensity: number }> {
     if (!serverTickRateHz || serverTickRateHz <= 0) {
-      // Cadence serveur inconnue (ex. mod de test) : repli sur l'ancien comportement, un bloc par
-      // échantillon fin — jamais le cas en production, où `welcome` fournit toujours `tickRateHz`.
       return samples.map((sample) => ({
         dtSeconds: sample.dtSeconds,
         target: sample.target,
@@ -584,27 +603,33 @@ export class LocalPrediction {
 
     const tickSeconds = 1 / serverTickRateHz;
     const chunks: Array<{ dtSeconds: number; target: Vector2; intensity: number }> = [];
+    let currentChunkSamples: InputSample[] = [];
     let accDtSeconds = 0;
-    let lastTarget: Vector2 | undefined;
-    let lastIntensity = 0;
 
     for (const sample of samples) {
+      currentChunkSamples.push(sample);
       accDtSeconds += sample.dtSeconds;
-      lastTarget = sample.target;
-      lastIntensity = sample.intensity;
-      // Tolérance flottante : la somme de plusieurs `FIXED_STEP_SECONDS` peut manquer `tickSeconds`
-      // de quelques ulps même quand elle le couvre exactement (ex. 8×1/240s vs 1/30s).
       if (accDtSeconds >= tickSeconds - 1e-9) {
-        chunks.push({ dtSeconds: accDtSeconds, target: lastTarget, intensity: lastIntensity });
+        const firstTarget = currentChunkSamples[0]!.target;
+        const isTurning = currentChunkSamples.some(
+          (s) => distance(s.target, firstTarget) > 1.0,
+        );
+        if (isTurning) {
+          for (const s of currentChunkSamples) {
+            chunks.push({ dtSeconds: s.dtSeconds, target: s.target, intensity: s.intensity });
+          }
+        } else {
+          const last = currentChunkSamples[currentChunkSamples.length - 1]!;
+          chunks.push({ dtSeconds: accDtSeconds, target: last.target, intensity: last.intensity });
+        }
         accDtSeconds = 0;
-        lastTarget = undefined;
+        currentChunkSamples = [];
       }
     }
-    // Reliquat plus court qu'un tick plein (fin de fenêtre de rejeu) : rejoué tel quel, borné par
-    // construction à moins de `tickSeconds` — pas de biais significatif sur un intervalle aussi
-    // court.
-    if (accDtSeconds > 0 && lastTarget) {
-      chunks.push({ dtSeconds: accDtSeconds, target: lastTarget, intensity: lastIntensity });
+    if (currentChunkSamples.length > 0) {
+      for (const s of currentChunkSamples) {
+        chunks.push({ dtSeconds: s.dtSeconds, target: s.target, intensity: s.intensity });
+      }
     }
     return chunks;
   }

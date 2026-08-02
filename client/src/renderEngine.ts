@@ -195,6 +195,7 @@ export class RenderEngine {
     tick: number,
     serverTickRateHz?: number,
     entitiesFull: boolean = true,
+    removedFoodIds?: string[],
   ): void {
     if (serverTickRateHz && serverTickRateHz > 0) {
       this.serverTickRateHz = serverTickRateHz;
@@ -231,6 +232,9 @@ export class RenderEngine {
     }
     if (entitiesFull) {
       this.knownFood.clear();
+    }
+    if (removedFoodIds && removedFoodIds.length > 0) {
+      this.forgetFood(removedFoodIds);
     }
     for (const food of receivedFood) this.knownFood.set(food.i, food);
     const mergedEntities =

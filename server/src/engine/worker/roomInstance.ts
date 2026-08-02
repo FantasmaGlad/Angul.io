@@ -493,14 +493,13 @@ export class RoomInstance {
 
         // Nourriture : delta — seuls les ids NOUVELLEMENT dans l'intérêt du joueur depuis son
         // dernier envoi sont inclus, sauf tick de resynchronisation complète (périodique, étalée
-        // par joueur — voir `isResyncTick`) ou premier envoi jamais fait à ce joueur.
         particles ??= allEntities.filter((e) => e.kind === 'particle');
         coarseFoodIndex ??= buildCoarseFoodIndex(particles);
         const candidateFoodIds = queryCoarseFoodIndex(coarseFoodIndex, center, radius);
         const currentFoodIds = new Set<EntityId>();
         for (const id of candidateFoodIds) {
           const entity = world.getEntity(id);
-          if (!entity) continue; // mangée entre la construction de l'index et cette requête
+          if (!entity) continue;
           const dx = entity.position.x - center.x;
           const dy = entity.position.y - center.y;
           if (dx * dx + dy * dy <= radiusSq) currentFoodIds.add(id);
@@ -509,6 +508,7 @@ export class RoomInstance {
         const lastSent = this.lastSentFoodIdsByPlayer.get(playerId);
         const resync = !lastSent || isResyncTick(playerId, tick, resyncIntervalTicks);
         const foodSnapshots: ReturnType<typeof toSnapshot>[] = [];
+        const removedFoodIds: string[] = [];
         if (resync) {
           for (const id of currentFoodIds) {
             const entity = world.getEntity(id);
@@ -516,6 +516,12 @@ export class RoomInstance {
           }
           this.lastSentFoodIdsByPlayer.set(playerId, currentFoodIds);
         } else {
+          for (const id of Array.from(lastSent)) {
+            if (!currentFoodIds.has(id)) {
+              removedFoodIds.push(id);
+              lastSent.delete(id);
+            }
+          }
           for (const id of currentFoodIds) {
             const entity = world.getEntity(id);
             if (!entity) continue;
@@ -529,6 +535,21 @@ export class RoomInstance {
 
         entitiesForPlayer = [...pieceSnapshots, ...foodSnapshots];
         entitiesFull = resync;
+
+        const { message, totalMass } = buildStateMessage({
+          room: this.room,
+          playerId,
+          tick,
+          entities: entitiesForPlayer,
+          topScores,
+          entitiesFull,
+          removedFoodIds: removedFoodIds.length > 0 ? removedFoodIds : undefined,
+        });
+        payloads.push({ playerId, message });
+
+        const previousMax = this.maxMassByPlayer.get(playerId) ?? 0;
+        if (totalMass > previousMax) this.maxMassByPlayer.set(playerId, totalMass);
+        continue;
       }
 
       const { message, totalMass } = buildStateMessage({

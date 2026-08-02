@@ -157,6 +157,10 @@ export interface WorldStateMessage {
    * les morceaux ('c', kind 'piece') sont toujours réenvoyés en entier tant qu'ils restent dans
    * l'intérêt du destinataire (ils bougent, un delta n'aurait pas de sens pour eux). */
   entitiesFull?: boolean;
+  /** Identifiants des pastilles de nourriture retirées (mangées) depuis le dernier snapshot delta —
+   * permet au client de supprimer instantanément la nourriture mangée de son cache local dès le
+   * premier tick sans attendre la resynchronisation périodique (~5s). */
+  removedFoodIds?: string[];
   leaderboard?: LeaderboardEntry[];
   /** Valeurs propres au destinataire de ce message, jamais partagées avec les autres clients
    * (contrairement à `entities`, diffusé tel quel). */

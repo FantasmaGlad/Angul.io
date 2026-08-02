@@ -95,6 +95,7 @@ export function attachInput(
   canvas: HTMLCanvasElement,
   onSplitRequested?: () => void,
   onDashRequested?: () => void,
+  onEjectRequested?: () => void,
 ): InputTracker {
   const keybinds: KeybindConfig = loadKeybinds();
 
@@ -139,6 +140,7 @@ export function attachInput(
     } else if (isEjectKey) {
       event.preventDefault();
       ejectRequested = true;
+      onEjectRequested?.();
     }
   };
 

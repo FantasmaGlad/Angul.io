@@ -203,6 +203,7 @@ export interface BuildStateMessageParams {
    * message construit, jamais recalculé ici : l'appelant (`RoomInstance.handleTick`) est seul à
    * savoir si `entities` est le résultat d'un filtrage par intérêt complet/delta. */
   entitiesFull: boolean;
+  removedFoodIds?: string[];
 }
 
 /** Construit le message `state` d'un seul destinataire (joueur ou spectateur) — logique
@@ -213,7 +214,7 @@ export interface BuildStateMessageParams {
 export function buildStateMessage(
   params: BuildStateMessageParams,
 ): { message: ServerMessage; totalMass: number } {
-  const { room, playerId, tick, entities, topScores, entitiesFull } = params;
+  const { room, playerId, tick, entities, topScores, entitiesFull, removedFoodIds } = params;
   const world = room.world;
 
   const ownPieces = world.getPiecesByOwner(playerId);
@@ -256,7 +257,15 @@ export function buildStateMessage(
   }));
 
   return {
-    message: { type: 'state', tick, entities, leaderboard, self, entitiesFull },
+    message: {
+      type: 'state',
+      tick,
+      entities,
+      leaderboard,
+      self,
+      entitiesFull,
+      ...(removedFoodIds && removedFoodIds.length > 0 ? { removedFoodIds } : {}),
+    },
     totalMass,
   };
 }
