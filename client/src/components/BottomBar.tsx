@@ -7,7 +7,7 @@ import { navigate } from '../router.js';
 export default function BottomBar() {
   return (
     <footer className="bottom-bar">
-      <span>Version 9.7</span>
+      <span>Version 10.0</span>
       <span>Angul.io 2026</span>
       <button
         type="button"

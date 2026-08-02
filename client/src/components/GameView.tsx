@@ -365,6 +365,7 @@ export default function GameView({
       },
       () => {
         if (currentModId !== 'hardcore') return;
+        if (!currentCanDash) return;
         // Aucune charge disponible (recharge en cours) ou déjà divisé (plus d'un morceau, voir
         // `getDashState`, hardcore/index.ts) : le serveur ignorerait silencieusement cet input de
         // toute façon — jouer quand même le zoom caméra/l'impulsion de prédiction locale ici
@@ -861,12 +862,11 @@ export default function GameView({
       const zoomMultiplier = 1 + dashZoomBonus;
       const targetScale = targetCamera.scale * zoomMultiplier;
 
-      // Suivi de caméra ultra-fluide et indépendant du framerate :
-      // - cameraPosLerp (k = 10) : suit le joueur de manière ultra-fluide, élimine le tremblottement
-      //   lors des virages rapides à haute vitesse et absorbe les téléportations lors des splits multiples.
+      // Suivi de caméra ultra-fluide et réactif :
+      // - cameraPosLerp (k = 35) : suit le joueur sans retard visuel tout en absorbant les micro-accoups.
       // - cameraScaleLerp (k = 12) : ajuste le zoom lors de la prise de masse (manger) en ~150ms.
       const cameraScaleLerp = 1 - Math.exp(-12 * (frameDt / 1000));
-      const cameraPosLerp = 1 - Math.exp(-10 * (frameDt / 1000));
+      const cameraPosLerp = 1 - Math.exp(-35 * (frameDt / 1000));
 
       let dx = targetCamera.x - latestCamera.x;
       let dy = targetCamera.y - latestCamera.y;

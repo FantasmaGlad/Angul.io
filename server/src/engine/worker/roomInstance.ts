@@ -517,10 +517,13 @@ export class RoomInstance {
           this.lastSentFoodIdsByPlayer.set(playerId, currentFoodIds);
         } else {
           for (const id of currentFoodIds) {
-            if (lastSent.has(id)) continue;
             const entity = world.getEntity(id);
-            if (entity) foodSnapshots.push(toSnapshot(entity));
-            lastSent.add(id);
+            if (!entity) continue;
+            const isMoving = entity.velocity.x !== 0 || entity.velocity.y !== 0;
+            if (!lastSent.has(id) || isMoving) {
+              foodSnapshots.push(toSnapshot(entity));
+              lastSent.add(id);
+            }
           }
         }
 
