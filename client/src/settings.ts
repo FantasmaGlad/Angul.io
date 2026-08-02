@@ -52,3 +52,16 @@ export function minFrameIntervalMs(vsyncEnabled: boolean, fpsSliderIndex: number
   const step = FPS_SLIDER_STEPS[clampFpsSliderIndex(fpsSliderIndex)] ?? 'unlimited';
   return step === 'unlimited' ? 0 : 1000 / step;
 }
+
+export const DEFAULT_HIDE_EAT_FLASH = false;
+const HIDE_EAT_FLASH_STORAGE_KEY = 'angulio.hideEatFlash';
+
+export function loadHideEatFlash(): boolean {
+  const raw = localStorage.getItem(HIDE_EAT_FLASH_STORAGE_KEY);
+  if (raw === null) return DEFAULT_HIDE_EAT_FLASH;
+  return raw === 'true';
+}
+
+export function saveHideEatFlash(hide: boolean): void {
+  localStorage.setItem(HIDE_EAT_FLASH_STORAGE_KEY, String(hide));
+}

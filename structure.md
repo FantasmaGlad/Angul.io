@@ -493,7 +493,7 @@ commune `PageLayout.tsx`.
 | `PageLayout.tsx` | — | Coquille commune (titre + bouton retour rond icône-seule, `.subpage-back` — plus de libellé texte depuis v5.5) |
 | `AccountPage.tsx` | `/compte` | Connexion/inscription/déconnexion |
 | `ProfilePage.tsx` | `/profil` | Niveau/XP/Premium/cosmétiques/scores + avatar (caroussel pleine largeur, aligné sur les autres cartes de la colonne) + personnalisation écran de mort. Badge NIVEAU en pastille blanche glassmorphism |
-| `SettingsPage.tsx` | `/parametres` | Plafond FPS/Vsync, son, touches (réglages locaux à l'appareil) |
+| `SettingsPage.tsx` | `/parametres` | Effets visuels (masquage flash rouge d'absorption `DisplaySettings.tsx`), son (`AudioSettings.tsx`), touches/manette (`KeybindSettings.tsx`) (réglages locaux à l'appareil) |
 | `LeaderboardPage.tsx` | `/classement` | Classement global |
 | `SupportPage.tsx` | `/soutenir` | Explication du don libre + lien de don |
 | `AboutPage.tsx` | `/a-propos` | Nom du projet, licence (le numéro de version affiché aux joueurs vit dans `BottomBar.tsx`, pas ici) |

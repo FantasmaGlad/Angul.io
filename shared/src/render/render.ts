@@ -238,6 +238,8 @@ export function renderFrame(
   mapSize?: number,
   borderType?: string,
   hideNicknames?: boolean,
+  hideEatFlash?: boolean,
+  eatFlashIntensity?: number,
 ): RenderFrameResult {
   let drawCalls = 0;
   const canvasWidth = canvas.clientWidth;
@@ -408,6 +410,15 @@ export function renderFrame(
   const largeCreatures = sortedCreatures.filter((e) => e.m >= 210);
   for (const entity of largeCreatures) {
     renderCreature(entity);
+  }
+
+  if (!hideEatFlash && eatFlashIntensity !== undefined && eatFlashIntensity > 0) {
+    ctx.save();
+    const alpha = Math.min(0.35, eatFlashIntensity * 0.35);
+    ctx.fillStyle = `rgba(220, 38, 38, ${alpha.toFixed(3)})`;
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+    ctx.restore();
+    drawCalls++;
   }
 
   return {
