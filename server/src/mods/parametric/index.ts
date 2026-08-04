@@ -43,6 +43,41 @@ import { pieceState } from './pieceState.js';
  * peut ne pas tomber exactement sur 0 selon `dt`. */
 const ABSORPTION_REMOVE_FLOOR = 0.5;
 
+/** Multiplicateur de `targetVirusCount()` au-delà duquel une duplication de Virus Vert/Bleu (voir
+ * `onCollision`, branche `vId === 1 || vId === 3`) est ignorée plutôt qu'exécutée — même famille de
+ * bug que le Virus Rouge (voir son commentaire) : nourrir un virus le fait se dupliquer, or le
+ * duplicata hérite d'une vélocité de tir (600px/s) qui le fait traverser un champ de nourriture en
+ * mouvement, l'engraissant vite et le faisant potentiellement redupliquer à son tour — un nombre
+ * d'entités qui peut s'emballer en chaîne, sans jamais être réduit par la maintenance de population
+ * (`targetVirusCount`, plus haut dans ce fichier, ne fait qu'AJOUTER jusqu'à la cible, jamais
+ * retirer un surplus). 3x la cible ambiante laisse largement la place à la récompense normale de
+ * "nourrir le virus" (le mécanisme reste inchangé jusque-là) tout en empêchant un nombre d'entités
+ * qui grandit indéfiniment. */
+const VIRUS_DUPLICATION_HEADROOM = 3;
+
+/** Le Virus Rouge (ID 2) ne fixe JAMAIS lui-même `virus.radius` après un changement de masse (voir
+ * `onCollision`/`onTick` plus bas, qui appellent uniquement `world.setMass(virus, ...)`) — incident
+ * de production Hardcore (salon 3, 2026-08-04 23h) : l'ancien code réécrivait `virus.radius = 150 *
+ * sqrt(virus.mass / 300)` juste après CHAQUE `world.setMass`, une formule propre au virus bien plus
+ * raide que la courbe standard (`massToRadius`/`blobGrowthFactor`, shared/geometry.ts) que
+ * `world.setMass` applique déjà de lui-même à TOUTE entité, y compris un virus (son `kind` n'est pas
+ * `'particle'`) — exactement la même courbe qui régit un morceau de joueur, plate à haute masse
+ * (exposant 0.38 au-delà de 10x la masse de spawn) précisément pour qu'un très gros blob reste bon
+ * marché en collision (voir son commentaire : "un très gros blob continue de grossir... mais chaque
+ * tranche de masse supplémentaire se voit proportionnellement de moins en moins"). Un virus dont le
+ * rayon dépasse `spatialHash.maxGridEntityRadius()` bascule en "grande entité" (voir SpatialHash) —
+ * sa requête de collision (`World.findOverlappingPairs`, `queryRadius(large.radius +
+ * maxSmallReach)`) scanne O((rayon/cellSize)²) cellules À CHAQUE TICK — et comme un virus déjà plus
+ * gros mange plus de monde (tout ce qui est `< virus.mass`), sa croissance s'auto-alimente : plus il
+ * mange, plus il grossit, plus il mange. Avec l'ancienne formule (rayon ∝ √masse, jamais plus plate)
+ * ce rayon — et donc ce coût — grandissait presque aussi vite que la masse elle-même ; confirmé en
+ * prod par le p95 des ticks du salon Hardcore passant de 38ms à >210ms en moins de 20 minutes après
+ * un reset (`room_tick_slow`, journalctl), CPU du process à 80% en continu. Laisser `world.setMass`
+ * appliquer SA courbe (jamais de plafond de masse — le virus doit pouvoir devenir réellement
+ * immense, voir le dégonflement plus bas qui le fait fondre en nourriture) traite le virus
+ * EXACTEMENT comme un gros joueur/bot Challenger, dont le rayon reste bon marché quelle que soit sa
+ * masse — aucun cas particulier à maintenir ici. */
+
 /** Amorce l'absorption d'un morceau dont le seuil de recouvrement vient d'être franchi —
  * n'effectue AUCUN transfert de masse elle-même, seulement une marque posée sur `target` (voir
  * `ParametricPieceState.consumedBy`), consommée ensuite tick après tick par
@@ -751,7 +786,6 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         if (virus.kind === 'virus' && virus.virusId === 2 && virus.mass > 300) {
           const massLost = Math.min(virus.mass - 300, 30 * dt);
           world.setMass(virus, virus.mass - massLost);
-          virus.radius = 150 * Math.sqrt(virus.mass / 300);
           virus.data.spitCredit = ((virus.data.spitCredit as number) ?? 0) + massLost;
           while ((virus.data.spitCredit as number) >= 1) {
             virus.data.spitCredit = (virus.data.spitCredit as number) - 1;
@@ -786,14 +820,21 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
           }
           if ((virus.data.fedMass as number) >= 200) {
             virus.data.fedMass = 0;
-            const dir = (virus.data.lastEjectDirection as Vector2) ?? { x: 1, y: 0 };
-            const newPos = add(virus.position, scale(dir, virus.radius * 2));
-            const dup = world.spawnVirus(newPos, virus.mass, vId);
-            dup.velocity = scale(dir, 600);
+            // Plafond de population (voir VIRUS_DUPLICATION_HEADROOM) : au-delà, la récompense de
+            // "nourrir le virus" reste acquise (fedMass consommé comme d'habitude) mais n'engendre
+            // plus de nouvel exemplaire.
+            const currentCount = world
+              .allEntities()
+              .filter((e) => e.kind === 'virus' && e.virusId === vId).length;
+            if (currentCount < targetVirusCount() * VIRUS_DUPLICATION_HEADROOM) {
+              const dir = (virus.data.lastEjectDirection as Vector2) ?? { x: 1, y: 0 };
+              const newPos = add(virus.position, scale(dir, virus.radius * 2));
+              const dup = world.spawnVirus(newPos, virus.mass, vId);
+              dup.velocity = scale(dir, 600);
+            }
           }
         } else if (vId === 2) {
           world.setMass(virus, virus.mass + particle.mass);
-          virus.radius = 150 * Math.sqrt(virus.mass / 300);
         }
         return;
       }
@@ -816,7 +857,6 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         if (vId === 2) { // Rouge (Mass 300 carnivore, mange les blobs plus petits < virus.mass, explose si >= minMassToEat)
           if (piece.mass < virus.mass) {
             world.setMass(virus, virus.mass + piece.mass);
-            virus.radius = 150 * Math.sqrt(virus.mass / 300);
             finalizeConsumedEntity(world, undefined, piece, piece.mass);
             return;
           }

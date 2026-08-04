@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { massToRadius } from '@angulio/shared';
 import { World } from '../../engine/world.js';
 import { createParametricMod } from './index.js';
 import type { ParametricModConfig } from './config.js';
@@ -113,6 +114,49 @@ describe('Virus Mechanics', () => {
     expect(p2Pieces.length).toBe(32);
   });
 
+  it('Virus Rouge (ID 2): la masse grandit sans plafond, mais le rayon suit exactement la même courbe géométrique qu’un morceau de joueur (régression, incident prod Hardcore 2026-08-04)', () => {
+    const config = createTestConfig(2);
+    const mod = createParametricMod(config);
+    const world = new World({ mapSize: 10000 });
+
+    const virus = world.spawnVirus({ x: 500, y: 500 }, 300, 2);
+    world.addPlayer('p1', 'Player 1');
+
+    // Enchaîne des absorptions toujours juste sous la masse courante du virus (jamais assez pour
+    // l'exploser) — la masse doit grandir sans AUCUNE limite (design voulu : le virus peut devenir
+    // réellement immense), mais son rayon doit rester celui de `massToRadius` (courbe standard des
+    // blobs, shared/geometry.ts, plate à haute masse) — jamais l'ancienne formule custom `150 *
+    // sqrt(mass/300)`, bien plus raide, dont la croissance auto-alimentée (plus gros -> mange plus
+    // -> encore plus gros) a fait exploser le coût de collision par tick en production.
+    for (let i = 0; i < 10; i++) {
+      const piece = world.spawnPiece('p1', { x: 500, y: 500 }, virus.mass * 0.9);
+      mod.onCollision(world, piece, virus, 0.016);
+      expect(world.getEntity(piece.id)).toBeUndefined();
+    }
+
+    expect(virus.mass).toBeGreaterThan(100_000); // aucun plafond de masse
+    expect(virus.radius).toBeCloseTo(massToRadius(virus.mass), 5);
+  });
+
+  it('Virus Rouge (ID 2): la masse gagnée par nourriture éjectée dessus n’est pas plafonnée non plus et suit la même courbe', () => {
+    const config = createTestConfig(2);
+    const mod = createParametricMod(config);
+    const world = new World({ mapSize: 10000 });
+
+    const virus = world.spawnVirus({ x: 500, y: 500 }, 300, 2);
+
+    // Un joueur qui spamme l'éjection de masse sur le virus est un second chemin vers la même
+    // masse (`virus.mass`), indépendant de l'absorption de morceaux ci-dessus — même courbe de
+    // rayon attendue dans les deux cas.
+    for (let i = 0; i < 500; i++) {
+      const particle = world.spawnParticle({ x: 500, y: 500 }, 40);
+      mod.onCollision(world, particle, virus, 0.016);
+    }
+
+    expect(virus.mass).toBe(300 + 500 * 40);
+    expect(virus.radius).toBeCloseTo(massToRadius(virus.mass), 5);
+  });
+
   it('Virus Bleu (ID 3): performs 4x4 (16) chain reaction split over 2 ticks', () => {
     const config = createTestConfig(3);
     const mod = createParametricMod(config);
@@ -152,5 +196,36 @@ describe('Virus Mechanics', () => {
 
     const afterViruses = world.allEntities().filter((e) => e.kind === 'virus');
     expect(afterViruses.length).toBe(2);
+  });
+
+  it('Virus Vert (ID 1): la duplication est plafonnée à un multiple de la population visée (régression, même famille de bug que le Virus Rouge)', () => {
+    // Arène minuscule pour que `targetVirusCount()` retombe sur son plancher (1) — le plafond de
+    // duplication (VIRUS_DUPLICATION_HEADROOM = 3x, mods/parametric/index.ts) vaut alors 3.
+    const config: ParametricModConfig = {
+      ...createTestConfig(1),
+      arena: { width: 100, height: 100, borderType: 'STRICT_WALL' },
+    };
+    const mod = createParametricMod(config);
+    const world = new World({ mapSize: 100 });
+
+    // Sature la population de virus AU-DELÀ du plafond avant de tenter une nouvelle duplication —
+    // sans plafond, nourrir un virus déjà dupliqué peut lui aussi redupliquer (le duplicata hérite
+    // d'une vélocité de tir qui le fait traverser le champ de nourriture en mouvement), un nombre
+    // d'entités qui s'emballe en chaîne.
+    const virus = world.spawnVirus({ x: 10, y: 10 }, 200, 1);
+    for (let i = 1; i < 5; i++) {
+      world.spawnVirus({ x: 10 + i, y: 10 }, 200, 1);
+    }
+    const beforeCount = world.allEntities().filter((e) => e.kind === 'virus' && e.virusId === 1).length;
+    expect(beforeCount).toBe(5); // déjà au-delà du plafond (3)
+
+    for (let i = 0; i < 10; i++) {
+      const particle = world.spawnParticle({ x: 10, y: 10 }, 20);
+      particle.velocity = { x: 100, y: 0 };
+      mod.onCollision(world, particle, virus, 0.016);
+    }
+
+    const afterCount = world.allEntities().filter((e) => e.kind === 'virus' && e.virusId === 1).length;
+    expect(afterCount).toBe(beforeCount); // aucune nouvelle duplication au-delà du plafond
   });
 });
