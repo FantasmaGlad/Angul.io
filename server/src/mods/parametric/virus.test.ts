@@ -121,6 +121,50 @@ describe('Virus Mechanics', () => {
     expect(p2Pieces.length).toBe(32);
   });
 
+  it('Virus Rouge (ID 2): un simple contact de cercles ne suffit plus à manger un joueur — recouvrement minimal requis (régression, retour utilisateur 2026-08-05 : "1/10 de mon blob est recouvert... et il se fait manger directement")', () => {
+    const config = createTestConfig(2);
+    const mod = createParametricMod(config);
+    const world = new World({ mapSize: 10000 });
+
+    const virus = world.spawnVirus({ x: 0, y: 0 }, 300, 2);
+    world.addPlayer('p1', 'Player 1');
+    const piece = world.spawnPiece('p1', { x: 0, y: 0 }, 100); // < 300, mangeable en principe
+
+    // Cercles qui se touchent tout juste (recouvrement quasi nul) — avant ce correctif, n'importe
+    // quel contact de cercles déclenchait une absorption COMPLÈTE et instantanée, contrairement à
+    // l'absorption entre joueurs qui exige déjà `eatOverlapFraction` (0.7 ici) de recouvrement.
+    piece.position = { x: virus.radius + piece.radius - 1, y: 0 };
+    mod.onCollision(world, piece, virus, 0.016);
+    expect(world.getEntity(piece.id)).toBeDefined(); // pas mangé, contact trop léger
+    expect(virus.mass).toBe(300); // inchangé
+
+    // Recouvrement complet (même position) : l'absorption fonctionne toujours normalement.
+    piece.position = { x: 0, y: 0 };
+    mod.onCollision(world, piece, virus, 0.016);
+    expect(world.getEntity(piece.id)).toBeUndefined();
+    expect(virus.mass).toBe(400);
+  });
+
+  it('Virus Vert (ID 1): un simple contact de cercles ne suffit plus à le faire exploser — recouvrement minimal requis (régression, même correctif que le Virus Rouge)', () => {
+    const config = createTestConfig(1);
+    const mod = createParametricMod(config);
+    const world = new World({ mapSize: 10000 });
+
+    const virus = world.spawnVirus({ x: 0, y: 0 }, 200, 1);
+    world.addPlayer('p1', 'Player 1');
+    const piece = world.spawnPiece('p1', { x: 0, y: 0 }, 250); // >= minMassToEat (210)
+
+    piece.position = { x: virus.radius + piece.radius - 1, y: 0 }; // contact léger
+    mod.onCollision(world, piece, virus, 0.016);
+    expect(world.getEntity(virus.id)).toBeDefined(); // virus pas explosé, contact trop léger
+    expect(world.getPiecesByOwner('p1').length).toBe(1);
+
+    piece.position = { x: 0, y: 0 }; // recouvrement complet
+    mod.onCollision(world, piece, virus, 0.016);
+    expect(world.getEntity(virus.id)).toBeUndefined();
+    expect(world.getPiecesByOwner('p1').length).toBe(16);
+  });
+
   it('Virus Rouge (ID 2): une croissance modeste suit la courbe géométrique du joueur rétrécie de 10% d’aire, SANS toucher le plafond (régression, 1er incident prod Hardcore 2026-08-04)', () => {
     const config: ParametricModConfig = {
       ...createTestConfig(2),
@@ -153,19 +197,18 @@ describe('Virus Mechanics', () => {
     const world = new World({ mapSize: 10000 });
 
     const virus = world.spawnVirus({ x: 500, y: 500 }, 300, 2);
-    world.addPlayer('p1', 'Player 1');
 
-    // Enchaîne des absorptions toujours juste sous la masse courante du virus (jamais assez pour
-    // l'exploser) — la masse doit grandir sans AUCUNE limite (design voulu : le virus peut devenir
-    // réellement immense), mais son RAYON doit se stabiliser au plafond dès qu'il est atteint —
-    // un premier correctif (suivre `massToRadius`, plate mais non bornée) avait RALENTI la
-    // croissance du coût de collision sans jamais l'arrêter : confirmé en prod, le p95 des ticks
-    // Hardcore a repris sa dérive (76ms -> 228ms en 8 minutes) après ce premier correctif. Seul un
-    // plafond de RAYON garantit un coût par tick réellement borné, pour toujours.
-    for (let i = 0; i < 10; i++) {
-      const piece = world.spawnPiece('p1', { x: 500, y: 500 }, virus.mass * 0.9);
-      mod.onCollision(world, piece, virus, 0.016);
-      expect(world.getEntity(piece.id)).toBeUndefined();
+    // Croissance via nourriture éjectée (jamais soumise au seuil de recouvrement — voir le test
+    // dédié plus bas — contrairement à l'absorption d'un morceau, qui en exige un depuis le
+    // correctif "insta eat" du 2026-08-05) — la masse doit grandir sans AUCUNE limite (design
+    // voulu : le virus peut devenir réellement immense), mais son RAYON doit se stabiliser au
+    // plafond dès qu'il est atteint — un premier correctif (suivre `massToRadius`, plate mais non
+    // bornée) avait RALENTI la croissance du coût de collision sans jamais l'arrêter : confirmé en
+    // prod, le p95 des ticks Hardcore a repris sa dérive (76ms -> 228ms en 8 minutes) après ce
+    // premier correctif. Seul un plafond de RAYON garantit un coût par tick réellement borné.
+    for (let i = 0; i < 3000; i++) {
+      const particle = world.spawnParticle({ x: 500, y: 500 }, 40);
+      mod.onCollision(world, particle, virus, 0.016);
     }
 
     expect(virus.mass).toBeGreaterThan(100_000); // aucun plafond de masse

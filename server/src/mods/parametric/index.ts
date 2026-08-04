@@ -594,6 +594,25 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     return attacker.mass > target.mass;
   }
 
+  /** Fraction du cercle de `target` recouverte par celui de `other` — mesurée par rapport à
+   * l'aire du cercle CONSOMMÉ (`target`, la victime), jamais celle de l'autre : même convention
+   * que `handleEatAttempt` (joueur vs joueur) ci-dessous, réutilisée ici pour les interactions
+   * morceau↔virus (voir `onCollision`, retour utilisateur 2026-08-05 : "1/10 de mon blob est
+   * recouvert par le virus et il se fait manger directement" — contrairement à l'absorption entre
+   * joueurs, qui exige déjà `eatOverlapFraction` de recouvrement avant tout effet, la collision
+   * avec un virus se déclenchait jusqu'ici au moindre contact de cercle, sans aucun seuil). Un gros
+   * cercle peut engloutir un petit dès un recouvrement modeste en DISTANCE mais déjà généreux en
+   * AIRE relative à la victime — c'est justement pour ça que la mesure se fait sur l'aire de la
+   * victime, jamais celle de l'attaquant (un simple effleurement en bordure d'un ÉNORME cercle ne
+   * doit jamais suffire). */
+  function overlapFractionOf(target: Entity, other: Entity): number {
+    const dist = distance(target.position, other.position);
+    const overlap = circleOverlapArea(target.radius, other.radius, dist);
+    if (overlap <= 0) return 0;
+    const targetArea = PI * target.radius * target.radius;
+    return targetArea > 0 ? clamp(overlap / targetArea, 0, 1) : 1;
+  }
+
   /** Décision d'absorption (avantage de masse + chevauchement suffisant, voir
    * `config.eating.eatOverlapFraction`/`eatOverlapFraction()`, physics.ts) — tant que ce seuil
    * n'est pas franchi, `target` reste librement chevauchable, sans aucun effet (demande
@@ -924,6 +943,9 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
 
         if (vId === 1) { // Vert (Mass 200, Manger >= 210, Div 16)
           if (piece.mass < minMassToEat) return; // Petit joueur inoffensif (se cache dedans)
+          // Le virus est la "victime" ici (il explose/disparaît) : recouvrement mesuré sur SON
+          // aire, jamais celle — bien plus grande — du joueur qui le fait exploser.
+          if (overlapFractionOf(virus, piece) < eatOverlapFraction(config)) return;
           world.setMass(piece, piece.mass + virus.mass);
           world.removeEntity(virus.id);
           explodePiece(world, piece, 16);
@@ -932,12 +954,17 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
 
         if (vId === 2) { // Rouge (Mass 300 carnivore, mange les blobs plus petits < virus.mass, explose si >= minMassToEat)
           if (piece.mass < virus.mass) {
+            // Le morceau est la "victime" ici (il se fait absorber) : recouvrement mesuré sur SON
+            // aire — retour utilisateur (2026-08-05) : un simple effleurement (~10% du blob
+            // recouvert) suffisait jusqu'ici à déclencher une absorption complète et instantanée.
+            if (overlapFractionOf(piece, virus) < eatOverlapFraction(config)) return;
             world.setMass(virus, virus.mass + piece.mass);
             virus.radius = redVirusEffectiveRadius(world, virus.mass);
             finalizeConsumedEntity(world, undefined, piece, piece.mass);
             return;
           }
           if (piece.mass < minMassToEat) return; // Se cache dedans si taille similaire mais insuffisante pour l'absorber
+          if (overlapFractionOf(virus, piece) < eatOverlapFraction(config)) return;
           world.setMass(piece, piece.mass + virus.mass);
           world.removeEntity(virus.id);
           explodePiece(world, piece, 32);
@@ -946,6 +973,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
 
         if (vId === 3) { // Bleu (Mass 200, Manger >= 210, Div 4x4 = 16)
           if (piece.mass < minMassToEat) return; // Se cache dedans
+          if (overlapFractionOf(virus, piece) < eatOverlapFraction(config)) return;
           world.setMass(piece, piece.mass + virus.mass);
           world.removeEntity(virus.id);
           const step1 = explodePiece(world, piece, 4);

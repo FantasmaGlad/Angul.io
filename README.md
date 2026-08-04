@@ -400,7 +400,19 @@ l'historique git de `mods/parametric/index.ts` autour des commits "lag exponenti
      du pellet est gaté ; une fois la nourriture au-dessus de la cible, la régurgitation cesse
      silencieusement de spawner jusqu'à ce que des joueurs libèrent de la place en mangeant.
 
-**Leçon des trois incidents** : "une courbe plus plate/lente" n'est PAS la même garantie qu'"un
+- **Recouvrement minimal requis pour toute interaction morceau↔virus** (`overlapFractionOf`,
+  `mods/parametric/index.ts`) — retour utilisateur (2026-08-05, une fois le TPS stabilisé) : "1/10
+  de mon blob est recouvert par le virus et il se fait manger directement". Contrairement à
+  l'absorption entre JOUEURS (`handleEatAttempt`), qui exige déjà `config.eating.eatOverlapFraction`
+  (0.7 en Hardcore/Vanilla) de recouvrement avant tout effet, la collision morceau↔virus se
+  déclenchait jusque-là au moindre contact de cercles, sans aucun seuil — dans les deux sens (un
+  virus qui absorbe un morceau plus petit, ET un morceau assez gros qui fait exploser un virus).
+  Réutilise le MÊME seuil `eatOverlapFraction` (pas de nouveau réglage) pour les 4 déclencheurs
+  (Vert, Rouge×2 — absorption ET explosion, Bleu), mesuré sur l'aire du cercle CONSOMMÉ (la
+  victime : le morceau quand le virus l'absorbe, le virus quand un morceau le fait exploser),
+  jamais celle de l'autre — même convention que `handleEatAttempt`.
+
+**Leçon des trois incidents de performance** : "une courbe plus plate/lente" n'est PAS la même garantie qu'"un
 plafond dur" — toute formule dont le rayon reste une fonction strictement croissante et non bornée
 de la masse finira, avec assez de temps/de proies mangées, par franchir n'importe quel seuil de
 coût (leçon des incidents 1-2). Mais surtout : **une seule entité individuellement bien élevée ne
@@ -415,7 +427,8 @@ illimitée mais rayon plafonné pour le Rouge, avec un test dédié à la croiss
 plafonnée — pour vérifier que la courbe normale reste respectée en-deçà du seuil ; pas de
 multiplication cumulative à travers plusieurs ticks de dégonflement ; plafond de population pour
 Vert/Bleu ; rayon effectif dès le spawn ambiant pour les 3 types ; `densityPer10k` réellement pris
-en compte ; régurgitation plafonnée par la cible de nourriture ambiante).
+en compte ; régurgitation plafonnée par la cible de nourriture ambiante ; recouvrement minimal
+requis avant toute absorption/explosion, dans les deux sens).
 
 ### 5ter. Comportement des robots (`server/configs/bots/*.json`)
 
