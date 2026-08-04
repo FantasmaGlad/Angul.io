@@ -1,4 +1,4 @@
-import { add, scale } from '@angulio/shared';
+import { add, massToRadius, scale } from '@angulio/shared';
 import type { BotConfig } from '../mods/parametric/config.js';
 import { BotManager } from './bots/botManager.js';
 import type { CustomBotSpawnOptions } from './bots/botTypes.js';
@@ -444,16 +444,22 @@ export class Room {
   }
 
   /** Spawn de virus manuel à des coordonnées précises (§10.2) — formule masse/rayon dupliquée
-   * depuis la maintenance organique du mod paramétrique (`mods/parametric/index.ts`, "vType === 2
-   * ? 300/150 : 200/100" et son facteur de rétrécissement d'aire de collision
-   * `VIRUS_HITBOX_RADIUS_FACTOR`, voir son commentaire) plutôt que réutilisée : `Room` reste
-   * indépendante du mod actif (`GameMod` générique, jamais couplée à `ParametricModConfig`), et
-   * cette constante d'équilibrage change rarement. */
+   * depuis la maintenance organique du mod paramétrique (`mods/parametric/index.ts`,
+   * `redVirusEffectiveRadius`/`VIRUS_HITBOX_RADIUS_FACTOR`/`redVirusRadiusCap`, voir leurs
+   * commentaires) plutôt que réutilisée : `Room` reste indépendante du mod actif (`GameMod`
+   * générique, jamais couplée à `ParametricModConfig`), et cette constante d'équilibrage change
+   * rarement. Rouge (type 2) : suit la même courbe `massToRadius` rétrécie de 10% d'aire ET
+   * plafonnée à 0.95x `spatialHash.maxGridEntityRadius()` (jamais de "grande entité", coût de
+   * collision borné) — nécessaire même à la masse de spawn (300) sur un salon privé à carte
+   * minuscule (mapSize aussi bas que 1000, voir `roomManager.ts`), où ce plafond peut être atteint
+   * dès le premier spawn. Vert/Bleu (1/3) : rayon fixe, jamais recalculé après coup. */
   spawnVirus(position: { x: number; y: number }, virusType: 1 | 2 | 3): void {
     const mass = virusType === 2 ? 300 : 200;
-    const radius = (virusType === 2 ? 150 : 100) * Math.sqrt(0.9);
     const virus = this.world.spawnVirus(position, mass, virusType);
-    virus.radius = radius;
+    virus.radius =
+      virusType === 2
+        ? Math.min(massToRadius(mass) * Math.sqrt(0.9), this.world.spatialHash.maxGridEntityRadius() * 0.95)
+        : 100 * Math.sqrt(0.9);
   }
 
   /** Apparence à la volée (§9.4) — met à jour l'état de SESSION du joueur (`PlayerState`, jamais le

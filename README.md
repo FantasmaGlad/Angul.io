@@ -317,25 +317,35 @@ code, pas seulement du JSON).
 ### 5bis-virus. Mécanique des virus (croissance, duplication, plafonds anti-emballement, rayon de collision)
 
 Les trois types de virus (`config.virus.type`) suivent des mécaniques de croissance
-**structurellement différentes**, chacune avec son propre garde-fou contre un emballement — les
-deux premiers garde-fous ci-dessous existent suite à un incident de production (Hardcore,
-2026-08-04, voir l'historique git de `mods/parametric/index.ts` autour du commit "lag exponentiel
-Hardcore").
+**structurellement différentes**, chacune avec son propre garde-fou contre un emballement — tous
+existent suite à DEUX incidents de production successifs (Hardcore, 2026-08-04/05, voir
+l'historique git de `mods/parametric/index.ts`autour des commits "lag exponentiel Hardcore").
 
 - **Virus Rouge (type 2, carnivore)** — grandit en MASSE à chaque morceau plus petit absorbé ou
-  particule reçue (`onCollision`), **sans aucun plafond** : il peut légitimement devenir immense
-  (design voulu), la mécanique de dégonflement passif (30 masse/s au-dessus de 300, régurgitation
-  en pellets de nourriture, voir `onTick`) le fait fondre progressivement. Le garde-fou n'est **pas**
-  un plafond de masse mais un plafond de RAYON : son rayon suit la même courbe géométrique qu'un
-  morceau de joueur (`massToRadius`/`blobGrowthFactor`, [shared/src/geometry.ts](shared/src/geometry.ts))
-  — plate à haute masse (exposant 0.38 au-delà de 10× la masse de spawn) — au lieu d'une formule
-  dédiée bien plus raide. Avant ce correctif, le code réécrivait `virus.radius` avec `150 *
-  sqrt(masse/300)` juste après chaque changement de masse ; passé le seuil "grande entité" de la
-  grille spatiale (`SpatialHash`/`World.findOverlappingPairs`), le coût de collision par tick d'UN
-  SEUL virus croît en O(rayon²) — et comme un virus plus gros mange plus de monde, sa croissance
-  s'auto-alimentait (plus gros → mange plus → encore plus gros → coût de tick qui explose). Mesuré
-  en prod : p95 des ticks du salon Hardcore passé de 38ms à >210ms (puis 555ms) en quelques
-  dizaines de minutes, CPU à 80-100%+ en continu.
+  particule reçue (`onCollision`), **sans aucun plafond de masse** : il peut légitimement devenir
+  réellement immense (design voulu), la mécanique de dégonflement passif (30 masse/s au-dessus de
+  300, régurgitation en pellets de nourriture, voir `onTick`) le fait fondre progressivement. Le
+  garde-fou porte sur son RAYON (`redVirusEffectiveRadius`, `mods/parametric/index.ts`), en DEUX
+  temps successifs (deux incidents distincts, voir leur historique git) :
+
+  1. *(1er incident)* Le rayon suit la même courbe géométrique qu'un morceau de joueur
+     (`massToRadius`/`blobGrowthFactor`, [shared/src/geometry.ts](shared/src/geometry.ts)) — plate
+     à haute masse (exposant 0.38 au-delà de 10× la masse de spawn) — au lieu d'une formule dédiée
+     bien plus raide (`150 * sqrt(masse/300)`, réécrite après CHAQUE changement de masse avant ce
+     correctif).
+  2. *(2e incident, quelques heures plus tard)* **Insuffisant à lui seul** : `blobGrowthFactor`
+     reste malgré tout NON BORNÉE (exposant 0.38 > 0), donc passé le seuil "grande entité" de la
+     grille spatiale (`SpatialHash`/`World.findOverlappingPairs`, coût de collision par tick d'UN
+     SEUL virus en O(rayon²)), le p95 des ticks Hardcore a repris sa dérive après le 1er correctif
+     seul (76ms → 228ms en 8 minutes) — juste plus lentement qu'avec l'ancienne formule. Le rayon
+     effectif est donc en plus PLAFONNÉ à 0.95× `spatialHash.maxGridEntityRadius()`
+     (`redVirusRadiusCap`) : le virus ne bascule alors JAMAIS en "grande entité", quelle que soit sa
+     masse — un plafond sur la GÉOMÉTRIE de collision, jamais sur `virus.mass` (qui reste illimitée,
+     toujours aussi dangereuse) ni sur sa capacité à manger.
+
+  Mesuré en prod à travers les deux incidents : p95 des ticks Hardcore passé de 38ms à >555ms (1er
+  incident, formule custom), puis de 76ms à 228ms en 8 min (2e incident, courbe standard seule mais
+  toujours non bornée), CPU à 80-100%+ en continu dans les deux cas.
 
 - **Virus Vert/Bleu (types 1/3)** — ne grandissent JAMAIS en taille (rayon fixe depuis le spawn) ;
   nourris à 200 de masse cumulée (particules reçues), ils se **DUPLIQUENT** à la place (nouvel
@@ -353,20 +363,28 @@ Hardcore").
   √0.9`, `mods/parametric/index.ts`) — retour utilisateur (2026-08-05) : même sans effleurement
   visuel apparent, un gros joueur explosait le virus et le virus absorbait un petit joueur avant
   tout contact réel perçu. `virus.radius` (le même champ, transmis tel quel au client — pas de
-  rayon "affichage" distinct d'un rayon "collision") vaut donc `<rayon nominal> * √0.9`, à CHAQUE
-  endroit où il est fixé : spawn ambiant (mod) et manuel (`Room.spawnVirus`, admin), et recalcul du
-  Rouge après chaque changement de masse. Racine carrée de 0.9 et non 0.9 directement, car
+  rayon "affichage" distinct d'un rayon "collision") est donc systématiquement rétréci de ce
+  facteur, à CHAQUE endroit où il est fixé : spawn ambiant (mod) et manuel (`Room.spawnVirus`,
+  admin), et recalcul du Rouge après chaque changement de masse (via `redVirusEffectiveRadius`,
+  qui applique aussi le plafond ci-dessus). Racine carrée de 0.9 et non 0.9 directement, car
   Aire = π·rayon² : réduire l'AIRE de 10% ne réduit le RAYON que de √0.9 (~94.9%). Implémenté comme
-  une assignation ABSOLUE (`virus.radius = massToRadius(virus.mass) * VIRUS_HITBOX_RADIUS_FACTOR`),
-  jamais une multiplication RELATIVE sur le rayon existant (`virus.radius *= ...`) : le
-  dégonflement du Rouge tourne à CHAQUE tick tant que sa masse dépasse 300, une multiplication
-  relative s'y serait appliquée en boucle et aurait fait fondre le rayon vers 0 en quelques
-  secondes — piège à ne pas réintroduire si ce code est retouché.
+  une assignation ABSOLUE (`virus.radius = redVirusEffectiveRadius(world, virus.mass)`), jamais une
+  multiplication RELATIVE sur le rayon existant (`virus.radius *= ...`) : le dégonflement du Rouge
+  tourne à CHAQUE tick tant que sa masse dépasse 300, une multiplication relative s'y serait
+  appliquée en boucle et aurait fait fondre le rayon vers 0 en quelques secondes — piège à ne pas
+  réintroduire si ce code est retouché.
+
+**Leçon des deux incidents** : "une courbe plus plate/lente" n'est PAS la même garantie qu'"un
+plafond dur" — toute formule dont le rayon reste une fonction strictement croissante et non bornée
+de la masse finira, avec assez de temps/de proies mangées, par franchir n'importe quel seuil de
+coût. Seul un `Math.min(..., plafond_constant)` élimine le risque pour de bon, quelle que soit la
+durée de la session.
 
 Voir `server/src/mods/parametric/virus.test.ts` pour les tests de régression correspondants (masse
-illimitée + rayon aligné sur `massToRadius * √0.9` pour le Rouge, y compris à travers plusieurs
-ticks de dégonflement successifs ; plafond de population pour Vert/Bleu ; rayon réduit au spawn
-ambiant pour les 3 types).
+illimitée mais rayon plafonné pour le Rouge, avec un test dédié à la croissance MODESTE — non
+plafonnée — pour vérifier que la courbe normale reste respectée en-deçà du seuil ; pas de
+multiplication cumulative à travers plusieurs ticks de dégonflement ; plafond de population pour
+Vert/Bleu ; rayon effectif dès le spawn ambiant pour les 3 types).
 
 ### 5ter. Comportement des robots (`server/configs/bots/*.json`)
 

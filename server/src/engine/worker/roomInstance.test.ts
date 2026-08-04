@@ -543,9 +543,13 @@ describe("RoomInstance — adminAction P4 (contrôle & marionnette, cahier_des_c
     expect(virus).toBeDefined();
     expect(virus?.position).toEqual({ x: 111, y: 222 });
     expect(virus?.mass).toBe(300); // vType 2 (Rouge) : formule dédiée
-    // Rayon = 150 (formule de base) rétréci de 10% d'aire (VIRUS_HITBOX_RADIUS_FACTOR, voir
-    // mods/parametric/index.ts, dupliqué ici — même raisonnement que Room.spawnVirus).
-    expect(virus?.radius).toBeCloseTo(150 * Math.sqrt(0.9), 5);
+    // Rayon = massToRadius(300) rétréci de 10% d'aire, plafonné à 0.95x maxGridEntityRadius (voir
+    // mods/parametric/index.ts `redVirusEffectiveRadius`, dupliqué dans Room.spawnVirus) — sur la
+    // carte 2000x2000 de ce test, le plafond (cellSize au plancher 50 -> 71.25) est déjà atteint
+    // dès la masse de spawn.
+    const cellSize = Math.max(50, Math.min(250, Math.floor(2000 / 200)));
+    const cap = cellSize * 1.5 * 0.95;
+    expect(virus?.radius).toBeCloseTo(cap, 5);
     expect(virus?.virusId).toBe(2);
 
     instance.destroy();
