@@ -285,6 +285,9 @@ fichiers en démarrant le serveur en local avant de déployer.
 | `food` | `density` | number | Pellets moyens par bloc de 1000×1000 px² (s'adapte à la taille de carte) |
 | | `respawnRatePerSecond` | number | Pellets réapparaissant par seconde sur toute la carte |
 | | `pelletTypes` | `{color, mass, weight}[]` | Types de pellets ; `weight` = poids de tirage relatif (pas nécessairement normalisé à 100) ; `color` est purement informatif, **jamais transmis au client** |
+| `virus?` | `enabled` | boolean | Active les virus pour ce mode |
+| | `type` | `1\|2\|3` | **Vert** (mange/explose en 16 morceaux au-dessus du seuil, se **duplique** en étant nourri de 200 de masse) / **Rouge** (carnivore : absorbe tout morceau de masse inférieure, explose en 32 pour les attaquants assez gros) / **Bleu** (comme Vert mais réaction en chaîne 4×4=16 sur 2 ticks) — voir §5bis-virus ci-dessous pour la mécanique de croissance/duplication et ses plafonds |
+| | `densityPer5k?` | number | Population VISÉE par bloc de 5000×5000 px² (`targetVirusCount()`, mods/parametric/index.ts) — défaut selon `type` : 8 (Vert) / 4 (Rouge) / 2 (Bleu). ⚠️ **`densityPer10k?` existe aussi sur ce type mais n'est lu nulle part dans le code** (`targetVirusCount()` ne lit que `densityPer5k`) — un champ mort dans les 4 configs actuelles (`vanilla.json`, `hardcore.json`, `infini.json`, `mega-split.json` définissent toutes `densityPer10k`, silencieusement ignoré ; la densité réellement appliquée est donc TOUJOURS le défaut ci-dessus, jamais la valeur du JSON). Bug connu, non corrigé (choix d'équilibrage à trancher avant de le corriger, pas un simple renommage — changerait la densité affichée sur les 4 modes) |
 | `areaConstant` | — | number | Constante masse→aire (Rayon = √(areaConstant·masse/π)) |
 | `bots?` | `enabled` | boolean | Active les bots normaux ET les Challengers pour ce mode |
 | | `behaviorId?` | string | Id d'un fichier `server/configs/bots/<id>.json` (voir plus bas) qui gouverne le PILOTAGE des bots (fuite/chasse/vagabondage/split) — distinct des réglages de POPULATION ci-dessous. Absent = `'default'` |
@@ -311,7 +314,47 @@ particule éjectée (`EJECT_LAUNCH_SPEED_PX_PER_S`/`EJECT_FRICTION_PER_SEC`) —
 tête de `mods/parametric/index.ts` si un mod a réellement besoin d'y toucher (nécessite alors du
 code, pas seulement du JSON).
 
-### 5bis. Comportement des robots (`server/configs/bots/*.json`)
+### 5bis-virus. Mécanique des virus (croissance, duplication, plafonds anti-emballement)
+
+Les trois types de virus (`config.virus.type`) suivent des mécaniques de croissance
+**structurellement différentes**, chacune avec son propre garde-fou contre un emballement — les
+deux garde-fous ci-dessous existent suite à un incident de production (Hardcore, 2026-08-04, voir
+l'historique git de `mods/parametric/index.ts` autour du commit "lag exponentiel Hardcore").
+
+- **Virus Rouge (type 2, carnivore)** — grandit en MASSE à chaque morceau plus petit absorbé ou
+  particule reçue (`onCollision`), **sans aucun plafond** : il peut légitimement devenir immense
+  (design voulu), la mécanique de dégonflement passif (30 masse/s au-dessus de 300, régurgitation
+  en pellets de nourriture, voir `onTick`) le fait fondre progressivement. Le garde-fou n'est **pas**
+  un plafond de masse mais un plafond de RAYON : son rayon suit exactement la même courbe
+  géométrique qu'un morceau de joueur (`massToRadius`/`blobGrowthFactor`,
+  [shared/src/geometry.ts](shared/src/geometry.ts)) — plate à haute masse (exposant 0.38 au-delà de
+  10× la masse de spawn) — au lieu d'une formule dédiée. Avant ce correctif, le code réécrivait
+  `virus.radius` avec `150 * sqrt(masse/300)` juste après chaque changement de masse, une courbe
+  bien plus raide ; passé le seuil "grande entité" de la grille spatiale
+  (`SpatialHash`/`World.findOverlappingPairs`), le coût de collision par tick d'UN SEUL virus croît
+  en O(rayon²) — et comme un virus plus gros mange plus de monde, sa croissance s'auto-alimentait
+  (plus gros → mange plus → encore plus gros → coût de tick qui explose). Mesuré en prod : p95 des
+  ticks du salon Hardcore passé de 38ms à >210ms en moins de 20 minutes après un reset, CPU du
+  process à 80% en continu. **Ne jamais réintroduire un calcul de rayon dédié au virus** — laisser
+  `World.setMass()` s'en charger, exactement comme pour n'importe quelle autre entité.
+
+- **Virus Vert/Bleu (types 1/3)** — ne grandissent JAMAIS en taille (rayon fixe depuis le spawn) ;
+  nourris à 200 de masse cumulée (particules reçues), ils se **DUPLIQUENT** à la place (nouvel
+  exemplaire de même masse/rayon, propulsé dans la direction de la dernière particule reçue). Le
+  risque n'est donc pas un rayon qui explose mais un NOMBRE D'ENTITÉS qui explose : un duplicata
+  hérite d'une vélocité de tir (600px/s) qui le fait traverser le champ de nourriture en mouvement,
+  l'engraissant vite et le faisant potentiellement redupliquer à son tour, en chaîne — la
+  maintenance de population ambiante (`targetVirusCount()`) ne fait qu'AJOUTER jusqu'à sa cible,
+  jamais retirer un surplus causé par la duplication. Plafonné à `targetVirusCount() * 3`
+  (`VIRUS_DUPLICATION_HEADROOM`, `mods/parametric/index.ts`) : au-delà, nourrir un virus reste
+  gratifiant (le compteur `fedMass` se consomme normalement) mais n'engendre plus de nouvel
+  exemplaire.
+
+Voir `server/src/mods/parametric/virus.test.ts` pour les tests de régression correspondants
+(masse illimitée + rayon aligné sur `massToRadius` pour le Rouge ; plafond de population pour
+Vert/Bleu).
+
+### 5ter. Comportement des robots (`server/configs/bots/*.json`)
 
 Même principe que `server/configs/*.json` pour les modes, mais pour le PILOTAGE des bots
 (`server/src/engine/bots/botEvaluator.ts`) plutôt que leur population : un fichier JSON par profil
@@ -332,7 +375,7 @@ Un fichier JSON ne redéfinissant qu'un sous-ensemble de ces champs est fusionn�
 défaut (`loadBehaviorConfig.ts`) — jamais un remplacement total, pour ne pas perdre silencieusement
 le reste des réglages d'un profil en n'en changeant qu'un seul champ.
 
-### 5ter. Personnalisation d'un salon privé (lobby)
+### 5quater. Personnalisation d'un salon privé (lobby)
 
 Un salon créé depuis le lobby (`CreateRoomPanel.tsx`, réservé aux comptes Premium) peut redéfinir,
 en plus des réglages déjà existants (capacité, durée, bots on/off) :
