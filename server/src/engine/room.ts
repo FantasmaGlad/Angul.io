@@ -445,12 +445,13 @@ export class Room {
 
   /** Spawn de virus manuel à des coordonnées précises (§10.2) — formule masse/rayon dupliquée
    * depuis la maintenance organique du mod paramétrique (`mods/parametric/index.ts`, "vType === 2
-   * ? 300/150 : 200/100") plutôt que réutilisée : `Room` reste indépendante du mod actif
-   * (`GameMod` générique, jamais couplée à `ParametricModConfig`), et cette constante d'équilibrage
-   * change rarement. */
+   * ? 300/150 : 200/100" et son facteur de rétrécissement d'aire de collision
+   * `VIRUS_HITBOX_RADIUS_FACTOR`, voir son commentaire) plutôt que réutilisée : `Room` reste
+   * indépendante du mod actif (`GameMod` générique, jamais couplée à `ParametricModConfig`), et
+   * cette constante d'équilibrage change rarement. */
   spawnVirus(position: { x: number; y: number }, virusType: 1 | 2 | 3): void {
     const mass = virusType === 2 ? 300 : 200;
-    const radius = virusType === 2 ? 150 : 100;
+    const radius = (virusType === 2 ? 150 : 100) * Math.sqrt(0.9);
     const virus = this.world.spawnVirus(position, mass, virusType);
     virus.radius = radius;
   }

@@ -6,6 +6,7 @@ import {
   dot,
   isBotId,
   length,
+  massToRadius,
   moveToward,
   normalize,
   PI,
@@ -55,28 +56,42 @@ const ABSORPTION_REMOVE_FLOOR = 0.5;
  * qui grandit indéfiniment. */
 const VIRUS_DUPLICATION_HEADROOM = 3;
 
-/** Le Virus Rouge (ID 2) ne fixe JAMAIS lui-même `virus.radius` après un changement de masse (voir
- * `onCollision`/`onTick` plus bas, qui appellent uniquement `world.setMass(virus, ...)`) — incident
- * de production Hardcore (salon 3, 2026-08-04 23h) : l'ancien code réécrivait `virus.radius = 150 *
- * sqrt(virus.mass / 300)` juste après CHAQUE `world.setMass`, une formule propre au virus bien plus
- * raide que la courbe standard (`massToRadius`/`blobGrowthFactor`, shared/geometry.ts) que
- * `world.setMass` applique déjà de lui-même à TOUTE entité, y compris un virus (son `kind` n'est pas
- * `'particle'`) — exactement la même courbe qui régit un morceau de joueur, plate à haute masse
- * (exposant 0.38 au-delà de 10x la masse de spawn) précisément pour qu'un très gros blob reste bon
- * marché en collision (voir son commentaire : "un très gros blob continue de grossir... mais chaque
- * tranche de masse supplémentaire se voit proportionnellement de moins en moins"). Un virus dont le
- * rayon dépasse `spatialHash.maxGridEntityRadius()` bascule en "grande entité" (voir SpatialHash) —
- * sa requête de collision (`World.findOverlappingPairs`, `queryRadius(large.radius +
- * maxSmallReach)`) scanne O((rayon/cellSize)²) cellules À CHAQUE TICK — et comme un virus déjà plus
- * gros mange plus de monde (tout ce qui est `< virus.mass`), sa croissance s'auto-alimente : plus il
- * mange, plus il grossit, plus il mange. Avec l'ancienne formule (rayon ∝ √masse, jamais plus plate)
- * ce rayon — et donc ce coût — grandissait presque aussi vite que la masse elle-même ; confirmé en
- * prod par le p95 des ticks du salon Hardcore passant de 38ms à >210ms en moins de 20 minutes après
- * un reset (`room_tick_slow`, journalctl), CPU du process à 80% en continu. Laisser `world.setMass`
- * appliquer SA courbe (jamais de plafond de masse — le virus doit pouvoir devenir réellement
- * immense, voir le dégonflement plus bas qui le fait fondre en nourriture) traite le virus
- * EXACTEMENT comme un gros joueur/bot Challenger, dont le rayon reste bon marché quelle que soit sa
- * masse — aucun cas particulier à maintenir ici. */
+/** Le rayon du Virus Rouge (ID 2) suit TOUJOURS `massToRadius(virus.mass)` (voir
+ * `onCollision`/`onTick` plus bas) — jamais une formule dédiée au virus — incident de production
+ * Hardcore (salon 3, 2026-08-04 23h) : l'ancien code réécrivait `virus.radius = 150 *
+ * sqrt(virus.mass / 300)` après chaque changement de masse, bien plus raide que la courbe standard
+ * (`massToRadius`/`blobGrowthFactor`, shared/geometry.ts) — exactement la même courbe qui régit un
+ * morceau de joueur, plate à haute masse (exposant 0.38 au-delà de 10x la masse de spawn) pour
+ * qu'un très gros blob reste bon marché en collision. Un virus dont le rayon dépasse
+ * `spatialHash.maxGridEntityRadius()` bascule en "grande entité" (voir SpatialHash) — sa requête de
+ * collision (`World.findOverlappingPairs`) scanne O((rayon/cellSize)²) cellules À CHAQUE TICK — et
+ * comme un virus plus gros mange plus de monde (tout ce qui est `< virus.mass`), sa croissance
+ * s'auto-alimente. Avec l'ancienne formule (rayon ∝ √masse, jamais plus plate), ce rayon — et donc
+ * ce coût — grandissait presque aussi vite que la masse elle-même ; confirmé en prod par le p95 des
+ * ticks du salon Hardcore passant de 38ms à >210ms (puis 555ms) en quelques dizaines de minutes,
+ * CPU à 80-100%+ en continu. Jamais de plafond de masse (le virus doit pouvoir devenir réellement
+ * immense, voir le dégonflement plus bas qui le fait fondre en nourriture) : c'est la courbe du
+ * RAYON, pas la masse, qui garde ce coût borné.
+ *
+ * `virus.radius` n'est PAS directement `massToRadius(virus.mass)` : voir
+ * `VIRUS_HITBOX_RADIUS_FACTOR` juste en-dessous, qui rétrécit encore ce rayon de 10% d'aire. */
+
+/** Retour utilisateur (2026-08-05) : même sans effleurement visuel apparent, un gros joueur
+ * explosait le virus et le virus absorbait un petit joueur avant tout contact réel perçu — le
+ * rayon de collision (`virus.radius`, identique au rayon affiché côté client, voir `toSnapshot`)
+ * était donc perçu comme trop généreux par rapport à ce qui semble réellement toucher à l'écran.
+ * Rétrécit l'aire de collision calculée de 10% par rapport à sa valeur "nominale"
+ * (`massToRadius(virus.mass)` pour le Rouge, `vRadius` au spawn pour les 3 types) — racine carrée
+ * de 0.9 et non 0.9 directement, car Aire = π·rayon² : réduire l'AIRE de 10% ne réduit le RAYON que
+ * de √0.9 (~94.9%), jamais l'inverse. Appliqué comme une multiplication ABSOLUE sur un rayon
+ * fraîchement recalculé (`massToRadius(virus.mass) * VIRUS_HITBOX_RADIUS_FACTOR`), jamais une
+ * multiplication RELATIVE sur `virus.radius` existant (`virus.radius *= ...`) : le dégonflement du
+ * Virus Rouge (voir plus bas) tourne à CHAQUE tick tant que sa masse dépasse 300, donc une
+ * multiplication relative s'y serait appliquée en boucle et aurait fait fondre le rayon vers 0 en
+ * quelques secondes — l'assignation absolue reste idempotente, peu importe combien de fois par
+ * session elle s'exécute. Ne touche jamais `virus.mass` elle-même (les mécaniques de masse/
+ * duplication décrites plus haut restent inchangées, seule la géométrie de collision rétrécit). */
+const VIRUS_HITBOX_RADIUS_FACTOR = Math.sqrt(0.9);
 
 /** Amorce l'absorption d'un morceau dont le seuil de recouvrement vient d'être franchi —
  * n'effectue AUCUN transfert de masse elle-même, seulement une marque posée sur `target` (voir
@@ -761,7 +776,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
             const vRadius = vType === 2 ? 150 : 100;
             const pos = randomVirusPosition(world, 1, vRadius);
             const v = world.spawnVirus(pos, initialMass, vType);
-            v.radius = vRadius;
+            v.radius = vRadius * VIRUS_HITBOX_RADIUS_FACTOR;
             // Voir le commentaire équivalent sur l'insertion immédiate de la nourriture ci-dessus.
             world.spatialHash.insert(v);
           }
@@ -786,6 +801,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         if (virus.kind === 'virus' && virus.virusId === 2 && virus.mass > 300) {
           const massLost = Math.min(virus.mass - 300, 30 * dt);
           world.setMass(virus, virus.mass - massLost);
+          virus.radius = massToRadius(virus.mass) * VIRUS_HITBOX_RADIUS_FACTOR;
           virus.data.spitCredit = ((virus.data.spitCredit as number) ?? 0) + massLost;
           while ((virus.data.spitCredit as number) >= 1) {
             virus.data.spitCredit = (virus.data.spitCredit as number) - 1;
@@ -835,6 +851,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
           }
         } else if (vId === 2) {
           world.setMass(virus, virus.mass + particle.mass);
+          virus.radius = massToRadius(virus.mass) * VIRUS_HITBOX_RADIUS_FACTOR;
         }
         return;
       }
@@ -857,6 +874,7 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         if (vId === 2) { // Rouge (Mass 300 carnivore, mange les blobs plus petits < virus.mass, explose si >= minMassToEat)
           if (piece.mass < virus.mass) {
             world.setMass(virus, virus.mass + piece.mass);
+            virus.radius = massToRadius(virus.mass) * VIRUS_HITBOX_RADIUS_FACTOR;
             finalizeConsumedEntity(world, undefined, piece, piece.mass);
             return;
           }

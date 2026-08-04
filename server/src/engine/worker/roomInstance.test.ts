@@ -543,7 +543,9 @@ describe("RoomInstance — adminAction P4 (contrôle & marionnette, cahier_des_c
     expect(virus).toBeDefined();
     expect(virus?.position).toEqual({ x: 111, y: 222 });
     expect(virus?.mass).toBe(300); // vType 2 (Rouge) : formule dédiée
-    expect(virus?.radius).toBe(150);
+    // Rayon = 150 (formule de base) rétréci de 10% d'aire (VIRUS_HITBOX_RADIUS_FACTOR, voir
+    // mods/parametric/index.ts, dupliqué ici — même raisonnement que Room.spawnVirus).
+    expect(virus?.radius).toBeCloseTo(150 * Math.sqrt(0.9), 5);
     expect(virus?.virusId).toBe(2);
 
     instance.destroy();
@@ -554,7 +556,7 @@ describe("RoomInstance — adminAction P4 (contrôle & marionnette, cahier_des_c
     instance.adminAction({ kind: 'spawnVirus', x: 1, y: 1, virusType: 1 });
     const virus = instance.room.world.allEntities().find((e) => e.kind === 'virus');
     expect(virus?.mass).toBe(200);
-    expect(virus?.radius).toBe(100);
+    expect(virus?.radius).toBeCloseTo(100 * Math.sqrt(0.9), 5);
     instance.destroy();
   });
 });

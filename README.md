@@ -314,29 +314,28 @@ particule éjectée (`EJECT_LAUNCH_SPEED_PX_PER_S`/`EJECT_FRICTION_PER_SEC`) —
 tête de `mods/parametric/index.ts` si un mod a réellement besoin d'y toucher (nécessite alors du
 code, pas seulement du JSON).
 
-### 5bis-virus. Mécanique des virus (croissance, duplication, plafonds anti-emballement)
+### 5bis-virus. Mécanique des virus (croissance, duplication, plafonds anti-emballement, rayon de collision)
 
 Les trois types de virus (`config.virus.type`) suivent des mécaniques de croissance
 **structurellement différentes**, chacune avec son propre garde-fou contre un emballement — les
-deux garde-fous ci-dessous existent suite à un incident de production (Hardcore, 2026-08-04, voir
-l'historique git de `mods/parametric/index.ts` autour du commit "lag exponentiel Hardcore").
+deux premiers garde-fous ci-dessous existent suite à un incident de production (Hardcore,
+2026-08-04, voir l'historique git de `mods/parametric/index.ts` autour du commit "lag exponentiel
+Hardcore").
 
 - **Virus Rouge (type 2, carnivore)** — grandit en MASSE à chaque morceau plus petit absorbé ou
   particule reçue (`onCollision`), **sans aucun plafond** : il peut légitimement devenir immense
   (design voulu), la mécanique de dégonflement passif (30 masse/s au-dessus de 300, régurgitation
   en pellets de nourriture, voir `onTick`) le fait fondre progressivement. Le garde-fou n'est **pas**
-  un plafond de masse mais un plafond de RAYON : son rayon suit exactement la même courbe
-  géométrique qu'un morceau de joueur (`massToRadius`/`blobGrowthFactor`,
-  [shared/src/geometry.ts](shared/src/geometry.ts)) — plate à haute masse (exposant 0.38 au-delà de
-  10× la masse de spawn) — au lieu d'une formule dédiée. Avant ce correctif, le code réécrivait
-  `virus.radius` avec `150 * sqrt(masse/300)` juste après chaque changement de masse, une courbe
-  bien plus raide ; passé le seuil "grande entité" de la grille spatiale
-  (`SpatialHash`/`World.findOverlappingPairs`), le coût de collision par tick d'UN SEUL virus croît
-  en O(rayon²) — et comme un virus plus gros mange plus de monde, sa croissance s'auto-alimentait
-  (plus gros → mange plus → encore plus gros → coût de tick qui explose). Mesuré en prod : p95 des
-  ticks du salon Hardcore passé de 38ms à >210ms en moins de 20 minutes après un reset, CPU du
-  process à 80% en continu. **Ne jamais réintroduire un calcul de rayon dédié au virus** — laisser
-  `World.setMass()` s'en charger, exactement comme pour n'importe quelle autre entité.
+  un plafond de masse mais un plafond de RAYON : son rayon suit la même courbe géométrique qu'un
+  morceau de joueur (`massToRadius`/`blobGrowthFactor`, [shared/src/geometry.ts](shared/src/geometry.ts))
+  — plate à haute masse (exposant 0.38 au-delà de 10× la masse de spawn) — au lieu d'une formule
+  dédiée bien plus raide. Avant ce correctif, le code réécrivait `virus.radius` avec `150 *
+  sqrt(masse/300)` juste après chaque changement de masse ; passé le seuil "grande entité" de la
+  grille spatiale (`SpatialHash`/`World.findOverlappingPairs`), le coût de collision par tick d'UN
+  SEUL virus croît en O(rayon²) — et comme un virus plus gros mange plus de monde, sa croissance
+  s'auto-alimentait (plus gros → mange plus → encore plus gros → coût de tick qui explose). Mesuré
+  en prod : p95 des ticks du salon Hardcore passé de 38ms à >210ms (puis 555ms) en quelques
+  dizaines de minutes, CPU à 80-100%+ en continu.
 
 - **Virus Vert/Bleu (types 1/3)** — ne grandissent JAMAIS en taille (rayon fixe depuis le spawn) ;
   nourris à 200 de masse cumulée (particules reçues), ils se **DUPLIQUENT** à la place (nouvel
@@ -350,9 +349,24 @@ l'historique git de `mods/parametric/index.ts` autour du commit "lag exponentiel
   gratifiant (le compteur `fedMass` se consomme normalement) mais n'engendre plus de nouvel
   exemplaire.
 
-Voir `server/src/mods/parametric/virus.test.ts` pour les tests de régression correspondants
-(masse illimitée + rayon aligné sur `massToRadius` pour le Rouge ; plafond de population pour
-Vert/Bleu).
+- **Rayon de collision réduit de 10% d'aire, pour les 3 types** (`VIRUS_HITBOX_RADIUS_FACTOR =
+  √0.9`, `mods/parametric/index.ts`) — retour utilisateur (2026-08-05) : même sans effleurement
+  visuel apparent, un gros joueur explosait le virus et le virus absorbait un petit joueur avant
+  tout contact réel perçu. `virus.radius` (le même champ, transmis tel quel au client — pas de
+  rayon "affichage" distinct d'un rayon "collision") vaut donc `<rayon nominal> * √0.9`, à CHAQUE
+  endroit où il est fixé : spawn ambiant (mod) et manuel (`Room.spawnVirus`, admin), et recalcul du
+  Rouge après chaque changement de masse. Racine carrée de 0.9 et non 0.9 directement, car
+  Aire = π·rayon² : réduire l'AIRE de 10% ne réduit le RAYON que de √0.9 (~94.9%). Implémenté comme
+  une assignation ABSOLUE (`virus.radius = massToRadius(virus.mass) * VIRUS_HITBOX_RADIUS_FACTOR`),
+  jamais une multiplication RELATIVE sur le rayon existant (`virus.radius *= ...`) : le
+  dégonflement du Rouge tourne à CHAQUE tick tant que sa masse dépasse 300, une multiplication
+  relative s'y serait appliquée en boucle et aurait fait fondre le rayon vers 0 en quelques
+  secondes — piège à ne pas réintroduire si ce code est retouché.
+
+Voir `server/src/mods/parametric/virus.test.ts` pour les tests de régression correspondants (masse
+illimitée + rayon aligné sur `massToRadius * √0.9` pour le Rouge, y compris à travers plusieurs
+ticks de dégonflement successifs ; plafond de population pour Vert/Bleu ; rayon réduit au spawn
+ambiant pour les 3 types).
 
 ### 5ter. Comportement des robots (`server/configs/bots/*.json`)
 

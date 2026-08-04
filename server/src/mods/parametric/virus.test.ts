@@ -114,7 +114,7 @@ describe('Virus Mechanics', () => {
     expect(p2Pieces.length).toBe(32);
   });
 
-  it('Virus Rouge (ID 2): la masse grandit sans plafond, mais le rayon suit exactement la même courbe géométrique qu’un morceau de joueur (régression, incident prod Hardcore 2026-08-04)', () => {
+  it('Virus Rouge (ID 2): la masse grandit sans plafond, mais le rayon suit la courbe géométrique du joueur rétrécie de 10% d’aire (régression, incident prod Hardcore 2026-08-04)', () => {
     const config = createTestConfig(2);
     const mod = createParametricMod(config);
     const world = new World({ mapSize: 10000 });
@@ -125,9 +125,10 @@ describe('Virus Mechanics', () => {
     // Enchaîne des absorptions toujours juste sous la masse courante du virus (jamais assez pour
     // l'exploser) — la masse doit grandir sans AUCUNE limite (design voulu : le virus peut devenir
     // réellement immense), mais son rayon doit rester celui de `massToRadius` (courbe standard des
-    // blobs, shared/geometry.ts, plate à haute masse) — jamais l'ancienne formule custom `150 *
-    // sqrt(mass/300)`, bien plus raide, dont la croissance auto-alimentée (plus gros -> mange plus
-    // -> encore plus gros) a fait exploser le coût de collision par tick en production.
+    // blobs, shared/geometry.ts, plate à haute masse) réduit de 10% d'aire (retour utilisateur :
+    // collisions se déclenchant avant tout contact visuel apparent) — jamais l'ancienne formule
+    // custom `150 * sqrt(mass/300)`, bien plus raide, dont la croissance auto-alimentée (plus gros
+    // -> mange plus -> encore plus gros) a fait exploser le coût de collision par tick en prod.
     for (let i = 0; i < 10; i++) {
       const piece = world.spawnPiece('p1', { x: 500, y: 500 }, virus.mass * 0.9);
       mod.onCollision(world, piece, virus, 0.016);
@@ -135,10 +136,10 @@ describe('Virus Mechanics', () => {
     }
 
     expect(virus.mass).toBeGreaterThan(100_000); // aucun plafond de masse
-    expect(virus.radius).toBeCloseTo(massToRadius(virus.mass), 5);
+    expect(virus.radius).toBeCloseTo(massToRadius(virus.mass) * Math.sqrt(0.9), 5);
   });
 
-  it('Virus Rouge (ID 2): la masse gagnée par nourriture éjectée dessus n’est pas plafonnée non plus et suit la même courbe', () => {
+  it('Virus Rouge (ID 2): la masse gagnée par nourriture éjectée dessus n’est pas plafonnée non plus et suit la même courbe rétrécie', () => {
     const config = createTestConfig(2);
     const mod = createParametricMod(config);
     const world = new World({ mapSize: 10000 });
@@ -147,14 +148,48 @@ describe('Virus Mechanics', () => {
 
     // Un joueur qui spamme l'éjection de masse sur le virus est un second chemin vers la même
     // masse (`virus.mass`), indépendant de l'absorption de morceaux ci-dessus — même courbe de
-    // rayon attendue dans les deux cas.
+    // rayon (rétrécie de 10% d'aire) attendue dans les deux cas.
     for (let i = 0; i < 500; i++) {
       const particle = world.spawnParticle({ x: 500, y: 500 }, 40);
       mod.onCollision(world, particle, virus, 0.016);
     }
 
     expect(virus.mass).toBe(300 + 500 * 40);
-    expect(virus.radius).toBeCloseTo(massToRadius(virus.mass), 5);
+    expect(virus.radius).toBeCloseTo(massToRadius(virus.mass) * Math.sqrt(0.9), 5);
+  });
+
+  it('Le dégonflement du Virus Rouge ne fait pas fondre le rayon en boucle (pas de multiplication cumulative, régression)', () => {
+    const config = createTestConfig(2);
+    const mod = createParametricMod(config);
+    const world = new World({ mapSize: 10000 });
+
+    const virus = world.spawnVirus({ x: 500, y: 500 }, 1000, 2); // masse > 300 -> dégonflement actif
+
+    for (let i = 0; i < 5; i++) {
+      mod.onTick(world, 0.016);
+    }
+
+    // Le rayon doit refléter la masse ACTUELLE via un recalcul ABSOLU à chaque tick, jamais un
+    // facteur 0.9^5 cumulé au fil des ticks — piège qu'une multiplication RELATIVE
+    // (`virus.radius *= VIRUS_HITBOX_RADIUS_FACTOR`) aurait introduit puisque le dégonflement
+    // tourne à CHAQUE tick tant que la masse dépasse 300 (voir le commentaire de la constante).
+    expect(virus.radius).toBeCloseTo(massToRadius(virus.mass) * Math.sqrt(0.9), 5);
+  });
+
+  it('Le spawn ambiant d’un Virus Rouge applique aussi le rétrécissement de 10% d’aire au rayon (régression)', () => {
+    const config: ParametricModConfig = {
+      ...createTestConfig(2),
+      arena: { width: 100, height: 100, borderType: 'STRICT_WALL' },
+    };
+    const mod = createParametricMod(config);
+    const world = new World({ mapSize: 100 });
+
+    mod.onTick(world, 1); // dt=1s : crédit de spawn (5) >= targetVirusCount() (plancher 1) -> spawn
+
+    const viruses = world.allEntities().filter((e) => e.kind === 'virus');
+    expect(viruses.length).toBe(1);
+    expect(viruses[0]!.mass).toBe(300);
+    expect(viruses[0]!.radius).toBeCloseTo(150 * Math.sqrt(0.9), 5);
   });
 
   it('Virus Bleu (ID 3): performs 4x4 (16) chain reaction split over 2 ticks', () => {
