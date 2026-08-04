@@ -7,7 +7,6 @@ import {
 import { DEFAULT_CHALLENGER_CONFIG } from '../bots/botTypes.js';
 import type { BotConfig } from '../../mods/parametric/config.js';
 import { isGodPlayerId } from '../godmode.js';
-import { logEvent } from '../../log.js';
 import { Room } from '../room.js';
 import type { ModResolver } from '../roomManager.js';
 import type { Entity, EntityId, PlayerId, PlayerInput } from '../types.js';
@@ -394,40 +393,6 @@ export class RoomInstance {
 
     const allEntities = world.allEntities();
     const topScores = computeTopScores(world, Array.from(world.allPlayers()));
-
-    // Télémétrie temporaire (audit lag Hardcore, 2026-08-05) — throttlée à ~1x/10s par salon à
-    // 20Hz : les correctifs successifs sur le rayon du Virus Rouge (courbe standard, puis plafond
-    // dur) n'ont pas suffi à stabiliser le p95 des ticks Hardcore (toujours en dérive lente), signe
-    // qu'autre chose grandit sans limite EN PARALLÈLE — cherche quoi (nombre d'entités par nature,
-    // mémoire RSS du process) avant d'écrire un nouveau correctif à l'aveugle. À retirer une fois
-    // la cause identifiée.
-    if (tick % 200 === 0) {
-      let pieceCount = 0;
-      let particleCount = 0;
-      let virusCount = 0;
-      let maxVirusMass = 0;
-      let maxVirusRadius = 0;
-      for (const entity of allEntities) {
-        if (entity.kind === 'piece') pieceCount++;
-        else if (entity.kind === 'particle') particleCount++;
-        else if (entity.kind === 'virus') {
-          virusCount++;
-          if (entity.mass > maxVirusMass) maxVirusMass = entity.mass;
-          if (entity.radius > maxVirusRadius) maxVirusRadius = entity.radius;
-        }
-      }
-      logEvent('room_entity_diagnostic', {
-        roomId: this.id,
-        tick,
-        pieceCount,
-        particleCount,
-        virusCount,
-        maxVirusMass: Math.round(maxVirusMass),
-        maxVirusRadius: Math.round(maxVirusRadius),
-        playerCount: allPlayers.length,
-        rssMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
-      });
-    }
 
     for (const player of allPlayers) {
       let currentMass = 0;

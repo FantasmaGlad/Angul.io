@@ -438,11 +438,26 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
     return randomPositionInMap(margin);
   }
 
+  /** Audit prod (2026-08-05, salon Hardcore) : `densityPer10k` — le champ que les 4 configs de
+   * production (`vanilla.json`, `hardcore.json`, `infini.json`, `mega-split.json`) définissent
+   * TOUTES — n'était jamais lu ici, silencieusement ignoré au profit du seul `densityPer5k`
+   * (jamais défini nulle part) puis de `defaultDensity5k` — un champ mort depuis toujours. Sur
+   * Hardcore (arena 50000x50000, `densityPer10k: 2`), ce bug faisait viser 400 Virus Rouges
+   * simultanés au lieu des 50 réellement configurés (8x). Avec autant de virus actifs en
+   * permanence, la charge de collision globale du salon (chacun individuellement borné depuis les
+   * correctifs précédents, mais des CENTAINES en même temps) restait élevée en continu — et la
+   * régurgitation du Virus Rouge (voir `onTick`, `spitCredit`) proportionnelle à leur nombre a
+   * fait grimper le nombre de pastilles sans borne (voir son propre correctif). `densityPer10k /
+   * 4` convertit vers l'unité interne "par bloc de 5000x5000" (un bloc de 10000x10000 couvre 4x
+   * la surface d'un bloc de 5000x5000 — même densité visuelle, 4x plus de virus dans la plus
+   * grande unité). */
   function targetVirusCount(): number {
     if (!config.virus?.enabled) return 0;
     const vType = config.virus.type;
     const defaultDensity5k = vType === 2 ? 4 : vType === 3 ? 2 : 8;
-    const density5k = config.virus.densityPer5k ?? defaultDensity5k;
+    const density5k =
+      config.virus.densityPer5k ??
+      (config.virus.densityPer10k !== undefined ? config.virus.densityPer10k / 4 : defaultDensity5k);
     const areaIn5k = (config.arena.width * config.arena.height) / (5000 * 5000);
     return Math.max(1, Math.round(areaIn5k * density5k));
   }
@@ -770,6 +785,9 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
         foodSpawnCredit += config.food.respawnRatePerSecond * dt;
         const toSpawn = Math.min(Math.floor(foodSpawnCredit), target - particleCount);
         foodSpawnCredit -= toSpawn;
+        // Tenu à jour ici (pas seulement en fin de tick) : la régurgitation du Virus Rouge, plus
+        // bas dans ce même tick, partage ce compteur pour respecter le même plafond `target`.
+        particleCount += toSpawn;
         for (let i = 0; i < toSpawn; i++) {
           const foodMass = randomFoodMass(config);
           const spawned = world.spawnParticle(randomFoodPosition(world, 1, foodMass), foodMass);
@@ -821,6 +839,21 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
       }
 
       // Dégonflement du Virus Rouge (type 2) et régurgitation de pellets ID 1 (+2 à +5 px du bord)
+      //
+      // Audit prod (2026-08-05) : cette boucle spawnait un pellet par unité de `spitCredit`
+      // INCONDITIONNELLEMENT — jamais soumise au même plafond `particleCount < target` que le
+      // spawn ambiant juste au-dessus. Sans conséquence tant qu'un seul virus existait à la fois,
+      // mais avec des CENTAINES de Virus Rouges actifs simultanément (voir `targetVirusCount`,
+      // bug `densityPer10k` corrigé ci-dessus) qui dégonflent chacun en continu, le nombre de
+      // pastilles n'avait plus AUCUNE limite — mesuré en prod : 1657 -> 5779 particules en 2
+      // minutes, sans palier, la cause directe de la fuite mémoire/du coût de collision qui
+      // faisait dériver le TPS Hardcore. `spitCredit` continue d'être drainé normalement (la
+      // masse perdue reste comptée, un virus ne "gèle" jamais en train de dégonfler) — seul le
+      // SPAWN du pellet est gaté par le même plafond `target` que la nourriture ambiante :
+      // dès que le salon a autant de nourriture que sa cible, la régurgitation cesse de spawner
+      // (silencieusement, sans backlog qui exploserait plus tard) jusqu'à ce que de la place se
+      // libère (joueurs qui mangent). `particleCount` est incrémenté ici pour rester exact d'un
+      // spawn au suivant DANS ce même tick (partagé avec le compteur du spawn ambiant ci-dessus).
       for (const virus of allEntities) {
         if (virus.kind === 'virus' && virus.virusId === 2 && virus.mass > 300) {
           const massLost = Math.min(virus.mass - 300, 30 * dt);
@@ -829,6 +862,8 @@ export function createParametricMod(config: ParametricModConfig): GameMod {
           virus.data.spitCredit = ((virus.data.spitCredit as number) ?? 0) + massLost;
           while ((virus.data.spitCredit as number) >= 1) {
             virus.data.spitCredit = (virus.data.spitCredit as number) - 1;
+            if (particleCount >= target) continue;
+            particleCount++;
             const angle = Math.random() * PI * 2;
             const distOffset = virus.radius + 2 + Math.random() * 3;
             const pelletPos = add(virus.position, { x: Math.cos(angle) * distOffset, y: Math.sin(angle) * distOffset });

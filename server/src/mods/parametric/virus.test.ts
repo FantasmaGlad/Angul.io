@@ -304,4 +304,53 @@ describe('Virus Mechanics', () => {
     const afterCount = world.allEntities().filter((e) => e.kind === 'virus' && e.virusId === 1).length;
     expect(afterCount).toBe(beforeCount); // aucune nouvelle duplication au-delà du plafond
   });
+
+  it('targetVirusCount lit réellement densityPer10k (régression, incident prod Hardcore 2026-08-05 : champ mort silencieusement ignoré depuis toujours)', () => {
+    // Reproduit exactement hardcore.json : arena 50000x50000, type 2 (Rouge), densityPer10k: 2.
+    // Avant correctif, ce champ n'était jamais lu (seul `densityPer5k`, jamais défini nulle part
+    // dans les 4 configs de prod, comptait) : le salon visait 400 virus simultanés au lieu des 50
+    // réellement configurés — la cause directe de la charge de collision globale soutenue et de la
+    // fuite de particules (voir le test suivant) observées en prod.
+    const config: ParametricModConfig = {
+      ...createTestConfig(2),
+      arena: { width: 50000, height: 50000, borderType: 'STRICT_WALL' },
+      virus: { enabled: true, type: 2, densityPer10k: 2 },
+    };
+    const mod = createParametricMod(config);
+    const world = new World({ mapSize: 50000 });
+
+    // Largement assez de crédit de spawn (5 virus/s) pour atteindre la cible réelle (50) en 20s.
+    for (let i = 0; i < 20; i++) mod.onTick(world, 1);
+
+    const virusCount = world.allEntities().filter((e) => e.kind === 'virus').length;
+    expect(virusCount).toBe(50); // avant correctif : 400
+  });
+
+  it('la régurgitation du Virus Rouge respecte le plafond de nourriture ambiante (régression, incident prod Hardcore 2026-08-05 : fuite de particules non bornée)', () => {
+    const config: ParametricModConfig = {
+      ...createTestConfig(2),
+      arena: { width: 1000, height: 1000, borderType: 'STRICT_WALL' },
+      virus: { enabled: false, type: 2, densityPer10k: 1 }, // pas de spawn ambiant parasite ici
+    };
+    const mod = createParametricMod(config);
+    const world = new World({ mapSize: 1000 });
+
+    world.addPlayer('p1', 'Player 1'); // humanCount=1 : pas de plancher à 100 (voir foodTargetCount)
+    // Cible réelle = round(density(4) * areaInBlocks(1)) = 4 — déjà saturée avant le premier tick.
+    for (let i = 0; i < 4; i++) world.spawnParticle({ x: 500, y: 500 }, 1);
+    expect(world.allEntities().filter((e) => e.kind === 'particle').length).toBe(4);
+
+    // Virus Rouge déjà massif : dégonflement + régurgitation actifs dès le premier tick.
+    const virus = world.spawnVirus({ x: 100, y: 100 }, 1000, 2);
+
+    for (let i = 0; i < 50; i++) mod.onTick(world, 0.016);
+
+    // Sans plafond partagé, la régurgitation aurait ajouté un pellet par unité de masse perdue
+    // (30 masse/s), bien au-delà de la cible ambiante — avec, le nombre de particules ne doit
+    // JAMAIS la dépasser, quel que soit le nombre de ticks écoulés.
+    const particleCount = world.allEntities().filter((e) => e.kind === 'particle').length;
+    expect(particleCount).toBeLessThanOrEqual(4);
+    // Le virus continue bien de dégonfler normalement (spitCredit drainé), juste sans spawner.
+    expect(virus.mass).toBeLessThan(1000);
+  });
 });

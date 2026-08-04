@@ -287,7 +287,8 @@ fichiers en démarrant le serveur en local avant de déployer.
 | | `pelletTypes` | `{color, mass, weight}[]` | Types de pellets ; `weight` = poids de tirage relatif (pas nécessairement normalisé à 100) ; `color` est purement informatif, **jamais transmis au client** |
 | `virus?` | `enabled` | boolean | Active les virus pour ce mode |
 | | `type` | `1\|2\|3` | **Vert** (mange/explose en 16 morceaux au-dessus du seuil, se **duplique** en étant nourri de 200 de masse) / **Rouge** (carnivore : absorbe tout morceau de masse inférieure, explose en 32 pour les attaquants assez gros) / **Bleu** (comme Vert mais réaction en chaîne 4×4=16 sur 2 ticks) — voir §5bis-virus ci-dessous pour la mécanique de croissance/duplication et ses plafonds |
-| | `densityPer5k?` | number | Population VISÉE par bloc de 5000×5000 px² (`targetVirusCount()`, mods/parametric/index.ts) — défaut selon `type` : 8 (Vert) / 4 (Rouge) / 2 (Bleu). ⚠️ **`densityPer10k?` existe aussi sur ce type mais n'est lu nulle part dans le code** (`targetVirusCount()` ne lit que `densityPer5k`) — un champ mort dans les 4 configs actuelles (`vanilla.json`, `hardcore.json`, `infini.json`, `mega-split.json` définissent toutes `densityPer10k`, silencieusement ignoré ; la densité réellement appliquée est donc TOUJOURS le défaut ci-dessus, jamais la valeur du JSON). Bug connu, non corrigé (choix d'équilibrage à trancher avant de le corriger, pas un simple renommage — changerait la densité affichée sur les 4 modes) |
+| | `densityPer10k?` | number | Population VISÉE par bloc de 10000×10000 px² (`targetVirusCount()`, mods/parametric/index.ts) — c'est le champ que les 4 configs de production définissent. Converti en interne vers l'unité "par 5000×5000" (÷4, un bloc de 10000×10000 couvre 4x la surface) |
+| | `densityPer5k?` | number | Équivalent direct dans l'unité interne "par 5000×5000" — prioritaire sur `densityPer10k` si les deux sont définis. Défaut si NI L'UN NI L'AUTRE n'est défini : 8 (Vert) / 4 (Rouge) / 2 (Bleu) par bloc de 5000×5000. ⚠️ Historique : `densityPer10k` a longtemps été silencieusement ignoré (bug corrigé le 2026-08-05, voir §5bis-virus) — Hardcore visait 400 Virus Rouges au lieu des 50 réellement configurés |
 | `areaConstant` | — | number | Constante masse→aire (Rayon = √(areaConstant·masse/π)) |
 | `bots?` | `enabled` | boolean | Active les bots normaux ET les Challengers pour ce mode |
 | | `behaviorId?` | string | Id d'un fichier `server/configs/bots/<id>.json` (voir plus bas) qui gouverne le PILOTAGE des bots (fuite/chasse/vagabondage/split) — distinct des réglages de POPULATION ci-dessous. Absent = `'default'` |
@@ -318,8 +319,10 @@ code, pas seulement du JSON).
 
 Les trois types de virus (`config.virus.type`) suivent des mécaniques de croissance
 **structurellement différentes**, chacune avec son propre garde-fou contre un emballement — tous
-existent suite à DEUX incidents de production successifs (Hardcore, 2026-08-04/05, voir
-l'historique git de `mods/parametric/index.ts`autour des commits "lag exponentiel Hardcore").
+existent suite à TROIS incidents de production successifs (Hardcore, 2026-08-04/05, voir
+l'historique git de `mods/parametric/index.ts` autour des commits "lag exponentiel Hardcore"). Le
+**3e incident (voir plus bas) était la cause dominante** — les deux premiers, bien réels, n'en
+étaient qu'un symptôme aggravant.
 
 - **Virus Rouge (type 2, carnivore)** — grandit en MASSE à chaque morceau plus petit absorbé ou
   particule reçue (`onCollision`), **sans aucun plafond de masse** : il peut légitimement devenir
@@ -374,17 +377,45 @@ l'historique git de `mods/parametric/index.ts`autour des commits "lag exponentie
   appliquée en boucle et aurait fait fondre le rayon vers 0 en quelques secondes — piège à ne pas
   réintroduire si ce code est retouché.
 
-**Leçon des deux incidents** : "une courbe plus plate/lente" n'est PAS la même garantie qu'"un
+- **(3e incident, cause dominante) Surpopulation de virus + fuite de particules non bornée** —
+  après les deux correctifs de rayon ci-dessus, le p95 des ticks Hardcore continuait de dériver
+  lentement (audit direct sur le serveur de prod, télémétrie temporaire ajoutée puis retirée une
+  fois la cause identifiée, voir l'historique git). Deux bugs combinés :
+
+  1. **`targetVirusCount()` ignorait `densityPer10k`** — le champ que les 4 configs de production
+     définissent TOUTES — au profit d'un défaut codé en dur (`densityPer5k`, jamais défini nulle
+     part). Sur Hardcore (`densityPer10k: 2`, arena 50000×50000), ce bug faisait viser **400 Virus
+     Rouges simultanés au lieu des 50 réellement configurés** (8×). Corrigé : `densityPer10k` est
+     maintenant converti et pris en compte (voir le tableau du schéma JSON plus haut).
+  2. **La régurgitation du Virus Rouge (dégonflement passif, `spitCredit`) spawnait un pellet de
+     nourriture par unité de masse perdue SANS JAMAIS vérifier le plafond de nourriture ambiante**
+     (`particleCount < target`, la même variable qui gate le spawn ambiant juste au-dessus dans
+     `onTick`) — sans conséquence tant qu'un seul virus dégonflait à la fois, mais avec des
+     centaines de Virus Rouges actifs en parallèle (bug 1 ci-dessus), le nombre de pastilles
+     n'avait plus AUCUNE limite. Mesuré en prod : 1657 → 5779 particules en 2 minutes, sans palier
+     — la cause directe de la fuite mémoire (RSS : ~115 Mo → ~386 Mo en 9 minutes) et du coût de
+     collision qui faisait dériver le TPS. Corrigé : la boucle de régurgitation partage désormais
+     le même compteur `particleCount`/`target` que le spawn ambiant (`onTick`) — `spitCredit`
+     continue d'être drainé normalement (un virus ne "gèle" jamais en dégonflant), seul le SPAWN
+     du pellet est gaté ; une fois la nourriture au-dessus de la cible, la régurgitation cesse
+     silencieusement de spawner jusqu'à ce que des joueurs libèrent de la place en mangeant.
+
+**Leçon des trois incidents** : "une courbe plus plate/lente" n'est PAS la même garantie qu'"un
 plafond dur" — toute formule dont le rayon reste une fonction strictement croissante et non bornée
 de la masse finira, avec assez de temps/de proies mangées, par franchir n'importe quel seuil de
-coût. Seul un `Math.min(..., plafond_constant)` élimine le risque pour de bon, quelle que soit la
-durée de la session.
+coût (leçon des incidents 1-2). Mais surtout : **une seule entité individuellement bien élevée ne
+suffit pas si le SALON EN CONTIENT DES CENTAINES** à cause d'un bug de configuration en amont
+(incident 3) — toujours vérifier la cause la plus en amont (ici, un champ de config silencieusement
+ignoré) avant d'empiler des correctifs sur des symptômes individuels. Tout mécanisme de spawn
+(spawn ambiant, régurgitation, duplication...) doit respecter le MÊME plafond structurel que les
+autres, jamais un chemin de spawn indépendant et non gaté.
 
 Voir `server/src/mods/parametric/virus.test.ts` pour les tests de régression correspondants (masse
 illimitée mais rayon plafonné pour le Rouge, avec un test dédié à la croissance MODESTE — non
 plafonnée — pour vérifier que la courbe normale reste respectée en-deçà du seuil ; pas de
 multiplication cumulative à travers plusieurs ticks de dégonflement ; plafond de population pour
-Vert/Bleu ; rayon effectif dès le spawn ambiant pour les 3 types).
+Vert/Bleu ; rayon effectif dès le spawn ambiant pour les 3 types ; `densityPer10k` réellement pris
+en compte ; régurgitation plafonnée par la cible de nourriture ambiante).
 
 ### 5ter. Comportement des robots (`server/configs/bots/*.json`)
 
