@@ -16,14 +16,14 @@ server/rooms.local.json
 .DS_Store
 coverage/
 
-# AI & Assistant files — .mcp.json, .claude/mcp/**, .claude/project-structure.json, ET leurs
-# équivalents .gemini/ (mcp/**, project-structure.json, AGENTS.md, skills/) SONT commités (voir
-# structure.md §1bis) : c'est un outillage de projet partagé (cartographie du dépôt interrogeable
-# par n'importe quel agent IA sur n'importe quel poste/plateforme), pas une préférence locale.
-# .claude/settings.local.json (permissions locales) et .claude/launch.json (contient des détails
-# d'infra réelle : IP/hostname/accès sudo du serveur de prod — volontairement PAS commités, à
-# reconsidérer au cas par cas) restent ignorés, comme le reste de ce bloc pour les autres outils IA
-# n'ayant pas (encore) de partie partagée équivalente.
+# AI & Assistant files — .mcp.json, .claude/mcp/**, .claude/project-structure.json, CLAUDE.md
+# (racine), ET leurs équivalents .gemini/ (mcp/**, project-structure.json, AGENTS.md, skills/) SONT
+# commités (voir structure.md §1bis) : c'est un outillage de projet partagé (cartographie du dépôt +
+# principes de développement interrogeables par n'importe quel agent IA sur n'importe quel
+# poste/plateforme), pas une préférence locale. .claude/settings.local.json (permissions locales) et
+# .claude/launch.json (contient des détails d'infra réelle : IP/hostname/accès sudo du serveur de
+# prod — volontairement PAS commités, à reconsidérer au cas par cas) restent ignorés, comme le reste
+# de ce bloc pour les autres outils IA n'ayant pas (encore) de partie partagée équivalente.
 .claude/*
 !.claude/mcp/
 !.claude/project-structure.json
@@ -36,13 +36,13 @@ coverage/
 .cursor/
 .windsurf/
 
-# Markdown files (except README.md, structure.md, et les .md partagés sous .gemini/ — voir le
-# bloc "AI & Assistant files" ci-dessus : cette règle *.md, plus bas dans le fichier, s'appliquait
-# sinon PAR-DESSUS les exceptions .gemini/* déjà posées plus haut et les ré-ignorait quand même)
+# Markdown files (except README.md, structure.md, CLAUDE.md, et les .md partagés sous .gemini/ —
+# voir le bloc "AI & Assistant files" ci-dessus : cette règle *.md, plus bas dans le fichier,
+# s'appliquait sinon PAR-DESSUS les exceptions déjà posées plus haut et les ré-ignorait quand même)
 *.md
 !README.md
 !structure.md
+!CLAUDE.md
 !.gemini/AGENTS.md
 !.gemini/skills/**/*.md
-Claude.md
 cahier_des_charges*.md

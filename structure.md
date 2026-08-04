@@ -5,11 +5,12 @@ mise à jour (par toi ou par un agent) sache immédiatement où intervenir sans 
 le code.
 
 Note sur les autres `.md` du dépôt : `*.md` est gitignored à la racine (voir `.gitignore`), à
-l'exception de `README.md`. Les autres fichiers `.md` mentionnés dans des commentaires de code
-(`cahier_des_charges.md`, `metriques.md`, `plan_performance_reseau.md`, `fix_vitesse_reseau.md`…)
-sont des documents de travail **locaux et éphémères** : ils peuvent exister ou non selon la copie
-du dépôt, ne sont jamais poussés, et ne doivent pas être considérés comme une source de vérité
-fiable à long terme — contrairement à ce document et à `README.md`, qui SONT committés.
+l'exception de `README.md` et `CLAUDE.md` (voir §1bis). Les autres fichiers `.md` mentionnés dans
+des commentaires de code (`cahier_des_charges.md`, `metriques.md`, `plan_performance_reseau.md`,
+`fix_vitesse_reseau.md`…) sont des documents de travail **locaux et éphémères** : ils peuvent
+exister ou non selon la copie du dépôt, ne sont jamais poussés, et ne doivent pas être considérés
+comme une source de vérité fiable à long terme — contrairement à ce document, à `README.md` et à
+`CLAUDE.md`, qui SONT committés.
 
 Règle de mise à jour : si tu ajoutes/déplaces/supprimes un fichier qui mériterait une ligne
 ici (un nouveau module, un nouveau composant, un nouvel asset), mets ce document à jour dans le
@@ -72,6 +73,16 @@ Sont donc **volontairement COMMITÉS** : `.gemini/mcp/**` (hors `node_modules/`)
 même logique que `.claude/` ci-dessus, avec les mêmes exceptions au `.gitignore` (voir son bloc "AI
 & Assistant files").
 
+**`CLAUDE.md`** (racine du dépôt, **COMMITÉ**) est l'équivalent Claude Code de `.gemini/AGENTS.md`
+— lu automatiquement en début de session par Claude Code (contrairement à `AGENTS.md`, qui doit
+être référencé explicitement par l'outil Gemini/Antigravity). Contient les mêmes **principes
+généraux de développement** (portables, communs à tous les projets de l'auteur — pas spécifiques à
+Angul.io) que `.gemini/AGENTS.md` §4 : les deux copies sont dupliquées à l'identique plutôt que
+factorisées dans un seul fichier référencé par les deux (chaque plateforme IA a ses propres
+conventions de découverte automatique de son fichier de contexte — un simple renvoi depuis l'un
+vers l'autre ne garantirait pas qu'il soit lu), et doivent donc être maintenues manuellement
+synchronisées si l'une des deux est modifiée.
+
 `.claude/launch.json` (config de lancement de l'aperçu navigateur + une section `_deployment`
 documentant l'infra de production RÉELLE : hostname/IP LAN, accès sudo, procédure de déploiement)
 reste volontairement **non commité** : contrairement à la cartographie ci-dessus, ce fichier
@@ -103,12 +114,14 @@ quel, il devient trompeur aussi vite qu'une doc humaine non maintenue.
 Angul.io/
 ├── README.md                          Vue d'ensemble technique + guide de modding (LE document de référence)
 ├── structure.md                       Ce fichier
+├── CLAUDE.md                          Consignes de projet Claude Code (lu auto. en début de session) — équivalent
+│                                       .gemini/AGENTS.md, voir §1bis
 ├── LICENSE                            AGPL-3.0-or-later
 ├── scripts/install.sh                 Bootstrap d'un nœud de production (voir §8 cahier des charges)
 ├── eslint.config.js                   Config ESLint racine (couvre les 4 workspaces)
 ├── .prettierrc.json / .prettierignore Config formatage
-├── .gitignore                         Note : *.md gitignored sauf README.md/structure.md/AGENTS.md
-│                                       (voir §1) ; voir §1bis pour ce qui EST commité sous
+├── .gitignore                         Note : *.md gitignored sauf README.md/structure.md/CLAUDE.md/
+│                                       AGENTS.md (voir §1) ; voir §1bis pour ce qui EST commité sous
 │                                       .claude/ et .gemini/ malgré le nom du bloc
 ├── package.json / package-lock.json   Racine du monorepo (workspaces, scripts globaux)
 ├── tsconfig.json / tsconfig.base.json Config TypeScript partagée
