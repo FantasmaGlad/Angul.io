@@ -3,7 +3,9 @@ import {
   add,
   decelerationForMass,
   distance,
+  HARDCORE_MAX_SPEED_PX_PER_S,
   length,
+  limitLength,
   massToRadius,
   moveToward,
   PI,
@@ -319,7 +321,10 @@ export class LocalPrediction {
         return isWithinWindow && (isPreExecutionServerTime || velocityLacksImpulse);
       });
       for (const dash of activeDashes) {
-        predicted.velocity = add(predicted.velocity, dash.impulse);
+        // Même plafond que `applyDash` (voir son commentaire) — sans lui, le rejeu de
+        // réconciliation réappliquerait l'impulsion brute et redivergerait du serveur (qui, lui,
+        // reste plafonné) à chaque nouvel état reçu.
+        predicted.velocity = limitLength(add(predicted.velocity, dash.impulse), HARDCORE_MAX_SPEED_PX_PER_S);
       }
 
       for (const chunk of replayChunks) {
@@ -505,8 +510,10 @@ export class LocalPrediction {
    * l'accélération locale du dash est alors visuellement annulée puis "revient" d'un coup au
    * tick suivant, perçu comme un gros lag/saccade au dash. */
   applyDash(direction: Vector2, speedImpulse = 4050): void {
+    // Même plafond que le serveur (HARDCORE_MAX_SPEED_PX_PER_S, shared/movement.ts) : sans lui, le
+    // serveur corrigerait (rollback visuel) cette prédiction dès le prochain `state` reçu.
     for (const piece of this.pieces.values()) {
-      piece.velocity = add(piece.velocity, scale(direction, speedImpulse));
+      piece.velocity = limitLength(add(piece.velocity, scale(direction, speedImpulse)), HARDCORE_MAX_SPEED_PX_PER_S);
     }
     this.pendingDashes.push({ atMs: performance.now(), impulse: scale(direction, speedImpulse) });
   }

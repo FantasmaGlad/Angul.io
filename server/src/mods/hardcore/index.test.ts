@@ -287,6 +287,39 @@ describe('createHardcoreMod — Dash (touche F)', () => {
 
     expect((mod as any).getDashState(world, 'p1').charges).toBe(5);
   });
+
+  it('plafonne la vitesse cumulée à 50 m/s (5000px/s) même en enchaînant plusieurs charges sans délai (régression, retour utilisateur 2026-08-05 : "le dash stop net le bot")', () => {
+    const config = testConfig();
+    const mod = createHardcoreMod(config);
+    const world = freshWorld();
+    world.addPlayer('p1', 'Dasher');
+    mod.onPlayerJoin?.(world, 'p1');
+
+    const piece = world.getPiecesByOwner('p1')[0]!;
+    piece.position = { x: 500, y: 500 };
+    piece.velocity = { x: 0, y: 0 };
+
+    // Enchaîne les 5 charges disponibles dans la MÊME direction, sans aucun délai entre elles
+    // (mécanique voulue, "Aucun délai minimum entre deux dashs", voir le 1er test de ce describe) —
+    // sans plafond, la vélocité s'additionnait sans limite (jusqu'à ~5x dashSpeedForMass), loin
+    // au-delà de 50 m/s. Un excès de vitesse aussi grand, une fois l'IA/le joueur redirigé vers une
+    // autre cible, prend d'autant plus longtemps à se résorber via `moveToward` (freinage à taux
+    // fixe) — perçu comme "le bot s'arrête net pendant ~0.5s", y compris en plein milieu de la
+    // carte, sans aucun mur impliqué.
+    for (let i = 0; i < 5; i++) {
+      mod.onPlayerInput?.(world, 'p1', {
+        target: { x: 1000, y: 500 },
+        intensity: 1,
+        split: false,
+        dash: true,
+      });
+    }
+
+    expect((mod as any).getDashState(world, 'p1').charges).toBe(0); // les 5 charges consommées
+    const speed = Math.hypot(piece.velocity.x, piece.velocity.y);
+    expect(speed).toBeLessThanOrEqual(5000 + 1e-6); // 50 m/s (MAP_UNITS_TO_METERS = 0.01)
+    expect(piece.velocity.x).toBeGreaterThan(0); // direction toujours respectée, juste plafonnée
+  });
 });
 
 describe('createHardcoreMod — IA de dash des bots (requête spatiale bornée, pas allEntities())', () => {

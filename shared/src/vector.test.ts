@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { distance, moveToward, normalize } from './vector.js';
+import { distance, length, limitLength, moveToward, normalize } from './vector.js';
 
 describe('normalize', () => {
   it('returns a unit vector', () => {
@@ -35,5 +35,22 @@ describe('moveToward', () => {
     const result = moveToward({ x: 0, y: 0 }, { x: 3, y: 4 }, 5);
     // distance = 5 exactement -> atteint la cible en une fois
     expect(result).toEqual({ x: 3, y: 4 });
+  });
+});
+
+describe('limitLength', () => {
+  it('leaves a vector already under the limit unchanged', () => {
+    const v = { x: 3, y: 4 }; // norme 5
+    expect(limitLength(v, 10)).toEqual(v);
+  });
+
+  it('scales down a vector exceeding the limit while preserving its direction', () => {
+    const result = limitLength({ x: 3, y: 4 }, 5); // norme 5 -> plafonnée à 5
+    expect(length(result)).toBeCloseTo(5, 10);
+    expect(result.x / result.y).toBeCloseTo(3 / 4, 10); // direction inchangée
+  });
+
+  it('leaves the zero vector unchanged (rien à plafonner, division par zéro évitée)', () => {
+    expect(limitLength({ x: 0, y: 0 }, 5)).toEqual({ x: 0, y: 0 });
   });
 });

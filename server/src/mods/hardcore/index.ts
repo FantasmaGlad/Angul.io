@@ -1,4 +1,16 @@
-import { add, circleOverlapArea, clamp, dashSpeedForMass, distance, isBotId, PI, scale, type Vector2 } from '@angulio/shared';
+import {
+  add,
+  circleOverlapArea,
+  clamp,
+  dashSpeedForMass,
+  distance,
+  HARDCORE_MAX_SPEED_PX_PER_S,
+  isBotId,
+  limitLength,
+  PI,
+  scale,
+  type Vector2,
+} from '@angulio/shared';
 import type { GameMod } from '../../engine/mod.js';
 import { isGodPlayerId } from '../../engine/godmode.js';
 import type { Entity, PlayerId, PlayerInput } from '../../engine/types.js';
@@ -152,7 +164,12 @@ export function createHardcoreMod(
             // Impulsion atténuée avec la masse (cahier des charges §4a : "moins puissant lorsqu'il
             // est gros") — même formule partagée que la prédiction locale du client (voir
             // client/src/prediction.ts `applyDash`), jamais de rollback visuel au dash.
-            piece.velocity = add(piece.velocity, scale(dir, dashSpeedForMass(piece.mass)));
+            // Plafonnée à HARDCORE_MAX_SPEED_PX_PER_S (voir son commentaire, shared/movement.ts) :
+            // aucun délai minimum entre deux dashs, l'impulsion s'accumulerait sinon sans limite.
+            piece.velocity = limitLength(
+              add(piece.velocity, scale(dir, dashSpeedForMass(piece.mass))),
+              HARDCORE_MAX_SPEED_PX_PER_S,
+            );
           }
         }
       }
@@ -233,7 +250,11 @@ export function createHardcoreMod(
             const dy = dashTarget.y - piece.position.y;
             const len = Math.hypot(dx, dy);
             const dir: Vector2 = len > 0 ? { x: dx / len, y: dy / len } : { x: 1, y: 0 };
-            piece.velocity = add(piece.velocity, scale(dir, dashSpeedForMass(piece.mass)));
+            // Même plafond que le Dash du joueur ci-dessus (voir son commentaire).
+            piece.velocity = limitLength(
+              add(piece.velocity, scale(dir, dashSpeedForMass(piece.mass))),
+              HARDCORE_MAX_SPEED_PX_PER_S,
+            );
           }
         }
       }

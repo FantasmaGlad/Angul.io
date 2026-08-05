@@ -667,6 +667,21 @@ via `physics.decelerationMassExponent` (repli sur `accelerationMassExponent` si 
 Hardcore (`dashSpeedForMass`) perd en puissance avec la masse (plancher 40% de `DASH_BASE_SPEED`),
 même formule partagée serveur (`mods/hardcore/index.ts`) et prédiction locale (`prediction.ts`).
 
+**Plafond de vitesse du Dash** (`HARDCORE_MAX_SPEED_PX_PER_S`, `shared/src/movement.ts`, 2026-08-05)
+— le Dash Hardcore n'a AUCUN délai minimum entre deux charges (jusqu'à 5 disponibles) : son
+impulsion pouvait donc s'accumuler sur la vélocité déjà acquise sans aucune limite. Au-delà du
+problème de vitesse en lui-même, `moveToward` (`shared/src/vector.ts`) interpole LINÉAIREMENT le
+VECTEUR vélocité vers sa cible (jamais juste sa norme) — un bot qui redirige son cap après un Dash
+voit donc sa vélocité passer PRÈS DE ZÉRO le temps que le vecteur pivote vers la nouvelle direction,
+une transition dont la durée croît avec l'excès de vitesse à résorber (taux de freinage fixe) :
+retour utilisateur, "le dash stop net le bot" pendant ~0.5s, y compris en plein milieu de la carte
+(aucun mur impliqué). Plafonné à 50 m/s (5000px/s, voir `MAP_UNITS_TO_METERS`,
+`client/src/components/GameView.tsx`) via `limitLength` (`shared/src/vector.ts`), à CHAQUE impulsion
+de Dash (joueur ET IA de bot, `mods/hardcore/index.ts`) — jamais sur la vélocité de croisière
+normale (déjà bornée par `velocityForMass`). Même plafond appliqué à l'identique côté client
+(`prediction.ts` `applyDash`, ET son rejeu de réconciliation) : sans lui, le serveur corrigerait
+(rollback visuel) la vitesse surestimée prédite localement dès le prochain `state` reçu.
+
 ---
 
 ## 9. Tests

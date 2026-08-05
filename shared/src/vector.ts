@@ -50,3 +50,12 @@ export function moveToward(current: Vector2, target: Vector2, maxDelta: number):
   if (deltaLength <= maxDelta || deltaLength === 0) return { ...target };
   return add(current, scale(delta, maxDelta / deltaLength));
 }
+
+/** Plafonne la norme de `v` à `maxLength`, en conservant sa direction — `v` inchangé si déjà
+ * en-dessous. Utilisé pour borner une vélocité qui s'accumule par impulsions successives (voir
+ * `HARDCORE_MAX_SPEED_PX_PER_S`, shared/src/movement.ts) sans perturber sa direction. */
+export function limitLength(v: Vector2, maxLength: number): Vector2 {
+  const len = length(v);
+  if (len <= maxLength || len === 0) return v;
+  return scale(v, maxLength / len);
+}

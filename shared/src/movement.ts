@@ -126,6 +126,26 @@ export function dashSpeedForMass(mass: number): number {
   return DASH_BASE_SPEED * clampUnitOrLess(factor, DASH_MIN_POWER_FRACTION);
 }
 
+/** Vitesse maximale (px/s) qu'un morceau peut atteindre en Hardcore — 50 m/s (voir
+ * `MAP_UNITS_TO_METERS`, client/src/components/GameView.tsx : 0.01, donc 1m = 100px). Retour
+ * utilisateur (2026-08-05) : le Dash Hardcore n'a AUCUN délai minimum entre deux charges (jusqu'à
+ * `HARDCORE_MAX_DASHES` disponibles, voir mods/hardcore/index.ts) — son impulsion (`dashSpeedForMass`,
+ * ~4050px/s pour un blob de taille normale) pouvait donc s'accumuler sur la vélocité déjà acquise
+ * sans AUCUNE limite, produisant une vitesse arbitrairement grande. Au-delà du problème de vitesse
+ * en lui-même : `moveToward` (ci-dessus) interpole LINÉAIREMENT le VECTEUR vélocité vers sa cible
+ * (jamais juste sa norme) — un bot qui redirige son cap après un Dash voit donc sa vélocité passer
+ * PRÈS DE ZÉRO le temps que le vecteur pivote vers la nouvelle direction, une transition dont la
+ * durée croît avec l'excès de vitesse à résorber (taux de freinage fixe, `decelerationForMass`) :
+ * perçu comme "le bot s'arrête net pendant ~0.5s", y compris en plein milieu de la carte (aucun mur
+ * impliqué). Plafonner la vitesse borne directement cette durée, en plus d'empêcher une vitesse
+ * déraisonnable. Appliqué à CHAQUE impulsion de Dash (joueur ET IA de bot, voir
+ * mods/hardcore/index.ts) — jamais à la vélocité de croisière normale (déjà bornée par
+ * `velocityForMass`, sans risque d'emballement). Propre à Hardcore, seul mode doté d'un Dash. Même
+ * valeur utilisée par la prédiction locale du client (`client/src/prediction.ts` `applyDash`) —
+ * sans ce plafond partagé, le serveur corrigerait (rollback visuel) la vitesse surestimée prédite
+ * localement dès le prochain `state` reçu. */
+export const HARDCORE_MAX_SPEED_PX_PER_S = 5000;
+
 function clampUnitOrLess(value: number, floor: number): number {
   return Math.max(floor, Math.min(1, value));
 }

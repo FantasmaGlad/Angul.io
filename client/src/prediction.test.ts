@@ -529,4 +529,50 @@ describe('LocalPrediction — réconciliation du Dash (prévention du lag au dé
     const pos = prediction.getOwnPosition();
     expect(pos).toBeDefined();
   });
+
+  it('plafonne la vélocité prédite à 50 m/s (5000px/s) même en enchaînant deux dashs sans délai (régression, retour utilisateur 2026-08-05 — miroir du plafond serveur, HARDCORE_MAX_SPEED_PX_PER_S)', () => {
+    const prediction = new LocalPrediction();
+    const nowSpy = vi.spyOn(performance, 'now');
+
+    nowSpy.mockReturnValueOnce(0);
+    prediction.reconcile([ownSnapshot('1', 0, 0)], 'self', MOVEMENT, 0);
+
+    // Deux dashs à pleine puissance dans la même direction, sans délai entre eux (mécanique
+    // Hardcore voulue) — 2x4050 = 8100px/s, largement au-delà du plafond de 5000px/s.
+    nowSpy.mockReturnValueOnce(10);
+    prediction.applyDash({ x: 1, y: 0 }, 4050);
+    nowSpy.mockReturnValueOnce(10);
+    prediction.applyDash({ x: 1, y: 0 }, 4050);
+
+    const piece = (prediction as unknown as { pieces: Map<string, { velocity: { x: number; y: number } }> })
+      .pieces.get('1');
+    expect(piece).toBeDefined();
+    const speed = Math.hypot(piece!.velocity.x, piece!.velocity.y);
+    expect(speed).toBeLessThanOrEqual(5000 + 1e-6);
+  });
+
+  it('le rejeu de réconciliation respecte aussi le plafond de vitesse (pas seulement l’application live du dash)', () => {
+    const prediction = new LocalPrediction();
+    const nowSpy = vi.spyOn(performance, 'now');
+
+    nowSpy.mockReturnValueOnce(0);
+    prediction.reconcile([ownSnapshot('1', 0, 0)], 'self', MOVEMENT, 0);
+
+    nowSpy.mockReturnValueOnce(10);
+    prediction.applyDash({ x: 1, y: 0 }, 4050);
+    nowSpy.mockReturnValueOnce(10);
+    prediction.applyDash({ x: 1, y: 0 }, 4050);
+
+    // Un nouveau `state` autoritaire déclenche le rejeu (`activeDashes` réapplique les impulsions
+    // journalisées, voir `reconcile`) — sans le plafond appliqué À CE point précis (pas seulement
+    // dans `applyDash`), ce rejeu redonnerait ~8100px/s malgré le plafond respecté en direct.
+    nowSpy.mockReturnValueOnce(15);
+    prediction.reconcile([ownSnapshot('1', 0, 0)], 'self', MOVEMENT, 20, 20, new Map([['1', { x: 0, y: 0 }]]));
+
+    const piece = (prediction as unknown as { pieces: Map<string, { velocity: { x: number; y: number } }> })
+      .pieces.get('1');
+    expect(piece).toBeDefined();
+    const speed = Math.hypot(piece!.velocity.x, piece!.velocity.y);
+    expect(speed).toBeLessThanOrEqual(5000 + 1e-6);
+  });
 });
